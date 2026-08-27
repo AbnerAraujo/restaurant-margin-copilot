@@ -1,0 +1,452 @@
+<title>Restaurant Margin Copilot</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root{
+    --ink:#1E241F;
+    --paper:#E7ECDE;
+    --paper-raised:#F4F6EC;
+    --rule:#C6CDB6;
+    --muted:#5B6551;
+    --det:#1F6F78;
+    --det-soft:#D7E9E7;
+    --prob:#6B4A8A;
+    --prob-soft:#EAE1F1;
+    --alert:#A83E2C;
+    --alert-soft:#F2DAD3;
+    --font-display:'IBM Plex Serif', Georgia, 'Times New Roman', serif;
+    --font-body:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono:'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#E7ECDE;
+      --paper:#12160F;
+      --paper-raised:#1A1F15;
+      --rule:#333B29;
+      --muted:#9AA48A;
+      --det:#5CC2B9;
+      --det-soft:#173330;
+      --prob:#C1A3E3;
+      --prob-soft:#2B2138;
+      --alert:#E6917C;
+      --alert-soft:#3A241D;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#E7ECDE;
+    --paper:#12160F;
+    --paper-raised:#1A1F15;
+    --rule:#333B29;
+    --muted:#9AA48A;
+    --det:#5CC2B9;
+    --det-soft:#173330;
+    --prob:#C1A3E3;
+    --prob-soft:#2B2138;
+    --alert:#E6917C;
+    --alert-soft:#3A241D;
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{
+    max-width:920px;
+    margin:0 auto;
+    padding:64px 28px 100px;
+  }
+  ::selection{ background:var(--det-soft); color:var(--ink); }
+
+  a{ color:var(--det); }
+  h1,h2,h3{ font-family:var(--font-display); text-wrap:balance; margin:0; }
+  p{ margin:0; }
+
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:12px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--muted);
+  }
+
+  header.hero{
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+    padding-bottom:36px;
+    border-bottom:1px solid var(--rule);
+    margin-bottom:48px;
+  }
+  header.hero h1{ font-size:clamp(32px,5vw,46px); font-weight:600; }
+  header.hero .dek{
+    font-size:17px;
+    color:var(--muted);
+    max-width:62ch;
+  }
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .chip{
+    font-family:var(--font-mono);
+    font-size:12px;
+    padding:5px 10px;
+    border:1px solid var(--rule);
+    border-radius:5px;
+    color:var(--muted);
+    background:var(--paper-raised);
+  }
+  .chip.status{
+    border-color:var(--det);
+    color:var(--det);
+  }
+
+  section{ margin-bottom:56px; }
+  section > h2{
+    font-size:14px;
+    font-family:var(--font-mono);
+    text-transform:uppercase;
+    letter-spacing:.1em;
+    color:var(--muted);
+    margin-bottom:16px;
+    display:flex;
+    align-items:center;
+    gap:12px;
+  }
+  section > h2::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--rule);
+  }
+
+  .prose{ max-width:66ch; font-size:16px; }
+  .prose + .prose{ margin-top:14px; }
+
+  figure{ margin:28px 0 0; }
+  figure svg{ display:block; width:100%; height:auto; }
+  figcaption{
+    margin-top:14px;
+    font-size:14px;
+    color:var(--muted);
+    max-width:70ch;
+  }
+
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:18px;
+    margin-top:18px;
+    font-size:13px;
+  }
+  .legend span{ display:inline-flex; align-items:center; gap:7px; }
+  .swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid var(--rule); }
+
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:640px){ .cols{ grid-template-columns:1fr; } }
+
+  .card{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    padding:22px;
+  }
+  .card h3{ font-size:16px; font-weight:600; margin-bottom:10px; }
+  .card.hard{ border-left:3px solid var(--alert); }
+  .card.soft{ border-left:3px solid var(--prob); }
+  .card ul{ margin:0; padding-left:18px; font-size:14.5px; }
+  .card li + li{ margin-top:8px; }
+
+  .tiles{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  @media (max-width:700px){ .tiles{ grid-template-columns:1fr; } }
+  .tile{
+    background:var(--paper-raised);
+    border:1px solid var(--rule);
+    border-radius:10px;
+    padding:20px;
+  }
+  .tile .n{ font-family:var(--font-mono); font-size:26px; font-variant-numeric:tabular-nums; }
+  .tile .label{ font-size:13px; color:var(--muted); margin-top:6px; }
+  .tile .method{ font-size:13px; margin-top:12px; }
+  .tile .target{
+    display:inline-block;
+    margin-top:12px;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    color:var(--det);
+    background:var(--det-soft);
+    padding:3px 8px;
+    border-radius:4px;
+  }
+
+  ol.build{ list-style:none; margin:0; padding:0; counter-reset:step; }
+  ol.build li{
+    counter-increment:step;
+    display:grid;
+    grid-template-columns:34px 1fr;
+    gap:14px;
+    padding:14px 0;
+    border-top:1px solid var(--rule);
+    font-size:15px;
+  }
+  ol.build li:last-child{ border-bottom:1px solid var(--rule); }
+  ol.build li::before{
+    content:counter(step, decimal-leading-zero);
+    font-family:var(--font-mono);
+    color:var(--det);
+    font-size:14px;
+    padding-top:1px;
+  }
+
+  .checklist{ display:flex; flex-direction:column; gap:0; }
+  .checkrow{
+    display:grid;
+    grid-template-columns:22px 1fr auto;
+    align-items:center;
+    gap:12px;
+    padding:11px 0;
+    border-top:1px solid var(--rule);
+    font-size:14.5px;
+  }
+  .checklist .checkrow:last-child{ border-bottom:1px solid var(--rule); }
+  .mark{
+    width:18px; height:18px; border-radius:5px;
+    display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-size:11px;
+    border:1px solid var(--rule);
+  }
+  .mark.done{ background:var(--det-soft); border-color:var(--det); color:var(--det); }
+  .mark.pending{ color:var(--muted); }
+  .tag{
+    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--muted);
+  }
+  .tag.done{ color:var(--det); }
+
+  footer{
+    margin-top:64px;
+    padding-top:20px;
+    border-top:1px solid var(--rule);
+    font-size:13px;
+    color:var(--muted);
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+
+  code{ font-family:var(--font-mono); font-size:0.92em; background:var(--paper-raised); padding:1px 5px; border-radius:4px; }
+</style>
+
+<div class="page">
+
+  <header class="hero">
+    <span class="eyebrow">Prototype architecture</span>
+    <h1>Restaurant Margin Copilot</h1>
+    <p class="dek">Daily close and margin alert for an independent restaurant. Ingests delivery-platform exports, POS exports, and a supplier cost sheet; reconciles them; and answers plain-language questions about the day and the week — flagging what changed and why, before the month closes and it's too late to act.</p>
+    <div class="chips">
+      <span class="chip">Go</span>
+      <span class="chip">PostgreSQL</span>
+      <span class="chip">MCP</span>
+      <span class="chip">React</span>
+      <span class="chip">OpenAI API</span>
+      <span class="chip status">● setup in progress</span>
+    </div>
+  </header>
+
+  <section>
+    <h2>The job to be done</h2>
+    <p class="prose">The owner already receives all the numbers they need — a delivery-platform payout file, a POS export, a cost sheet — but nobody reconciles them daily, because it's tedious and error-prone by hand. Margin slippage is usually discovered when the month closes: too late to change anything about the week that already happened. This product closes that gap by doing the reconciliation automatically, every day, and letting the owner ask about it in plain language.</p>
+    <p class="prose">It is deliberately <em>not</em> a general restaurant assistant, not an empty chat box, and not a multi-agent system for its own sake. It is one narrow job, done in a way where every number is verifiable.</p>
+  </section>
+
+  <section>
+    <h2>Where the line sits</h2>
+    <p class="prose">The central design constraint: no number the user sees is ever produced by a model. Arithmetic happens once, in Go, against Postgres. The model layer only ever receives the result of a typed tool call and narrates it — it cannot see raw rows, and it cannot query the database on its own terms.</p>
+
+    <figure>
+      <svg viewBox="0 0 1220 620" role="img" aria-label="Diagram: daily ingestion runs in Go and writes to PostgreSQL; a user question passes through an ambiguity gate that either refuses/clarifies directly or forwards to the MCP tool layer, which reads PostgreSQL and returns typed results to the OpenAI explanation step, which answers the user. The model never queries PostgreSQL directly.">
+
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+          </marker>
+          <marker id="arrowDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
+          </marker>
+          <marker id="arrowAlert" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill="var(--alert)"/>
+          </marker>
+        </defs>
+
+        <text x="30" y="70" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">DAILY INGESTION — DETERMINISTIC, RUNS ONCE</text>
+        <text x="30" y="345" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">QUESTION ANSWERING — PER USER QUESTION</text>
+
+        <!-- Top lane: ingestion -->
+        <rect class="box-neutral" x="40" y="90" width="190" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="135" y="119" text-anchor="middle" font-size="13" fill="currentColor">Delivery / POS /</text>
+        <text x="135" y="136" text-anchor="middle" font-size="13" fill="currentColor">cost-sheet files</text>
+
+        <line x1="230" y1="125" x2="308" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="269" y="112" text-anchor="middle" font-size="11" fill="var(--muted)">parse, normalize</text>
+
+        <rect x="310" y="90" width="220" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="420" y="119" text-anchor="middle" font-size="13" fill="currentColor">Go — ingest &amp;</text>
+        <text x="420" y="136" text-anchor="middle" font-size="13" fill="currentColor">reconciliation engine</text>
+
+        <line x1="530" y1="125" x2="608" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="569" y="112" text-anchor="middle" font-size="11" fill="var(--muted)">writes margins, deltas, flags</text>
+
+        <rect x="610" y="90" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+        <line x1="610" y1="104" x2="770" y2="104" stroke="var(--det)" stroke-width="1"/>
+        <text x="690" y="132" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
+
+        <!-- Vertical connector: the hard limit -->
+        <line x1="690" y1="160" x2="690" y2="378" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrowDet)"/>
+        <text x="705" y="255" font-size="11.5" fill="var(--det)">typed tool calls only —</text>
+        <text x="705" y="271" font-size="11.5" fill="var(--det)">no open SQL, ever</text>
+
+        <!-- Bottom lane: question path -->
+        <rect x="30" y="380" width="150" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="105" y="420" text-anchor="middle" font-size="13" fill="currentColor">User question</text>
+
+        <line x1="180" y1="415" x2="186" y2="415" stroke="currentColor" stroke-width="1.5"/>
+
+        <!-- gate diamond -->
+        <polygon points="310,370 430,415 310,460 190,415" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="310" y="411" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
+        <text x="310" y="426" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
+        <text x="310" y="480" text-anchor="middle" font-size="10.5" fill="var(--muted)">cheap model</text>
+        <line x1="186" y1="415" x2="192" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- ambiguous branch -->
+        <line x1="310" y1="460" x2="310" y2="518" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+        <text x="326" y="495" font-size="11" fill="var(--alert)">ambiguous /</text>
+        <text x="326" y="509" font-size="11" fill="var(--alert)">unanswerable</text>
+
+        <rect x="195" y="520" width="230" height="56" rx="8" fill="var(--alert-soft)" stroke="var(--alert)"/>
+        <text x="310" y="544" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
+        <text x="310" y="561" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
+
+        <polyline points="425,548 1115,548 1115,452" fill="none" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+        <text x="770" y="540" text-anchor="middle" font-size="11" fill="var(--alert)">reaches the user directly — bypasses the model layer</text>
+
+        <!-- answerable branch -->
+        <line x1="430" y1="415" x2="608" y2="415" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+        <text x="519" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
+
+        <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="690" y="410" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
+        <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, typed tools)</text>
+
+        <line x1="770" y1="415" x2="818" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="794" y="402" text-anchor="middle" font-size="10.5" fill="var(--muted)">numbers +</text>
+        <text x="794" y="447" text-anchor="middle" font-size="10.5" fill="var(--muted)">provenance</text>
+
+        <rect x="820" y="380" width="180" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
+        <text x="910" y="410" text-anchor="middle" font-size="13" fill="currentColor">OpenAI — explain</text>
+        <text x="910" y="427" text-anchor="middle" font-size="13" fill="currentColor">(stronger model)</text>
+
+        <line x1="1000" y1="415" x2="1028" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <rect x="1030" y="380" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="1110" y="410" text-anchor="middle" font-size="13" fill="currentColor">React UI</text>
+        <text x="1110" y="427" text-anchor="middle" font-size="13" fill="currentColor">answer + provenance</text>
+
+      </svg>
+      <figcaption>Every figure the UI shows is computed left of the gate, in Go and Postgres. The model only ever receives a typed tool result and narrates it — the dashed line is the one boundary in this system that OpenAI never crosses.</figcaption>
+    </figure>
+
+    <div class="legend">
+      <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic — code, no model, ground truth</span>
+      <span><i class="swatch" style="background:var(--prob-soft);border-color:var(--prob)"></i>Probabilistic — model, interprets and narrates only</span>
+      <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit — refuses rather than guesses</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Hard limits &amp; soft limits</h2>
+    <div class="cols">
+      <div class="card hard">
+        <h3>Hard limits</h3>
+        <ul>
+          <li>Refuses rather than estimates when data is missing or incomplete.</li>
+          <li>No open SQL, no free-form computation — defined, typed MCP tools only.</li>
+          <li>Timeout on every tool call; explicit cap on loop iterations.</li>
+          <li>Every number carries provenance: which file, which rows, which period.</li>
+        </ul>
+      </div>
+      <div class="card soft">
+        <h3>Soft limits</h3>
+        <ul>
+          <li>The model is nudged toward the right framing, not hard-coded to one phrasing.</li>
+          <li>Free to self-correct on rephrasings and unexpected question shapes.</li>
+          <li>Clarifying questions are asked rather than assumptions being silently made.</li>
+          <li>Assumptions that <em>are</em> taken are always stated back to the user.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Evaluation plan</h2>
+    <p class="prose">A harness in <code>evaluation/</code> that produces real numbers for the write-up — including where it fails. Nothing below is measured yet; these are the targets the harness is built against.</p>
+    <div class="tiles" style="margin-top:20px;">
+      <div class="tile">
+        <div class="n">15–20</div>
+        <div class="label">Accuracy questions</div>
+        <div class="method">Known correct answers computed independently from the fixture data.</div>
+        <div class="target">Target: run &amp; report</div>
+      </div>
+      <div class="tile">
+        <div class="n">5 × 3</div>
+        <div class="label">Consistency phrasings</div>
+        <div class="method">5 questions asked 3 different ways each — do the answers agree?</div>
+        <div class="target">Target: run &amp; report</div>
+      </div>
+      <div class="tile">
+        <div class="n">5</div>
+        <div class="label">Refusal-correctness questions</div>
+        <div class="method">Unanswerable from the data. Correct behavior is refusal, not a plausible guess.</div>
+        <div class="target">Target: run &amp; report</div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Build order</h2>
+    <p class="prose">Deliberately sequenced — if the interface is polished before the numbers are right, the challenge is failed.</p>
+    <ol class="build">
+      <li>Fixture data first, including the deliberate mess: a duplicate order, a refund, a missing day, an inconsistent date format.</li>
+      <li>Deterministic reconciliation engine in Go, proven with tests — before any LLM call exists.</li>
+      <li>MCP server wrapping the reconciliation engine as a fixed set of typed tools.</li>
+      <li>Model layer, starting with the ambiguity gate.</li>
+      <li>Instrumentation — tokens, cost, latency, refusal rate — from the first API call.</li>
+      <li>Evaluation harness, before polishing the interface.</li>
+      <li>React frontend last.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h2>Setup status</h2>
+    <div class="checklist">
+      <div class="checkrow"><span class="mark done">✓</span><span>Project scaffolded, local git repo initialized</span><span class="tag done">done</span></div>
+      <div class="checkrow"><span class="mark done">✓</span><span>Sanitized spec (<code>CLAUDE.md</code>) and <code>.gitignore</code> committed</span><span class="tag done">done</span></div>
+      <div class="checkrow"><span class="mark done">✓</span><span>SDD skill installed for spec-driven workflow</span><span class="tag done">done</span></div>
+      <div class="checkrow"><span class="mark done">✓</span><span>MCP library selected — <code>mark3labs/mcp-go</code>, in-process with the Go engine</span><span class="tag done">done</span></div>
+      <div class="checkrow"><span class="mark pending">–</span><span>Toolchain install — Homebrew, Go, Node, <code>gh</code>, Docker</span><span class="tag">pending (user)</span></div>
+      <div class="checkrow"><span class="mark pending">–</span><span>Private GitHub repository created</span><span class="tag">pending</span></div>
+      <div class="checkrow"><span class="mark pending">–</span><span>PostgreSQL via Docker Compose</span><span class="tag">pending</span></div>
+      <div class="checkrow"><span class="mark pending">–</span><span>Fixture data + reconciliation engine</span><span class="tag">pending</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>restaurant-margin-copilot — internal architecture reference</span>
+    <span>Prosus / Toqan technical challenge</span>
+  </footer>
+
+</div>
