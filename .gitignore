@@ -1,0 +1,40 @@
+# --- Never commit: personal/strategic notes ---
+# This repo may end up in front of the evaluator. Anything analyzing him,
+# the interview process, or personal background stays out, full stop.
+PROJECT_BRIEF.md
+*strategy*
+*interview-notes*
+NOTES.private.md
+
+# --- Secrets ---
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# --- Go ---
+backend/bin/
+backend/*.exe
+vendor/
+
+# --- Node / React ---
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+npm-debug.log*
+
+# --- Database ---
+*.db
+*.sqlite
+*.sqlite3
+pgdata/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Spec Kit / SDD working files that are just scratch ---
+specs/**/*.tmp
