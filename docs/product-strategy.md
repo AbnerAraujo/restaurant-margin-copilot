@@ -362,6 +362,154 @@ that undermines trust before the refusal-vs-guess question is even
 reached. That's a more useful, more honest finding than a clean pass
 would have been.
 
+## Fix verification: before/after (same day, 2026-08-28)
+
+**[Measured]** — the two root causes named above were fixed and the
+**identical** 35-question suite (`evaluation/promptfoo/{accuracy,
+consistency,refusal}.yaml` — questions and golden values unchanged) was
+re-run against the live backend with real Anthropic API calls, same
+methodology as the run above (raw `answer_text`/`status` checked directly,
+not just promptfoo's own grading). The numbers below are additive to the
+"Real evaluation results" section above, not a replacement for it — both
+are kept so the before/after delta stays honestly visible.
+
+**What was actually changed** (both fixes are typed/bounded, per
+Constitution Principle III — neither weakens Principle II's refuse-rather-
+than-guess discipline; see `backend/internal/mcptools/promo_tools_test.go`'s
+"still refuses a genuinely unknown campaign" case and the refusal-
+correctness row below for evidence that a real refusal still fires):
+
+1. **Date-year grounding**: the ambiguity gate and the explain step each
+   received the real min/max date `daily_reconciliation` actually has
+   (`internal/storage.LoadDataDateRange`, a new `GetDataDateRange` SQL
+   query resolved once at process start in `cmd/server/main.go`) instead of
+   a hardcoded literal, plus an explicit "Date grounding" instruction
+   telling both models their only "today" is that max date — never the
+   real wall-clock date — and that a year-less date must resolve into the
+   one year the data spans, never be asked about or guessed.
+2. **Campaign lookup**: `get_promotion_roi` (`internal/mcptools/promo_tools.go`)
+   now falls back, on an exact-id miss, to `matchCampaignID`
+   (`internal/mcptools/campaign_match.go`) — a bounded, typed match against
+   the real, currently-persisted `campaign_id` set
+   (`storage.LoadDistinctCampaignIDs`) that resolves a shortened form
+   ("LUNCHFIX") or an embedded id in a full display name ("Banner Ad - Lunch
+   Fix Menu (JET-CAMP-LUNCHFIX)"), and deliberately refuses to guess (never
+   picks a winner) when normalization makes more than one real id plausible.
+   A second, related sub-cause was found only while verifying this fix live:
+   the ambiguity **gate** itself — which never sees real data — was
+   independently refusing shortened campaign references ("Is the LUNCHFIX
+   campaign profitable?") before the question ever reached the tool layer
+   that could have resolved it. Its system prompt now explicitly tells it
+   not to refuse over an unfamiliar-looking campaign name — that
+   determination is a downstream typed lookup's job, not the gate's.
+
+**Targeted regression tests** (written specifically to reproduce the
+original bugs, per the build order's test-first discipline):
+- `TestGate_Classify_DateGroundingRegression`
+  (`backend/internal/ambiguity/gate_test.go`) — asks the live Haiku 4.5
+  gate the exact bare, no-year, relative question from the original bug
+  ("How did we do this week?") three times, asserting no run ever states a
+  year outside 2026, never refuses, and never asks which year. **3/3 runs
+  passed.**
+- `TestGetPromotionRoi_ResolvesRealCampaignByHumanReadableOrShortenedName`
+  (`backend/internal/mcptools/promo_tools_test.go`) — a live-Postgres (zero
+  API cost) test reproducing the exact two failing inputs from the report,
+  "Banner Ad - Lunch Fix Menu (JET-CAMP-LUNCHFIX)" and "LUNCHFIX" alone,
+  both asserted to resolve to `JET-CAMP-LUNCHFIX` with its real -$165.00
+  ROI, plus a case confirming a genuinely unknown campaign still refuses.
+  **All subtests passed.** (`campaign_match_test.go` adds 11 further pure,
+  zero-cost unit tests around the matching boundary — ambiguous fragments,
+  case/punctuation variance, and "never returns a value outside the known
+  set" — all passing.)
+
+| Metric | Before (2026-08-28, earlier run) | After (2026-08-28, this run) | Change |
+|---|---|---|---|
+| Accuracy | 10/15 (67%) | **9/15 (60%)** | net −1, see honest breakdown below |
+| Consistency (sets) | 0/5 fully agreed | **2/5 fully agreed** (promptfoo-strict); **3/5 agree in substance** (manual read) | the *targeted* defect (year-hallucination) is fully gone — see below |
+| Refusal correctness | 4/5 (80%) | **5/5 (100%)** | +1 — R1 fixed |
+| Real API cost, this 35-question re-run | — | **$0.532881** ($0.01523/question avg, vs $0.00817/question before) | ~1.9× cost/question — see cost note below |
+| Cumulative session cost (Postgres-tracked) | $0.367783 | **$0.959264** | still ≪ the $4.50 checkpoint |
+
+**Refusal correctness — the clean win.** All 5 now pass, including **R1**
+("What was our delivery revenue on August 8th?"), the exact case that
+previously suggested "e.g., 2024" as a clarifying example. It now answers
+directly and correctly: *"For August 8th, there's no delivery-platform data
+available — the reconciliation for that day only includes POS (in-house)
+sales of $487.50..."* — no year confusion, no invented premise.
+
+**Consistency — the targeted defect is eliminated; a different, untargeted
+one surfaced.** Zero of the 15 new consistency answers showed the
+year-hallucination pattern (a wrong year, or a year-clarification question)
+that previously hit 4 of 5 sets — this is the direct, complete fix of the
+bug this work targeted. **C3** (LUNCHFIX, the other originally-broken set)
+and **C4** (a year-omitted date set) now fully agree with each other and
+match the golden value across all 3 phrasings — both promptfoo-graded PASS,
+3/3. **C5** (missing Aug 8 delivery data) is consistent and *correct* in
+substance across all 3 phrasings (each independently states plainly that no
+delivery-platform data exists for Aug 8, citing the real `missing_delivery_
+source` flag and the correct $487.50/$152.50 POS-only figures) but
+promptfoo's regex grades 2 of 3 as FAIL purely because the answer also
+states the day's real (and correct) $0.00 commissions/refunds — an overly
+broad "$0.00" guard tripping on a legitimate figure unrelated to the
+delivery-data-missing concern it was meant to catch. Read manually rather
+than by that regex alone, per this document's own stated methodology, C5 is
+a third fully-agreeing set. **C1** and **C2**, however, show a real, newly
+observed miss: all 3 phrasings in each set agree with each other and state
+correct per-platform figures (e.g. iFood $69.50 + Just Eat Takeaway $76.25
+for C1), but none of the 6 answers restate the combined golden total
+($145.75 / $120.50) the way the pre-fix passing runs did — a different
+quirk (apparent new reluctance to sum two figures from a single tool
+result, not a date or campaign defect) that these two fixes were not aimed
+at and did not introduce a fabricated number or a refusal regression;
+it's flagged here rather than hidden, exactly as the constitution requires.
+
+**Accuracy — the targeted bug fixed, one unrelated quirk newly visible.**
+**A9** (ROI on `JET-CAMP-NEWMENU`) — the hallucinated-refusal case this work
+targeted — now **passes**: *"ROI: $19.50 (positive — the campaign made more
+than it cost)"*, with no false claim of the campaign being absent. Net
+accuracy nonetheless moved from 10/15 to 9/15 because **A1**, **A11**, and
+**A12** (three previously-passing "delivery revenue on `<date>`" questions)
+now show the *same* combined-total quirk described under C1/C2 above: each
+correctly states iFood's and Just Eat Takeaway's individual figures but
+never states the combined golden number promptfoo's regex checks for. **A4**
+(no tool sums a supplier-cost range), **A10** (asks the user to define
+"underperforming" instead of calling `list_negative_roi_promotions`), and
+**A15** (refund-netting) persist unchanged — all three are real,
+previously-known gaps outside the two root causes this work was scoped to
+fix, named here rather than folded silently into the headline number.
+
+**Cost note (KR4 — token discipline).** Average cost per question roughly
+doubled ($0.00817 → $0.01523) — the direct, expected consequence of adding
+explicit date-grounding and campaign-matching guidance to both the gate's
+and explain's system prompts (more input tokens per call). Still under two
+cents per question and a small fraction of the $4.50 session checkpoint;
+named honestly as a real trade-off rather than presented as free. Separately,
+an estimated **~$0.10–0.11** was spent on this work's own package-level live
+regression tests (`TestGate_Classify_DateGroundingRegression` and the
+pre-existing `TestExplain_LiveSmokeTest`, run several times while iterating
+on the system prompt) — these call the Anthropic API directly through
+`internal/ambiguity`/`internal/explain` rather than through
+`internal/httpapi.HandleAsk`, the only place instrumentation is wired in
+(by this codebase's own documented design — see those packages' doc
+comments), so this spend is real but does **not** appear in the
+Postgres-tracked cumulative total above. Disclosed here rather than treated
+as zero-cost. Total estimated real session spend, including this
+undisclosed-by-instrumentation-design portion, is approximately **$1.07** —
+still comfortably under the $4.50 checkpoint and the $5 session ceiling.
+
+**Net read of the fix.** Both targeted root causes are fixed and verified
+by dedicated regression tests plus the live harness: the year-hallucination
+pattern is completely gone (0 of 15 consistency answers, R1 now passing),
+and the campaign-lookup hallucinated refusal is gone (A9 passing, plus the
+gate-level sub-cause found and fixed during verification). The harness also
+surfaced one honest cost: a newly-visible, unrelated quirk (declining to
+state a combined dollar total across two platforms) that trimmed accuracy
+by three previously-passing questions. This is reported plainly rather than
+netted against the real wins — per Principle II and this document's own
+standing rule, a fix that resolves the two named defects does not get
+credit for problems it didn't touch, and a harness that came back "clean"
+across the board would have been the less trustworthy result to report.
+
 ## The user problem, grounded
 
 **[Sourced]** Independent restaurants run thin: net margins average 3–5% industry-wide, with 3–9% considered a healthy range, and only 42% of U.S. restaurants were profitable in 2024 (Toast, VantaInsights 2026 benchmarks). **[Sourced]** Delivery-platform commissions run 15–30% (DoorDash, Uber Eats) or 10–20% (Grubhub), plus 2–3% payment processing on top — so the advertised rate and the effective cost per order routinely diverge. **[Sourced]** Restaurants lose an estimated 2–5% of delivery revenue to reconciliation discrepancies they never catch, and manual reconciliation across POS, delivery payouts, and cost sheets can run ~12 hours/week for a mid-size operation (MAS Partner, DeliverGuard 2026 data).

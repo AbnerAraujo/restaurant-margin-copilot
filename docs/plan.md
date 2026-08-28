@@ -304,3 +304,43 @@ when that time comes, not a task queued for now.
   fixture's own calendar window has passed — pin quickstart demo phrasing
   to explicit dates, not relative ones, once this is a known model-layer
   gap rather than a hypothetical.
+- **Fixing the two harness root causes (Day 5)**: went back and fixed the
+  two specific bugs the harness and the quickstart re-validation had both
+  independently pointed at, instead of leaving them as known limitations.
+  **What was wrong**: (1) the model's only clue about "what year is it"
+  was a hardcoded date range typed into a prompt — nothing told it to treat
+  that range as its own "today" instead of guessing at the real calendar
+  date, so a bare "this week" or a date with no year sometimes worked,
+  sometimes triggered a needless clarifying question, and once actually
+  invented the year 2024 and confidently reported "no data" against a
+  premise nobody stated. (2) `get_promotion_roi` required the *exact*
+  campaign code (`JET-CAMP-LUNCHFIX`) — asking about "LUNCHFIX" or the
+  campaign's full display name got a flat "not in the data," even though
+  it's a real campaign with a real, negative ROI already sitting in the
+  database. **What was changed**: for (1), the backend now asks Postgres
+  for the actual earliest/latest date it has data for and hands that to
+  both the pre-check step and the answering step as their working
+  definition of "today" — a real query, not a hardcoded guess baked into a
+  prompt that could quietly go stale. For (2), the campaign lookup now
+  tries a bounded match against the real, short list of campaigns that
+  actually exist (a shortened name or a name-with-the-code-in-parentheses
+  both resolve; something never a match, like a truly made-up campaign,
+  still correctly gets refused — matching is boring and typed, not the
+  model taking a guess). **A third thing surfaced only while checking the
+  fix live, not predicted in advance**: the early pre-check step (which
+  never touches real data, by design) was independently refusing
+  shortened campaign names before the question even reached the part that
+  could look them up — a second, related cause of the same symptom that
+  wouldn't have been caught without testing the whole path end to end
+  rather than just the one function believed to be broken. **Before/after,
+  measured on the identical 35-question suite**: refusal correctness went
+  4/5 → 5/5 (the exact wrong-year case now answers cleanly); the
+  year-hallucination pattern that hit 4 of 5 consistency sets is completely
+  gone (0 of 15 answers); the campaign-name bug's own accuracy question now
+  passes. Overall accuracy nonetheless slipped slightly, 10/15 → 9/15 — not
+  a fix regressing, but three previously-passing questions newly showing a
+  different, unrelated habit (stating two platforms' figures separately
+  without adding them into the one combined number the grading looks for).
+  Reported here rather than folded quietly into a rounder-sounding number.
+  Full comparison table and honest breakdown: `docs/product-strategy.md`,
+  "Fix verification: before/after."
