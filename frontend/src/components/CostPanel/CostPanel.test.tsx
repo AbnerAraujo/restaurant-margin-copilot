@@ -1,0 +1,80 @@
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it } from 'vitest'
+
+import CostPanel, { type CostInteraction } from './CostPanel'
+
+// Realistic mocked data shaped exactly like the QuestionInteraction fields
+// this panel aggregates (data-model.md), per FR-008/FR-009.
+const ambiguityGateCall: CostInteraction = {
+  model_used: 'claude-haiku-4-5',
+  input_tokens: 420,
+  output_tokens: 18,
+  estimated_cost_usd: 0.00051,
+  latency_ms: 310,
+}
+
+const explanationCall: CostInteraction = {
+  model_used: 'claude-sonnet-5',
+  input_tokens: 1180,
+  output_tokens: 240,
+  estimated_cost_usd: 0.00476,
+  latency_ms: 1420,
+}
+
+describe('CostPanel', () => {
+  it('shows a zeroed session cost with no interactions yet', () => {
+    render(<CostPanel interactions={[]} />)
+    expect(screen.getByText('Session cost')).toBeInTheDocument()
+    expect(screen.getByText('$0.000')).toBeInTheDocument()
+  })
+
+  it('sums estimated_cost_usd across interactions into the glanceable total', () => {
+    render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
+    // 0.00051 + 0.00476 = 0.00527 -> displayed to 3 decimals
+    expect(screen.getByText('$0.005')).toBeInTheDocument()
+  })
+
+  it('keeps the detail panel (tokens/latency) collapsed until the pill is clicked', () => {
+    render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
+    expect(screen.queryByRole('group', { name: /session cost detail/i })).not.toBeInTheDocument()
+  })
+
+  it('expands to show interaction count, total tokens, and average latency', async () => {
+    const user = userEvent.setup()
+    render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
+
+    await user.click(screen.getByRole('button', { name: /session cost/i }))
+
+    const panel = screen.getByRole('group', { name: /session cost detail/i })
+    expect(panel).toHaveTextContent('Interactions')
+    expect(panel).toHaveTextContent('2')
+    // total tokens: (420+18) + (1180+240) = 1858
+    expect(panel).toHaveTextContent('1,858')
+    // average latency: (310 + 1420) / 2 = 865ms
+    expect(panel).toHaveTextContent('865ms')
+  })
+
+  it('shows an em dash for average latency when there are no interactions', async () => {
+    const user = userEvent.setup()
+    render(<CostPanel interactions={[]} />)
+
+    await user.click(screen.getByRole('button', { name: /session cost/i }))
+    expect(screen.getByRole('group', { name: /session cost detail/i })).toHaveTextContent('—')
+  })
+
+  it('toggles aria-expanded and collapses the detail panel on a second click', async () => {
+    const user = userEvent.setup()
+    render(<CostPanel interactions={[ambiguityGateCall]} />)
+
+    const trigger = screen.getByRole('button', { name: /session cost/i })
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'true')
+
+    await user.click(trigger)
+    expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByRole('group', { name: /session cost detail/i })).not.toBeInTheDocument()
+  })
+})
