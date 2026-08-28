@@ -17,9 +17,17 @@ import type { ChatMessage } from '@/components/Chat/ChatPanel'
  * rather than a broken page.
  */
 
-const STORAGE_VERSION = 1
-const THREADS_KEY = `mbs.chat.threads.v${STORAGE_VERSION}`
-const PROMPTS_KEY = `mbs.chat.prompts.v${STORAGE_VERSION}`
+// Independently versioned: a thread stores whole `ChatMessage` objects, whose
+// shape has changed more than once since persistence was first added
+// (ErrorChatMessage, AnswerCacheInfo, and other fields landed without a
+// version bump) — a browser that kept an old-shape thread across those
+// changes could hand the current renderer an object missing fields it now
+// assumes exist. Saved prompts are plain strings and never changed shape, so
+// they don't need to be invalidated by a threads-only bump.
+const THREADS_VERSION = 2
+const PROMPTS_VERSION = 1
+const THREADS_KEY = `mbs.chat.threads.v${THREADS_VERSION}`
+const PROMPTS_KEY = `mbs.chat.prompts.v${PROMPTS_VERSION}`
 
 /** How many threads are kept in total, including the active one. */
 export const MAX_THREADS = 6
@@ -63,6 +71,37 @@ function writeJSON(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Per-message shape check, not just per-thread. This is the specific gap
+ * that let a real bug through once already: `ChatMessage`'s shape changed
+ * more than once (ErrorChatMessage added, AnswerCacheInfo added) without a
+ * `THREADS_VERSION` bump at the time, so a browser that kept using the app
+ * across those changes could have an old-shape message sitting in storage
+ * that the current renderer assumes has fields it doesn't. `THREADS_VERSION`
+ * is now bumped for that specific incident, but this function is the
+ * general-purpose defense for the next time a shape changes and a version
+ * bump is missed — belt and suspenders, not a substitute for versioning.
+ */
+function isWellFormedMessage(message: unknown): message is ChatMessage {
+  if (!message || typeof message !== 'object') return false
+  const m = message as Record<string, unknown>
+  if (typeof m.id !== 'string' || typeof m.askedAt !== 'string') return false
+  if (m.role === 'user') return typeof m.text === 'string'
+  if (m.role !== 'assistant') return false
+  switch (m.kind) {
+    case 'answer':
+      return typeof m.text === 'string' && Array.isArray(m.provenance)
+    case 'clarification':
+      return typeof m.text === 'string'
+    case 'refusal':
+      return typeof m.text === 'string' && Array.isArray(m.missing)
+    case 'error':
+      return typeof m.text === 'string' && typeof m.question === 'string'
+    default:
+      return false
+  }
+}
+
 function newId(): string {
   return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
 }
@@ -93,13 +132,22 @@ export function loadThreadStore(): ThreadStore {
     }
   }
   // A hand-edited or partially-written key must not crash the page: anything
-  // that isn't a well-formed thread is dropped rather than trusted.
-  const threads = stored.threads.filter(
-    (thread): thread is StoredThread =>
-      Boolean(thread) &&
-      typeof thread.id === 'string' &&
-      Array.isArray(thread.messages),
-  )
+  // that isn't a well-formed thread is dropped rather than trusted. This
+  // checks the thread shell (id, messages array) but NOT each message's own
+  // shape — see isWellFormedMessage below for why that second layer matters
+  // just as much: a thread can be well-formed while one message inside it
+  // is a stale, pre-schema-change object that would still crash the renderer.
+  const threads = stored.threads
+    .filter(
+      (thread): thread is StoredThread =>
+        Boolean(thread) &&
+        typeof thread.id === 'string' &&
+        Array.isArray(thread.messages),
+    )
+    .map((thread) => ({
+      ...thread,
+      messages: thread.messages.filter(isWellFormedMessage),
+    }))
   if (threads.length === 0) return loadThreadStoreFresh()
   const activeId = threads.some((t) => t.id === stored.activeId)
     ? stored.activeId
