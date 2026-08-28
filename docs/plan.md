@@ -7,16 +7,49 @@ tests → MCP tools → model layer → instrumentation → harness → UI. That
 does not move, even under time pressure — reordering it is the one mistake the
 whole project is built to avoid.
 
+## Product strategy recap (full detail: `docs/product-strategy.md`)
+
+This is already decided, not still open — restated here so it stays visible
+in the plan instead of living only behind a link.
+
+- **Customer problem**: independent restaurant/bar margins average 3–5% net
+  [Sourced], delivery commissions run 15–30% + 2–3% processing [Sourced], and
+  manual reconciliation across POS/delivery/cost-sheet exports runs ~12
+  hrs/week [Sourced] — so nobody does it daily, and margin slippage surfaces
+  at month-end, too late to act on.
+- **Vision**: a same-day, trustworthy answer to "did we make money today, and
+  why" — no bookkeeper, no manual exports, no month-end surprise.
+- **North Star Metric**: time-to-reconciled-close (median minutes from data
+  available to a trusted, provenanced margin figure), anchored to Prosus'
+  own cited proof point of cutting this from weeks to 30 minutes [Sourced].
+- **Supporting KPIs**: accuracy rate, consistency rate, refusal-correctness
+  rate, cost per interaction (USD) — all measured by the Day 4 harness, not
+  asserted.
+- **Hypotheses, ranked by risk** (full tagging in the strategy doc):
+  1. [Hypothesis, highest risk] Owners trust a system that refuses/clarifies
+     over one that always answers confidently — **this is the one being
+     tested**, via the refusal-correctness harness slice.
+  2. [Hypothesis] Daily (not weekly/monthly) reconciliation surfaces
+     anomalies early enough to act on mid-week.
+  3. [Assumption] Owners prefer a question box over a dashboard.
+  4. [Simulated-as-Prosus] What ToqanClaw's real usage data would show about
+     question frequency/category, if we had access — explicitly labeled as
+     simulated, not real.
+- **What's explicitly not being validated in this build**, and why: see
+  "what I decided not to build" in the strategy doc and the reasoning doc
+  outline below.
+
 ## Day 0 — Thursday Aug 27 (done)
 
 - [x] Dev environment: Homebrew, Go, Node, Docker, `gh`
 - [x] Private GitHub repo created and pushed
 - [x] GitHub Spec Kit installed, constitution ratified (v1.0.0)
 - [x] 30 Claude Code skills installed (Go, React, clean code, architecture, product strategy) + `promptfoo`/`sqlc`/`golang-migrate`
-- [x] `docs/product-strategy.md` — vision, North Star, KPIs, tagged hypotheses
+- [x] `docs/product-strategy.md` written: problem, vision, North Star, KPIs, tagged hypotheses (recapped above)
 
 ## Day 1 — Friday Aug 28
 
+- [ ] `inspired-product` skill: run the empowered-teams diagnostic against our own approach (score 0–7) before writing more — catches "feature factory" thinking early rather than at the end
 - [ ] `/speckit-specify` — formal baseline spec from `product-strategy.md` + `CLAUDE.md`
 - [ ] `/speckit-plan` → `/speckit-tasks` — technical plan and task breakdown
 - [ ] Fixture data: delivery-platform export, POS export, supplier cost sheet — with the deliberate mess (duplicate order, refund, missing day, inconsistent date format)
@@ -44,6 +77,7 @@ whole project is built to avoid.
 
 ## Day 5 — Tuesday Sept 1 (interview day)
 
+- [ ] Close the loop on the hypotheses: with real harness numbers in hand, state plainly whether Hypothesis 1 (refusal trust) held up, partially held, or failed — this is the actual validation step, not a formality
 - [ ] One-page reasoning doc (`one-pager-prd` skill), built from real harness numbers: job chosen and why, deterministic/probabilistic boundary, hard/soft limits, evaluation numbers including failures, cost per interaction, what was deliberately not built and why
 - [ ] The "where the model got it wrong during the build and how I caught it" passage — from the real running log kept during Days 1–4, not reconstructed from memory
 - [ ] Demo recorded or rehearsed live, including at least one on-screen refusal
