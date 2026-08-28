@@ -22,8 +22,16 @@ const (
 // Story 2/3), get_promotion_roi and list_negative_roi_promotions
 // (promo_tools.go, User Story 4), and compare_platform_economics
 // (platform_comparison_tools.go, specs/003-platform-comparator) — each
-// exporting its own Register* function specifically for this function to
-// call, per those files' own doc comments.
+// file has its own unexported register* function specifically for this
+// function to call. This package's own public surface for building a
+// server is RegisterMCPServer alone; nothing outside this package has any
+// business registering an individual tool on its own mcp-go server, so the
+// per-file registrars stay unexported.
+//
+// q is declared as the storage.Querier interface, not the concrete
+// *storage.Queries, for the same reason every function this one calls
+// already takes the interface: it lets a test build this whole server over
+// a faked Querier with no live Postgres dependency.
 //
 // This function is exported and deliberately NOT called from
 // cmd/server/main.go here (tasks.md T020) — a later Integration phase
@@ -32,7 +40,7 @@ const (
 // transport, matching research.md's decision against Anthropic's URL-based
 // native MCP connector for this local prototype (docs/technical-rfc.md,
 // "Anthropic's native MCP connector" alternative).
-func RegisterMCPServer(q *storage.Queries) *server.MCPServer {
+func RegisterMCPServer(q storage.Querier) *server.MCPServer {
 	s := server.NewMCPServer(
 		serverName,
 		serverVersion,
@@ -47,8 +55,8 @@ func RegisterMCPServer(q *storage.Queries) *server.MCPServer {
 	s.Use(timeoutAndBudgetMiddleware(DefaultToolTimeout))
 
 	registerReconciliationTools(s, q)
-	RegisterPromoTools(s, q)
-	RegisterPlatformComparisonTool(s, q)
+	registerPromoTools(s, q)
+	registerPlatformComparisonTool(s, q)
 
 	return s
 }

@@ -5,13 +5,11 @@
 // Period/ToolError/dateLayout types types.go already defines, plus a thin
 // MCP handler adapter over each.
 //
-// Registration is deliberately NOT wired into cmd/server/main.go here: the
-// in-process MCP server itself (tasks.md T020, User Story 2) doesn't exist
-// yet, and wiring these tools into a server that doesn't exist would be
-// scope creep into US2/US3. RegisterPromoTools is exported specifically so
-// whoever builds T020 can call it directly, the same way this file's tool
-// constructors and core functions are exported so they can be unit-tested
-// without a live MCP server at all.
+// Registration is wired in via registerPromoTools below, called from
+// RegisterMCPServer (server.go) — this package's only exported entry point
+// for building a server, per server.go's own doc comment. This file's tool
+// constructors and core functions stay exported independently of that, so
+// they can be unit-tested without a live MCP server at all.
 package mcptools
 
 import (
@@ -281,11 +279,13 @@ func ListNegativeRoiPromotionsHandler(store storage.Querier) server.ToolHandlerF
 	})
 }
 
-// RegisterPromoTools registers both tools on an mcp-go server. Exported so a
-// later phase's server wiring (tasks.md T020) can call it directly — this
-// package does not call it itself, and cmd/server/main.go does not either
-// (see this file's doc comment).
-func RegisterPromoTools(s *server.MCPServer, store storage.Querier) {
+// registerPromoTools registers both tools on an mcp-go server. Unexported,
+// like reconciliation_tools.go's registerReconciliationTools: this
+// package's only public surface for building a server is
+// RegisterMCPServer (server.go), which is the sole caller of this
+// function — nothing outside this package registers an individual tool
+// directly.
+func registerPromoTools(s *server.MCPServer, store storage.Querier) {
 	s.AddTool(GetPromotionRoiTool(), GetPromotionRoiHandler(store))
 	s.AddTool(ListNegativeRoiPromotionsTool(), ListNegativeRoiPromotionsHandler(store))
 }

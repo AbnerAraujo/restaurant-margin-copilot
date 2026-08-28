@@ -2,6 +2,7 @@ package mcptools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -87,12 +88,20 @@ func callBudgetFromContext(ctx context.Context) (*CallBudget, bool) {
 	return b, ok
 }
 
-// ErrToolCallCapExceeded and ErrToolCallTimeout are the two typed-error
-// "error" field values timeoutAndBudgetMiddleware can produce, exported so
-// internal/explain (and tests) can recognize them without string-matching.
+// ErrToolCallCapExceeded, ErrToolCallTimeout, and ErrToolCallCanceled are
+// the typed-error "error" field values timeoutAndBudgetMiddleware can
+// produce, exported so internal/explain (and tests) can recognize them
+// without string-matching. ErrToolCallTimeout and ErrToolCallCanceled are
+// deliberately distinct values: a genuine 5s deadline expiry is a real
+// timeout the model can be told about, but a canceled parent context (the
+// browser closed, the HTTP request was aborted upstream) is not a timeout
+// at all — reporting it as one would be a false claim about what happened,
+// which this codebase's refuse-rather-than-guess principle forbids just as
+// much for an internal status report as for a margin figure.
 const (
 	ErrToolCallCapExceeded = "tool_call_cap_exceeded"
 	ErrToolCallTimeout     = "tool_call_timeout"
+	ErrToolCallCanceled    = "tool_call_canceled"
 )
 
 // timeoutAndBudgetMiddleware enforces both of Constitution Principle III's
@@ -105,11 +114,16 @@ const (
 //   - a hard per-interaction call cap, via whatever CallBudget (if any)
 //     WithCallBudget installed into ctx upstream.
 //
-// Both failure modes return a typed, non-protocol-level error result —
+// All three failure modes return a typed, non-protocol-level error result —
 // mcp-go's own documented convention ("errors that originate from the tool
 // SHOULD be reported inside the result object... so the LLM can see it and
 // self-correct") — rather than crashing the interaction or silently
-// truncating it.
+// truncating it. The two ways cctx can end are NOT reported the same way:
+// a deadline expiry is a real timeout, but a canceled parent context (the
+// browser closed, the HTTP request was aborted upstream) is genuine
+// cancellation, not a timeout — see ErrToolCallCanceled's doc comment for
+// why conflating the two would itself be a refuse-rather-than-guess
+// violation.
 func timeoutAndBudgetMiddleware(timeout time.Duration) server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -126,13 +140,26 @@ func timeoutAndBudgetMiddleware(timeout time.Duration) server.ToolHandlerMiddlew
 			defer cancel()
 
 			result, err := next(cctx, req)
-			if cctx.Err() != nil {
-				// The bound was hit; whatever next() returned (a partial
-				// result, a context-cancellation error, or nothing yet) is
-				// not something to hand back as if it completed normally.
+			switch {
+			case errors.Is(cctx.Err(), context.DeadlineExceeded):
+				// The 5s bound was actually hit; whatever next() returned
+				// (a partial result, a context-cancellation error, or
+				// nothing yet) is not something to hand back as if it
+				// completed normally.
 				return errorResult(ToolError{
 					Error:  ErrToolCallTimeout,
 					Reason: fmt.Sprintf("%s exceeded its %s timeout", req.Params.Name, timeout),
+				})
+			case errors.Is(cctx.Err(), context.Canceled):
+				// The PARENT context was canceled (e.g. the client
+				// disconnected) — cctx inherits that cancellation from
+				// context.WithTimeout, but the 5s bound itself was never
+				// reached. Reporting this as "exceeded its timeout" would
+				// be a false claim about what happened, so it gets its own
+				// distinct, accurate error value instead.
+				return errorResult(ToolError{
+					Error:  ErrToolCallCanceled,
+					Reason: fmt.Sprintf("%s was canceled before it completed — the client disconnected or the request was aborted upstream", req.Params.Name),
 				})
 			}
 			return result, err

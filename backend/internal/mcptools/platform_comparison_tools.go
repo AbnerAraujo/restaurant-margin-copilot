@@ -226,9 +226,10 @@ func ComparePlatformEconomicsHandler(store storage.Querier) server.ToolHandlerFu
 	})
 }
 
-// RegisterPlatformComparisonTool registers compare_platform_economics on s.
-// Called from RegisterMCPServer (server.go), the same way RegisterPromoTools
-// is.
-func RegisterPlatformComparisonTool(s *server.MCPServer, store storage.Querier) {
+// registerPlatformComparisonTool registers compare_platform_economics on s.
+// Unexported, like registerReconciliationTools and registerPromoTools —
+// called only from RegisterMCPServer (server.go), this package's sole
+// public entry point for building a server.
+func registerPlatformComparisonTool(s *server.MCPServer, store storage.Querier) {
 	s.AddTool(ComparePlatformEconomicsTool(), ComparePlatformEconomicsHandler(store))
 }
