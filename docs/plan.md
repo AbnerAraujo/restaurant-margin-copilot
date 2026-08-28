@@ -83,6 +83,14 @@ in the plan instead of living only behind a link.
 - [ ] Demo recorded or rehearsed live, including at least one on-screen refusal
 - [ ] Final read-through against the constitution and the hard-truth rules on background claims before walking in
 
+## Running log of real mistakes (overnight build, Phase 1: Setup + Foundational)
+
+- `.gitignore`'s `.env.*` rule was silently blocking `.env.example` (a secret-free template) from ever being committed — fixed with a narrow `!.env.example` exception rather than loosening the actual secret rule.
+- `go mod tidy` dropped `anthropic-sdk-go`/`mcp-go`/`pgx` as unused indirect deps immediately after `go get` added them, since no code imported them yet — had to re-add once real code existed. Note for later: don't run `go mod tidy` before every dependency is actually wired into code.
+- The `shadcn` CLI only reads the root `tsconfig.json` for the `@/*` path alias (ours lived in `tsconfig.app.json`) and silently wrote a literal `./@/components/ui/button.tsx` directory instead of resolving the alias — fixed by duplicating the alias into the root tsconfig.
+- Fixture promotion attribution ended up computed as a tag-join over delivery orders rather than pre-baked numbers, reading spec.md's Assumptions more literally than data-model.md's table alone suggests — flagged for whoever implements `internal/reconcile` next, in case that reading needs revisiting.
+- Migrations and sqlc queries were only statically validated (no live Postgres available at build time) — running them for real afterward against colima-backed Postgres confirmed the schema exactly matches `data-model.md`, including the DB-level CHECK constraints mirroring Principles I/II/IV/VI. No discrepancy found, but this was verified independently, not just trusted from the agent's own report.
+
 ## Presentation notes (save for Day 5)
 
 - Present the product-strategy narrative (5 problems → Objective/KRs →
