@@ -1144,7 +1144,7 @@
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Haiku 4.5 ambiguity gate, which either refuses or asks a clarifying question — returned straight to the user, with the explanation step never running — or passes the question to the Go MCP tool layer. That layer reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
+        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Haiku 4.5 ambiguity gate. If the gate lands on ambiguous or unanswerable, a second, conditional Claude Sonnet 5 call writes the final clarifying-question or refusal text — Haiku's classification is structurally final by then, since that second call's reply schema has no classification field at all — and the result returns straight to the user, with the main explanation step never running. Otherwise the question passes to the Go MCP tool layer, which reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
           <defs>
             <marker id="bDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1261,7 +1261,11 @@
           </ul>
         </div>
       </div>
+      <div class="callout" style="margin-top:20px;">
+        <strong>A third, conditional call: Sonnet writes the words, never the verdict.</strong> When Haiku lands on <code>ambiguous</code> or <code>unanswerable</code>, a second model call &mdash; Claude Sonnet 5, in the same <code>internal/ambiguity</code> package &mdash; rewrites the clarifying question or refusal reason into clearer, more specific prose than the classification call is worth spending frontier-adjacent tokens on. It is structurally unable to overturn Haiku's decision: its fixed reply schema (<code>writerResponse</code>) has no <code>classification</code> field at all, so there is nothing for the caller to read back even if the model tried. On an <code>answerable</code> question this second call never fires &mdash; cost stays exactly what it was. Both passes are logged as separate <code>question_interaction</code> rows, so the running cost total always reflects real calls made, never a single row standing in for two.
+      </div>
       <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $1/$5 per MTok for Haiku, $2/$10 for Sonnet &mdash; and an unrecognised model id is an error, not a silent zero.</p>
+      <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">This project's whole ambiguity/refusal discipline &mdash; classify cheaply first, refuse rather than fabricate, pair every non-answer with a concrete next step &mdash; is generalised into a reusable Claude Code skill, <code>.claude/skills/question-recovery-design</code>, so the same recovery-design pattern can be applied to a future chat or agent surface beyond this product.</p>
     </section>
 
     <section>

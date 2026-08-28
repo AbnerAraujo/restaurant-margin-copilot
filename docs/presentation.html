@@ -175,6 +175,8 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .stat-trend{font-size:12.5px;font-weight:500;margin-top:8px;color:var(--text-secondary);line-height:1.45}
 .stat-trend.up{color:var(--positive);font-weight:600}
 .stat-trend.warn{color:var(--negative);font-weight:600}
+.stat-target{font-size:11px;color:var(--text-tertiary);margin-top:4px;line-height:1.4;font-family:var(--mono)}
+.stat-target b{color:var(--text-secondary);font-weight:600}
 
 /* flow */
 .flow{display:flex;align-items:stretch;gap:12px;margin-top:26px;flex-wrap:wrap;justify-content:center}
@@ -402,17 +404,18 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 3 · Problem -->
-<div class="slide" data-notes="The pain is sourced, not assumed: razor-thin margins, opaque platform fees, reconciliation so tedious it happens at month-end — when it's too late to act. That's the gap this product closes.">
+<div class="slide" data-notes="The customer problem, stated plainly: an independent owner cannot tell, day to day, whether they made money — because reconciling POS, delivery-platform, and cost data by hand is this tedious, and platform commissions are deducted with no line-item breakdown to audit against. Every number here is sourced. That gap, discovered only at month-end, is what this product closes.">
   <div class="num-bg">01</div>
-  <div class="a tag">The problem &middot; all sourced</div>
-  <h2 class="a lg">A 3&ndash;5% margin business can't afford<br>a single wrong number</h2>
+  <div class="a tag">The customer problem &middot; all sourced</div>
+  <h2 class="a lg">The owner can't tell, daily,<br>if today made money</h2>
+  <div class="a sub" style="font-family:var(--serif);font-style:italic;font-size:19px;max-width:780px">Independent restaurant/bar owner-operators &mdash; already juggling POS, delivery apps, and spreadsheets &mdash; can't see it, because reconciling them by hand is this tedious:</div>
   <div class="a stat-cards">
-    <div class="stat-card"><div class="stat-label">Net margin</div><div class="stat-value">3&ndash;5%</div><div class="stat-trend">Only 42% of U.S. restaurants profitable in 2024</div></div>
-    <div class="stat-card"><div class="stat-label">Commissions</div><div class="stat-value">15&ndash;30%</div><div class="stat-trend">+2&ndash;3% processing, promos 5&ndash;10% more &mdash; "no clear line-item breakdown"</div></div>
-    <div class="stat-card"><div class="stat-label">Manual work</div><div class="stat-value">12 h/wk</div><div class="stat-trend">Tedious enough that nobody reconciles daily</div></div>
-    <div class="stat-card"><div class="stat-label">Silent loss</div><div class="stat-value">2&ndash;5%</div><div class="stat-trend warn">Of delivery revenue lost to uncaught discrepancies</div></div>
+    <div class="stat-card"><div class="stat-label">Net margin</div><div class="stat-value">3&ndash;5%</div><div class="stat-trend">Only 42% of U.S. restaurants profitable in 2024 &mdash; no room to absorb a miscount</div></div>
+    <div class="stat-card"><div class="stat-label">Commissions</div><div class="stat-value">15&ndash;30%</div><div class="stat-trend">Deducted from payout with <span class="hi">no line-item breakdown</span> the owner can audit</div></div>
+    <div class="stat-card"><div class="stat-label">Manual work</div><div class="stat-value">12 h/wk</div><div class="stat-trend">So tedious it happens at month-end, if at all</div></div>
+    <div class="stat-card"><div class="stat-label">Silent loss</div><div class="stat-value">2&ndash;5%</div><div class="stat-trend warn">Of delivery revenue lost to discrepancies nobody catches in time</div></div>
   </div>
-  <p class="a body">Discovery happens at month-end &mdash; <span class="hi">structurally too late to act</span>.</p>
+  <p class="a body">By the time the month closes and the shortfall shows up, <span class="hi">it's structurally too late to act on it</span>.</p>
 </div>
 
 <!-- 4 · Vision -->
@@ -447,15 +450,35 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 6 · Key Results -->
-<div class="slide" data-notes="Four Key Results, all four measured — not asserted. KR1 is measured against the evaluator's own published framework. Every number on this slide is a real harness or instrumentation figure.">
+<div class="slide" data-notes="Four Key Results, each with an explicit, falsifiable target stated up front — not just a number floating with no bar to clear. KR1's target is honest measurement itself, per Constitution Principle V, since no percentage was pre-committed; KR2 through KR4 carry numeric bars, and every one is met. Every figure here is a real harness or instrumentation result.">
   <div class="num-bg">02</div>
   <div class="a tag">Key Results</div>
-  <h2 class="a lg">Four KRs &mdash; every one measured, not promised</h2>
+  <h2 class="a lg">Four KRs &mdash; a target set first, a result measured against it</h2>
   <div class="a stat-cards">
-    <div class="stat-card"><div class="stat-label">KR1 &middot; Trust</div><div class="stat-value acc">5/5</div><div class="stat-trend">Refusal correctness &mdash; plus 10/15 accuracy, 2/5&ndash;3/5 consistency, failures included</div></div>
-    <div class="stat-card"><div class="stat-label">KR2 &middot; Margin</div><div class="stat-value acc">0</div><div class="stat-trend">Silent data losses on the deliberately messy fixture set</div></div>
-    <div class="stat-card"><div class="stat-label">KR3 &middot; Growth</div><div class="stat-value acc">&minus;$165.00</div><div class="stat-trend">Negative-ROI promotion flagged end-to-end, with provenance</div></div>
-    <div class="stat-card"><div class="stat-label">KR4 &middot; Cost</div><div class="stat-value acc">$0.015</div><div class="stat-trend">Per question &mdash; measured by the instrumentation log, under the $0.05 bar</div></div>
+    <div class="stat-card">
+      <div class="stat-label">KR1 &middot; Trust</div>
+      <div class="stat-target">Target &mdash; <b>100% refusal correctness</b>; accuracy/consistency reported honestly, no % pre-set</div>
+      <div class="stat-value acc">5/5</div>
+      <div class="stat-trend up">Refusal correctness, 100% &mdash; plus 10/15 accuracy, 2/5 consistency (strict): <span class="hi">named, not hidden</span></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">KR2 &middot; Margin</div>
+      <div class="stat-target">Target &mdash; <b>zero</b> silent data loss on the messy fixture set</div>
+      <div class="stat-value acc">0</div>
+      <div class="stat-trend up">Defects found &mdash; all 14 fixture days reconciled correctly, mess included</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">KR3 &middot; Growth</div>
+      <div class="stat-target">Target &mdash; <b>&ge;1</b> negative-ROI promo flagged end-to-end</div>
+      <div class="stat-value acc">1</div>
+      <div class="stat-trend up">Flagged with provenance &mdash; JET-CAMP-LUNCHFIX, ROI &minus;$165.00</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">KR4 &middot; Cost</div>
+      <div class="stat-target">Target &mdash; <b>under $0.05</b> per interaction</div>
+      <div class="stat-value acc">$0.015</div>
+      <div class="stat-trend up">Per question, instrumented log &mdash; ~30% of the ceiling</div>
+    </div>
   </div>
 </div>
 
