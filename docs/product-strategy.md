@@ -177,6 +177,47 @@ Segment 1 — a different kind of metric, not to be conflated with the KRs:
   used, negative-ROI promotion spend actually redirected — the real-world
   version of KR2/KR3, with real users instead of fixture data.
 
+## Badge system (UI gamification)
+
+Grounded in two pieces of real research rather than guessed: restaurant
+owners are **[Sourced]** "app-rich but insight-poor" and time-poor — tools
+survive only if they're quick to adopt and used daily, not if they're
+impressive once. **[Sourced]** The B2B gamification pattern that actually
+works is quiet acknowledgment (a filled progress bar, a milestone banner),
+not loud arcade mechanics — which also matters here specifically because
+this is a financial tool; badges that feel like a game would undercut the
+trust the whole architecture is built to earn. Badges are a typed,
+extensible category (a Postgres enum, not hardcoded), evaluated by
+deterministic Go logic against already-computed facts — the model may
+*narrate* a badge in conversation, never *decide* one, so this never touches
+Principle I.
+
+**Built now** (Day 4, proof of mechanism — kept small on purpose given the
+deadline):
+- **Reconciliation category only**: "Clean Close" (a day reconciled with
+  zero discrepancies) and "Discrepancy Catcher" (the system caught and
+  flagged a duplicate, refund, or anomaly) — both fire directly off
+  `DailyReconciliation.discrepancy_flags`, no new computation needed beyond
+  what KR2 already produces.
+
+**Roadmap — named, explicitly not built in this take-home**:
+- **Growth category** ("Smart Spender," "Margin Guardian" — tied to KR3):
+  deferred because it needs UI time beyond Day 4's "functional over
+  polished" bar, not because the underlying data isn't there.
+- **Engagement category** ("Week One," "Consistency Streak"): needs real
+  multi-day usage to mean anything — a fixture-data demo can't organically
+  produce a streak, only simulate one, which would be exactly the kind of
+  fabricated signal this project's honesty discipline exists to avoid.
+- **Campaign Creation category** ("Campaign Launcher" — awarded for
+  creating a promotional campaign that connects to Prosus's own promotional
+  tooling, e.g. via ToqanClaw automations): the most strategically
+  interesting one, because it closes the loop from *insight* to *action* —
+  KR3 flags a negative-ROI promotion, and this badge is the natural next
+  step, "launch a better one," directly through tools Prosus already owns.
+  Not built here because it requires an actual integration this take-home
+  has no API access to build against — named as a roadmap direction, not
+  faked as a working feature.
+
 ## Vision
 
 Give every independent restaurant or bar owner a same-day, trustworthy answer to "did we make money today, and why" — without hiring a bookkeeper, opening three exports, or waiting for month-end to find out margin already slipped.
