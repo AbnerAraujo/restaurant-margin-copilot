@@ -461,7 +461,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <div class="stat-label">KR1 &middot; Trust</div>
       <div class="stat-target">Target &mdash; <b>100% refusal correctness</b>; accuracy/consistency reported honestly, no % pre-set</div>
       <div class="stat-value acc">5/5</div>
-      <div class="stat-trend up">Refusal correctness, 100% &mdash; plus 10/15 accuracy, 2/5 consistency (strict): <span class="hi">named, not hidden</span></div>
+      <div class="stat-trend up">Refusal correctness, 100% &mdash; plus 13/15 accuracy, 2/5 consistency (strict): <span class="hi">named, not hidden</span></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR2 &middot; Margin</div>
@@ -528,6 +528,18 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <div class="democard"><p class="actn">Act 3 &middot; A live refusal</p><h3>"ROI on the weekend campaign?"</h3><p>Attribution is missing from the export &mdash; so it refuses to assert an ROI. The refusal is the feature.</p><p class="fig">roi &rarr; null &middot; refusal, by design</p></div>
   </div>
   <p class="a livenote"><b>Nothing is a recording.</b> Live database, live Anthropic API, a cost panel ticking up in real dollars.</p>
+</div>
+
+<!-- 9b · Steward guidance -->
+<div class="slide" data-notes="The real gap found after the take-home froze: every answer ended in a blank composer, so success looked like a dead end. Follow-up chips close it, and the mechanism matters as much as the feature — deterministic Go, keyed on the real tool call that ran, never a second model call suggesting a question the product might not be able to answer.">
+  <div class="a tag">Chat UX &middot; shipped after the freeze</div>
+  <h2 class="a lg">A steward suggests the next check &mdash; it doesn't wait to be asked</h2>
+  <div class="a cols3">
+    <div class="democard"><p class="actn">1 &middot; Ask</p><h3>"Margin on Aug 9th?"</h3><p>Gate classifies, <code>get_daily_summary</code> computes, Sonnet narrates.</p><p class="fig">Aug 9 &rarr; &minus;$70.58 (a loss)</p></div>
+    <div class="democard"><p class="actn">2 &middot; The steward suggests</p><h3>A chip appears, unprompted</h3><p>Generated in Go from the tool call that just ran &mdash; not the model guessing its own capabilities.</p><p class="fig">"Were there any discrepancies on Aug 9?"</p></div>
+    <div class="democard"><p class="actn">3 &middot; One tap, grounded again</p><h3>Tap it &rarr; a real answer</h3><p>Re-enters the same gate, same tools, same refusal discipline &mdash; a suggestion is a reply, never a side door.</p><p class="fig">Clean &mdash; no discrepancy flags that day</p></div>
+  </div>
+  <p class="a livenote"><b>Zero extra model spend.</b> <code>deriveFollowUpSuggestions</code> is a pure Go function keyed on the tool result already computed &mdash; the same discipline that already picks bar vs. pie vs. table, applied to &ldquo;what's worth asking next.&rdquo;</p>
 </div>
 
 <!-- 10 · Architecture flow -->
@@ -737,7 +749,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <h2 class="a lg">Every target measured &mdash; then the scope grew</h2>
   <table class="a data-table">
     <tr><th>Metric</th><th>Target</th><th style="text-align:right">Result</th></tr>
-    <tr><td>Accuracy (KR1)</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">10/15 (67%)</td></tr>
+    <tr><td>Accuracy (KR1)</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">13/15 (87%)</td></tr>
     <tr><td>Consistency (KR1)</td><td>Measured &amp; reported</td><td class="num-cell">2/5 strict &middot; 3/5 substance</td></tr>
     <tr><td>Refusal correctness (KR1)</td><td>100% on unanswerable set</td><td class="num-cell">5/5 (100%)</td></tr>
     <tr><td>Reconciliation (KR2)</td><td>Zero silent data loss</td><td class="num-cell">0 defects found</td></tr>
@@ -875,10 +887,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </svg>
   <h2 class="a xl" style="font-size:52px">Out of the red, in the green &mdash; daily</h2>
   <div class="a stat-cards" style="max-width:900px">
-    <div class="stat-card"><div class="stat-label">Accuracy</div><div class="stat-value acc">10/15</div></div>
+    <div class="stat-card"><div class="stat-label">Accuracy</div><div class="stat-value acc">13/15</div></div>
     <div class="stat-card"><div class="stat-label">Refusals</div><div class="stat-value acc">5/5</div></div>
     <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">200</div></div>
-    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$1.57</div></div>
+    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$3.35</div></div>
   </div>
   <div class="a sub" style="font-size:14px;margin-top:24px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
 </div>
@@ -1071,12 +1083,11 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 
   // ---- Evaluation unit chart ----
   var rows = { acc: { units: [] }, ref: { units: [] }, con: { units: [] } };
-  for (var i = 0; i < 10; i++) rows.acc.units.push({ s: 'pass', t: 'Correct answer, matched against an independently computed golden value (10 of 15).' });
-  rows.acc.units.push({ s: 'fail', t: 'Known gap A4 — no tool exists that sums a supplier-cost range.' });
-  rows.acc.units.push({ s: 'fail', t: 'Known gap A10 — asks the user to define “underperforming” instead of calling list_negative_roi_promotions.' });
-  rows.acc.units.push({ s: 'fail', t: 'Known gap A15 — reports the gross figure; the per-source tool output doesn’t expose the refund-netted number.' });
-  rows.acc.units.push({ s: 'fail', t: 'Failed in the final full-suite run — reported in the 10/15 headline rather than netted away.' });
-  rows.acc.units.push({ s: 'fail', t: 'Failed in the final full-suite run — reported in the 10/15 headline rather than netted away.' });
+  for (var i = 0; i < 11; i++) rows.acc.units.push({ s: 'pass', t: 'Correct answer, matched against an independently computed golden value.' });
+  rows.acc.units.push({ s: 'pass', t: 'A4 — fixed: no tool summed a supplier-cost range before get_period_totals shipped; now answers directly instead of refusing or iterating per-day calls.' });
+  rows.acc.units.push({ s: 'pass', t: 'A10 — fixed: the gate asked the user to define "underperforming" instead of calling list_negative_roi_promotions; the gate/explain prompts now route evaluative language to the tool that already defines it.' });
+  rows.acc.units.push({ s: 'fail', t: 'A7 — the model gives a correct, positive-ROI answer, but promptfoo\'s regex trips on the word "flagged" appearing in a disclaiming sentence ("Not flagged as negative ROI").' });
+  rows.acc.units.push({ s: 'fail', t: 'A15 — the model still correctly declines to state a refund-netted, platform-specific figure the data doesn\'t support attributing; refunds_by_source shipped since, a netted total field remains a named follow-up.' });
   for (var j = 0; j < 5; j++) rows.ref.units.push({ s: 'pass', t: 'Refused or asked a correct clarifying question instead of guessing (5 of 5 — including R1, which failed before the date-grounding fix).' });
   rows.con.units.push({ s: 'pass', t: 'C3 (LUNCHFIX) — all 3 phrasings agree and match the golden value.' });
   rows.con.units.push({ s: 'pass', t: 'C4 (year-omitted date) — all 3 phrasings agree after date-grounding.' });
@@ -1103,7 +1114,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     });
     var count = document.createElement('span');
     count.className = 'count';
-    if (key === 'acc') count.textContent = '10/15 · 67%';
+    if (key === 'acc') count.textContent = '13/15 · 87%';
     if (key === 'ref') count.textContent = '5/5 · 100%';
     if (key === 'con') count.textContent = '2/5 strict · 3/5 substance';
     host.appendChild(count);

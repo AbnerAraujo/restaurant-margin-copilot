@@ -12,7 +12,7 @@ Built as a take-home prototype for a Prosus/Toqan Technical PM interview
 challenge. `CLAUDE.md` in this repo is the original brief and constitution the
 whole build follows.
 
-- **Live presentation** (22-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — also checked in at [`docs/presentation.html`](docs/presentation.html)
+- **Live presentation** (23-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — also checked in at [`docs/presentation.html`](docs/presentation.html)
 - **Live architecture diagram** (design system, reconciliation engine, full system): https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441 — also checked in at [`docs/architecture.html`](docs/architecture.html)
 - **Live API docs** (interactive Swagger UI, every backend endpoint): https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764 — spec checked in at [`docs/openapi.yaml`](docs/openapi.yaml)
 
@@ -86,7 +86,7 @@ fact.
 | [`docs/brand.md`](docs/brand.md) | Visual identity / design tokens used across the app and docs |
 | [`docs/frontend.md`](docs/frontend.md) | Frontend design system and architecture reference — real file paths, real consumer counts, real bugs found and fixed |
 | [`docs/openapi.yaml`](docs/openapi.yaml) + **[live API docs ↗](https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764)** | OpenAPI 3.0 spec for every backend endpoint, grounded against real live responses, rendered as an interactive Swagger UI page |
-| [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 6 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the one this project created itself |
+| [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 7 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the two this project created itself |
 
 ## User stories and specs (spec-driven development)
 
@@ -109,16 +109,16 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 Measured against the live backend with real Anthropic API calls
 (`evaluation/promptfoo/{accuracy,consistency,refusal}.yaml`, 35 questions
 total), reported honestly including the failures — see
-`docs/product-strategy.md`'s "Real evaluation results" and "Fix verification:
-before/after" sections for the full breakdown and root-cause analysis.
+`docs/product-strategy.md`'s dated fix sections for the full breakdown,
+root-cause analysis, and every before/after re-run.
 
 | Metric | Result |
 |---|---|
-| Accuracy | 9/15 (60%) |
+| Accuracy | 13/15 (87%) — only A7 (a grading-regex false negative) and A15 (an honest refusal on unattributable data) still failing |
 | Consistency (5 questions × 3 phrasings each) | 2/5 sets fully agree (promptfoo-strict); 3/5 agree in substance on manual read |
 | Refusal correctness (5 unanswerable questions) | 5/5 (100%) |
-| Cost per interaction | ~$0.0152/question average |
-| Cumulative real API spend, this build | ~$0.96, against a self-imposed $5 cap |
+| Cost per interaction | ~$0.015/question average |
+| Cumulative real API spend, this build | ~$3.35, against a self-imposed $5 cap |
 
 The deterministic reconciliation/ingestion/MCP-tool layer showed **zero
 defects** across the full run — every failure traced to the model layer's
