@@ -260,3 +260,47 @@ when that time comes, not a task queued for now.
   explicitly when the whole point of the run is proving a *live* call
   happened, and never trust a successful HTTP response to a smoke test
   without first confirming which binary/process is actually answering it.
+- **Evaluation harness (T033/T034), real 35-question run against the live
+  backend**: accuracy came in at 10/15 (67%) and consistency at 0/5 sets
+  fully agreed — full breakdown in `docs/product-strategy.md`'s "Real
+  evaluation results" section. The headline defect is a single shared root
+  cause across most failures, not five independent bugs: when a question
+  omits the year (e.g. "Aug 1st"), the ambiguity gate/explain layer does
+  not reliably infer 2026 — the only year with any data — and instead
+  varies unprompted between answering correctly, asking a clarifying
+  question, and (worst case, R1 and one consistency phrasing) confidently
+  inventing a wrong year ("no data for August 8th, 2024") and reporting a
+  true-but-irrelevant refusal against a premise it fabricated. A second,
+  separate defect (C3/A9): a campaign referenced by a shortened or
+  full-name form (`LUNCHFIX`, `JET-CAMP-NEWMENU`) sometimes triggers a
+  hallucinated "not in the data" refusal even though the campaign_id
+  exists and is fully computable — a false refusal on answerable data,
+  which is the specific failure mode the refuse-don't-guess architecture
+  exists to prevent, showing up in the opposite direction. The
+  deterministic reconciliation/ingestion/MCP-tool layer itself showed zero
+  defects in the full run — every failure traced to the model layer's
+  date-grounding and tool/entity-selection behavior, confirming the
+  Principle I risk boundary held where it was supposed to.
+- **Quickstart re-validation (US2 step), Day 5**: re-ran the harness's exact
+  root-cause bug live, using quickstart.md's own literal validation
+  phrasing — *"how did this week compare to last week?"*, asked with no
+  date given, against the real system clock (2026-08-28). It refused,
+  correctly reasoning that "last week" relative to *today* falls entirely
+  outside the 2026-08-01–14 fixture window — a legitimate, well-reasoned
+  refusal, not a repeat of the year-hallucination bug, but it does mean
+  the quickstart doc's own suggested phrasing cannot be used verbatim to
+  demo US2 once real wall-clock time has moved past the fixture period;
+  the demo script needs the date range stated explicitly (as tested
+  instead: "how did the week of August 8-14 2026 compare to August 1-7
+  2026?", which answered correctly with the golden $105.01/$377.04
+  figures). Also reproduced the A10-shaped gap live: "List all promotions
+  with negative ROI" with no date range asked the user to define
+  "underperforming" instead of just running the tool over the only period
+  with data, but adding an explicit date range answered correctly and
+  cited the golden -$165.00 JET-CAMP-LUNCHFIX figure with exact
+  provenance. Lesson: a written quickstart script that hardcodes relative
+  date language ("this week," "last week") has a shelf life shorter than
+  the project itself once a fixture-dated demo is validated after the
+  fixture's own calendar window has passed — pin quickstart demo phrasing
+  to explicit dates, not relative ones, once this is a known model-layer
+  gap rather than a hypothetical.
