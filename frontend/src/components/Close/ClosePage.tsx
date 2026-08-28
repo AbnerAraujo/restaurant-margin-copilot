@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { CalendarDays } from 'lucide-react'
+import { CalendarDays, CalendarRange } from 'lucide-react'
 
 import BadgeDisplay, {
   type ReconciliationBadge,
@@ -10,6 +10,8 @@ import MarginTrendChart, {
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
@@ -22,6 +24,12 @@ import { getJson } from '@/lib/api'
 // whose 2026-08-08 value said "no data" while Postgres actually holds a
 // computed margin of $152.50 for that day. Both were plausible and both were
 // wrong, which is exactly the failure mode this product exists to prevent.
+//
+// This page used to show ONLY the latest reconciled day, with no way to look
+// at anything else. The backend's ?start=&end= query parameters
+// (YYYY-MM-DD, both required together or neither — data.go's
+// parseOptionalPeriod) already supported an arbitrary window; the picker
+// below is the only thing that was missing.
 // ---------------------------------------------------------------------------
 
 interface SourceRowRefApi {
@@ -52,6 +60,16 @@ interface ReconciliationApiResponse {
   end: string
   days: DailySummaryApi[]
 }
+
+/** The real ingested data's [min, max] date, learned from the unfiltered
+ *  ("latest") fetch's own echoed start/end — the same bound the backend
+ *  grounds its own defaults against, never a client-side guess. */
+interface DataBounds {
+  start: string
+  end: string
+}
+
+type ViewMode = 'latest' | 'day' | 'period'
 
 /** Money arrives as "-227.09"-style decimal strings; parse once, here. */
 function parseMoney(decimal: string): number {
@@ -86,6 +104,23 @@ function toProvenanceRefs(day: DailySummaryApi): SourceRowRef[] {
   }))
 }
 
+/** Same citation shape the trend chart already uses for a whole period. */
+function toPeriodProvenanceRefs(
+  days: DailySummaryApi[],
+  start: string,
+  end: string,
+): SourceRowRef[] {
+  return [
+    {
+      source_file: 'daily_reconciliation (Postgres)',
+      row_start: 1,
+      row_end: days.length,
+      period_start: start,
+      period_end: end,
+    },
+  ]
+}
+
 function toBadges(day: DailySummaryApi): ReconciliationBadge[] {
   // Same rule the backend's internal/badges applies, and the only rule:
   // empty discrepancy_flags is a Clean Close, anything else is a catch.
@@ -100,6 +135,34 @@ function toBadges(day: DailySummaryApi): ReconciliationBadge[] {
         : day.discrepancy_flags.map((flag) => flag.detail).join(' · '),
     },
   ]
+}
+
+/**
+ * Sums an already-computed decimal field across days. This is the same class
+ * of arithmetic `grossSalesTotal` above already does (adding figures the Go
+ * engine produced) — not a second implementation of reconciliation math, just
+ * a client-side total of numbers the API already computed per day.
+ */
+function sumField(
+  days: DailySummaryApi[],
+  field: 'commissions' | 'refunds' | 'input_costs' | 'margin',
+): number {
+  return days.reduce((sum, day) => sum + parseMoney(day[field]), 0)
+}
+
+function sumGrossSales(days: DailySummaryApi[]): number {
+  return days.reduce((sum, day) => sum + grossSalesTotal(day), 0)
+}
+
+/** Per-source totals across every day in the period, same rule as above. */
+function aggregateGrossSalesBySource(days: DailySummaryApi[]): [string, number][] {
+  const totals = new Map<string, number>()
+  for (const day of days) {
+    for (const [source, amount] of Object.entries(day.gross_sales_by_source)) {
+      totals.set(source, (totals.get(source) ?? 0) + parseMoney(amount))
+    }
+  }
+  return [...totals.entries()]
 }
 
 /**
@@ -130,22 +193,72 @@ function toChartData(
   return out
 }
 
+/** `days` back from `iso`, never going earlier than `minIso`. Used only to
+ *  seed a sensible default period window ("last week of real data") — the
+ *  user can always widen or narrow it with the date inputs afterward. */
+function shiftDateClamped(iso: string, days: number, minIso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  const min = new Date(`${minIso}T00:00:00Z`)
+  return (date < min ? min : date).toISOString().slice(0, 10)
+}
+
+/** Builds the query suffix for the current mode, or `null` when the mode's
+ *  inputs aren't complete enough to fetch yet (e.g. a period missing one
+ *  bound) — the caller skips the request rather than hitting the backend
+ *  with a half-picked range. */
+function buildQuery(
+  mode: ViewMode,
+  day: string,
+  rangeStart: string,
+  rangeEnd: string,
+): string | null {
+  if (mode === 'latest') return ''
+  if (mode === 'day') return day ? `?start=${day}&end=${day}` : null
+  return rangeStart && rangeEnd ? `?start=${rangeStart}&end=${rangeEnd}` : null
+}
+
 /**
- * `/close` — "Today's Close": the most recent reconciled day's summary above
- * the margin trend, both read live from Postgres via GET /api/reconciliation.
- * "Today" here means the latest day the DATA covers, not the wall-clock date
- * — the same grounding rule the ambiguity gate and the explanation step use,
- * so the page and the chat never disagree about which day "today" is.
+ * `/close` — "Today's Close": a reconciled day's summary above the margin
+ * trend, read live from Postgres via GET /api/reconciliation. Defaults to
+ * "today" meaning the latest day the DATA covers, not the wall-clock date —
+ * the same grounding rule the ambiguity gate and the explanation step use, so
+ * the page and the chat never disagree about which day "today" is — but a
+ * picker lets the owner look at any other day, or any period, on demand.
  */
 export default function ClosePage() {
+  const [viewMode, setViewMode] = useState<ViewMode>('latest')
+  const [selectedDate, setSelectedDate] = useState('')
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
+
+  const [bounds, setBounds] = useState<DataBounds | null>(null)
+  // `data === null` IS the loading state — the same convention the original
+  // single-fetch version of this page used (and PromotionsPage still uses):
+  // no separate boolean to keep in sync, just "no response for the current
+  // query yet". Every handler that changes what query is active below resets
+  // `data` to null in the same synchronous state update, so a newly-picked
+  // day/period shows the loading skeleton immediately rather than the
+  // previous selection's stale figures.
   const [data, setData] = useState<ReconciliationApiResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    const query = buildQuery(viewMode, selectedDate, rangeStart, rangeEnd)
+    if (query === null) return
+
     let cancelled = false
-    getJson<ReconciliationApiResponse>('/api/reconciliation')
+    getJson<ReconciliationApiResponse>(`/api/reconciliation${query}`)
       .then((response) => {
-        if (!cancelled) setData(response)
+        if (cancelled) return
+        setData(response)
+        // Only the unfiltered "latest" fetch's echoed start/end reflects the
+        // real ingested data's own range — a filtered fetch echoes back the
+        // requested window instead (data.go's servedBound), which would be
+        // the wrong thing to treat as the picker's min/max.
+        if (viewMode === 'latest') {
+          setBounds({ start: response.start, end: response.end })
+        }
       })
       .catch((caught: unknown) => {
         if (!cancelled) {
@@ -155,10 +268,47 @@ export default function ClosePage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [viewMode, selectedDate, rangeStart, rangeEnd])
 
-  const latest = data?.days[data.days.length - 1]
+  const hasAnyData = bounds !== null && bounds.start !== ''
+
+  function handleModeChange(mode: ViewMode) {
+    if (mode === 'day' && !selectedDate) {
+      setSelectedDate(bounds?.end ?? '')
+    }
+    if (mode === 'period' && (!rangeStart || !rangeEnd)) {
+      const end = bounds?.end ?? ''
+      setRangeStart(bounds ? shiftDateClamped(end, -6, bounds.start) : end)
+      setRangeEnd(end)
+    }
+    setViewMode(mode)
+    setData(null)
+    setError(null)
+  }
+
+  function handleSelectedDateChange(value: string) {
+    setSelectedDate(value)
+    setData(null)
+    setError(null)
+  }
+
+  function handleRangeStartChange(value: string) {
+    setRangeStart(value)
+    setData(null)
+    setError(null)
+  }
+
+  function handleRangeEndChange(value: string) {
+    setRangeEnd(value)
+    setData(null)
+    setError(null)
+  }
+
+  const days = data?.days ?? []
+  const latest = days[days.length - 1]
+  const isPeriodView = viewMode === 'period'
   const margin = latest ? parseMoney(latest.margin) : 0
+  const periodMargin = sumField(days, 'margin')
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -166,20 +316,115 @@ export default function ClosePage() {
         eyebrow="Daily reconciliation"
         title="Today's Close"
         meta={
-          latest ? (
+          data && latest ? (
             <>
-              <Chip icon={CalendarDays}>{latest.date}</Chip>
+              {isPeriodView ? (
+                <Chip icon={CalendarRange}>
+                  {data.start} → {data.end}
+                </Chip>
+              ) : (
+                <Chip icon={CalendarDays}>{latest.date}</Chip>
+              )}
               <Chip>
-                {data.days.length} {data.days.length === 1 ? 'day' : 'days'}{' '}
-                reconciled
+                {days.length} {days.length === 1 ? 'day' : 'days'} reconciled
               </Chip>
-              <Chip>
-                {data.start} to {data.end}
-              </Chip>
+              {!isPeriodView ? (
+                <Chip>
+                  {data.start} to {data.end}
+                </Chip>
+              ) : null}
             </>
           ) : null
         }
+        actions={
+          hasAnyData ? (
+            <div
+              role="group"
+              aria-label="View mode"
+              className="inline-flex items-center gap-1 rounded-md border border-border p-0.5"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'latest' ? 'default' : 'ghost'}
+                aria-pressed={viewMode === 'latest'}
+                onClick={() => handleModeChange('latest')}
+              >
+                Latest
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'day' ? 'default' : 'ghost'}
+                aria-pressed={viewMode === 'day'}
+                onClick={() => handleModeChange('day')}
+              >
+                Day
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={viewMode === 'period' ? 'default' : 'ghost'}
+                aria-pressed={viewMode === 'period'}
+                onClick={() => handleModeChange('period')}
+              >
+                Period
+              </Button>
+            </div>
+          ) : null
+        }
       />
+
+      {hasAnyData && bounds && viewMode !== 'latest' ? (
+        <div className="flex flex-wrap items-center gap-3">
+          {viewMode === 'day' ? (
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="close-day-picker" className="text-xs font-medium text-muted-foreground">
+                Day
+              </label>
+              <Input
+                id="close-day-picker"
+                type="date"
+                className="h-8 w-auto"
+                value={selectedDate}
+                min={bounds.start}
+                max={bounds.end}
+                onChange={(event) => handleSelectedDateChange(event.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <label htmlFor="close-period-start" className="text-xs font-medium text-muted-foreground">
+                From
+              </label>
+              <Input
+                id="close-period-start"
+                type="date"
+                className="h-8 w-auto"
+                value={rangeStart}
+                min={bounds.start}
+                max={rangeEnd || bounds.end}
+                onChange={(event) => handleRangeStartChange(event.target.value)}
+              />
+              <label htmlFor="close-period-end" className="text-xs font-medium text-muted-foreground">
+                To
+              </label>
+              <Input
+                id="close-period-end"
+                type="date"
+                className="h-8 w-auto"
+                value={rangeEnd}
+                min={rangeStart || bounds.start}
+                max={bounds.end}
+                onChange={(event) => handleRangeEndChange(event.target.value)}
+              />
+            </div>
+          )}
+          <span className="text-xs text-muted-foreground">
+            Data on file covers {bounds.start} to {bounds.end}
+          </span>
+        </div>
+      ) : null}
 
       {error ? (
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
@@ -188,16 +433,10 @@ export default function ClosePage() {
         </Panel>
       ) : null}
 
-      {!error && data && !latest ? (
-        <Panel className="p-4 text-sm text-muted-foreground">
-          No reconciled days on file yet. Run the ingestion pipeline (
-          <code className="font-mono text-xs">-ingest</code>) and this page
-          fills in from the real rows.
-        </Panel>
-      ) : null}
-
       {/* Loading is a real state, not a blank page. Skeletons hold the exact
-          geometry the resolved stats will occupy, so nothing jumps. */}
+          geometry the resolved stats will occupy, so nothing jumps. This
+          fires on the initial load AND on every user-triggered re-fetch when
+          a different day or period is picked. */}
       {!error && !data ? (
         <Panel className="p-5 sm:p-6">
           <StatGroup>
@@ -209,7 +448,36 @@ export default function ClosePage() {
         </Panel>
       ) : null}
 
-      {latest ? (
+      {!error && data && !hasAnyData ? (
+        <Panel className="p-4 text-sm text-muted-foreground">
+          No reconciled days on file yet. Run the ingestion pipeline (
+          <code className="font-mono text-xs">-ingest</code>) and this page
+          fills in from the real rows.
+        </Panel>
+      ) : null}
+
+      {/* Honest empty state for a date/period that IS within a system that
+          has real data, but has no reconciliation of its own — never a
+          zeroed-out chart that reads as "broke even that day". */}
+      {!error && data && hasAnyData && days.length === 0 ? (
+        <Panel className="p-4 text-sm text-muted-foreground">
+          No reconciled data for{' '}
+          {viewMode === 'day' ? (
+            <>the selected day ({data.start})</>
+          ) : (
+            <>
+              the selected period ({data.start} to {data.end})
+            </>
+          )}
+          . This restaurant&apos;s data covers{' '}
+          <span className="font-medium text-foreground">
+            {bounds?.start} to {bounds?.end}
+          </span>{' '}
+          — pick a date in that range.
+        </Panel>
+      ) : null}
+
+      {!error && data && latest && !isPeriodView ? (
         <>
           <Panel aria-label="Latest reconciled day" className="p-5 sm:p-6">
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
@@ -261,16 +529,8 @@ export default function ClosePage() {
               column with content the chart does not carry. */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <MarginTrendChart
-              data={toChartData(data.days, data.start, data.end)}
-              sourceRefs={[
-                {
-                  source_file: 'daily_reconciliation (Postgres)',
-                  row_start: 1,
-                  row_end: data.days.length,
-                  period_start: data.start,
-                  period_end: data.end,
-                },
-              ]}
+              data={toChartData(days, data.start, data.end)}
+              sourceRefs={toPeriodProvenanceRefs(days, data.start, data.end)}
             />
 
             {/* Gross sales by source: values printed exactly as the API sent
@@ -299,6 +559,95 @@ export default function ClosePage() {
                     </div>
                   ),
                 )}
+              </dl>
+            </Panel>
+          </div>
+        </>
+      ) : null}
+
+      {/* Period view: the same figures, summed across every reconciled day
+          in the window — an aggregate, not a second copy of the day view.
+          Every number here is a client-side sum of decimal strings the Go
+          engine already computed per day (sumField / aggregateGrossSalesBySource
+          above), the same class of arithmetic `grossSalesTotal` already does;
+          nothing here re-derives reconciliation math. */}
+      {!error && data && isPeriodView && days.length > 0 ? (
+        <>
+          <Panel aria-label="Period reconciliation" className="p-5 sm:p-6">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Where the period landed
+              </h2>
+              <BadgeDisplay badges={days.flatMap(toBadges)} />
+            </div>
+
+            <StatGroup>
+              <Stat
+                label="Total margin"
+                value={formatUsd(periodMargin)}
+                size="lg"
+                tone={periodMargin < 0 ? 'negative' : 'positive'}
+                caption={
+                  periodMargin < 0
+                    ? `Closed in the red over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
+                    : `Closed in the green over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
+                }
+                footer={
+                  <ProvenanceTag
+                    refs={toPeriodProvenanceRefs(days, data.start, data.end)}
+                  />
+                }
+              />
+              <Stat
+                label="Gross sales"
+                value={formatUsd(sumGrossSales(days))}
+                caption="Summed across the period"
+              />
+              <Stat
+                label="Commissions"
+                value={formatUsd(sumField(days, 'commissions'))}
+                caption="Netted out"
+              />
+              <Stat
+                label="Refunds"
+                value={formatUsd(sumField(days, 'refunds'))}
+                caption="Netted out"
+              />
+              <Stat
+                label="Input costs"
+                value={formatUsd(sumField(days, 'input_costs'))}
+                caption="Netted out"
+              />
+            </StatGroup>
+          </Panel>
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <MarginTrendChart
+              data={toChartData(days, data.start, data.end)}
+              sourceRefs={toPeriodProvenanceRefs(days, data.start, data.end)}
+            />
+
+            <Panel className="p-5">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Gross sales by source
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {data.start} to {data.end}
+              </p>
+              <dl className="mt-4 flex flex-col">
+                {aggregateGrossSalesBySource(days).map(([source, amount]) => (
+                  <div
+                    key={source}
+                    className="flex items-baseline justify-between gap-3 border-b border-border py-2.5 last:border-b-0"
+                  >
+                    <dt className="min-w-0 truncate text-xs text-muted-foreground">
+                      {source}
+                    </dt>
+                    <dd className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                      {formatUsd(amount)}
+                    </dd>
+                  </div>
+                ))}
               </dl>
             </Panel>
           </div>
