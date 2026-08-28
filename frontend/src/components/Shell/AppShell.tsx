@@ -3,6 +3,7 @@ import { Outlet, useOutletContext } from 'react-router-dom'
 
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
 import Sidebar, { MobileNavBar } from '@/components/Shell/Sidebar'
+import SplashScreen from '@/components/Shell/SplashScreen'
 import { postJson } from '@/lib/api'
 
 /**
@@ -63,6 +64,7 @@ export default function AppShell() {
     // ~382px of dead space beneath it, so only about one and a half messages
     // were ever visible at once.
     <div className="flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
+      <SplashScreen />
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <MobileNavBar />
