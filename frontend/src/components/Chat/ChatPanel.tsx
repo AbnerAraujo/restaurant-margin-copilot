@@ -1164,14 +1164,21 @@ export default function ChatPanel({
           ref={composerRef}
           className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 sm:px-5 sm:pb-4"
         >
-          {/* Solid to ~70% of its height, then a short fade — a pure
-              from/to gradient leaves the bar's own height half-transparent
-              and message text shows through it, which reads as a rendering
-              bug rather than depth. */}
+          {/* Solid for its bottom half, then a short fade — a pure from/to
+              gradient leaves the bar's own height half-transparent and
+              message text shows through it, which reads as a rendering bug
+              rather than depth. Fixed at 80px (not tied to the composer's
+              own measured height, which can range from ~90px resting to
+              350px+ with the suggestions panel open) specifically so this
+              backdrop stays a small lip hugging the composer's bottom edge
+              — a taller fixed value here previously extended 60-70px above
+              a normal single-line composer's actual top edge, fading real
+              conversation content that had nothing to do with the composer
+              and reading as a shadow "overlapping" the chat log. */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-40
-              bg-[linear-gradient(to_top,var(--background)_0%,var(--background)_72%,transparent_100%)]"
+            className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-20
+              bg-[linear-gradient(to_top,var(--background)_0%,var(--background)_55%,transparent_100%)]"
           />
           {/* Persistent capability shortcut. The empty state disappears after
               the first question and a refusal only appears when one fires —
