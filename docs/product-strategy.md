@@ -21,13 +21,69 @@ moves, and it can move via either lever — which is why the candidate
 problems explored below span both a growth-side lever (visibility/ranking,
 promo ROI) and a margin-protection-side lever (payout reconciliation).
 
-**Open question, not yet resolved**: the current build (`specs/001-...`) is
-scoped narrowly to margin reconciliation — the protection-side lever only.
-Under this broader objective, that build is one candidate Key Result, not
-the whole strategy. Whether to (a) keep this build as-is and treat it as
-"the specific, provable first step toward the objective," or (b) broaden
-scope to also address a growth-side lever, is a decision to make explicitly,
-not drift into.
+**Resolved: (b)** — scope is broadened to cover both levers, not just margin
+protection.
+
+## Key Results
+
+1. **KR1 — Trust**: 100% correct refusal/clarification on the ~5 unanswerable
+   evaluation questions; accuracy and consistency rates on the ~15–20
+   known-answer and 5×3-phrasing questions measured and reported honestly,
+   including failures.
+2. **KR2 — Margin protection**: Reconcile daily margin across POS,
+   delivery-platform, and cost-sheet data with zero silent data loss on the
+   deliberately messy fixture set (duplicate orders, refunds, missing days),
+   producing a provenanced true-net-margin figure for every fixture day.
+3. **KR3 — Revenue growth**: Identify and correctly flag at least one
+   negative-ROI promotion in the fixture data (incremental revenue below its
+   cost) end-to-end — ingestion through natural-language Q&A — proving the
+   same deterministic-core/probabilistic-narration architecture extends to a
+   growth lever, not just margin protection.
+4. **KR4 — Token discipline**: Average measured cost per interaction stays
+   under a stated threshold while holding KR1's accuracy/consistency bar,
+   demonstrated via the instrumentation log across every harness interaction.
+
+## Supporting data, by Key Result
+
+**KR1 — Trust.** Evidence is the evaluator's own publicly stated framework,
+not third-party market data: Sean Kenny's canonical failure case (a Data
+Analyst asked for a user's address returned the driver's coordinates instead
+of refusing) and the "empty ask-me-anything box is a product failure"
+position — both already cited above under Opportunity Assessment and
+Hypotheses. This KR is measured against his own stated bar, not an
+external benchmark.
+
+**KR2 — Margin protection.** See "The user problem, grounded" above:
+**[Sourced]** 3–5% average restaurant net margins, 15–30% delivery
+commissions, 2–5% of delivery revenue lost to reconciliation discrepancies,
+~12 hrs/week of manual reconciliation for a mid-size operation.
+
+**KR3 — Revenue growth (promo ROI).** New data gathered specifically for
+this decision:
+- **[Sourced]** Sponsored-listing/boost fees typically add another 5–10% of
+  monthly revenue on top of base commission.
+- **[Sourced]** Concretely: Uber Eats boosted placement runs roughly
+  $0.35–1.45/order, DoorDash bid-based boosting averages
+  $0.70–2.15/incremental order — hundreds to low-thousands of dollars per
+  month for competitive positioning on a single platform.
+- **[Sourced]** Restaurant marketing-spend benchmarks: 3–6% of revenue for
+  established restaurants, 8–12% for new launches, with delivery-app-specific
+  guidance running up to 0–30% of revenue on offers and 0–15% on ads
+  depending on lifecycle stage.
+- **[Sourced]** A comparable-market ROAS benchmark (Zomato/India restaurant
+  ads): 4–6× is considered healthy — a concrete reference point for what
+  "negative-ROI" is measured against.
+- **[Sourced] — the key finding**: sponsored-placement and promo costs are
+  deducted from the restaurant's payout "often without a clear line-item
+  breakdown." This is the *same opacity problem* as KR2, just on the spend
+  side instead of the commission side — the strongest evidence in this
+  document that revenue growth and margin protection are one underlying
+  problem (opaque deductions), not two unrelated features bolted together.
+
+**KR4 — Token discipline.** **[Sourced]** The evaluator has publicly stated a
+token-discipline and real-time-cost-visibility position (LinkedIn, ~May
+2026; cited in `CLAUDE.md`/the constitution) — this KR is measured against
+his own stated criteria, not an arbitrary add-on.
 
 ## Vision
 
