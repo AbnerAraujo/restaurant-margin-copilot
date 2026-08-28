@@ -99,6 +99,55 @@ func TestParseGateResponse_RejectsMalformedJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "not valid JSON")
 }
 
+// TestParseWriterResponse_* are pure unit tests over the second-pass
+// writing call's model-independent parsing (parseWriterResponse), mirroring
+// TestParseGateResponse_* above. writerResponse has no "classification"
+// field at all — these tests confirm that an extra "classification" key in
+// the raw JSON is simply ignored by encoding/json (Go's default behavior
+// for unknown fields) rather than somehow smuggled through, which is the
+// structural half of "Sonnet cannot override Haiku's classification" this
+// package's doc comment describes.
+
+func TestParseWriterResponse_AmbiguousRewrite(t *testing.T) {
+	wr, err := parseWriterResponse(`{"clarifying_question": "Does \"the weekend\" mean Friday through Sunday, or just Saturday and Sunday?", "clarifying_options": ["Friday through Sunday", "Saturday and Sunday only"], "reason": ""}`)
+	require.NoError(t, err)
+	require.Equal(t, `Does "the weekend" mean Friday through Sunday, or just Saturday and Sunday?`, wr.ClarifyingQuestion)
+	require.Equal(t, []string{"Friday through Sunday", "Saturday and Sunday only"}, wr.ClarifyingOptions)
+	require.Empty(t, wr.Reason)
+}
+
+func TestParseWriterResponse_UnanswerableRewrite(t *testing.T) {
+	wr, err := parseWriterResponse(`{"clarifying_question": "", "clarifying_options": [], "reason": "This product only has reconciled data from 2026-08-01 through 2026-08-14 — September 2026 isn't in range yet."}`)
+	require.NoError(t, err)
+	require.Empty(t, wr.ClarifyingQuestion)
+	require.Contains(t, wr.Reason, "2026-08-01")
+}
+
+// A malicious or confused model response including an extra
+// "classification" key must not break parsing, and — critically —
+// writerResponse has nowhere for that value to land: this test proves the
+// parsed struct carries only prose fields, never a classification.
+func TestParseWriterResponse_IgnoresAnyClassificationField(t *testing.T) {
+	wr, err := parseWriterResponse(`{"classification": "answerable", "clarifying_question": "Which week — this one or last?", "clarifying_options": [], "reason": ""}`)
+	require.NoError(t, err)
+	require.Equal(t, "Which week — this one or last?", wr.ClarifyingQuestion)
+	// writerResponse (see its type definition) has exactly three fields:
+	// ClarifyingQuestion, ClarifyingOptions, Reason. There is no field a
+	// "classification" key could have populated, by construction.
+}
+
+func TestParseWriterResponse_RejectsNonJSON(t *testing.T) {
+	_, err := parseWriterResponse("Sure, here's a better clarifying question.")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "did not contain a JSON object")
+}
+
+func TestParseWriterResponse_RejectsMalformedJSON(t *testing.T) {
+	_, err := parseWriterResponse(`{"reason": "missing data", }`)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "not valid JSON")
+}
+
 // testDataStart/testDataEnd mirror the real fixture range
 // (backend/fixtures/README.md, 2026-08-01..14) — tests that don't care
 // about the exact date-grounding text still need a well-formed range for
@@ -143,6 +192,16 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateUnanswerable, d.Result)
 		require.NotEmpty(t, d.RefusalReason)
+		// The non-negotiable this feature adds: the second-pass Sonnet call
+		// may rewrite d.RefusalReason's PROSE, but it can never change
+		// d.Result away from what Haiku classified — asserted directly here
+		// against a real live response, not just by code inspection.
+		require.Equal(t, instrumentation.GateUnanswerable, d.Result, "Sonnet's writing pass must never change the gate's classification")
+		if d.Writer != nil {
+			require.Equal(t, llmclient.ModelExplanation, d.Writer.ModelUsed)
+			require.Greater(t, d.Writer.InputTokens, int64(0))
+			t.Logf("unanswerable writer pass: %d in / %d out tokens, $%.6f", d.Writer.InputTokens, d.Writer.OutputTokens, d.Writer.EstimatedCostUSD)
+		}
 		t.Logf("unanswerable smoke test: %d in / %d out tokens, $%.6f, reason=%q", d.InputTokens, d.OutputTokens, d.EstimatedCostUSD, d.RefusalReason)
 	})
 
@@ -151,7 +210,23 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAmbiguous, d.Result)
 		require.True(t, d.ClarifyingQuestion != "" || d.AssumptionStated != "")
+		// Same non-negotiable as the unanswerable case above: a real writer
+		// pass (only fires when a clarifying question, not an assumption,
+		// was chosen) must never move d.Result off "ambiguous".
+		require.Equal(t, instrumentation.GateAmbiguous, d.Result, "Sonnet's writing pass must never change the gate's classification")
+		if d.ClarifyingQuestion != "" && d.Writer != nil {
+			require.Equal(t, llmclient.ModelExplanation, d.Writer.ModelUsed)
+			require.Greater(t, d.Writer.InputTokens, int64(0))
+			t.Logf("ambiguous writer pass: %d in / %d out tokens, $%.6f", d.Writer.InputTokens, d.Writer.OutputTokens, d.Writer.EstimatedCostUSD)
+		}
 		t.Logf("ambiguous smoke test: %d in / %d out tokens, $%.6f, clarify=%q assume=%q", d.InputTokens, d.OutputTokens, d.EstimatedCostUSD, d.ClarifyingQuestion, d.AssumptionStated)
+	})
+
+	t.Run("answerable question costs exactly the gate's single Haiku call", func(t *testing.T) {
+		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-05?", nil)
+		require.NoError(t, err)
+		require.Equal(t, instrumentation.GateAnswerable, d.Result)
+		require.Nil(t, d.Writer, "an answerable question must never trigger the second Sonnet writing pass — no cost change for the common case")
 	})
 }
 

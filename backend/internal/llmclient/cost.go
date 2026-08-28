@@ -10,6 +10,13 @@ import (
 // gate, Claude Sonnet 5 for narrating an already-computed result. Neither
 // step needs frontier reasoning, so Opus/Fable are deliberately not used
 // here — see research.md's "LLM vendor and model split" for the rationale.
+//
+// ModelExplanation is also the model internal/ambiguity's second pass uses
+// to rewrite a hard-case clarifying-question or refusal-reason draft into
+// better prose (see gate.go's package doc) — reusing this same constant
+// rather than adding a second one priced identically, since pricePerMTok
+// below is keyed by model string and a second constant equal to the same
+// string would be a duplicate map key.
 const (
 	ModelAmbiguityGate = "claude-haiku-4-5"
 	ModelExplanation   = "claude-sonnet-5"

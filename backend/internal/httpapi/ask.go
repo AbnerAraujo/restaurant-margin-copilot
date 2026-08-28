@@ -25,6 +25,15 @@
 // is the reading that never drops a real API call's cost — the running
 // total (SumEstimatedCostUSD) still sums correctly across both.
 //
+// The same per-call reading extends to a THIRD possible row: when the gate
+// classifies a question ambiguous (with a clarifying question) or
+// unanswerable, internal/ambiguity may itself have made a second, real
+// Claude Sonnet 5 call to upgrade that message's wording (see its package
+// doc, Decision.Writer). logWriterCallIfAny logs that as its own row and its
+// own CostInteraction, exactly like the gate/explain pair above — this
+// handler never merges it into the gate's row or drops it because the
+// request short-circuits before reaching explain.
+//
 // specs/004-semantic-cache adds one more step between the exact-match cache
 // probe and the ambiguity gate: on an exact-match MISS against a non-empty
 // cache, deps.ParaphraseMatcher (internal/paraphrase) checks whether the
@@ -287,12 +296,14 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
+			interactions := []CostInteraction{
+				{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+			}
+			interactions = deps.logWriterCallIfAny(ctx, req.Question, decision, false, true, interactions)
 			deps.writeAndCache(ctx, w, resolved, AskResponse{
 				Status:        "refused",
 				RefusalReason: decision.RefusalReason,
-				Interactions: []CostInteraction{
-					{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
-				},
+				Interactions:  interactions,
 			})
 			return
 		}
@@ -308,13 +319,15 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
+			interactions := []CostInteraction{
+				{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+			}
+			interactions = deps.logWriterCallIfAny(ctx, req.Question, decision, true, false, interactions)
 			deps.writeAndCache(ctx, w, resolved, AskResponse{
 				Status:             "clarification_needed",
 				ClarifyingQuestion: decision.ClarifyingQuestion,
 				ClarifyingOptions:  decision.ClarifyingOptions,
-				Interactions: []CostInteraction{
-					{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
-				},
+				Interactions:       interactions,
 			})
 			return
 		}
@@ -400,6 +413,39 @@ func (deps Deps) logOrWarn(ctx context.Context, r instrumentation.Record) {
 	if err := deps.Logger.Log(ctx, r); err != nil {
 		log.Printf("httpapi: FAILED to write instrumentation record (question=%q, model=%s): %v", r.QuestionText, r.ModelUsed, err)
 	}
+}
+
+// logWriterCallIfAny logs decision.Writer — the ambiguity gate's optional
+// second-pass Claude Sonnet 5 call that rewrites a hard-case clarifying
+// question or refusal reason (internal/ambiguity's package doc) — as its
+// OWN instrumentation.Record and CostInteraction, exactly the same
+// discipline this file already applies to the gate/explain pair (package
+// doc: "two rows sharing the same question_text ... never drops a real API
+// call's cost"). It is a no-op, returning interactions unchanged, whenever
+// this decision's gate call did not need the second pass (Answerable, or
+// Ambiguous-with-an-AssumptionStated).
+func (deps Deps) logWriterCallIfAny(ctx context.Context, questionText string, decision *ambiguity.Decision, clarificationFired, refusalFired bool, interactions []CostInteraction) []CostInteraction {
+	if decision.Writer == nil {
+		return interactions
+	}
+	deps.logOrWarn(ctx, instrumentation.Record{
+		QuestionText:        questionText,
+		AmbiguityGateResult: decision.Result,
+		ClarificationFired:  clarificationFired,
+		RefusalFired:        refusalFired,
+		ModelUsed:           decision.Writer.ModelUsed,
+		InputTokens:         decision.Writer.InputTokens,
+		OutputTokens:        decision.Writer.OutputTokens,
+		EstimatedCostUSD:    decision.Writer.EstimatedCostUSD,
+		LatencyMs:           decision.Writer.LatencyMs,
+	})
+	return append(interactions, CostInteraction{
+		ModelUsed:        decision.Writer.ModelUsed,
+		InputTokens:      decision.Writer.InputTokens,
+		OutputTokens:     decision.Writer.OutputTokens,
+		EstimatedCostUSD: decision.Writer.EstimatedCostUSD,
+		LatencyMs:        decision.Writer.LatencyMs,
+	})
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

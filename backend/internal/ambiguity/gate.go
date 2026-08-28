@@ -6,6 +6,22 @@
 // classification task, not one that needs frontier reasoning
 // (constitution v1.1.0, research.md's model-split rationale).
 //
+// Two passes, not one model doing both jobs: classification is ALWAYS one
+// Haiku call, exactly as before — an answerable question still costs
+// exactly what it cost before this file changed. But when that
+// classification is "ambiguous" (and the gate chose to ask rather than
+// assume) or "unanswerable", the message the user actually reads was, until
+// now, whatever Haiku happened to word in the same breath as its
+// classification — a cheap model doing a job (writing a specific, helpful
+// sentence to a restaurant owner) it was never chosen for. Classify's
+// second pass (refineIfNeeded/writeBetterText) sends that draft to Claude
+// Sonnet 5 to rewrite ONLY the prose, given Haiku's classification and
+// draft as settled fact. Sonnet cannot re-decide answerable/ambiguous/
+// unanswerable here even if it tried: writerResponse, the fixed JSON shape
+// this second pass replies in, has no classification field at all, and
+// refineIfNeeded never assigns decision.Result from it. This is a real,
+// disclosed cost increase for exactly the harder cases — see Decision.Writer.
+//
 // This package has no import path to internal/mcptools or internal/storage
 // at all (docs/technical-rfc.md's module architecture diagram): it
 // classifies question text only and never touches real data itself. The
@@ -32,6 +48,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -76,6 +93,35 @@ type Decision struct {
 	// RefusalReason is non-empty when Result is Unanswerable.
 	RefusalReason string
 
+	InputTokens      int64
+	OutputTokens     int64
+	EstimatedCostUSD float64
+	LatencyMs        int64
+
+	// Writer is set when — and only when — this Decision's ambiguous/
+	// unanswerable message was upgraded by the second-pass Claude Sonnet 5
+	// writing call described in this package's doc comment: exactly the
+	// Ambiguous-with-a-ClarifyingQuestion and Unanswerable cases. It stays
+	// nil for Answerable and for Ambiguous-with-an-AssumptionStated (that
+	// path proceeds straight into internal/explain — itself a Sonnet 5
+	// call — so a second Sonnet call here would just double-pay for the
+	// same quality upgrade without the user ever seeing this gate's prose).
+	//
+	// The caller (internal/httpapi) MUST log this as its own
+	// instrumentation.Record and its own CostInteraction, exactly as it
+	// already does for the classification call above — Constitution
+	// Principle VI reads as per-call, not per-question (see ask.go's
+	// package doc), and this is a second real, billed Anthropic API call.
+	Writer *WriterCall
+}
+
+// WriterCall is the token/cost/latency figures for this Decision's optional
+// second-pass Claude Sonnet 5 writing call — see Decision.Writer. It never
+// carries a classification: see writerResponse and refineIfNeeded, which is
+// the structural guarantee that this call can upgrade prose but never
+// overrule Haiku's answerable/ambiguous/unanswerable decision.
+type WriterCall struct {
+	ModelUsed        string
 	InputTokens      int64
 	OutputTokens     int64
 	EstimatedCostUSD float64
@@ -147,12 +193,14 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 		return nil, ErrEmptyQuestion
 	}
 
+	resolved := ComposeFollowUp(question, pending)
+
 	resp, err := g.client.CreateMessage(ctx, llmclient.MessageRequest{
 		Model:     llmclient.ModelAmbiguityGate,
 		System:    g.systemPrompt,
 		MaxTokens: MaxOutputTokens,
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(ComposeFollowUp(question, pending))),
+			anthropic.NewUserMessage(anthropic.NewTextBlock(resolved)),
 		},
 	})
 	if err != nil {
@@ -174,6 +222,7 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 	if resp.Refused {
 		decision.Result = instrumentation.GateUnanswerable
 		decision.RefusalReason = "model declined to classify this question (category: " + resp.RefusalCategory + ")"
+		g.refineIfNeeded(ctx, resolved, decision)
 		return decision, nil
 	}
 
@@ -187,8 +236,209 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 	decision.ClarifyingOptions = parsed.ClarifyingOptions
 	decision.AssumptionStated = parsed.AssumptionStated
 	decision.RefusalReason = parsed.RefusalReason
+
+	g.refineIfNeeded(ctx, resolved, decision)
 	return decision, nil
 }
+
+// refineIfNeeded runs this gate's second pass (see package doc) for exactly
+// the two cases where a hard-to-word message actually reaches the user:
+// Ambiguous with a ClarifyingQuestion, and Unanswerable. It is a deliberate
+// no-op for Answerable (nothing to write) and for Ambiguous-with-an-
+// AssumptionStated (see Decision.Writer for why).
+//
+// This method can only overwrite decision's PROSE fields
+// (ClarifyingQuestion/ClarifyingOptions/RefusalReason) — it never touches
+// decision.Result. A transport/parse failure in the writing pass is logged
+// and swallowed, never surfaced as a Classify error: Haiku's own draft
+// message is always a valid fallback, so a broken quality upgrade must
+// degrade into "the question still gets answered/refused with the earlier
+// wording", never into "the whole request fails" (the same degrade-not-fail
+// discipline internal/httpapi's answer cache already applies).
+func (g *Gate) refineIfNeeded(ctx context.Context, resolvedQuestion string, decision *Decision) {
+	var draftText string
+	switch {
+	case decision.Result == instrumentation.GateAmbiguous && decision.ClarifyingQuestion != "":
+		draftText = decision.ClarifyingQuestion
+	case decision.Result == instrumentation.GateUnanswerable:
+		draftText = decision.RefusalReason
+	default:
+		return
+	}
+
+	writer, call, err := g.writeBetterText(ctx, resolvedQuestion, decision.Result, draftText, decision.ClarifyingOptions)
+	// A real API call may have actually run (and been billed) even when err
+	// is non-nil below — e.g. the response came back but wasn't parseable
+	// JSON. That cost is still real and must still be logged/reported, so
+	// call is attached to decision independently of err.
+	if call != nil {
+		decision.Writer = call
+	}
+	if err != nil {
+		log.Printf("ambiguity: Sonnet writing pass failed, falling back to Haiku's draft text (result=%s): %v", decision.Result, err)
+		return
+	}
+	if writer == nil {
+		// Sonnet declined to write (a model safety refusal) — Haiku's draft
+		// still stands. The attempt is still a real, billed interaction
+		// (decision.Writer was set above from call), it just produced no
+		// usable replacement text.
+		return
+	}
+
+	switch decision.Result {
+	case instrumentation.GateAmbiguous:
+		if writer.ClarifyingQuestion != "" {
+			decision.ClarifyingQuestion = writer.ClarifyingQuestion
+		}
+		if len(writer.ClarifyingOptions) > 0 {
+			decision.ClarifyingOptions = writer.ClarifyingOptions
+		}
+	case instrumentation.GateUnanswerable:
+		if writer.Reason != "" {
+			decision.RefusalReason = writer.Reason
+		}
+	}
+}
+
+// writerResponse is the fixed JSON shape the Sonnet writing pass must reply
+// with. It deliberately has NO "classification" field — unlike
+// gateResponse, whose whole job is to report one. Even if a writing-pass
+// reply somehow smuggled in an extra "classification" key, encoding/json
+// silently ignores unknown fields on Unmarshal, and nothing in
+// refineIfNeeded ever reads decision.Result from a writerResponse. This is
+// the structural half of "Sonnet cannot override Haiku's classification";
+// writerSystemPrompt's instructions are the other half.
+type writerResponse struct {
+	ClarifyingQuestion string   `json:"clarifying_question"`
+	ClarifyingOptions  []string `json:"clarifying_options"`
+	Reason             string   `json:"reason"`
+}
+
+// MaxWriterOutputTokens bounds the writing pass's reply — one rewritten
+// clarifying question (plus a short options list) or one rewritten refusal
+// reason, never open-ended prose.
+const MaxWriterOutputTokens = 512
+
+// writeBetterText asks Claude Sonnet 5 to rewrite ONE already-decided
+// clarifying-question or refusal-reason into a more specific, more helpful
+// version, given the original question and Haiku's own draft.
+//
+// Return shape is deliberately three-way, not (result, error):
+//   - (writer, call, nil): the call succeeded and produced usable text.
+//   - (nil, call, nil): the call succeeded but Sonnet issued a safety
+//     refusal — a real, billed interaction that produced no usable text.
+//   - (nil, nil, err): a transport failure, or a parse failure severe
+//     enough that no usage was ever attached (see below) — the caller
+//     falls back to Haiku's draft without billing anything for this call.
+//   - (nil, call, err): the API call itself succeeded (and billed real
+//     tokens, captured in call) but the reply wasn't parseable JSON — the
+//     caller must still log call's real cost even though there is no
+//     writer text to apply.
+func (g *Gate) writeBetterText(ctx context.Context, resolvedQuestion string, result instrumentation.GateResult, draftText string, draftOptions []string) (*writerResponse, *WriterCall, error) {
+	prompt := buildWriterPrompt(resolvedQuestion, result, draftText, draftOptions)
+
+	resp, err := g.client.CreateMessage(ctx, llmclient.MessageRequest{
+		Model:     llmclient.ModelExplanation,
+		System:    writerSystemPrompt,
+		MaxTokens: MaxWriterOutputTokens,
+		Messages: []anthropic.MessageParam{
+			anthropic.NewUserMessage(anthropic.NewTextBlock(prompt)),
+		},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("writing pass: %w", err)
+	}
+
+	cost, err := resp.EstimatedCostUSD(llmclient.ModelExplanation)
+	if err != nil {
+		return nil, nil, fmt.Errorf("writing pass: %w", err)
+	}
+	call := &WriterCall{
+		ModelUsed:        llmclient.ModelExplanation,
+		InputTokens:      resp.InputTokens,
+		OutputTokens:     resp.OutputTokens,
+		EstimatedCostUSD: cost,
+		LatencyMs:        resp.Latency.Milliseconds(),
+	}
+
+	if resp.Refused {
+		return nil, call, nil
+	}
+
+	writer, err := parseWriterResponse(resp.Text)
+	if err != nil {
+		return nil, call, fmt.Errorf("writing pass: %w", err)
+	}
+	return writer, call, nil
+}
+
+// parseWriterResponse is the pure, model-independent half of writeBetterText
+// (mirrors parseGateResponse) — given the raw text a writing-pass call
+// produced, extract and validate the fixed JSON shape writerSystemPrompt
+// requires.
+func parseWriterResponse(text string) (*writerResponse, error) {
+	raw := extractJSONObject(text)
+	if raw == "" {
+		return nil, fmt.Errorf("writing pass response did not contain a JSON object: %q", text)
+	}
+
+	var wr writerResponse
+	if err := json.Unmarshal([]byte(raw), &wr); err != nil {
+		return nil, fmt.Errorf("writing pass response is not valid JSON: %w (raw: %q)", err, raw)
+	}
+
+	wr.ClarifyingQuestion = strings.TrimSpace(wr.ClarifyingQuestion)
+	wr.Reason = strings.TrimSpace(wr.Reason)
+	wr.ClarifyingOptions = cleanOptions(wr.ClarifyingOptions)
+	return &wr, nil
+}
+
+// buildWriterPrompt renders the original question plus Haiku's own
+// classification and draft into the single user message the writing pass
+// sees. Deliberately narrow, the same discipline ComposeFollowUp documents:
+// this pass gets exactly the facts it needs to rewrite one message, not a
+// transcript or the full classification system prompt.
+func buildWriterPrompt(resolvedQuestion string, result instrumentation.GateResult, draftText string, draftOptions []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "User's question: %q\n\n", resolvedQuestion)
+
+	switch result {
+	case instrumentation.GateAmbiguous:
+		fmt.Fprintf(&b, "Classification (already decided — do not change it, and there is nowhere in your reply to state one): ambiguous, needs a clarifying question.\nDraft clarifying question: %q\n", draftText)
+		if len(draftOptions) > 0 {
+			b.WriteString("Draft reply options:\n")
+			for _, opt := range draftOptions {
+				fmt.Fprintf(&b, "- %q\n", opt)
+			}
+		} else {
+			b.WriteString("Draft reply options: (none given)\n")
+		}
+	case instrumentation.GateUnanswerable:
+		fmt.Fprintf(&b, "Classification (already decided — do not change it, and there is nowhere in your reply to state one): unanswerable, must be refused.\nDraft refusal reason: %q\n", draftText)
+	}
+
+	b.WriteString("\nRewrite the draft above into the best possible version for this outcome, per your system instructions.")
+	return b.String()
+}
+
+// writerSystemPrompt is the second pass's system prompt. Unlike
+// systemPromptTemplate, it never lists what data this product has and never
+// asks the model to classify anything — see writerResponse and package doc
+// for why that's a structural guarantee, not just a phrasing choice.
+const writerSystemPrompt = `You are the writing pass for a restaurant margin-reconciliation copilot's question-answering gate. A separate, already-completed step has classified a user's question as either "ambiguous" (it needs a clarifying question) or "unanswerable" (it must be refused), and drafted a first-pass message for that outcome. Your ONLY job is to rewrite that message to be clearer, more specific, and more genuinely helpful to the restaurant owner reading it — using only the facts already given to you below. You do not classify anything, and you cannot change the outcome that was already decided; there is nowhere in your reply to even state one.
+
+Rules:
+- Never contradict, second-guess, or hedge about the classification given to you — treat it as settled fact.
+- Never invent a new fact (a date, a platform, a number) that was not already present in the question or the draft you were given.
+- For a clarifying question: keep it to ONE specific question. If draft reply options were given, write 2-3 short, concrete reply phrasings (each a complete answer the user could send as-is) — improve their wording if they were vague, but keep the same number of distinct choices they represent.
+- For a refusal reason: state plainly and specifically what is missing or out of range, in one or two sentences — no hedging, no apology padding, no suggestion the answer might exist somewhere else.
+- Keep the tone direct and plain-language, the way a competent colleague would explain it — not corporate, not verbose.
+
+Reply with ONLY a single JSON object, no other text, no markdown fence, in exactly this shape:
+{"clarifying_question": "...", "clarifying_options": ["...", "..."], "reason": "..."}
+
+Leave whichever fields don't apply to the case you were given as empty strings ("")/[] — do not fill in the field for the outcome you were NOT given.`
 
 // ComposeFollowUp renders a question plus its pending-clarification context
 // into the single self-contained prompt the gate classifies.
