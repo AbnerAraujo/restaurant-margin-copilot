@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -149,14 +150,25 @@ func main() {
 	}
 }
 
-// withDevCORS allows the Vite dev server (a different origin/port from this
-// API) to call it directly from the browser. This is a local-prototype
-// convenience, not a production CORS policy — it allows exactly the one
-// known frontend dev origin rather than "*", but a real deployment would
-// derive this from configuration instead of a hard-coded localhost port.
+// withDevCORS allows the frontend (a different origin/port from this API) to
+// call it directly from the browser. This is a local-prototype convenience,
+// not a production CORS policy — it reflects back any localhost origin
+// rather than "*", but a real deployment would derive this from
+// configuration instead of a hard-coded allowlist rule.
+//
+// A single hard-coded port (originally just the Vite dev server's 5173) is
+// exactly wrong once the frontend can run from more than one: the installed
+// PWA build (`vite preview`, port 4173) failed every fetch with a real CORS
+// error in this browser's console the moment it was installed, because the
+// server only ever answered with the one port baked in. Reflecting any
+// http(s)://localhost:<port> origin fixes that without opening this up to
+// non-local origins the way "*" would.
 func withDevCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		if origin := r.Header.Get("Origin"); isLocalhostOrigin(origin) {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
@@ -165,6 +177,17 @@ func withDevCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// isLocalhostOrigin reports whether origin is an http(s) origin on
+// localhost or 127.0.0.1, at any port — deliberately not a bare substring
+// check (which "http://localhost:5173.evil.example" would slip past).
+func isLocalhostOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return false
+	}
+	return u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
 }
 
 // buildAskDeps wires httpapi.HandleAsk's dependencies: internal/llmclient's
