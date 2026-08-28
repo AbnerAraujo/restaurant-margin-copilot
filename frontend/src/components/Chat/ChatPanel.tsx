@@ -816,6 +816,23 @@ export default function ChatPanel({
     scrollToBottom()
   }, [messages.length, isPending, isPinnedToBottom, scrollToBottom])
 
+  // A second, separate re-pin keyed on the composer's own measured height —
+  // NOT covered by the content-resize observer below. That observer's
+  // default box option is content-box, which by definition excludes
+  // padding, so growing the list's padding-bottom (this component's own
+  // fix for the composer overlapping the last message) never fires it: the
+  // composer growing taller — the suggestions panel opening, on a short
+  // viewport — moved its own top edge up over the last message with
+  // nothing re-syncing scrollTop to the new, larger scrollHeight. Measured
+  // live: padding-bottom was already correctly 376px, but a 231px overlap
+  // persisted indefinitely without this. `useLayoutEffect` again, so the
+  // resync happens in the same commit as the padding change, not a visible
+  // frame later.
+  React.useLayoutEffect(() => {
+    if (!isPinnedToBottom) return
+    scrollToBottom()
+  }, [composerHeight, isPinnedToBottom, scrollToBottom])
+
   // Re-pin whenever the CONTENT grows, not just when a message is appended.
   // An answer carrying a chart is measurably taller after its SVG lays out
   // than at the moment the message was added, so the one-shot scroll above
