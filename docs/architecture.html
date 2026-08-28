@@ -1056,7 +1056,7 @@
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation and GET /api/promotions; and GET /api/badges. Third layer: a single PostgreSQL database holding five tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache and answer_cache_hit. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
+        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, the Platforms page, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation, GET /api/promotions and GET /api/platforms; and GET /api/badges. Third layer: a single PostgreSQL database holding six tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache, answer_cache_hit and usage_event. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
           <defs>
             <marker id="aArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1070,9 +1070,9 @@
           <text x="64" y="138" font-size="11.5" fill="var(--muted)">Answer, chart, provenance, running cost.</text>
 
           <rect x="450" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
-          <text x="474" y="96" font-size="13.5" font-weight="600" fill="currentColor">Close &middot; Promotions</text>
-          <text x="474" y="120" font-size="11.5" fill="var(--muted)">Charts of the reconciled days and</text>
-          <text x="474" y="138" font-size="11.5" fill="var(--muted)">campaign ROI. No chat, no model.</text>
+          <text x="474" y="96" font-size="13.5" font-weight="600" fill="currentColor">Close &middot; Promotions &middot; Platforms</text>
+          <text x="474" y="120" font-size="11.5" fill="var(--muted)">Charts of reconciled days, campaign ROI,</text>
+          <text x="474" y="138" font-size="11.5" fill="var(--muted)">and platform economics. No chat, no model.</text>
 
           <rect x="860" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
           <text x="884" y="96" font-size="13.5" font-weight="600" fill="currentColor">Home</text>
@@ -1091,10 +1091,10 @@
           <text x="64" y="290" font-size="11" fill="var(--prob)">Detailed below.</text>
 
           <rect x="450" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
-          <text x="474" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/reconciliation</text>
-          <text x="474" y="248" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/promotions</text>
-          <text x="474" y="272" font-size="11.5" fill="currentColor">No model. Returns internal/mcptools&rsquo; own</text>
-          <text x="474" y="290" font-size="11.5" fill="currentColor">result shapes &mdash; one rendering, so nothing drifts.</text>
+          <text x="474" y="222" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/reconciliation</text>
+          <text x="474" y="240" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/promotions &middot; /api/platforms</text>
+          <text x="474" y="266" font-size="11" fill="currentColor">No model. Returns internal/mcptools&rsquo; own</text>
+          <text x="474" y="283" font-size="11" fill="currentColor">result shapes &mdash; one rendering, so nothing drifts.</text>
 
           <rect x="860" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="884" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/badges</text>
@@ -1110,16 +1110,18 @@
           <rect x="40" y="396" width="1200" height="128" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
           <line x1="40" y1="414" x2="1240" y2="414" stroke="var(--det)" stroke-width="1"/>
           <text x="64" y="438" font-size="13.5" font-weight="600" fill="currentColor">PostgreSQL 16 &mdash; the single source of truth for all three surfaces</text>
-          <text x="64" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">daily_reconciliation</text>
-          <text x="64" y="484" font-size="10.5" fill="var(--muted)">one row per day</text>
-          <text x="290" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">promotion_roi_record</text>
-          <text x="290" y="484" font-size="10.5" fill="var(--muted)">one row per campaign period</text>
-          <text x="560" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">question_interaction</text>
-          <text x="560" y="484" font-size="10.5" fill="var(--muted)">one row per real model call</text>
-          <text x="810" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">answer_cache</text>
-          <text x="810" y="484" font-size="10.5" fill="var(--muted)">exact-match question &rarr; response</text>
-          <text x="1050" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">answer_cache_hit</text>
-          <text x="1050" y="484" font-size="10.5" fill="var(--muted)">cost avoided, kept separate</text>
+          <text x="64" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">daily_reconciliation</text>
+          <text x="64" y="484" font-size="10" fill="var(--muted)">one row per day</text>
+          <text x="253" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">promotion_roi_record</text>
+          <text x="253" y="484" font-size="10" fill="var(--muted)">one row per campaign period</text>
+          <text x="442" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">question_interaction</text>
+          <text x="442" y="484" font-size="10" fill="var(--muted)">one row per real model call</text>
+          <text x="631" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache</text>
+          <text x="631" y="484" font-size="10" fill="var(--muted)">exact-match question &rarr; response</text>
+          <text x="820" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache_hit</text>
+          <text x="820" y="484" font-size="10" fill="var(--muted)">cost avoided, kept separate</text>
+          <text x="1009" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">usage_event</text>
+          <text x="1009" y="484" font-size="10" fill="var(--muted)">one row per distinct day used</text>
           <text x="64" y="508" font-size="11" fill="var(--muted)">One container: margin-copilot-postgres. One database. One volume. No replica, no failover &mdash; see the honesty note below.</text>
 
           <line x1="640" y1="600" x2="640" y2="528" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
@@ -1132,13 +1134,13 @@
           <text x="464" y="688" font-size="11.5" fill="currentColor">CLI &mdash; there is no scheduler in this build.</text>
         </svg>
         </div>
-        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code> and <code>GET /api/promotions</code> deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day cannot drift apart, because there is only one of them.</figcaption>
+        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code>, <code>GET /api/promotions</code> and <code>GET /api/platforms</code> deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day (or the same platform) cannot drift apart, because there is only one of them.</figcaption>
       </figure>
     </section>
 
     <section>
       <h2>Inside <code>POST /api/ask</code></h2>
-      <p class="prose">Five steps, of which two are model calls and three are plain Go. The deterministic and probabilistic steps alternate &mdash; which is why the boundary in this system is not a line on a map but a rule about what each step is permitted to do.</p>
+      <p class="prose">Five named steps. The gate and Explain are always-model steps; the MCP tool layer and chart-type decision are always plain Go. The Answer cache step is mostly plain Go too &mdash; a free exact-text lookup on every call &mdash; but conditionally makes one small, real, billed Haiku call of its own on a miss, to check for a paraphrase before falling through to the gate. That call is disclosed the same way every other model call is: logged, costed, and never presented as free. The boundary in this system is not a line on a map but a rule about what each step is permitted to do.</p>
 
       <figure>
         <div class="figscroll">
@@ -1156,7 +1158,7 @@
           <rect x="230" y="56" width="1045" height="74" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
           <line x1="230" y1="72" x2="1275" y2="72" stroke="var(--det)" stroke-width="1"/>
           <text x="254" y="94" font-size="13" font-weight="600" fill="currentColor">PostgreSQL &mdash; the one store behind every box below</text>
-          <text x="254" y="116" font-family="var(--font-mono)" font-size="11" fill="var(--muted)">answer_cache &#183; answer_cache_hit &#183; daily_reconciliation &#183; promotion_roi_record &#183; question_interaction</text>
+          <text x="254" y="116" font-family="var(--font-mono)" font-size="10.5" fill="var(--muted)">answer_cache &#183; answer_cache_hit &#183; paraphrase_match &#183; daily_reconciliation &#183; promotion_roi_record &#183; question_interaction &#183; usage_event</text>
 
           <line x1="320" y1="248" x2="320" y2="134" stroke="var(--det)" stroke-width="1.5" marker-start="url(#bDet)" marker-end="url(#bDet)"/>
           <text x="334" y="196" font-size="11" fill="var(--det)">reads + writes answer_cache</text>
@@ -1173,9 +1175,10 @@
           <text x="125" y="324" text-anchor="middle" font-size="11" fill="var(--muted)">receives</text>
 
           <rect x="230" y="250" width="180" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
-          <text x="320" y="284" text-anchor="middle" font-size="13" fill="currentColor">Answer cache</text>
-          <text x="320" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">exact match on the</text>
-          <text x="320" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">normalized question</text>
+          <text x="320" y="278" text-anchor="middle" font-size="13" fill="currentColor">Answer cache</text>
+          <text x="320" y="296" text-anchor="middle" font-size="10.5" fill="var(--muted)">exact match, then a bounded</text>
+          <text x="320" y="311" text-anchor="middle" font-size="10.5" fill="var(--muted)">Haiku paraphrase check</text>
+          <text x="320" y="326" text-anchor="middle" font-size="10.5" fill="var(--muted)">(verified, never trusted alone)</text>
 
           <polygon points="560,250 660,295 560,340 460,295" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
           <text x="560" y="291" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
@@ -1183,7 +1186,7 @@
 
           <rect x="705" y="250" width="170" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="790" y="284" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">five typed Go tools,</text>
+          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">six typed Go tools,</text>
           <text x="790" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">5s timeout, 8-call cap</text>
 
           <rect x="915" y="250" width="160" height="90" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
@@ -1226,7 +1229,7 @@
           <text x="620" y="512" font-size="11" fill="var(--det)">answer + chart + provenance</text>
         </svg>
         </div>
-        <figcaption>Two deterministic steps bracket the model layer: an exact-match cache in front of it, so a repeated question makes no API call at all, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Haiku call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat.</figcaption>
+        <figcaption>Two deterministic steps bracket the model layer: a cache in front of it, so a repeated <em>or paraphrased</em> question spends little to nothing, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Haiku call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat. The paraphrase check inside the cache box is itself a small, real, billed Haiku call &mdash; disclosed as spend, never presented as free.</figcaption>
       </figure>
 
       <div class="legend">
@@ -1312,6 +1315,7 @@
             <tr><td class="mono">get_margin_delta</td><td>Bar, two marks</td><td>Period A vs period B. The delta is deliberately <em>not</em> a third bar &mdash; it is a different measure, and putting a difference on the same axis as the magnitudes it came from double-counts the same money visually. It becomes the subtitle.</td></tr>
             <tr><td class="mono">get_promotion_roi<br>list_negative_roi_promotions</td><td>Bar, or table for one</td><td>2+ campaigns is a magnitude comparison across named categories. A single campaign becomes a table: the content is its several columns of detail, and a one-bar bar chart is an anti-pattern.</td></tr>
             <tr><td class="mono">get_daily_summary</td><td>Nothing / bar / pie</td><td>Nothing for a single day &mdash; the sentence already carries the figure. 2+ days becomes a bar of margin per day. One day splitting across 3&ndash;6 sources becomes a pie of gross sales by source, the one genuine part-to-whole here. A two-slice pie is never produced.</td></tr>
+            <tr><td class="mono">compare_platform_economics</td><td>Bar, four marks</td><td>Two platforms &times; two cost views (commission-only, commission&thinsp;+&thinsp;promo) is a magnitude comparison across named categories, the same job as <code>get_margin_delta</code>. A platform's <code>effective_rate</code> is <code>null</code>, never a fabricated 0%, when it has zero sales &mdash; that platform still draws as a real, visible zero-height bar for gross sales, just not a rate.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1325,7 +1329,7 @@
           <h3>Hard limits</h3>
           <ul>
             <li>Refuses rather than estimates when data is missing or incomplete. A confidently wrong margin figure is worse than a refusal.</li>
-            <li>No open SQL, no free-form computation. Five defined, typed MCP tools, and nothing else.</li>
+            <li>No open SQL, no free-form computation. Six defined, typed MCP tools, and nothing else.</li>
             <li>5-second timeout on every tool call and a hard 8-call cap per interaction, enforced in mcp-go's own dispatch middleware &mdash; not something an individual handler has to remember. Exceeding either returns a typed error the model can see and self-correct from, rather than crashing or truncating the interaction.</li>
             <li>30-second bound on every model call.</li>
             <li>Chart selection is deterministic Go &mdash; never a second model call deciding how a financial figure is drawn.</li>
@@ -1387,8 +1391,8 @@
           <p style="font-size:14.5px;">Two model calls with two clearly different jobs is not a multi-agent system, and calling it one would be dressing up a pipeline. There is no orchestrator, no agent-to-agent messaging, and nothing that would benefit from either.</p>
         </div>
         <div class="card">
-          <h3>No semantic cache</h3>
-          <p style="font-size:14.5px;">Covered above: it would buy hit rate at the cost of putting a probabilistic step in front of a deterministic lookup. The limitation is disclosed in the API response itself, on every hit.</p>
+          <h3>No open-ended semantic search</h3>
+          <p style="font-size:14.5px;">A bounded exact-match cache with a Haiku-verified paraphrase layer now exists (<code>internal/paraphrase</code>) &mdash; it is not embeddings-based semantic search, on purpose: Anthropic has no first-party embeddings endpoint, and adding a second vendor for a cost optimization would reopen a single-vendor decision this constitution already made once. A false positive risk is real for any fuzzy match, so it is capped: 20 recent candidates, a verbatim-match requirement, and a live re-check before serving &mdash; a small, real, disclosed cost every time, never a free-seeming shortcut.</p>
         </div>
         <div class="card">
           <h3>No open query tool</h3>
@@ -1396,11 +1400,11 @@
         </div>
         <div class="card">
           <h3>No point redemption</h3>
-          <p style="font-size:14.5px;">The Steward Points balance is real &mdash; a deterministic function of closes already run, 10 per clean close, 25 per caught discrepancy. Spending them needs an integration with promotional tooling this build has no access to, so it ships as a stated direction rather than a button that does nothing.</p>
+          <p style="font-size:14.5px;">The Steward Points balance is real &mdash; a deterministic function of five badge codes now live (10 clean close, 25 caught discrepancy, 15 growth, 5 engagement, 30 campaign launcher). Spending them still needs an integration with promotional tooling this build has no access to, so redemption ships as a stated direction rather than a button that does nothing.</p>
         </div>
         <div class="card">
-          <h3>No badge categories beyond reconciliation</h3>
-          <p style="font-size:14.5px;">Growth, Engagement and Campaign-Creation categories are named in the product strategy as roadmap and are deliberately absent from the code, rather than present and inert.</p>
+          <h3>No cross-tenant support</h3>
+          <p style="font-size:14.5px;">One restaurant, one dataset, no auth, no account model &mdash; multi-tenancy (Segment 2) has a full spec and RFC (<code>specs/005-multi-tenant/</code>, <code>docs/rfc-multi-tenant.md</code>) but implementation is deliberately gated on human review: a tenant-isolation defect is a data-breach class of bug, not a UX one, and is not something to build under the same time pressure as everything else here.</p>
         </div>
       </div>
     </section>
