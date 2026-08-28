@@ -107,6 +107,76 @@ above, not against each other in the abstract:
 
 **Decision: build Product A.** This confirms, by structured comparison rather than momentum, that KR1–KR4 as already defined describe the right combined product — not a compromise between two half-measures.
 
+## Market sizing & launch strategy
+
+The total universe of potential users splits cleanly into two segments with
+completely different launch economics — this split, not a single global
+number, is the actually useful way to size this.
+
+### Segment 1 — Prosus customers (warm, already reachable)
+
+- **[Sourced]** Prosus states ToqanClaw is available to **5 million**
+  restaurants, merchants, and entrepreneurs across its ecosystem, launched
+  June 2026 (Prosus/Naspers newsroom, BusinessWire).
+- **[Sourced]** Within that, restaurants already transacting on Prosus-owned
+  delivery platforms specifically: **iFood ~350,000+ restaurants** (Brazil)
+  and **Just Eat Takeaway ~374,000 partnered restaurants** across its
+  markets (~100,000 in the UK alone) — roughly **724,000+ restaurants**
+  already on Prosus rails, a tighter and more credible number than the
+  looser 5M (which includes non-restaurant merchants).
+- **[Sourced]** Three named, real ToqanClaw restaurant case studies exist
+  already: **Lebkov & Sons** (Dutch café chain — financial reporting cut
+  from weeks to 30 minutes, 40% YoY revenue growth), **Burger & Frites**
+  (Rotterdam — +25% deliveries, -60% overtime, €21k/month saved), and
+  **Poke Perfect** (Dutch poke bowl chain — -70% routine staff queries).
+  These are stronger, more specific proof points than the single generic
+  citation used earlier in this document — worth leading with in the
+  presentation.
+- **[Simulated-as-Prosus]** How many of the 5M are *active* ToqanClaw users
+  today (vs. merely eligible) is not disclosed publicly — my research found
+  this gap explicitly. The three named case studies are all Netherlands/
+  Benelux businesses, which is a plausible (not confirmed) signal that early
+  traction is concentrated there — a reasonable first-launch cohort to
+  target, not a claimed fact.
+
+### Segment 2 — Non-Prosus customers (cold, no existing distribution)
+
+- **[Sourced]** ~749,000 U.S. restaurant locations (NAICS 722, National
+  Restaurant Association 2026) — a market almost entirely outside Prosus's
+  reach, since DoorDash and Uber Eats dominate U.S. delivery, not a Prosus
+  platform. Comparable cold markets exist wherever Prosus has no delivery
+  platform presence.
+- This segment requires an entirely different go-to-market motion (direct
+  sales, POS-vendor partnerships, or a standalone SaaS play) with its own
+  acquisition funnel and CAC — not a distribution extension of anything
+  Prosus already has.
+
+### Launch strategy this implies
+
+Launch into **Segment 1 only**, as an added capability inside the existing
+ToqanClaw surface restaurants already use — not a new product requiring new
+distribution. Segment 2 is explicitly **not** part of a near-term launch
+strategy; pursuing it would be a distinct, later decision requiring its own
+business case, named here rather than silently assumed.
+
+### How success is measured post-launch (distinct from KR1–KR4)
+
+KR1–KR4 above are what this take-home build proves *now*, inside the eval
+harness. The following is what would be measured *after* a real launch into
+Segment 1 — a different kind of metric, not to be conflated with the KRs:
+
+- **Attach rate**: % of active ToqanClaw restaurant users who adopt this
+  capability within a defined window post-rollout — the right metric
+  precisely because distribution already exists; the question is uptake,
+  not acquisition.
+- **Retention of the behavior this product is betting on**: % of adopters
+  still asking questions (not just having reconciled data sitting unused)
+  after 30/60/90 days — a direct, later-stage test of Hypothesis 3.
+- **Realized profitability lift**: for adopters, a measured change in the
+  North Star (time-to-reconciled-close) and, if Product A's growth lever is
+  used, negative-ROI promotion spend actually redirected — the real-world
+  version of KR2/KR3, with real users instead of fixture data.
+
 ## Vision
 
 Give every independent restaurant or bar owner a same-day, trustworthy answer to "did we make money today, and why" — without hiring a bookkeeper, opening three exports, or waiting for month-end to find out margin already slipped.
