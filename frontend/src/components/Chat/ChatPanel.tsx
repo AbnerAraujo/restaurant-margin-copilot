@@ -6,20 +6,15 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
+import ProvenanceTag, {
+  type SourceRowRef,
+} from '@/components/Provenance/ProvenanceTag'
 
 // ---------------------------------------------------------------------------
 // Types — shaped to line up with QuestionInteraction in data-model.md and the
 // answer/refusal contract in mcp-tools.md, so a real `resolveAnswer` can map
 // a backend response onto these fields with no reshaping.
 // ---------------------------------------------------------------------------
-
-/** A single number's source citation (file, rows, period) — FR-005. */
-export interface ProvenanceRef {
-  /** e.g. "POS export · rows 12–47 · Aug 21" */
-  label: string
-  /** Optional extra detail revealed when the citation is opened. */
-  detail?: string
-}
 
 export interface UserChatMessage {
   id: string
@@ -33,7 +28,14 @@ export interface AnswerChatMessage {
   role: 'assistant'
   kind: 'answer'
   text: string
-  provenance: ProvenanceRef[]
+  /**
+   * Points into the `DailyReconciliation` / `PromotionRoiRecord` rows this
+   * answer was narrated from (data-model.md `QuestionInteraction.provenance_refs`) —
+   * the same FR-005 shape `ProvenanceTag` renders everywhere else in the app,
+   * so a citation looks and behaves identically whether it's attached to a
+   * chat answer or a reconciliation summary figure.
+   */
+  provenance: SourceRowRef[]
   askedAt: string
 }
 
@@ -104,12 +106,18 @@ const SEED_MESSAGES: ChatMessage[] = [
     text: "Today's reconciled margin was $612.40 on $2,180.00 in gross sales, commissions and refunds already netted out. That's roughly in line with your trailing 7-day average.",
     provenance: [
       {
-        label: 'Daily reconciliation · Aug 27',
-        detail: 'Computed from 3 source files, 0 discrepancy flags',
+        source_file: 'daily_reconciliation.csv',
+        row_start: 27,
+        row_end: 27,
+        period_start: '2026-08-27',
+        period_end: '2026-08-27',
       },
       {
-        label: 'POS export · rows 1–42',
-        detail: '42 orders, Aug 27 00:00–23:59',
+        source_file: 'pos_export_2026-08-27.csv',
+        row_start: 1,
+        row_end: 42,
+        period_start: '2026-08-27',
+        period_end: '2026-08-27',
       },
     ],
     askedAt: '2026-08-27T09:14:04-03:00',
@@ -141,9 +149,11 @@ const SEED_MESSAGES: ChatMessage[] = [
     text: 'Sat–Sun margin was $1,340.80, up 4.1% from last weekend, mostly from lower refunds rather than higher sales.',
     provenance: [
       {
-        label: 'Daily reconciliation · Aug 22–23',
-        detail:
-          'Computed from 3 source files, 1 discrepancy caught (duplicate order netted out)',
+        source_file: 'daily_reconciliation.csv',
+        row_start: 22,
+        row_end: 23,
+        period_start: '2026-08-22',
+        period_end: '2026-08-23',
       },
     ],
     askedAt: '2026-08-27T09:15:33-03:00',
@@ -176,8 +186,13 @@ const UNKNOWN_SOURCE_PATTERN = /\b(uber eats|grubhub|sysco)\b/i
  * answer, clarifying question, refusal) are all reachable interactively —
  * never a model narrating an invented number, matching the deterministic
  * core the mock is standing in for.
+ *
+ * Exported so a page-level wiring component can reuse this exact routing
+ * (rather than re-implementing the same demo patterns) when it needs to
+ * observe which path fired — e.g. to log the matching cost interaction(s)
+ * per FR-009 without duplicating this logic.
  */
-async function mockResolveAnswer(
+export async function mockResolveAnswer(
   question: string,
 ): Promise<AssistantChatMessage> {
   await new Promise((resolve) => setTimeout(resolve, 450))
@@ -210,8 +225,20 @@ async function mockResolveAnswer(
     kind: 'answer',
     text: 'Margin for that period was $1,842.60, up 6.4% from the week before, driven mainly by lower refunds rather than higher sales.',
     provenance: [
-      { label: 'Daily reconciliation · Aug 18–24' },
-      { label: 'POS export · rows 118–166' },
+      {
+        source_file: 'daily_reconciliation.csv',
+        row_start: 18,
+        row_end: 24,
+        period_start: '2026-08-18',
+        period_end: '2026-08-24',
+      },
+      {
+        source_file: 'pos_export_2026-08-18.csv',
+        row_start: 118,
+        row_end: 166,
+        period_start: '2026-08-18',
+        period_end: '2026-08-24',
+      },
     ],
     askedAt: new Date().toISOString(),
   }
@@ -250,33 +277,6 @@ function ChatAvatar({
   )
 }
 
-/**
- * The exact citation affordance from design-tokens.md §2: a dotted-underline
- * button, never plain unlabeled text next to a number. Opens on click to
- * reveal its detail rather than navigating away, so the owner never loses
- * their place in the conversation.
- */
-function ProvenanceCitation({ label, detail }: ProvenanceRef) {
-  const [expanded, setExpanded] = React.useState(false)
-  const canExpand = Boolean(detail)
-
-  return (
-    <span className="inline-flex flex-col">
-      <button
-        type="button"
-        onClick={() => canExpand && setExpanded((value) => !value)}
-        aria-expanded={canExpand ? expanded : undefined}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground"
-      >
-        {label}
-      </button>
-      {expanded && detail ? (
-        <span className="mt-0.5 text-xs text-muted-foreground">{detail}</span>
-      ) : null}
-    </span>
-  )
-}
-
 function UserBubble({ message }: { message: UserChatMessage }) {
   return (
     <li className="flex items-start justify-end gap-2">
@@ -299,10 +299,8 @@ function AnswerBubble({ message }: { message: AnswerChatMessage }) {
           {message.text}
         </p>
         {message.provenance.length > 0 ? (
-          <div className="flex flex-wrap gap-x-3 gap-y-1 border-t border-border/60 pt-2">
-            {message.provenance.map((ref, index) => (
-              <ProvenanceCitation key={`${message.id}-ref-${index}`} {...ref} />
-            ))}
+          <div className="border-t border-border/60 pt-2">
+            <ProvenanceTag refs={message.provenance} />
           </div>
         ) : null}
       </div>

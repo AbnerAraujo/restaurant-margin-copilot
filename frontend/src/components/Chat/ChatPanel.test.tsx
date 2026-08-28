@@ -31,17 +31,17 @@ function deferred<T>() {
 }
 
 describe('ChatPanel', () => {
-  it('renders the seeded conversation with a grounded answer and its provenance citations', () => {
+  it('renders the seeded conversation with a grounded answer and its provenance citation', () => {
     render(<ChatPanel />)
 
     expect(
       screen.getByText(/today's reconciled margin was \$612\.40/i),
     ).toBeInTheDocument()
+    // Two source rows back this answer, so the shared ProvenanceTag trigger
+    // (FR-005 — the same component used everywhere else in the app) renders
+    // its "N sources" form rather than a single inline citation.
     expect(
-      screen.getByRole('button', { name: /daily reconciliation · aug 27/i }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByRole('button', { name: /pos export · rows 1–42/i }),
+      screen.getByRole('button', { name: '2 sources' }),
     ).toBeInTheDocument()
   })
 
@@ -97,25 +97,23 @@ describe('ChatPanel', () => {
     expect(refusalBanner?.className).not.toBe(clarificationBanner?.className)
   })
 
-  it('expands a provenance citation to reveal its detail on click, and hides it again', async () => {
+  it('expands a provenance citation to reveal its individual source rows, and hides it again', async () => {
     const user = userEvent.setup()
     render(<ChatPanel />)
 
-    const citation = screen.getByRole('button', {
-      name: /daily reconciliation · aug 27/i,
-    })
+    const citation = screen.getByRole('button', { name: '2 sources' })
     expect(
-      screen.queryByText(/computed from 3 source files, 0 discrepancy/i),
+      screen.queryByRole('group', { name: /source citations/i }),
     ).not.toBeInTheDocument()
 
     await user.click(citation)
-    expect(
-      screen.getByText(/computed from 3 source files, 0 discrepancy/i),
-    ).toBeInTheDocument()
+    const panel = screen.getByRole('group', { name: /source citations/i })
+    expect(panel).toHaveTextContent('pos_export_2026-08-27.csv')
+    expect(panel).toHaveTextContent('daily_reconciliation.csv')
 
     await user.click(citation)
     expect(
-      screen.queryByText(/computed from 3 source files, 0 discrepancy/i),
+      screen.queryByRole('group', { name: /source citations/i }),
     ).not.toBeInTheDocument()
   })
 
@@ -151,7 +149,15 @@ describe('ChatPanel', () => {
       role: 'assistant',
       kind: 'answer',
       text: 'Test-resolved margin answer.',
-      provenance: [{ label: 'Daily reconciliation · Aug 26' }],
+      provenance: [
+        {
+          source_file: 'daily_reconciliation.csv',
+          row_start: 26,
+          row_end: 26,
+          period_start: '2026-08-26',
+          period_end: '2026-08-26',
+        },
+      ],
       askedAt: '2026-08-27T10:00:00Z',
     })
 
