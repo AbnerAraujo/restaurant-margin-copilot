@@ -245,6 +245,30 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		}
 
 		if resp.StopReason != anthropic.StopReasonToolUse || len(toolUses) == 0 {
+			// A response cut off by the output-token cap is never a
+			// trustworthy final answer, whatever it says and whether or not
+			// a tool ran earlier in the loop: the model was stopped
+			// mid-thought, and there is no way to know whether the missing
+			// remainder would have corrected, qualified, or completed
+			// whatever text already exists. Caught live: "show me the day
+			// with the most profit and why" returned "I'll need to check
+			// each day's reconciliation... Let me pull all 14 days." as a
+			// served answer — a truncated planning sentence with zero tool
+			// calls, but not currency-shaped, so the check below never saw
+			// it. Same philosophy as the MaxTurns-exhaustion path further
+			// down: report inability plainly rather than return a partial
+			// narration, checked first and unconditionally rather than
+			// folded into the currency-specific heuristic.
+			if resp.StopReason == anthropic.StopReasonMaxTokens {
+				return &Result{
+					IncompleteReason: "the model's response was cut off by the output-token limit before it finished — refusing rather than returning a truncated narration",
+					ToolCallsMade:    budget.Used(),
+					ToolInvocations:  invocations,
+					InputTokens:      totalIn, OutputTokens: totalOut,
+					EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
+				}, nil
+			}
+
 			// A final narrated answer: Principle I is enforced upstream by
 			// what tools exist (no free-form computation tool) and by
 			// systemPrompt's instruction to never state a number that

@@ -333,6 +333,40 @@ func TestExplain_ZeroToolCallNonCurrencyAnswerStillAllowed(t *testing.T) {
 	require.Equal(t, answer, result.AnswerText)
 }
 
+// TestExplain_MaxTokensTruncationIsRefusedEvenWithoutCurrencyText reproduces
+// a real interaction caught live in question_interaction: "show me the day
+// with the most profit and why" was served as an answer consisting only of
+// "I'll need to check each day's reconciliation to find which one had the
+// highest margin. Let me pull all 14 days." — a planning sentence the model
+// never finished, cut off by hitting MaxAnswerTokens before it made a
+// single tool call. TestExplain_ZeroToolCallCurrencyAnswerIsRefused's guard
+// didn't catch it because the truncated text has no dollar amount in it.
+// StopReasonMaxTokens must be refused unconditionally, independent of the
+// currency heuristic.
+func TestExplain_MaxTokensTruncationIsRefusedEvenWithoutCurrencyText(t *testing.T) {
+	truncated := "I'll need to check each day's reconciliation to find which one had the highest margin. Let me pull all 14 days."
+	llm := &fakeLLM{
+		responses: []*llmclient.MessageResult{
+			{
+				Text:          truncated,
+				ContentBlocks: []anthropic.ContentBlockUnion{textBlock(t, truncated)},
+				StopReason:    anthropic.StopReasonMaxTokens,
+				InputTokens:   500,
+				OutputTokens:  1024,
+			},
+		},
+	}
+	e := newTestExplainer(llm, nil)
+
+	result, err := e.Explain(context.Background(), "show me the day with the most profit and why", "")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, result.IncompleteReason, "a max_tokens-truncated response must be refused, not served as an answer")
+	require.Empty(t, result.AnswerText)
+	require.Equal(t, int64(500), result.InputTokens)
+	require.Equal(t, int64(1024), result.OutputTokens)
+}
+
 // TestExplain_MidLoopFailurePreservesPartialUsage is Finding 1: turn 0
 // succeeds and makes one real (billed) tool call; turn 1's CreateMessage
 // call fails. Explain must still hand back turn 0's accumulated tokens/cost
