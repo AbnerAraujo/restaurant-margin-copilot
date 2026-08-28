@@ -567,6 +567,252 @@ standing rule, a fix that resolves the two named defects does not get
 credit for problems it didn't touch, and a harness that came back "clean"
 across the board would have been the less trustworthy result to report.
 
+## Fourth fix: the false-clarify on evaluative language (A10), plus two research-motivated hardening changes
+
+**[Measured]** — this fix targets **A10** specifically (the one named,
+persistent gap called out three times above: "asks the user to define
+'underperforming' instead of calling `list_negative_roi_promotions`"), plus
+two changes made proactively rather than reactively, grounded in published
+LLM-behavior research rather than a locally observed failure:
+
+1. **Knowing but Not Showing: LLMs Recognize Ambiguity but Rarely Ask
+   Clarifying Questions** (arXiv 2605.25284) motivates the CONVERSE failure
+   this fix targets: models often detect ambiguity internally but default to
+   answering anyway unless explicitly prompted to surface it. A10 is that
+   failure running backwards — the gate asked a clarifying question about a
+   term (`underperforming`) that a typed tool already defines deterministically,
+   when it should have classified the question answerable and let
+   `list_negative_roi_promotions` resolve it. Both directions of this failure
+   are Principle II violations (an unnecessary clarify degrades the product
+   exactly as a false answer would, just less dangerously), so both needed a
+   named, deliberate fix rather than tuning only in the direction the
+   evaluator's rubric happens to reward.
+2. **Intent Mismatch Causes LLMs to Get Lost in Multi-Turn Conversation**
+   (arXiv 2602.07338) motivates an anti-drift instruction added to the gate's
+   follow-up-reply handling — cheap insurance today (this product's follow-up
+   context is already a narrow typed pair, `PendingClarification`, not a free
+   transcript) that becomes load-bearing if that handling is ever extended to
+   carry more context.
+3. A third change, not from either paper but from this project's own
+   `explain` tool-calling loop design: an explicit instruction against
+   iterating per-day tool calls to assemble a combined figure the tool set
+   doesn't compute directly — the same failure mode as the already-documented
+   **A4** gap (no tool sums a supplier-cost range) but stated as a rule rather
+   than left to be rediscovered per question, and directly pre-empting a
+   documented near-miss where a "which day had the most profit" question
+   burned through the turn/tool-call budget calling `get_daily_summary`
+   fourteen times before this session's `get_period_totals` tool (added
+   concurrently by another agent) existed to answer it directly.
+
+**What was actually changed** (both files stay within Constitution Principle
+III's typed/bounded discipline — no change here makes the system more
+willing to guess at an ungrounded number; see the regression investigation
+below for evidence refusal correctness held or improved):
+
+- `backend/internal/ambiguity/gate.go`'s `systemPromptTemplate` gained a new
+  "Evaluative language" section:
+
+  > Evaluative language — read this before classifying a question that uses
+  > a subjective-sounding word ("underperforming", "losing money", "bad",
+  > "worst", "best", "worth it"):
+  > - This product's tool set already defines several of these words
+  >   deterministically — "underperforming" or "losing money" promotions
+  >   means a computed negative ROI, and a typed tool exists specifically to
+  >   return that list. A question is not ambiguous merely because it uses an
+  >   evaluative word that this product's tool set already resolves to a
+  >   fixed computation.
+  > - Classify a question like this as "answerable" and let the downstream
+  >   explanation step call the matching tool to resolve it. Do not ask the
+  >   user to define a threshold, cutoff, or ranking method that a typed tool
+  >   already defines for them — that is exactly the false-clarify failure
+  >   this rule exists to prevent.
+
+  and the "Follow-up replies" section gained one closing anti-drift line:
+
+  > Classify the resolved question fresh, on its own terms — never silently
+  > carry forward an interpretation, assumption, or unstated context from any
+  > earlier exchange beyond the exact follow-up pair you are given here. This
+  > pair is the entire conversational history you get, deliberately (see
+  > this package's doc comment on `PendingClarification`); treat it as such
+  > rather than reasoning as if a longer transcript existed behind it.
+
+- `backend/internal/explain/explain.go`'s `systemPromptTemplate` gained a
+  compact tool-routing paragraph naming the exact mapping (checked against
+  the real registered tool names in `backend/internal/mcptools/` rather than
+  guessed):
+
+  > Tool routing for subjective-sounding language: this product's tool set
+  > already defines several evaluative words deterministically — call the
+  > matching tool directly rather than asking the user what the word means or
+  > what threshold to use:
+  > - "underperforming", "losing money", "worst promotions" →
+  >   `list_negative_roi_promotions` (a computed-negative-ROI list, not
+  >   something to define ad hoc).
+  > - "best/worst day", "period totals", "averages" → `get_period_totals`
+  >   (it ranks every day by margin and totals the period in one call — never
+  >   assemble this yourself from repeated `get_daily_summary` calls; see the
+  >   next rule).
+  > An upstream ambiguity check already lets exactly these questions through
+  > as answerable for this same reason — never second-guess that by asking
+  > the user to define the term yourself here.
+
+  and the existing "never do arithmetic across tool calls" rule gained one
+  closing sentence: "If no single tool computes the combined figure you need,
+  say plainly that this isn't something the product can compute yet — do NOT
+  call the same tool repeatedly per day (or per period) to assemble an
+  aggregate yourself; that burns the turn/tool-call budget trying to simulate
+  a tool that doesn't exist, and the result would be exactly the
+  arithmetic-across-tool-calls this rule forbids."
+
+**A10, confirmed live.** *"Which campaigns should be flagged as
+underperforming?"* — before this fix: `clarification_needed`, asking the
+user "What counts as 'underperforming' — a specific ROI cutoff, or ranking
+campaigns against each other?" After: `status: "answered"`, calling
+`list_negative_roi_promotions` directly and naming **JET-CAMP-LUNCHFIX**
+(ROI −$165.00) with real provenance (`data/live/promotion_ad_spend_export.csv:3`
++ two delivery-export rows). Verified against the live backend directly (not
+just re-read from the prompt), and confirmed passing in the promptfoo suite
+under both a concurrent (4-way) and a sequential (1-way) re-run — see
+methodology note below for why both were run.
+
+**Methodology note: the exact-match/paraphrase answer cache forced a
+sandboxed before/after comparison.** `backend/internal/answercache` is a
+*permanent*, Postgres-backed cache (see that package's own doc comment:
+"Invalidation... every ingestion run clears the whole cache before it writes"
+— there is no TTL and no per-request bypass). The first "before" run of the
+identical 35-question suite against the live, shared backend (`localhost:8092`,
+the project's real `margin-copilot-postgres` database) populated that cache
+with all 35 questions' pre-fix answers. Re-running the identical suite
+against that same database after editing the prompts would therefore have
+silently replayed the *stale, pre-fix* cached answers for nearly every
+question — including A10 — making the "after" numbers meaningless without
+first clearing the cache. Clearing it (a direct `DELETE FROM answer_cache`,
+and the officially-supported cache-clearing path of re-running `-ingest`)
+was denied by the harness's own permission system as a mutation against a
+database another concurrently-running agent might depend on — a reasonable
+protection this work did not attempt to work around. The resolution: a new,
+fully isolated Postgres container (`margin-copilot-eval-pg`, a different
+port, migrated with the project's own `migrations/` and seeded via the
+project's own `-ingest`/`-ingest-promo` flags against the identical
+`data/live` fixtures) was stood up so the "after" run started from a
+genuinely empty cache without touching the shared database or any concurrent
+agent's state at all. This is disclosed here as a real constraint this
+verification worked around, not a shortcut taken silently.
+
+A second methodology finding, itself worth naming: the first isolated-DB
+"after" run (`-j 4`, matching the "before" run's concurrency) showed a
+false regression on the C4 consistency set (all 3 phrasings of "iFood's
+delivery revenue on August 2nd" started returning a confused, off-topic
+answer about refund netting). Tracing it through the raw JSON found the
+literal root cause: `specs/004-semantic-cache`'s paraphrase matcher (a
+bounded Haiku classification call checked only on an exact-match cache miss,
+`backend/internal/paraphrase`, out of this fix's scope and not modified)
+wrongly matched C4's question against a *different*, concurrently-running
+question in the same batch (A15's "delivery revenue net of the refund")
+purely because both landed on the same calendar date. This is a real,
+pre-existing, already-disclosed limitation of that separate package (its own
+doc comment: "a cache that sometimes decides two differently-worded
+questions 'mean the same thing' can also decide that wrongly") surfacing
+under concurrency, not something this fix's prompt changes caused — confirmed
+by re-running the exact same question 3 times with the cache manually
+cleared between each call, which reproduced the correct $72.50 answer every
+time. A second, sequential (`-j 1`) re-run of the full suite eliminates this
+concurrency-only artifact entirely and is the number reported below as the
+trustworthy "after" figure.
+
+| Metric | Before (shared DB, `-j 4`) | After (isolated DB, `-j 1`, clean) | Change |
+|---|---|---|---|
+| Accuracy | 11/15 (73%) — A4, A7, A10, A15 failing | **13/15 (87%)** — only A7, A15 failing | **+2** (A4, A10 both fixed) |
+| Refusal correctness | 4/5 — R1 failing | **5/5 (100%)** | **+1** |
+| Consistency (sets promptfoo-strict fully-passing) | 3/5 (C1, C3, C4) | 2/5 (C1, C3) | C2 and C5's failures are the same disclosed regex-strictness false-negative already named earlier in this document (a legitimate "$0.00 — no data" answer tripping an overly broad "no `$0.00`" guard) and a single paraphrase-matcher misfire (C4b) unrelated to this fix's prompt changes — not a new semantic defect; see investigation below |
+
+**A7 and A15 — confirmed unchanged, not silently dropped.** Both persist
+exactly as previously documented: A7 fails promptfoo's regex purely because
+the model's correct, positive-ROI answer contains the word "flagged" ("Not
+flagged as negative ROI") in a sentence *disclaiming* the flag; A15 fails
+because the model still correctly declines to state a refund-netted,
+platform-specific figure the data doesn't support attributing (the same gap
+named when A15 was first found). Neither is in this fix's scope (A15 is a
+tool-contract gap; A7 is a promptfoo grading artifact), and neither
+regressed or improved — named here so the accuracy delta isn't misread as
+resolving problems it didn't touch.
+
+**Investigating the consistency-axis regression before finalizing (Constitution
+Principle II discipline applied to this document, not just the product).**
+Two failure clusters newly appeared in the first isolated-DB run and needed
+tracing before this fix could be called clean:
+- **A5/A6/A14** ("iFood's/Just Eat Takeaway's share...") flipped between
+  answering directly and asking what "share" means (percentage vs. dollar
+  amount vs. commission) across repeated fresh calls. Re-running the *same*
+  question against the **reverted** (pre-fix) prompt reproduced the identical
+  flip-flopping (1 of 2 runs asked for clarification; the other answered,
+  once even with a `£` instead of `$` — the same currency-symbol bug already
+  named under A6 in the original report). This confirms the "share" ambiguity
+  is pre-existing model variance around that one word, not something this
+  fix's tool-routing or arithmetic-rule additions caused.
+- **C4b** ("How much did iFood bring in on the 2nd?") is the single
+  paraphrase-matcher misfire described above — traced to a different
+  question's cached content by exact cost/timestamp match in the raw JSON,
+  not a fresh, wrongly-reasoned answer.
+
+No genuine regression traceable to either prompt change was found. Both
+`internal/ambiguity` and `internal/explain`'s full existing test suites
+(including the live-API smoke tests, `TestGate_Classify_LiveSmokeTest`,
+`TestGate_Classify_DateGroundingRegression`, `TestExplain_LiveSmokeTest`)
+pass unchanged with the new prompt text.
+
+**Cost.** The "before" 35-question suite run, measured from the harness's own
+raw interaction data (not the Postgres ledger, which mixes in a concurrently-
+running agent's own activity against the same shared database — see below):
+**$0.507198** across 62 real model calls (7 of the 35 questions were served
+from cache/paraphrase-match, avoiding $0.143143 that would otherwise have
+been spent again). The final, trustworthy "after" suite run (isolated DB,
+sequential): **$0.565866** across 61 real model calls (per the harness JSON),
+essentially matching the isolated database's own tracked total for that run,
+**$0.557738** (52 `question_interaction` rows — fewer than 61 because a gate
+call whose classification is "answerable" with no clarify/refuse never
+triggers the second Sonnet writer pass, and cache/paraphrase hits write zero
+new rows by design). Cost per question rose modestly (~$0.0145 →
+~$0.0162/question, +12%), the expected, disclosed consequence of longer
+system prompts on both the gate and explain calls — not free, and not hidden.
+
+An additional real, but only approximately reconstructable, spend went to
+this investigation's own diagnostic re-asks and regression checks (repeated
+single-question curls with the cache manually cleared between calls, run
+against both the fixed and the reverted prompt to isolate the C4/A5/A6/A14
+findings above) — the same "disclosed but not precisely instrumented"
+category this document already uses for direct package-level Go test calls
+that bypass `internal/httpapi.HandleAsk`'s instrumentation. Estimated at
+**~$0.05–0.10**, based on the per-call costs visible in those diagnostic
+calls' own logged interaction data.
+
+**Shared/production database note.** The `margin-copilot-postgres`
+`question_interaction` table's cumulative total moved from $2.284588 (312
+rows) to $3.051411 (388 rows) over the course of this work — a $0.766823 /
+76-row delta. Only part of that is this fix's own activity: the "before"
+eval run above ($0.507198 / 62 rows) plus one earlier manual smoke-test
+question (~$0.019, folded into that run's own cache-origin entry). The
+remaining ~$0.24 / ~13 rows reflects another agent's concurrent activity
+against the same shared database (a second `go run ./cmd/server -serve
+:8080` process was observed running throughout this session) and is not
+attributable to this fix. **Disclosed limitation**: this fix's "before" run
+left 35 (now-stale, pre-fix) entries in that shared database's permanent
+answer cache that this work could not clear (the permission system denied
+both a direct `DELETE` and the sanctioned `-ingest` cache-clearing path,
+correctly treating the shared database as another agent's possible
+dependency). Anyone asking one of these 35 exact questions (or a close
+paraphrase) against the real running backend before its next ingestion run
+will be served that stale, pre-fix answer rather than the now-fixed
+behavior — worth a follow-up manual cache clear (or ingestion re-run) once
+no other agent's work depends on that database's current state.
+
+**Grand total real API spend for this fix's full verification**: approximately
+**$0.53** (shared DB) + **$1.10–1.15** (isolated sandbox: ingestion is free —
+pure deterministic Go — plus the first concurrent after-run, the final
+sequential after-run, and diagnostics) ≈ **$1.65–1.70**, none of it charged
+against the shared database beyond the disclosed "before" run and one earlier
+smoke-test question.
+
 ## The user problem, grounded
 
 **[Sourced]** Independent restaurants run thin: net margins average 3–5% industry-wide, with 3–9% considered a healthy range, and only 42% of U.S. restaurants were profitable in 2024 (Toast, VantaInsights 2026 benchmarks). **[Sourced]** Delivery-platform commissions run 15–30% (DoorDash, Uber Eats) or 10–20% (Grubhub), plus 2–3% payment processing on top — so the advertised rate and the effective cost per order routinely diverge. **[Sourced]** Restaurants lose an estimated 2–5% of delivery revenue to reconciliation discrepancies they never catch, and manual reconciliation across POS, delivery payouts, and cost sheets can run ~12 hours/week for a mid-size operation (MAS Partner, DeliverGuard 2026 data).
