@@ -1,18 +1,16 @@
 // Command server is the entry point for the Daily Margin & Growth Copilot
-// backend. Per tasks.md T017, it is currently a thin CLI wrapper around
+// backend. Per tasks.md T017, it is a thin CLI wrapper around
 // internal/pipeline's ingest -> reconcile -> persist flows, runnable via the
 // -ingest and -ingest-promo flags (quickstart.md's "Validate User Story 1"
-// and "User Story 4" steps), plus a -serve flag exposing the one
-// deterministic-only REST endpoint built so far (GET /api/badges, T032).
-// The real pipeline logic lives in internal/pipeline, not here, specifically
-// so later phases (the MCP tool layer, the evaluation harness) can import
-// and call it directly — a package named main cannot be imported elsewhere.
-//
-// The chat/MCP endpoints (tasks.md T020, T023) are not wired yet — User
-// Story 1's deterministic core is deliberately proven first, with no LLM
-// call anywhere in this path (Constitution Principle V). -serve exists only
-// for GET /api/badges, which is itself deterministic (internal/badges) and
-// carries no model call either.
+// and "User Story 4" steps), plus a -serve flag that starts the HTTP server:
+// the deterministic GET /api/badges endpoint (T032) and, per the
+// Integration phase, POST /api/ask (T020/T023) — the chat surface wiring
+// internal/ambiguity's gate, internal/explain's tool-calling loop over
+// internal/mcptools' typed MCP server, and internal/instrumentation
+// together. The real pipeline and handler logic all live in their own
+// internal/ packages, not here, specifically so the evaluation harness can
+// import and call them directly — a package named main cannot be imported
+// elsewhere.
 package main
 
 import (
@@ -24,7 +22,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ambiguity"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/httpapi"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/llmclient"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/pipeline"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
@@ -32,7 +36,7 @@ import (
 func main() {
 	ingestDir := flag.String("ingest", "", "run the ingest -> reconcile -> persist pipeline against the delivery/POS/cost-sheet exports in this directory, then exit (see quickstart.md)")
 	ingestPromoDir := flag.String("ingest-promo", "", "run User Story 4's promotion ingest -> reconcile -> persist pipeline against the promotion/ad-spend + delivery-platform exports in this directory, then exit (tasks.md T029-T030)")
-	serveAddr := flag.String("serve", "", "if set, start an HTTP server on this address (e.g. :8080) exposing GET /api/badges (tasks.md T032) and block until interrupted")
+	serveAddr := flag.String("serve", "", "if set, start an HTTP server on this address (e.g. :8080) exposing GET /api/badges (T032) and POST /api/ask (T020/T023), then block until interrupted")
 	flag.Parse()
 
 	if *ingestDir == "" && *ingestPromoDir == "" && *serveAddr == "" {
@@ -40,7 +44,6 @@ func main() {
 		log.Println("Usage: go run ./backend/cmd/server -ingest <fixture-directory>")
 		log.Println("       go run ./backend/cmd/server -ingest-promo <fixture-directory>")
 		log.Println("       go run ./backend/cmd/server -serve <addr>")
-		log.Println("The chat/MCP endpoints are not wired yet — see specs/001-margin-reconciliation-qa/tasks.md T018+.")
 		return
 	}
 
@@ -77,9 +80,46 @@ func main() {
 	if *serveAddr != "" {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/badges", badges.RegisterBadgeHandler(store))
-		log.Printf("serving GET /api/badges on %s (tasks.md T032) — Ctrl+C to stop", *serveAddr)
+
+		askDeps, err := buildAskDeps(ctx, store)
+		if err != nil {
+			log.Fatalf("wiring POST /api/ask: %v", err)
+		}
+		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
+
+		log.Printf("serving GET /api/badges (T032) and POST /api/ask (T020/T023) on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, mux); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
 	}
+}
+
+// buildAskDeps wires httpapi.HandleAsk's dependencies: internal/llmclient's
+// shared Anthropic client (Claude Haiku 4.5 for the gate, Claude Sonnet 5
+// for explain — both model choices live inside internal/ambiguity and
+// internal/explain themselves, not here), internal/mcptools' in-process MCP
+// server (the fixed, typed tool set backing every explain call), and
+// internal/instrumentation's Logger backed by the storage.InstrumentationAdapter
+// (storage/instrumentation.go) — the concrete adapter internal/instrumentation's
+// own package doc promises.
+//
+// This requires ANTHROPIC_API_KEY to be resolvable from the environment
+// (internal/llmclient.New's documented default); -serve fails fast here
+// rather than at the first POST /api/ask if that's missing, matching how
+// DATABASE_URL is already checked fast above.
+func buildAskDeps(ctx context.Context, store *storage.Queries) (httpapi.Deps, error) {
+	llm := llmclient.New()
+
+	mcpServer := mcptools.RegisterMCPServer(store)
+
+	explainer, err := explain.New(ctx, llm, mcpServer)
+	if err != nil {
+		return httpapi.Deps{}, err
+	}
+
+	return httpapi.Deps{
+		Gate:      ambiguity.New(llm),
+		Explainer: explainer,
+		Logger:    instrumentation.NewLogger(storage.NewInstrumentationAdapter(store)),
+	}, nil
 }
