@@ -11,6 +11,7 @@ import BadgeDisplay, {
   type ReconciliationBadge,
 } from '@/components/Badges/BadgeDisplay'
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
+import Logo from '@/components/Logo/Logo'
 
 // ---------------------------------------------------------------------------
 // Mocked "today's close" — a DailyReconciliation row shaped exactly per
@@ -125,10 +126,8 @@ export default function MarginCopilotApp() {
   return (
     <div className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <header className="flex flex-col gap-0.5">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Margin Copilot
-          </p>
+        <header className="flex flex-col gap-2">
+          <Logo />
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Today&apos;s Close
           </h1>

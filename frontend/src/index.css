@@ -12,13 +12,16 @@
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
 
-  /* Brand accent — iFood-inspired warm red. #EA1D2C is a commonly-cited
-     third-party sourced value, not confirmed from an official iFood brand
-     guideline: used as inspiration for a warm, appetite-associated accent,
-     not a trademark clone. This is the app's primary action color (CTAs,
-     links, active nav) — it is NOT reused for "danger"/error semantics;
-     see --destructive below, kept as an independent token on purpose. */
-  --primary: #ea1d2c;
+  /* Brand accent — "prosperity emerald," from the finalized logo mark
+     (batwing café doors, green — the "in the red / in the green" financial
+     idiom made literal). Deliberately teal-leaning so it stays visually
+     distinct from --success below (a separate, yellow-leaning green used
+     only for badge semantics) — same family, not the same color, per the
+     rule that semantic color must never double as the one brand accent.
+     Replaces the earlier iFood-red exploration. This is the app's primary
+     action color (CTAs, links, active nav) — it is NOT reused for
+     "danger"/error semantics; see --destructive below, kept independent. */
+  --primary: #0e6e52;
   --primary-foreground: #ffffff;
   --primary-hover: color-mix(in oklch, var(--primary) 88%, black);
   --primary-active: color-mix(in oklch, var(--primary) 76%, black);
@@ -65,10 +68,12 @@
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
 
-  /* Brighter/lighter than the light-mode brand red so it stays legible
-     and doesn't muddy against a near-black surface. Hover/active lighten
-     toward white in dark mode instead of darkening toward black. */
-  --primary: #f0384a;
+  /* Brighter/more saturated emerald than the light-mode brand green so it
+     stays legible against a near-black surface, and still kept teal-leaning
+     so it never converges on --success's yellow-green (#22c55e) below.
+     Hover/active lighten toward white in dark mode instead of darkening
+     toward black. */
+  --primary: #1fa876;
   --primary-foreground: #ffffff;
   --primary-hover: color-mix(in oklch, var(--primary) 88%, white);
   --primary-active: color-mix(in oklch, var(--primary) 78%, white);
