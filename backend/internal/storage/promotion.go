@@ -94,6 +94,18 @@ func LoadNegativeRoiPromotionsInPeriod(ctx context.Context, q Querier, start, en
 	return promotionRowsToDomain(rows)
 }
 
+// LoadDistinctCampaignIDs returns every real, persisted campaign_id — the
+// bounded, typed set internal/mcptools matches a human-readable or
+// shortened campaign reference against (e.g. "LUNCHFIX" or "Banner Ad -
+// Lunch Fix Menu (JET-CAMP-LUNCHFIX)" both resolving to the real
+// JET-CAMP-LUNCHFIX id) rather than requiring an exact string match or
+// letting the model guess an id that doesn't exist (Constitution Principle
+// III). See docs/plan.md's mistakes log, "campaign name/entity lookup
+// defect", for the bug this backs the fix for.
+func LoadDistinctCampaignIDs(ctx context.Context, q Querier) ([]string, error) {
+	return q.ListDistinctCampaignIDs(ctx)
+}
+
 func promotionRowsToDomain(rows []PromotionRoiRecord) ([]reconcile.PromotionRoiRecord, error) {
 	out := make([]reconcile.PromotionRoiRecord, 0, len(rows))
 	for _, row := range rows {

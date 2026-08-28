@@ -112,6 +112,26 @@ func GetPromotionRoi(ctx context.Context, store storage.Querier, args GetPromoti
 			return nil, nil, err
 		}
 		if len(records) == 0 {
+			// Exact match failed — before returning no_data, try resolving
+			// args.CampaignID as a shortened form or a human-readable
+			// display name against the real, bounded campaign_id set
+			// (campaign_match.go). This is the fix for the "campaign
+			// name/entity lookup defect" (docs/plan.md mistakes log): a
+			// real, computable campaign like JET-CAMP-LUNCHFIX previously
+			// produced a false no_data/refusal when asked about by its
+			// full display name or as "LUNCHFIX".
+			known, kerr := storage.LoadDistinctCampaignIDs(ctx, store)
+			if kerr != nil {
+				return nil, nil, kerr
+			}
+			if resolved := matchCampaignID(args.CampaignID, known); resolved != "" {
+				records, err = storage.LoadPromotionRoiRecordsByCampaign(ctx, store, resolved)
+				if err != nil {
+					return nil, nil, err
+				}
+			}
+		}
+		if len(records) == 0 {
 			return nil, &ToolError{Error: "no_data", Reason: fmt.Sprintf("no promotion found with campaign_id %q", args.CampaignID)}, nil
 		}
 		return newPromotionRoiResult(records), nil, nil
@@ -141,7 +161,7 @@ func GetPromotionRoiTool() mcp.Tool {
 	return mcp.NewTool("get_promotion_roi",
 		mcp.WithDescription("Look up a promotion/ad-spend campaign's computed ROI, either by exact campaign_id or by platform+period. roi is null with reason=\"attribution_unavailable\" when incremental revenue cannot be attributed from available data (FR-013) — this is never estimated, so always check for a null roi before narrating a figure."),
 		mcp.WithReadOnlyHintAnnotation(true),
-		mcp.WithString("campaign_id", mcp.Description("Exact campaign_id to look up (e.g. IFOOD-CAMP-BOOST01). Mutually exclusive with platform+period.")),
+		mcp.WithString("campaign_id", mcp.Description("Campaign identifier to look up. Accepts the exact campaign_id (e.g. IFOOD-CAMP-BOOST01), a shortened form (e.g. BOOST01), or a full human-readable campaign name/description that contains the id or its shortened form (e.g. \"Banner Ad - Lunch Fix Menu (JET-CAMP-LUNCHFIX)\") — pass whatever reference was given, this tool matches it against the real known campaign set. Mutually exclusive with platform+period.")),
 		mcp.WithString("platform", mcp.Description("Delivery platform name (e.g. iFood, Just Eat Takeaway). Requires period.")),
 		mcp.WithObject("period",
 			mcp.Description("{start, end} as YYYY-MM-DD, inclusive. Required with platform; ignored when campaign_id is given."),
