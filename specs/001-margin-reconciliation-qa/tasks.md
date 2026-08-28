@@ -10,10 +10,10 @@
 
 ## Phase 1: Setup
 
-- [ ] T001 Create `backend/` and `frontend/` directories per plan.md's Project Structure; `go mod init` in `backend/`
-- [ ] T002 Add Go dependencies to `backend/go.mod`: `mark3labs/mcp-go`, `jackc/pgx/v5`, `stretchr/testify`, `anthropic-sdk-go`
-- [ ] T003 [P] Initialize React app in `frontend/` with Vite + TypeScript; add Vitest, React Testing Library, Tailwind, shadcn/ui
-- [ ] T004 [P] Configure `golangci-lint` for `backend/` and ESLint/Prettier for `frontend/`
+- [x] T001 Create `backend/` and `frontend/` directories per plan.md's Project Structure; `go mod init` in `backend/`
+- [x] T002 Add Go dependencies to `backend/go.mod`: `mark3labs/mcp-go`, `jackc/pgx/v5`, `stretchr/testify`, `anthropic-sdk-go`
+- [x] T003 [P] Initialize React app in `frontend/` with Vite + TypeScript; add Vitest, React Testing Library, Tailwind, shadcn/ui
+- [x] T004 [P] Configure `golangci-lint` for `backend/` and ESLint/Prettier for `frontend/`
 
 **Checkpoint**: Both project skeletons compile/run empty.
 
@@ -23,12 +23,12 @@
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete.
 
-- [ ] T005 Write `docker-compose.yml` for local PostgreSQL
-- [ ] T006 Write initial `golang-migrate` migration in `backend/migrations/` for `daily_reconciliation`, `promotion_roi_record`, `question_interaction` tables per `data-model.md`
-- [ ] T007 [P] Configure `sqlc.yaml` and base queries in `backend/internal/storage/`
-- [ ] T008 [P] Generate fixture CSVs (delivery-platform, POS, cost-sheet, promotion exports) in `backend/fixtures/`, including the deliberate mess: duplicate order, refund, missing day, inconsistent date format, one promotion with incomplete attribution — per Constitution Principle V, this MUST exist before any reconciliation code is written
-- [ ] T009 Implement shared Anthropic API client wrapper in `backend/internal/llmclient/client.go`
-- [ ] T010 [P] Implement instrumentation writer (tokens, cost, latency, refusal/clarification flags) in `backend/internal/instrumentation/log.go`
+- [x] T005 Write `docker-compose.yml` for local PostgreSQL
+- [x] T006 Write initial `golang-migrate` migration in `backend/migrations/` for `daily_reconciliation`, `promotion_roi_record`, `question_interaction` tables per `data-model.md`
+- [x] T007 [P] Configure `sqlc.yaml` and base queries in `backend/internal/storage/`
+- [x] T008 [P] Generate fixture CSVs (delivery-platform, POS, cost-sheet, promotion exports) in `backend/fixtures/`, including the deliberate mess: duplicate order, refund, missing day, inconsistent date format, one promotion with incomplete attribution — per Constitution Principle V, this MUST exist before any reconciliation code is written
+- [x] T009 Implement shared Anthropic API client wrapper in `backend/internal/llmclient/client.go`
+- [x] T010 [P] Implement instrumentation writer (tokens, cost, latency, refusal/clarification flags) in `backend/internal/instrumentation/log.go`
 
 **Checkpoint**: DB migrated, fixtures exist, LLM client and instrumentation ready — user stories can now proceed.
 
@@ -42,16 +42,16 @@
 
 ### Tests for User Story 1 ⚠️ write first, confirm they fail
 
-- [ ] T011 [P] [US1] Table-driven ingestion tests (duplicate order, refund, missing day, inconsistent date format) in `backend/internal/ingest/ingest_test.go`
-- [ ] T012 [P] [US1] Table-driven reconciliation tests (margin calc, commission/refund netting, discrepancy flags) in `backend/internal/reconcile/reconcile_test.go`
+- [x] T011 [P] [US1] Table-driven ingestion tests (duplicate order, refund, missing day, inconsistent date format) in `backend/internal/ingest/ingest_test.go`
+- [x] T012 [P] [US1] Table-driven reconciliation tests (margin calc, commission/refund netting, discrepancy flags) in `backend/internal/reconcile/reconcile_test.go`
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Implement delivery/POS/cost-sheet CSV parsing in `backend/internal/ingest/ingest.go` (make T011 pass)
-- [ ] T014 [US1] Implement `DailyReconciliation` computation in `backend/internal/reconcile/reconcile.go` (make T012 pass; depends on T013)
-- [ ] T015 [US1] Implement discrepancy flags + anomaly threshold in `backend/internal/reconcile/discrepancies.go`
-- [ ] T016 [US1] Implement `sqlc`-generated persistence for `DailyReconciliation` in `backend/internal/storage/reconciliation.go`
-- [ ] T017 [US1] Wire `cmd/server/main.go`: ingest → reconcile → persist pipeline, runnable via CLI flag per `quickstart.md`
+- [x] T013 [US1] Implement delivery/POS/cost-sheet CSV parsing in `backend/internal/ingest/ingest.go` (make T011 pass)
+- [x] T014 [US1] Implement `DailyReconciliation` computation in `backend/internal/reconcile/reconcile.go` (make T012 pass; depends on T013)
+- [x] T015 [US1] Implement discrepancy flags + anomaly threshold in `backend/internal/reconcile/discrepancies.go`
+- [x] T016 [US1] Implement `sqlc`-generated persistence for `DailyReconciliation` in `backend/internal/storage/reconciliation.go`
+- [x] T017 [US1] Wire `cmd/server/main.go`: ingest → reconcile → persist pipeline, runnable via CLI flag per `quickstart.md`
 
 **Checkpoint**: User Story 1 fully functional and testable independently — no LLM call exists yet.
 
@@ -65,15 +65,15 @@
 
 ### Tests for User Story 2
 
-- [ ] T018 [P] [US2] Unit tests for `get_daily_summary` and `get_margin_delta` tool logic in `backend/internal/mcptools/reconciliation_tools_test.go`
+- [x] T018 [P] [US2] Unit tests for `get_daily_summary` and `get_margin_delta` tool logic in `backend/internal/mcptools/reconciliation_tools_test.go`
 
 ### Implementation for User Story 2
 
-- [ ] T019 [US2] Implement `get_daily_summary`, `get_margin_delta`, `list_discrepancies` MCP tools in `backend/internal/mcptools/reconciliation_tools.go` per `contracts/mcp-tools.md` (make T018 pass)
-- [ ] T020 [US2] Register MCP server (`mark3labs/mcp-go`) in `cmd/server/main.go`
-- [ ] T021 [US2] Implement explanation step (Claude Sonnet 5, tool-calling loop) in `backend/internal/explain/explain.go`
-- [ ] T022 [US2] Wire instrumentation capture around every `explain` call (depends on T010, T021) — note: the ambiguity gate (T025, Phase 5) is a separate model call that also needs this wiring; T026 must not skip it just because it happens before `explain`
-- [ ] T023 [US2] Implement `POST /api/ask` endpoint in `cmd/server/main.go`
+- [x] T019 [US2] Implement `get_daily_summary`, `get_margin_delta`, `list_discrepancies` MCP tools in `backend/internal/mcptools/reconciliation_tools.go` per `contracts/mcp-tools.md` (make T018 pass)
+- [x] T020 [US2] Register MCP server (`mark3labs/mcp-go`) in `cmd/server/main.go`
+- [x] T021 [US2] Implement explanation step (Claude Sonnet 5, tool-calling loop) in `backend/internal/explain/explain.go`
+- [x] T022 [US2] Wire instrumentation capture around every `explain` call (depends on T010, T021) — note: the ambiguity gate (T025, Phase 5) is a separate model call that also needs this wiring; T026 must not skip it just because it happens before `explain`
+- [x] T023 [US2] Implement `POST /api/ask` endpoint in `cmd/server/main.go`
 
 **Checkpoint**: US1 + US2 both work independently; every answer traces to `get_*` tool output, never model-invented numbers.
 
@@ -87,13 +87,13 @@
 
 ### Tests for User Story 3
 
-- [ ] T024 [P] [US3] Unit tests for ambiguity classification (answerable/ambiguous/unanswerable cases) in `backend/internal/ambiguity/gate_test.go`
+- [x] T024 [P] [US3] Unit tests for ambiguity classification (answerable/ambiguous/unanswerable cases) in `backend/internal/ambiguity/gate_test.go`
 
 ### Implementation for User Story 3
 
-- [ ] T025 [US3] Implement ambiguity gate (Claude Haiku 4.5) in `backend/internal/ambiguity/gate.go` (make T024 pass)
-- [ ] T026 [US3] Wire the gate into `/api/ask` before any tool call; implement refusal and clarifying-question response paths, logging the gate's own tokens/cost/latency via `internal/instrumentation` even when the request never reaches `explain` (depends on T022, T023, T025)
-- [ ] T027 [US3] Implement per-tool-call timeout and per-interaction call cap in `backend/internal/mcptools/`
+- [x] T025 [US3] Implement ambiguity gate (Claude Haiku 4.5) in `backend/internal/ambiguity/gate.go` (make T024 pass)
+- [x] T026 [US3] Wire the gate into `/api/ask` before any tool call; implement refusal and clarifying-question response paths, logging the gate's own tokens/cost/latency via `internal/instrumentation` even when the request never reaches `explain` (depends on T022, T023, T025)
+- [x] T027 [US3] Implement per-tool-call timeout and per-interaction call cap in `backend/internal/mcptools/`
 
 **Checkpoint**: All three core stories independently functional — the refusal discipline is provably real, not asserted.
 
@@ -107,14 +107,14 @@
 
 ### Tests for User Story 4
 
-- [ ] T028 [P] [US4] Table-driven promo-ROI tests (negative ROI, positive ROI, missing attribution → null) in `backend/internal/reconcile/promo_test.go`
+- [x] T028 [P] [US4] Table-driven promo-ROI tests (negative ROI, positive ROI, missing attribution → null) in `backend/internal/reconcile/promo_test.go`
 
 ### Implementation for User Story 4
 
-- [ ] T029 [US4] Implement promotion/ad-spend CSV parsing in `backend/internal/ingest/promo.go`
-- [ ] T030 [US4] Implement `PromotionRoiRecord` computation in `backend/internal/reconcile/promo.go` (make T028 pass; depends on T029)
-- [ ] T031 [US4] Implement `get_promotion_roi`, `list_negative_roi_promotions` MCP tools in `backend/internal/mcptools/promo_tools.go`
-- [ ] T032 [US4] Implement "Clean Close" / "Discrepancy Catcher" badge evaluation (Reconciliation category only — per `docs/product-strategy.md`'s built-now scope) in `backend/internal/badges/badges.go`, exposed via a plain `GET /api/badges` REST endpoint in `cmd/server/main.go` — deliberately NOT an MCP tool, since no FR requires the model to narrate badges; this is deterministic UI state, not something to over-expose to the LLM layer
+- [x] T029 [US4] Implement promotion/ad-spend CSV parsing in `backend/internal/ingest/promo.go`
+- [x] T030 [US4] Implement `PromotionRoiRecord` computation in `backend/internal/reconcile/promo.go` (make T028 pass; depends on T029)
+- [x] T031 [US4] Implement `get_promotion_roi`, `list_negative_roi_promotions` MCP tools in `backend/internal/mcptools/promo_tools.go`
+- [x] T032 [US4] Implement "Clean Close" / "Discrepancy Catcher" badge evaluation (Reconciliation category only — per `docs/product-strategy.md`'s built-now scope) in `backend/internal/badges/badges.go`, exposed via a plain `GET /api/badges` REST endpoint in `cmd/server/main.go` — deliberately NOT an MCP tool, since no FR requires the model to narrate badges; this is deterministic UI state, not something to over-expose to the LLM layer
 
 **Checkpoint**: Product A (KR1–KR4) fully functional end-to-end.
 
@@ -122,13 +122,13 @@
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T033 [P] Write `promptfoo` configs (`accuracy.yaml`, `consistency.yaml`, `refusal.yaml`) in `evaluation/promptfoo/`, with independently-computed golden answers in `evaluation/golden/`
-- [ ] T034 Run the evaluation harness; record real numbers (including failures) into `docs/product-strategy.md` and the reasoning doc — no target asserted in advance, per Principle V
-- [ ] T035 [P] React chat UI (shadcn AI Elements) in `frontend/src/components/Chat/`
-- [ ] T036 [P] React provenance display + running cost panel in `frontend/src/components/`
-- [ ] T037 [P] React badge display (Reconciliation category only) in `frontend/src/components/Badges/`
-- [ ] T038 Run `quickstart.md` validation end-to-end, including the real-file-compatibility trial
-- [ ] T039 Log any real mistakes caught during implementation into `docs/plan.md`'s running mistakes log — live, not reconstructed later
+- [x] T033 [P] Write `promptfoo` configs (`accuracy.yaml`, `consistency.yaml`, `refusal.yaml`) in `evaluation/promptfoo/`, with independently-computed golden answers in `evaluation/golden/`
+- [x] T034 Run the evaluation harness; record real numbers (including failures) into `docs/product-strategy.md` and the reasoning doc — no target asserted in advance, per Principle V
+- [x] T035 [P] React chat UI (shadcn AI Elements) in `frontend/src/components/Chat/`
+- [x] T036 [P] React provenance display + running cost panel in `frontend/src/components/`
+- [x] T037 [P] React badge display (Reconciliation category only) in `frontend/src/components/Badges/`
+- [x] T038 Run `quickstart.md` validation end-to-end, including the real-file-compatibility trial
+- [x] T039 Log any real mistakes caught during implementation into `docs/plan.md`'s running mistakes log — live, not reconstructed later
 
 ---
 
