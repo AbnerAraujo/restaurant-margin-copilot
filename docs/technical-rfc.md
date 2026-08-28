@@ -64,6 +64,31 @@ Full per-decision alternatives (LLM vendor, MCP transport, DB access layer, eval
 - **Anthropic's native MCP connector** (`mcp_servers` + `mcp_toolset`, URL-based) instead of in-process `mark3labs/mcp-go`: would require the MCP server to be independently HTTP-reachable, an unneeded deployment step for a local prototype. Noted as a real simplification opportunity if this ever moves toward a hosted deployment.
 - **A hand-rolled Go evaluation harness** instead of `promptfoo`: viable, but `promptfoo`'s assertions/repeat/redteam features map close to 1:1 onto the three required evaluation axes (accuracy, consistency, refusal), so building one from scratch would be pure cost with no capability gain.
 
+## Build-process trade-off (worth recording as it happened)
+
+**Decision**: implementation itself is executed by autonomous agents (Claude Code `Agent`/`Workflow` tooling) against `tasks.md`, not written by hand line-by-line.
+
+**Trade-off encountered**: `Workflow` (deterministic multi-agent pipelining) was disabled for the session at the start of the build. Rather than block, Phase 1 (Setup+Foundational) and Phase 3 (US1) were executed as manually-chained background `Agent` dispatches — functionally similar, but I (the orchestrator) had to sequence each phase myself off completion notifications instead of the runtime handling dependency order. Once `Workflow` was enabled mid-build (`/config` → Dynamic workflows), remaining phases (US2+US3 ∥ US4, Integration, Polish) switched to a real `Workflow` script. **Consequence**: the two approaches produce equivalent code, but the chained-agent phases have less structured intermediate verification (no schema-typed agent returns) than the Workflow-orchestrated phases. Not a defect, just a documented inconsistency in how the build was produced, for anyone auditing the process later.
+
+**Live API cost control**: real Anthropic API testing (US2 explain, US3 ambiguity gate, and the `promptfoo` harness) is bounded to a **hard $5 spend ceiling** for this build session, against $20 of Console credit. Mechanism: a small number of smoke-test calls verify the code path first (a handful of calls, each logging real `response.usage`-derived cost), with the full evaluation harness run as a separate, monitored step afterward, with cumulative cost checked before proceeding past $4.50 (buffer against the $5 ceiling). This is a real operational constraint, not a design principle — recorded here because it directly shaped how integration testing was sequenced (smoke tests before full harness, not the other way around).
+
+## Design decision: refund-netting convention
+
+`backend/fixtures/README.md` deliberately leaves open whether a refund nets
+against the original order's date or its settlement date (the order
+0007 case: ordered 2026-08-02, refunded 2026-08-09). **Decision: net against
+the original order date** (accrual convention) — 2026-08-02's delivery total
+is 154.25 - 34.50 = **119.75**, not the gross 154.25. **Rationale**: the
+product's whole premise is a same-day "did we make money today" figure
+(Vision, `product-strategy.md`); accrual-basis attributes economic reality to
+the day the sale actually happened, matching what an owner intuitively means
+by "how did Tuesday go" — cash-basis netting at settlement date would let a
+day look artificially good until a refund from a future date retroactively
+never gets reflected back into it. **Alternative considered**: cash-basis
+netting at settlement date — rejected because it would require re-opening
+and restating a closed day's figure whenever a late refund settles, which
+contradicts the "trustworthy, same-day" framing this product is built around.
+
 ## Risks
 
 | Risk | Mitigation |

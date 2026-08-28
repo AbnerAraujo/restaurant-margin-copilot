@@ -30,13 +30,18 @@ Checked honestly against what's actually true right now, not what's aspirational
 - [x] 39 tasks generated, organized by user story, dependency-ordered, with parallel opportunities marked (`tasks.md`)
 - [x] Tests specified first in every phase, per Constitution Principle V
 
-## NOT ready — real blockers before implementation starts
+## Resolved since first written
 
-- [ ] **`ANTHROPIC_API_KEY` for the Console API account is not yet confirmed set** in the build environment — Phase 4 (US2) cannot produce a real explanation-step call without it
-- [ ] **Fixture data does not exist yet** (T008) — nothing in Phase 3 onward can start until it does
-- [ ] **`docker-compose.yml` / local Postgres is not yet running** (T005) — blocks Phase 2 entirely
-- [ ] **No real restaurant/bar export files have been obtained yet** for the real-file compatibility goal — the quickstart's final validation step has nothing to run against until one is provided
+- [x] **`ANTHROPIC_API_KEY`** — set and verified working with a live models-list call (cost: $0).
+- [x] **Local Postgres** — running via `colima` (Docker Desktop was never actually installed; colima is a lighter drop-in daemon), migration applied, schema verified to match `data-model.md` exactly, including the DB-level CHECK constraints.
+- [x] **Fixture data** (T008) — generated: two weeks (2026-08-01–14), four source files, every deliberate irregularity documented with exact row IDs and independently-verified reference sums in `backend/fixtures/README.md`.
+- [x] **`Workflow` (multi-agent orchestration)** — enabled via `/config` → Dynamic workflows.
+
+## Still NOT ready
+
+- [ ] **No real restaurant/bar export files have been obtained yet** for the real-file compatibility goal — the quickstart's final validation step has nothing to run against until one is provided.
+- [ ] **Live API spend is capped at $5 for this build session** (against $20 Console credit) — the full evaluation harness (T034) must be run as a single monitored step with cost tracked against this ceiling, not run repeatedly during debugging.
 
 ## Verdict
 
-Ready to start Phase 1/2 (Setup, Foundational) immediately. **Not** ready to start Phase 3 (US1) until fixtures (T008) and Postgres (T005) exist, and **not** ready to start Phase 4 (US2) until the Anthropic API key is confirmed. These are the actual next actions, not "review more docs."
+All four original blockers are resolved. Ready to proceed through US2/US3/US4/Integration/Polish now, with one live operational constraint carried forward: bound real Anthropic API calls tightly (smoke-test first, full harness as one monitored run) to stay under the $5 ceiling.
