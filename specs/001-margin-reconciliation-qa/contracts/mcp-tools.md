@@ -59,6 +59,29 @@ via `mark3labs/mcp-go`, each wrapping a read-only query against
   by calling this tool, never by the narration model combining two separate
   `get_daily_summary`/`get_promotion_roi` calls itself.
 
+## `get_period_totals`
+
+- **Input**: `{ "period": {start, end} }`
+- **Output**: The entire period's reconciled figures summed and ranked in
+  one call — `days_included`, `gross_sales_by_source` (summed per source
+  across the period), `total_delivery_gross_sales`, `commissions`,
+  `refunds`, `input_costs`, `margin_total`, `avg_daily_margin`
+  (`margin_total ÷ days_included`, fixed-point round-half-up, never a float
+  divide), and `best_day`/`worst_day` (`{date, margin}` — the single
+  highest/lowest per-day margin in the period; an exact tie is broken by
+  the chronologically earliest date), each carrying `source_row_refs`.
+  Returns `{ "error": "insufficient_data" }` if any calendar day in the
+  period has no computed reconciliation, the same policy `get_margin_delta`
+  and `compare_platform_economics` already apply — never a total or a
+  best/worst-day pick computed against partial data. Added to close two
+  observed gaps: a period-total question (e.g. "total supplier cost for
+  the two-week period") and a "which day had the most profit and why"
+  question that previously had no single tool to resolve to, and instead
+  called `get_daily_summary` once per day until the per-interaction
+  tool-call budget was exhausted. Call this tool directly for any
+  period-total or best/worst-day question — never reconstruct one from
+  repeated `get_daily_summary` calls.
+
 ## Cross-cutting contract rules
 
 - Every tool response that includes a number includes `source_row_refs`.

@@ -50,7 +50,7 @@ Three persisted entities (`daily_reconciliation`, `promotion_roi_record`, `quest
 
 ### MCP tool contracts
 
-Five fixed tools (`get_daily_summary`, `get_margin_delta`, `list_discrepancies`, `get_promotion_roi`, `list_negative_roi_promotions`), each read-only, each timeout-bounded, each returning a typed error object rather than a best-guess value on failure. No open-SQL or free-form-filter tool exists. Full contracts: `contracts/mcp-tools.md`.
+Seven fixed tools (`get_daily_summary`, `get_margin_delta`, `list_discrepancies`, `get_promotion_roi`, `list_negative_roi_promotions`, `compare_platform_economics`, `get_period_totals`), each read-only, each timeout-bounded, each returning a typed error object rather than a best-guess value on failure. `get_period_totals` sums and ranks an entire period (per-source gross, commissions, refunds, input costs, margin, and the best/worst day by margin) in one call, closing a gap where a period-total or "which day was best" question otherwise called `get_daily_summary` once per day until the per-interaction tool-call budget ran out. No open-SQL or free-form-filter tool exists. Full contracts: `contracts/mcp-tools.md`.
 
 ### Request flow
 
