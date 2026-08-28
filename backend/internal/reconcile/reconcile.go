@@ -80,6 +80,7 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 	date, _ := time.Parse(dateKeyLayout, dateKey) // dateKey is always produced by Format(dateKeyLayout) above
 
 	gross := map[string]int64{}
+	commissionsBySource := map[string]int64{}
 	var commissionsCents, refundsCents int64
 	var refs []SourceRowRef
 	flags := append([]DiscrepancyFlag{}, extraFlags...)
@@ -99,8 +100,13 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 		// AND refunded) grouped by order_date, so a refund's commission
 		// reversal nets against its original charge within the same day —
 		// see the design-decision doc comment on ComputeDailyReconciliations.
+		// Broken down by source too (commissionsBySource), the same way
+		// gross sales already are — a refund's reversal is keyed by the
+		// same source as its original order, so it nets within that
+		// source's own entry exactly as it nets within the total.
 		recomputed := recomputeCommissionCents(r)
 		commissionsCents += recomputed
+		commissionsBySource[src] += recomputed
 		if abs64(recomputed-r.CommissionCents) > 1 {
 			flags = append(flags, DiscrepancyFlag{
 				Type: FlagCommissionMismatch,
@@ -146,14 +152,15 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 	margin := grossTotalCents - commissionsCents - refundsCents - inputCostsCents
 
 	return DailyReconciliation{
-		Date:               date,
-		GrossSalesBySource: gross,
-		CommissionsCents:   commissionsCents,
-		RefundsCents:       refundsCents,
-		InputCostsCents:    inputCostsCents,
-		MarginCents:        margin,
-		DiscrepancyFlags:   flags,
-		SourceRowRefs:      refs,
+		Date:                date,
+		GrossSalesBySource:  gross,
+		CommissionsCents:    commissionsCents,
+		CommissionsBySource: commissionsBySource,
+		RefundsCents:        refundsCents,
+		InputCostsCents:     inputCostsCents,
+		MarginCents:         margin,
+		DiscrepancyFlags:    flags,
+		SourceRowRefs:       refs,
 	}
 }
 

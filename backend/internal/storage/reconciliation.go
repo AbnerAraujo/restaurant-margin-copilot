@@ -28,9 +28,13 @@ import (
 // model layer never calls this (data-model.md's DailyReconciliation
 // validation rule).
 func SaveDailyReconciliation(ctx context.Context, q Querier, day reconcile.DailyReconciliation) (DailyReconciliation, error) {
-	grossJSON, err := marshalGrossSales(day.GrossSalesBySource)
+	grossJSON, err := marshalCentsMap(day.GrossSalesBySource)
 	if err != nil {
 		return DailyReconciliation{}, fmt.Errorf("storage: marshal gross_sales_by_source: %w", err)
+	}
+	commissionsBySourceJSON, err := marshalCentsMap(day.CommissionsBySource)
+	if err != nil {
+		return DailyReconciliation{}, fmt.Errorf("storage: marshal commissions_by_source: %w", err)
 	}
 	flagsJSON, err := marshalOrEmptyArray(day.DiscrepancyFlags)
 	if err != nil {
@@ -42,14 +46,15 @@ func SaveDailyReconciliation(ctx context.Context, q Querier, day reconcile.Daily
 	}
 
 	params := UpsertDailyReconciliationParams{
-		Date:               pgtype.Date{Time: day.Date, Valid: true},
-		GrossSalesBySource: grossJSON,
-		Commissions:        centsToNumeric(day.CommissionsCents),
-		Refunds:            centsToNumeric(day.RefundsCents),
-		InputCosts:         centsToNumeric(day.InputCostsCents),
-		Margin:             centsToNumeric(day.MarginCents),
-		DiscrepancyFlags:   flagsJSON,
-		SourceRowRefs:      refsJSON,
+		Date:                pgtype.Date{Time: day.Date, Valid: true},
+		GrossSalesBySource:  grossJSON,
+		Commissions:         centsToNumeric(day.CommissionsCents),
+		CommissionsBySource: commissionsBySourceJSON,
+		Refunds:             centsToNumeric(day.RefundsCents),
+		InputCosts:          centsToNumeric(day.InputCostsCents),
+		Margin:              centsToNumeric(day.MarginCents),
+		DiscrepancyFlags:    flagsJSON,
+		SourceRowRefs:       refsJSON,
 	}
 
 	return q.UpsertDailyReconciliation(ctx, params)
@@ -69,9 +74,13 @@ func LoadDailyReconciliation(ctx context.Context, q Querier, date time.Time) (re
 }
 
 func rowToDomain(row DailyReconciliation) (reconcile.DailyReconciliation, error) {
-	gross, err := unmarshalGrossSales(row.GrossSalesBySource)
+	gross, err := unmarshalCentsMap(row.GrossSalesBySource)
 	if err != nil {
 		return reconcile.DailyReconciliation{}, fmt.Errorf("storage: unmarshal gross_sales_by_source: %w", err)
+	}
+	commissionsBySource, err := unmarshalCentsMap(row.CommissionsBySource)
+	if err != nil {
+		return reconcile.DailyReconciliation{}, fmt.Errorf("storage: unmarshal commissions_by_source: %w", err)
 	}
 	var flags []reconcile.DiscrepancyFlag
 	if err := json.Unmarshal(nonNilJSON(row.DiscrepancyFlags), &flags); err != nil {
@@ -100,26 +109,30 @@ func rowToDomain(row DailyReconciliation) (reconcile.DailyReconciliation, error)
 	}
 
 	return reconcile.DailyReconciliation{
-		Date:               row.Date.Time,
-		GrossSalesBySource: gross,
-		CommissionsCents:   commissions,
-		RefundsCents:       refunds,
-		InputCostsCents:    inputCosts,
-		MarginCents:        margin,
-		DiscrepancyFlags:   flags,
-		SourceRowRefs:      refs,
+		Date:                row.Date.Time,
+		GrossSalesBySource:  gross,
+		CommissionsCents:    commissions,
+		CommissionsBySource: commissionsBySource,
+		RefundsCents:        refunds,
+		InputCostsCents:     inputCosts,
+		MarginCents:         margin,
+		DiscrepancyFlags:    flags,
+		SourceRowRefs:       refs,
 	}, nil
 }
 
-// marshalGrossSales renders cents as "12.34"-style decimal strings (via
-// internal/money), matching the decimal convention every other money field
-// in this schema uses — jsonb has no native fixed-point numeric type, and
-// storing raw integer cents there would silently disagree with how
-// commissions/refunds/input_costs/margin are represented in the same row.
-func marshalGrossSales(gross map[string]int64) (json.RawMessage, error) {
-	decimals := make(map[string]string, len(gross))
-	for source, cents := range gross {
-		decimals[source] = money.FormatCents(cents)
+// marshalCentsMap renders a map of integer cents (keyed by normalized
+// source) as "12.34"-style decimal strings (via internal/money), matching
+// the decimal convention every other money field in this schema uses —
+// jsonb has no native fixed-point numeric type, and storing raw integer
+// cents there would silently disagree with how commissions/refunds/
+// input_costs/margin are represented in the same row. Shared by
+// gross_sales_by_source and commissions_by_source, which are persisted and
+// read back identically.
+func marshalCentsMap(cents map[string]int64) (json.RawMessage, error) {
+	decimals := make(map[string]string, len(cents))
+	for source, c := range cents {
+		decimals[source] = money.FormatCents(c)
 	}
 	if len(decimals) == 0 {
 		return json.RawMessage(`{}`), nil
@@ -131,20 +144,20 @@ func marshalGrossSales(gross map[string]int64) (json.RawMessage, error) {
 	return json.RawMessage(b), nil
 }
 
-func unmarshalGrossSales(raw json.RawMessage) (map[string]int64, error) {
+func unmarshalCentsMap(raw json.RawMessage) (map[string]int64, error) {
 	var decimals map[string]string
 	if err := json.Unmarshal(nonNilJSON(raw), &decimals); err != nil {
 		return nil, err
 	}
-	gross := make(map[string]int64, len(decimals))
+	cents := make(map[string]int64, len(decimals))
 	for source, s := range decimals {
-		cents, err := money.ParseCents(s)
+		c, err := money.ParseCents(s)
 		if err != nil {
-			return nil, fmt.Errorf("gross_sales_by_source[%q]=%q: %w", source, s, err)
+			return nil, fmt.Errorf("source %q=%q: %w", source, s, err)
 		}
-		gross[source] = cents
+		cents[source] = c
 	}
-	return gross, nil
+	return cents, nil
 }
 
 // marshalOrEmptyArray marshals a possibly-nil slice, rendering nil as `[]`

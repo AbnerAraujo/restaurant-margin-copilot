@@ -40,6 +40,8 @@ type DailyReconciliation struct {
 	SourceRowRefs      json.RawMessage    `json:"source_row_refs"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+	// Per-source (delivery-platform) breakdown of the day's commission, summing to the same total as the commissions column — added for specs/003-platform-comparator's compare_platform_economics tool, which needs a platform's real per-order commission, never a flat-rate estimate (FR-001).
+	CommissionsBySource json.RawMessage `json:"commissions_by_source"`
 }
 
 // roi is NULL when incremental revenue cannot be attributed (FR-013) — never estimated. Enforced by roi_requires_attribution.

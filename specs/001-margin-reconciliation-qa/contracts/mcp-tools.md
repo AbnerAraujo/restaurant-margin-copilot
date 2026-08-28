@@ -39,6 +39,26 @@ via `mark3labs/mcp-go`, each wrapping a read-only query against
 - **Output**: `PromotionRoiRecord` rows where `flagged_negative = true` —
   backs spec User Story 4 / SC-006 directly.
 
+## `compare_platform_economics`
+
+- **Input**: `{ "period": {start, end} }`
+- **Output**: `PlatformComparisonResult` — the same period's iFood and Just
+  Eat Takeaway figures side by side: `gross_sales`, `commission_paid`,
+  `effective_rate` (commission ÷ gross sales), `promo_spend` (from
+  `PromotionRoiRecord`), `combined_cost` (commission + promo spend), and
+  `combined_effective_rate`, each carrying its own `source_row_refs`.
+  `effective_rate`/`combined_effective_rate` are `null` — never a fabricated
+  `"0.00%"` and never a divide-by-zero — for a platform with zero gross
+  sales in the period (FR-003): the sales figure is a real zero, but a rate
+  over zero sales is undefined, and the two are never conflated. Returns
+  `{ "error": "insufficient_data" }` if any calendar day in the period has
+  no computed reconciliation, the same policy `get_margin_delta` applies.
+  Added by specs/003-platform-comparator; see that spec's FR-001–FR-007 for
+  the full requirement set this tool exists to satisfy — most notably
+  FR-006: a natural-language platform-comparison question MUST be answered
+  by calling this tool, never by the narration model combining two separate
+  `get_daily_summary`/`get_promotion_roi` calls itself.
+
 ## Cross-cutting contract rules
 
 - Every tool response that includes a number includes `source_row_refs`.

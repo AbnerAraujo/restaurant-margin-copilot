@@ -46,9 +46,19 @@ type DailyReconciliation struct {
 	Date               time.Time
 	GrossSalesBySource map[string]int64 // cents, keyed by normalized source: "ifood", "just_eat_takeaway", "pos", ...
 	CommissionsCents   int64
-	RefundsCents       int64
-	InputCostsCents    int64
-	MarginCents        int64
-	DiscrepancyFlags   []DiscrepancyFlag
-	SourceRowRefs      []SourceRowRef
+	// CommissionsBySource breaks CommissionsCents down per normalized
+	// delivery-platform source key, the same keys GrossSalesBySource uses
+	// (added for specs/003-platform-comparator's compare_platform_economics
+	// tool). It always sums back to CommissionsCents. "pos" never appears
+	// here — POS orders carry no commission at all. A refund's commission
+	// reversal is keyed by the SAME source as its original order (both are
+	// the same platform, by construction), so it nets within that source's
+	// entry exactly the way it already nets within the CommissionsCents
+	// total.
+	CommissionsBySource map[string]int64
+	RefundsCents        int64
+	InputCostsCents     int64
+	MarginCents         int64
+	DiscrepancyFlags    []DiscrepancyFlag
+	SourceRowRefs       []SourceRowRef
 }

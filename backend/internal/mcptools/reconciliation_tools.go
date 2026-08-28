@@ -20,7 +20,7 @@ import (
 // Every money field below is rendered as a "-12.34"-style decimal string
 // via internal/money.FormatCents, matching the convention every other
 // money value in this codebase's JSON surfaces already uses (see
-// internal/storage/reconciliation.go's marshalGrossSales) — the model
+// internal/storage/reconciliation.go's marshalCentsMap) — the model
 // receives numbers already formatted the way a human reads them, never a
 // raw integer-cents value it might misinterpret as dollars.
 

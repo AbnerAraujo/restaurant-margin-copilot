@@ -1,4 +1,11 @@
-import { CalendarCheck, Coins, LayoutGrid, Megaphone, MessagesSquare } from 'lucide-react'
+import {
+  CalendarCheck,
+  Coins,
+  LayoutGrid,
+  Megaphone,
+  MessagesSquare,
+  Scale,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
@@ -23,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/close', label: "Today's Close", icon: CalendarCheck },
   { to: '/ask', label: 'Ask', icon: MessagesSquare },
   { to: '/promotions', label: 'Promotions', icon: Megaphone },
+  { to: '/platforms', label: 'Platforms', icon: Scale },
   { to: '/points', label: 'Points', icon: Coins },
 ]
 

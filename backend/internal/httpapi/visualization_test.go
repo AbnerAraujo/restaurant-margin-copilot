@@ -45,6 +45,23 @@ const (
 		{"platform":"iFood","campaign_id":"IFOOD-CAMP-BOOST01","period":{"start":"2026-08-01","end":"2026-08-07"},
 		 "spend":"180.00","attributed_incremental_orders":6,"attributed_incremental_revenue":"214.00","roi":"34.00","flagged_negative":false}
 	]}`
+
+	platformComparisonJSONFixture = `{"period":{"start":"2026-08-01","end":"2026-08-14"},"days_included":14,"platforms":[
+		{"source":"ifood","display_name":"iFood","gross_sales":"838.00","commission_paid":"184.85","effective_rate":"22.06%",
+		 "promo_spend":"275.00","combined_cost":"459.85","combined_effective_rate":"54.87%","source_row_refs":[]},
+		{"source":"just_eat_takeaway","display_name":"Just Eat Takeaway","gross_sales":"908.00","commission_paid":"181.60","effective_rate":"20.00%",
+		 "promo_spend":"280.00","combined_cost":"461.60","combined_effective_rate":"50.84%","source_row_refs":[]}
+	]}`
+
+	// A platform with zero gross sales this period (FR-003): effective_rate
+	// is null, never "0.00%", but the platform still appears with real
+	// zeros — the chart must render its (zero) bars, not drop it.
+	platformComparisonZeroSalesJSONFixture = `{"period":{"start":"1999-04-01","end":"1999-04-01"},"days_included":1,"platforms":[
+		{"source":"ifood","display_name":"iFood","gross_sales":"0.00","commission_paid":"0.00","effective_rate":null,
+		 "promo_spend":"0.00","combined_cost":"0.00","combined_effective_rate":null,"source_row_refs":[]},
+		{"source":"just_eat_takeaway","display_name":"Just Eat Takeaway","gross_sales":"100.00","commission_paid":"20.00","effective_rate":"20.00%",
+		 "promo_spend":"0.00","combined_cost":"20.00","combined_effective_rate":"20.00%","source_row_refs":[]}
+	]}`
 )
 
 func TestDeriveVisualizationKind(t *testing.T) {
@@ -133,6 +150,20 @@ func TestDeriveVisualizationKind(t *testing.T) {
 			invocations: []explain.ToolInvocation{inv("get_margin_delta", `{not json`)},
 			wantKind:    "",
 		},
+		{
+			name:        "compare_platform_economics becomes a 4-point bar chart, commission-only and combined per platform",
+			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONFixture)},
+			wantKind:    VizKindBar,
+			wantTool:    "compare_platform_economics",
+			wantPoints:  4,
+		},
+		{
+			name:        "a platform with zero sales still gets its own bar pair, never omitted",
+			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonZeroSalesJSONFixture)},
+			wantKind:    VizKindBar,
+			wantTool:    "compare_platform_economics",
+			wantPoints:  4,
+		},
 	}
 
 	for _, tt := range tests {
@@ -183,6 +214,61 @@ func TestDeriveVisualizationPriorityIsFixedNotCallOrder(t *testing.T) {
 	}
 	if forward.SourceTool != "get_promotion_roi" || reversed.SourceTool != "get_promotion_roi" {
 		t.Fatalf("promotions must win the fixed priority; got %q and %q", forward.SourceTool, reversed.SourceTool)
+	}
+}
+
+func TestDeriveVisualizationPlatformComparisonOutranksPromotions(t *testing.T) {
+	// A question that reached compare_platform_economics is about platform
+	// economics even if a promotion tool was also called for context — the
+	// narrowest/most specific subject wins, same doctrine as the existing
+	// priority test above.
+	viz := deriveVisualization([]explain.ToolInvocation{
+		inv("get_promotion_roi", promotionsJSONFixture),
+		inv("compare_platform_economics", platformComparisonJSONFixture),
+	})
+	if viz == nil {
+		t.Fatal("expected a visualization")
+	}
+	if viz.SourceTool != "compare_platform_economics" {
+		t.Errorf("SourceTool = %q, want compare_platform_economics", viz.SourceTool)
+	}
+}
+
+func TestPlatformComparisonChartShowsCommissionOnlyAndCombinedAsDistinctBars(t *testing.T) {
+	viz := deriveVisualization([]explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONFixture)})
+	if viz == nil {
+		t.Fatal("expected a visualization")
+	}
+
+	byLabel := make(map[string]VizPoint, len(viz.Points))
+	for _, p := range viz.Points {
+		byLabel[p.Label] = p
+	}
+
+	tests := []struct {
+		label       string
+		wantDisplay string
+	}{
+		{"iFood — commission only", "$184.85"},
+		{"iFood — commission + promo", "$459.85"},
+		{"Just Eat Takeaway — commission only", "$181.60"},
+		{"Just Eat Takeaway — commission + promo", "$461.60"},
+	}
+	for _, tt := range tests {
+		point, ok := byLabel[tt.label]
+		if !ok {
+			t.Errorf("missing point %q", tt.label)
+			continue
+		}
+		if point.Display != tt.wantDisplay {
+			t.Errorf("%s: Display = %q, want %q", tt.label, point.Display, tt.wantDisplay)
+		}
+	}
+	// FR-004: commission-only and the promo-combined figure must be two
+	// SEPARATE points, never merged into one bar that hides which part came
+	// from which mechanism.
+	if len(viz.Points) != 4 {
+		t.Errorf("len(Points) = %d, want 4 (2 platforms x commission-only/combined)", len(viz.Points))
 	}
 }
 

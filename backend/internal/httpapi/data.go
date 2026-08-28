@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
@@ -48,6 +49,13 @@ type ReconciliationResponse struct {
 type PromotionsResponse struct {
 	Promotions []mcptools.PromotionRoiView `json:"promotions"`
 }
+
+// PlatformComparisonResponse is GET /api/platforms' body — the exact
+// mcptools.PlatformComparisonResult shape compare_platform_economics
+// returns, so the dedicated Platforms page and a chat answer about the same
+// period read one rendering of one computation (spec 003-platform-comparator
+// SC-003: "the two surfaces never disagree").
+type PlatformComparisonResponse = mcptools.PlatformComparisonResult
 
 // HandleReconciliation implements GET /api/reconciliation. Optional
 // ?start=YYYY-MM-DD&end=YYYY-MM-DD scope the period; omitting either serves
@@ -106,6 +114,94 @@ func HandlePromotions(q storage.Querier) http.HandlerFunc {
 			Promotions: mcptools.NewPromotionRoiResult(records).Promotions,
 		})
 	}
+}
+
+// HandlePlatformComparison implements GET /api/platforms: iFood's and Just
+// Eat Takeaway's gross sales, commission, effective rate, and promo-adjusted
+// combined cost/rate for one period, via the exact same
+// mcptools.ComparePlatformEconomics compare_platform_economics itself calls
+// — one computation, read here directly (no model involved) and narrated in
+// chat, never two.
+//
+// Unlike HandleReconciliation/HandlePromotions, an omitted ?start/?end here
+// does NOT default to the wide-open 1900..2999 sentinel parseOptionalPeriod
+// uses for "everything persisted": ComparePlatformEconomics refuses
+// (insufficient_data) on any calendar day in range with no persisted
+// reconciliation, and iterating a ~1000-year range to discover that would be
+// wasted work for a query this endpoint can answer directly. It defaults
+// instead to the real data's own [min, max] date range
+// (storage.LoadDataDateRange) — the same "ground against what the data
+// actually covers" convention cmd/server/main.go already applies for the
+// chat surface.
+func HandlePlatformComparison(q storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only GET is supported")
+			return
+		}
+
+		start, end, err := resolvePlatformComparisonPeriod(r, q)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_period", err.Error())
+			return
+		}
+
+		result, toolErr, err := mcptools.ComparePlatformEconomics(r.Context(), q, mcptools.Period{
+			Start: start.Format(dateLayout),
+			End:   end.Format(dateLayout),
+		})
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+			return
+		}
+		if toolErr != nil {
+			writeJSONError(w, http.StatusUnprocessableEntity, toolErr.Error, toolErrorDetail(toolErr))
+			return
+		}
+
+		writeJSON(w, http.StatusOK, result)
+	}
+}
+
+// resolvePlatformComparisonPeriod reads optional ?start/?end query
+// parameters (both, or neither — a lone bound would leave the other at the
+// wide-open sentinel, which is exactly the ~1000-year range this handler's
+// doc comment explains is the wrong default here), falling back to the real
+// persisted data's own date range when neither is given.
+func resolvePlatformComparisonPeriod(r *http.Request, q storage.Querier) (start, end time.Time, err error) {
+	s, e := r.URL.Query().Get("start"), r.URL.Query().Get("end")
+	if s == "" && e == "" {
+		return storage.LoadDataDateRange(r.Context(), q)
+	}
+	if s == "" || e == "" {
+		return time.Time{}, time.Time{}, fmt.Errorf("both start and end are required together, or neither")
+	}
+	start, err = time.Parse(dateLayout, s)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("start %q is not YYYY-MM-DD", s)
+	}
+	end, err = time.Parse(dateLayout, e)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("end %q is not YYYY-MM-DD", e)
+	}
+	if end.Before(start) {
+		return time.Time{}, time.Time{}, fmt.Errorf("end %s is before start %s", e, s)
+	}
+	return start, end, nil
+}
+
+// toolErrorDetail renders a mcptools.ToolError's Reason/Missing into a
+// single human-readable string for writeJSONError's flat {error, detail}
+// shape — this endpoint's only consumer of a *mcptools.ToolError, so no
+// richer shape exists yet for it to preserve.
+func toolErrorDetail(e *mcptools.ToolError) string {
+	if e.Reason != "" {
+		return e.Reason
+	}
+	if len(e.Missing) > 0 {
+		return "missing reconciliation for: " + strings.Join(e.Missing, ", ")
+	}
+	return e.Error
 }
 
 // parseOptionalPeriod reads optional start/end query parameters, defaulting

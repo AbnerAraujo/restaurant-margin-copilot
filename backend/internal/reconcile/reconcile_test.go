@@ -84,6 +84,16 @@ func TestComputeDailyReconciliations_RefundNetsCorrectly(t *testing.T) {
 	require.Equal(t, int64(3450), day.RefundsCents, "refund magnitude must be 34.50, netted against the original order_date per fixtures/README.md's documented convention")
 	require.Equal(t, int64(2509), day.CommissionsCents, "commission must net to 25.09: the refunded order's 7.94 commission is reversed by its own refund row's -7.94")
 
+	// CommissionsBySource (specs/003-platform-comparator): the refund's
+	// reversal is keyed by "ifood" (same source as its original order), so
+	// it nets WITHIN that source's own entry — iFood's 8.74 (order 0006) +
+	// 7.94 (order 0007 completed) - 7.94 (order 0007 refunded) = 8.74, not
+	// 16.68. JET is untouched by the refund: 5.95 + 10.40 = 16.35. The two
+	// sources still sum to the day's existing 25.09 total.
+	require.Equal(t, int64(874), day.CommissionsBySource["ifood"], "iFood commission for 2026-08-02, net of order 0007's refund reversal")
+	require.Equal(t, int64(1635), day.CommissionsBySource["just_eat_takeaway"])
+	require.Equal(t, day.CommissionsCents, day.CommissionsBySource["ifood"]+day.CommissionsBySource["just_eat_takeaway"], "per-source commission must sum back to the day's total")
+
 	require.Equal(t, int64(22375), day.GrossSalesBySource["pos"])
 	require.Equal(t, int64(54550), day.InputCostsCents)
 	require.Equal(t, int64(-22709), day.MarginCents, "2026-08-02 margin: (72.50+81.75+223.75) - 25.09 - 34.50 - 545.50 = -227.09")
@@ -118,6 +128,9 @@ func TestComputeDailyReconciliations_CleanDayMatchesHandComputation(t *testing.T
 	require.Equal(t, int64(7625), day.GrossSalesBySource["just_eat_takeaway"])
 	require.Equal(t, int64(24875), day.GrossSalesBySource["pos"])
 	require.Equal(t, int64(3124), day.CommissionsCents)
+	require.Equal(t, int64(1599), day.CommissionsBySource["ifood"], "9.66 (order 0001) + 6.33 (order 0002)")
+	require.Equal(t, int64(1525), day.CommissionsBySource["just_eat_takeaway"], "6.20 + 9.05")
+	require.NotContains(t, day.CommissionsBySource, "pos", "POS orders carry no commission at all")
 	require.Zero(t, day.RefundsCents)
 	require.Equal(t, int64(32000), day.InputCostsCents)
 	require.Equal(t, int64(4326), day.MarginCents, "(69.50+76.25+248.75) - 31.24 - 0 - 320.00 = 43.26")

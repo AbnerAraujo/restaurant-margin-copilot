@@ -110,6 +110,11 @@ func main() {
 		// same rendering (see internal/httpapi/data.go).
 		mux.HandleFunc("/api/reconciliation", httpapi.HandleReconciliation(store))
 		mux.HandleFunc("/api/promotions", methodSplit(httpapi.HandlePromotions(store), httpapi.HandleCreatePromotion(store)))
+		// GET /api/platforms: specs/003-platform-comparator's dedicated
+		// Platforms page, reading the exact same compare_platform_economics
+		// computation a chat answer about the same period would (see
+		// httpapi.HandlePlatformComparison's doc comment).
+		mux.HandleFunc("/api/platforms", httpapi.HandlePlatformComparison(store))
 		// POST /api/usage: the real app-open ping backing Engagement badges
 		// (spec 002-badge-expansion). No model involved, same as every other
 		// endpoint registered directly here rather than through
@@ -122,7 +127,7 @@ func main() {
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, POST /api/usage, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

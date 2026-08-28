@@ -126,6 +126,7 @@ func TestSaveAndLoadDailyReconciliation_RoundTripsExactly(t *testing.T) {
 	require.True(t, target.Date.Equal(loaded.Date), "date must round-trip exactly")
 	require.Equal(t, target.GrossSalesBySource, loaded.GrossSalesBySource, "gross_sales_by_source jsonb must round-trip exactly, including the absence of the ifood/just_eat_takeaway keys")
 	require.Equal(t, target.CommissionsCents, loaded.CommissionsCents)
+	require.Equal(t, target.CommissionsBySource, loaded.CommissionsBySource, "commissions_by_source jsonb (specs/003-platform-comparator) must round-trip exactly, including the absence of the ifood/just_eat_takeaway keys on this missing-delivery-day fixture")
 	require.Equal(t, target.RefundsCents, loaded.RefundsCents)
 	require.Equal(t, target.InputCostsCents, loaded.InputCostsCents)
 	require.Equal(t, target.MarginCents, loaded.MarginCents, "margin must round-trip exactly — a rounding-mode mismatch here would silently corrupt the one number Constitution Principle I says must never be wrong")

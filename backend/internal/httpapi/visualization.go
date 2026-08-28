@@ -24,6 +24,15 @@ package httpapi
 // form heuristic — magnitude comparison -> bar, part-to-whole -> pie, more
 // than a couple of columns of detail -> table):
 //
+//   - compare_platform_economics -> bar, 4 marks: one pair per platform
+//     (commission-only, commission+promo combined). This is a magnitude
+//     comparison across named categories (spec 003-platform-comparator),
+//     the same job get_margin_delta's bar already does — reused rather than
+//     inventing a grouped/2-series bar component, since a flat list of 4
+//     labelled points fits the existing single-series contract exactly
+//     (plan.md's own chart-mapping decision). Commission-only and combined
+//     are two SEPARATE points, never merged into one bar, per FR-004's
+//     "shown as distinct, separately-sourced figures".
 //   - list_discrepancies      -> table. Each flagged day carries a date, one
 //     or more flag types, and free-text detail: three columns of mixed text,
 //     which is a table's job, not a chart's.
@@ -124,6 +133,9 @@ func deriveVisualization(invocations []explain.ToolInvocation) *Visualization {
 	// Fixed priority: the narrowest subject wins. A question that reached a
 	// promotions tool is about promotions even if a daily summary was also
 	// pulled for context.
+	if viz := platformComparisonVisualization(byTool["compare_platform_economics"]); viz != nil {
+		return viz
+	}
 	if viz := promotionVisualization(byTool); viz != nil {
 		return viz
 	}
@@ -270,6 +282,73 @@ func periodLabel(p periodMarginJSON) string {
 		return p.Start
 	}
 	return p.Start + " → " + p.End
+}
+
+// --- compare_platform_economics -> bar ---------------------------------
+
+type platformEconomicsJSON struct {
+	Source                string  `json:"source"`
+	DisplayName           string  `json:"display_name"`
+	CommissionPaid        string  `json:"commission_paid"`
+	CombinedCost          string  `json:"combined_cost"`
+	EffectiveRate         *string `json:"effective_rate"`
+	CombinedEffectiveRate *string `json:"combined_effective_rate"`
+}
+
+type platformComparisonJSON struct {
+	Platforms []platformEconomicsJSON `json:"platforms"`
+}
+
+// platformComparisonVisualization renders compare_platform_economics' result
+// as 4 points: one platform's commission-only cost, then that same
+// platform's commission+promo combined cost, repeated for the second
+// platform — never fewer, so a platform with zero activity in the period
+// still gets its own (zero-valued) pair rather than being dropped (FR-003).
+func platformComparisonVisualization(results []string) *Visualization {
+	if len(results) == 0 {
+		return nil
+	}
+	var parsed platformComparisonJSON
+	if err := json.Unmarshal([]byte(results[0]), &parsed); err != nil || len(parsed.Platforms) == 0 {
+		return nil
+	}
+
+	points := make([]VizPoint, 0, len(parsed.Platforms)*2)
+	subtitleParts := make([]string, 0, len(parsed.Platforms))
+	for _, platform := range parsed.Platforms {
+		name := platform.DisplayName
+		if name == "" {
+			name = platform.Source
+		}
+
+		commissionOnly, ok := moneyPoint(name+" — commission only", platform.CommissionPaid)
+		if !ok {
+			continue
+		}
+		combined, ok := moneyPoint(name+" — commission + promo", platform.CombinedCost)
+		if !ok {
+			continue
+		}
+		points = append(points, commissionOnly, combined)
+
+		if platform.EffectiveRate != nil {
+			subtitleParts = append(subtitleParts, fmt.Sprintf("%s: %s commission rate", name, *platform.EffectiveRate))
+		} else {
+			subtitleParts = append(subtitleParts, fmt.Sprintf("%s: no sales this period", name))
+		}
+	}
+	if len(points) == 0 {
+		return nil
+	}
+
+	return &Visualization{
+		Kind:       VizKindBar,
+		Title:      "Platform economics: commission vs. commission + promo spend",
+		Subtitle:   strings.Join(subtitleParts, " · "),
+		ValueLabel: "Cost (USD)",
+		SourceTool: "compare_platform_economics",
+		Points:     points,
+	}
 }
 
 // --- promotion tools -> bar or table ----------------------------------

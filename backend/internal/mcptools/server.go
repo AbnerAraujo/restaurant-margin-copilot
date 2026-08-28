@@ -19,10 +19,11 @@ const (
 // exposing this project's full fixed, typed tool set over q, per
 // contracts/mcp-tools.md: get_daily_summary, get_margin_delta,
 // list_discrepancies (this package's own reconciliation_tools.go, User
-// Story 2/3), plus get_promotion_roi and list_negative_roi_promotions
-// (promo_tools.go, User Story 4 — already implemented and exporting
-// RegisterPromoTools specifically for this function to call, per that
-// file's own doc comment).
+// Story 2/3), get_promotion_roi and list_negative_roi_promotions
+// (promo_tools.go, User Story 4), and compare_platform_economics
+// (platform_comparison_tools.go, specs/003-platform-comparator) — each
+// exporting its own Register* function specifically for this function to
+// call, per those files' own doc comments.
 //
 // This function is exported and deliberately NOT called from
 // cmd/server/main.go here (tasks.md T020) — a later Integration phase
@@ -47,6 +48,7 @@ func RegisterMCPServer(q *storage.Queries) *server.MCPServer {
 
 	registerReconciliationTools(s, q)
 	RegisterPromoTools(s, q)
+	RegisterPlatformComparisonTool(s, q)
 
 	return s
 }
