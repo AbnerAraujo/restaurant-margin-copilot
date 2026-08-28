@@ -58,6 +58,26 @@
   --warning: #d97706;
   --warning-foreground: #ffffff;
   --warning-text: #b45309;
+
+  /* Categorical chart palette — IDENTITY only (which platform, which
+     campaign), never magnitude and never state. Kept separate from both the
+     brand accent and the status palette on the rule that a semantic color
+     must never double as a series color: a slice must not read as "this one
+     is good" just because it landed in slot 1.
+
+     Validated, not eyeballed — dataviz `scripts/validate_palette.js`
+     against this mode's surface (#ffffff):
+       #0b8a5e,#2563eb,#be1e74,#8a6d0b --mode light
+       PASS lightness band · PASS chroma floor
+       PASS CVD separation (worst adjacent ΔE 11.1 deutan)
+       PASS normal-vision floor (worst adjacent ΔE 23.9)
+       PASS contrast vs surface (all >= 3:1)
+     Assigned in fixed order and never cycled; a 5th category folds into a
+     neutral "Other" rather than getting a generated hue. */
+  --chart-1: #0b8a5e;
+  --chart-2: #2563eb;
+  --chart-3: #be1e74;
+  --chart-4: #8a6d0b;
 }
 
 .dark {
@@ -97,6 +117,20 @@
   --warning: #f59e0b;
   --warning-foreground: #1f1300;
   --warning-text: #fbbf24;
+
+  /* Dark mode is re-stepped from the same hues against the dark card
+     surface, not an automatic flip of the light values (the light magenta
+     drops to 2.84:1 on #171717 and would need a contrast relief it doesn't
+     have). Validated the same way:
+       #0e9968,#3b74f0,#c92d8a,#9a7a0d --mode dark --surface "#171717"
+       PASS lightness band · PASS chroma floor
+       PASS CVD separation (worst adjacent ΔE 14.0 deutan)
+       PASS normal-vision floor (worst adjacent ΔE 25.7)
+       PASS contrast vs surface (all >= 3:1) */
+  --chart-1: #0e9968;
+  --chart-2: #3b74f0;
+  --chart-3: #c92d8a;
+  --chart-4: #9a7a0d;
 }
 
 @theme inline {
@@ -129,6 +163,10 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning-text: var(--warning-text);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);

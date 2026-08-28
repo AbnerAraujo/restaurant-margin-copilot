@@ -11,9 +11,21 @@ import (
 )
 
 type Querier interface {
+	CountAnswerCacheHits(ctx context.Context) (int64, error)
+	// One row per answer served from cache — a non-interaction, recorded in its
+	// own ledger rather than as a fabricated question_interaction.
+	CreateAnswerCacheHit(ctx context.Context, arg CreateAnswerCacheHitParams) (AnswerCacheHit, error)
 	// Writer: internal/instrumentation/ only, alongside whichever of
 	// internal/ambiguity/ or internal/explain/ ran (Constitution Principle VI).
 	CreateQuestionInteraction(ctx context.Context, arg CreateQuestionInteractionParams) (QuestionInteraction, error)
+	// Invalidation. Called at the START of every ingestion run: new source data
+	// can change any cached answer, and there is no cheap way to know which, so
+	// the whole cache is dropped. Correctness after new data beats cache
+	// retention, always.
+	DeleteAllAnswerCacheEntries(ctx context.Context) error
+	// Exact lookup on the normalized question key. Writer/reader:
+	// internal/answercache only.
+	GetAnswerCacheEntry(ctx context.Context, normalizedQuestion string) (AnswerCache, error)
 	// Backs the get_daily_summary MCP tool contract.
 	GetDailyReconciliationByDate(ctx context.Context, date pgtype.Date) (DailyReconciliation, error)
 	// Backs the date-grounding fix (docs/plan.md mistakes log: "date-year
@@ -29,6 +41,12 @@ type Querier interface {
 	GetPromotionRoiByCampaign(ctx context.Context, campaignID string) ([]PromotionRoiRecord, error)
 	// Backs the get_promotion_roi MCP tool contract (platform+period input form).
 	GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg GetPromotionRoiByPlatformAndPeriodParams) ([]PromotionRoiRecord, error)
+	// Backs GET /api/promotions (internal/httpapi/data.go): the whole promotion
+	// set for the Promotions page, which is a deliberate full listing rather
+	// than a period query — the page's job is "every campaign on file and
+	// whether it paid for itself", and silently scoping it to a default window
+	// would hide campaigns rather than answer that question.
+	ListAllPromotionRoiRecords(ctx context.Context) ([]PromotionRoiRecord, error)
 	// Backs get_margin_delta / list_discrepancies, which operate over a range.
 	ListDailyReconciliationsInPeriod(ctx context.Context, arg ListDailyReconciliationsInPeriodParams) ([]DailyReconciliation, error)
 	// Backs the campaign-lookup fuzzy-match fix (docs/plan.md mistakes log:
@@ -45,8 +63,14 @@ type Querier interface {
 	ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype.Range[pgtype.Date]) ([]PromotionRoiRecord, error)
 	// Backs an instrumentation/history view in the frontend cost panel.
 	ListRecentQuestionInteractions(ctx context.Context, limit int32) ([]QuestionInteraction, error)
+	// Total model spend the cache has avoided so far.
+	SumAnswerCacheCostAvoided(ctx context.Context) (pgtype.Numeric, error)
 	// Backs the running cost total the UI must show for 100% of interactions (FR-009).
 	SumEstimatedCostUSD(ctx context.Context) (pgtype.Numeric, error)
+	// Re-answering the same normalized question overwrites the entry rather than
+	// keeping the older one: the newer response was computed against whatever
+	// data is current, so it is the one worth serving next time.
+	UpsertAnswerCacheEntry(ctx context.Context, arg UpsertAnswerCacheEntryParams) (AnswerCache, error)
 	// Writer: internal/reconcile/ only. The model layer never calls this.
 	UpsertDailyReconciliation(ctx context.Context, arg UpsertDailyReconciliationParams) (DailyReconciliation, error)
 	// Writer: internal/reconcile/ only. roi/attributed_* are NULL together when

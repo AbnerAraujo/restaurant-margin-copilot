@@ -61,6 +61,97 @@ type Badge struct {
 
 const dateLayout = "2006-01-02"
 
+// --- Points ------------------------------------------------------------
+//
+// Points are a pure function of the badges already earned — same design
+// principle as badges themselves: computed at read time, never persisted.
+// There is no points table, no points column, and nothing in this package
+// writes to Postgres. A points balance held as mutable state would be a
+// second source of truth for something already fully determined by
+// DailyReconciliation.discrepancy_flags, and the two could drift the moment
+// a day is re-ingested and re-reconciled. Deriving instead means a
+// re-ingestion silently corrects the balance, which is the only behaviour
+// that stays honest.
+//
+// The weights are a product judgement, stated here rather than buried:
+//
+//	Clean Close          10 pts — the day closed with zero discrepancies.
+//	                              Routine by design; the habit of closing
+//	                              daily is what earns it, not the outcome.
+//	Discrepancy Catcher  25 pts — the system caught and flagged something
+//	                              real (a duplicate order, a missing source,
+//	                              a commission mismatch, an anomaly breach).
+//
+// Weighting the catch HIGHER than the clean day is deliberate and is the
+// same reading docs/product-strategy.md already takes of the badge itself:
+// a caught anomaly is "a quiet 'system worked' acknowledgment, not a
+// failure." The money this product saves is found on the days something was
+// wrong, so those days are worth more — scoring them lower would quietly
+// tell an owner that a day with a problem was a worse day to have used the
+// product, which is the opposite of true.
+const (
+	PointsCleanClose         = 10
+	PointsDiscrepancyCatcher = 25
+)
+
+// pointsByCode is the single lookup both the total and the breakdown read
+// from, so a new badge code can never be worth points in one and not the
+// other.
+var pointsByCode = map[Code]int{
+	CodeCleanClose:         PointsCleanClose,
+	CodeDiscrepancyCatcher: PointsDiscrepancyCatcher,
+}
+
+// PointsLine is one badge code's contribution to the total — shown so the
+// balance is auditable rather than a bare number the owner has to trust.
+type PointsLine struct {
+	Code       Code   `json:"code"`
+	Name       string `json:"name"`
+	Count      int    `json:"count"`
+	PointsEach int    `json:"points_each"`
+	Points     int    `json:"points"`
+}
+
+// Points is the full earned balance plus the arithmetic behind it.
+type Points struct {
+	Total     int          `json:"total"`
+	Breakdown []PointsLine `json:"breakdown"`
+}
+
+// EvaluatePoints derives the points balance from already-evaluated badges.
+// It takes badges rather than reconciliation rows on purpose: points must be
+// a restatement of what the badge layer already decided, never an
+// independent second reading of discrepancy_flags that could disagree with
+// the badges shown beside it.
+//
+// The breakdown is emitted in a fixed code order (not map iteration order)
+// so the same data always renders the same way.
+func EvaluatePoints(earned []Badge) Points {
+	counts := map[Code]int{}
+	for _, badge := range earned {
+		counts[badge.Code]++
+	}
+
+	points := Points{Breakdown: make([]PointsLine, 0, len(pointsByCode))}
+	for _, code := range []Code{CodeCleanClose, CodeDiscrepancyCatcher} {
+		count := counts[code]
+		if count == 0 {
+			continue
+		}
+		each := pointsByCode[code]
+		subtotal := count * each
+		points.Total += subtotal
+		points.Breakdown = append(points.Breakdown, PointsLine{
+			Code:       code,
+			Name:       names[code],
+			Count:      count,
+			PointsEach: each,
+			Points:     subtotal,
+		})
+	}
+	return points
+}
+
 // EvaluateReconciliationBadges evaluates the two built-now Reconciliation
 // -category badges against already-computed DailyReconciliation rows.
 // Nothing here recomputes or reinterprets margin, discrepancies, or
@@ -95,6 +186,26 @@ func EvaluateReconciliationBadges(days []reconcile.DailyReconciliation) []Badge 
 	return out
 }
 
+// Response is GET /api/badges' body. Points ride on this response rather
+// than a separate endpoint: they are a derivation of exactly the badges in
+// the same payload, and splitting them across two requests would let a
+// client render a balance that disagrees with the badges shown beside it if
+// the two responses ever straddled an ingestion.
+type Response struct {
+	Badges []Badge `json:"badges"`
+	Points Points  `json:"points"`
+}
+
+// BuildResponse assembles GET /api/badges' body from already-loaded
+// reconciliation rows. Split out from the handler so the wire contract the
+// frontend reads can be asserted directly, without standing up a fake
+// implementation of the whole storage.Querier interface for a function that
+// touches none of it.
+func BuildResponse(days []reconcile.DailyReconciliation) Response {
+	earned := EvaluateReconciliationBadges(days)
+	return Response{Badges: earned, Points: EvaluatePoints(earned)}
+}
+
 // RegisterBadgeHandler returns a plain REST handler for GET /api/badges —
 // deliberately NOT an MCP tool (tasks.md T032): no functional requirement
 // asks the model to narrate badges, and this is deterministic UI state, not
@@ -124,9 +235,7 @@ func RegisterBadgeHandler(q storage.Querier) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]any{
-			"badges": EvaluateReconciliationBadges(days),
-		}); err != nil {
+		if err := json.NewEncoder(w).Encode(BuildResponse(days)); err != nil {
 			// Headers are already sent at this point (Content-Type, status
 			// 200 via the default); there is nothing left to do but log —
 			// see cmd/server for how this handler is wired.

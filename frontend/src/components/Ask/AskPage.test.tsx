@@ -79,18 +79,43 @@ describe('AskPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders the chat panel with its seeded conversation', () => {
+  it('renders the chat panel with an empty conversation, never the demo seed', () => {
     renderAskPage()
 
     expect(
       screen.getByRole('heading', { name: /ask about your margin/i }),
     ).toBeInTheDocument()
+    // The live surface must not display ChatPanel's fabricated demo thread:
+    // those figures have no provenance behind them and are styled exactly
+    // like real answers.
     expect(
-      screen.getByText(/today's reconciled margin was \$612\.40/i),
+      screen.queryByText(/today's reconciled margin was \$612\.40/i),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText(/ask anything about your reconciled numbers/i),
     ).toBeInTheDocument()
   })
 
-  it('starts the shared session cost at zero — it does not replay the seed conversation\'s cost on mount', () => {
+  it('offers starter questions that submit straight to the backend', async () => {
+    mockAskResponse({
+      status: 'answered',
+      answer_text: 'Margin on 2026-08-07 was $375.82.',
+      provenance_refs: [],
+      interactions: [],
+    })
+    const user = userEvent.setup()
+    renderAskPage()
+
+    await user.click(
+      screen.getByRole('button', { name: /how did we do on 2026-08-07/i }),
+    )
+
+    expect(
+      await screen.findByText('Margin on 2026-08-07 was $375.82.'),
+    ).toBeInTheDocument()
+  })
+
+  it('starts the shared session cost at zero', () => {
     renderAskPage()
 
     expect(screen.getByText(formatUsd(0))).toBeInTheDocument()

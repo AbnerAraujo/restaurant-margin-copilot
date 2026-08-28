@@ -136,21 +136,37 @@ const MARGIN = { top: 44, right: 16, bottom: 44, left: 48 }
 const PLOT_WIDTH = CHART_WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
 
-const Y_DOMAIN: [number, number] = [-200, 60]
-const Y_TICKS = [-150, -100, -50, 0, 50]
-
 const BAR_WIDTH = 24
 const BAR_RADIUS = 4
 const REFUSAL_BOX_WIDTH = 64
 const REFUSAL_BOX_HEIGHT = 28
 
-function yToPixel(value: number): number {
-  const [min, max] = Y_DOMAIN
-  const clamped = Math.min(Math.max(value, min), max)
-  return MARGIN.top + ((max - clamped) / (max - min)) * PLOT_HEIGHT
-}
+/**
+ * Y scale derived from the data, not hard-coded. The previous fixed
+ * [-200, 60] domain was tuned to one fixture; against live /api/promotions
+ * rows a campaign outside it would be CLAMPED to the axis edge and drawn
+ * smaller than the loss it represents.
+ */
+function buildScale(data: PromotionRoiDatum[]) {
+  const values = data
+    .map((datum) => datum.net)
+    .filter((value): value is number => value !== null)
+  const rawMin = Math.min(0, ...values)
+  const rawMax = Math.max(0, ...values)
+  const span = rawMax - rawMin || 1
+  const step = span > 2000 ? 500 : span > 800 ? 200 : 50
+  const min = Math.floor(rawMin / step) * step
+  const max = Math.ceil(rawMax / step) * step
 
-const BASELINE_Y = yToPixel(0)
+  const ticks: number[] = []
+  for (let tick = min; tick <= max; tick += step) ticks.push(tick)
+
+  const yToPixel = (value: number) => {
+    const clamped = Math.min(Math.max(value, min), max)
+    return MARGIN.top + ((max - clamped) / (max - min || 1)) * PLOT_HEIGHT
+  }
+  return { ticks, yToPixel, baselineY: yToPixel(0) }
+}
 
 function roundedBarPath(
   x: number,
@@ -192,7 +208,10 @@ interface BarGeometry {
   barHeight: number
 }
 
-function buildBars(data: PromotionRoiDatum[]): BarGeometry[] {
+function buildBars(
+  data: PromotionRoiDatum[],
+  yToPixel: (value: number) => number,
+): BarGeometry[] {
   const slotWidth = PLOT_WIDTH / data.length
   return data.map((datum, index) => {
     const slotCenterX = MARGIN.left + slotWidth * (index + 0.5)
@@ -228,7 +247,8 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
 
-  const bars = buildBars(data)
+  const { ticks, yToPixel, baselineY } = buildScale(data)
+  const bars = buildBars(data, yToPixel)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
 
   return (
@@ -252,7 +272,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
           aria-label="Bar chart of net ROI across four promotion campaigns, with one campaign flagged as unattributable and refused"
           className="h-auto w-full min-w-[360px]"
         >
-          {Y_TICKS.map((tick) => (
+          {ticks.map((tick) => (
             <g key={tick}>
               <line
                 x1={MARGIN.left}
@@ -278,8 +298,8 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
           <line
             x1={MARGIN.left}
             x2={CHART_WIDTH - MARGIN.right}
-            y1={BASELINE_Y}
-            y2={BASELINE_Y}
+            y1={baselineY}
+            y2={baselineY}
             stroke="var(--border)"
             strokeWidth={1}
           />
@@ -377,7 +397,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
               className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
               style={{
                 left: `${(bar.slotCenterX / CHART_WIDTH) * 100}%`,
-                top: `${(BASELINE_Y / CHART_HEIGHT) * 100}%`,
+                top: `${(baselineY / CHART_HEIGHT) * 100}%`,
                 width: `${(REFUSAL_BOX_WIDTH / CHART_WIDTH) * 100}%`,
               }}
             >
@@ -402,7 +422,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
               left: `${(hovered.slotCenterX / CHART_WIDTH) * 100}%`,
-              top: `${(Math.min(hovered.isRefused ? BASELINE_Y - REFUSAL_BOX_HEIGHT / 2 : hovered.barY, BASELINE_Y) / CHART_HEIGHT) * 100 - 1}%`,
+              top: `${(Math.min(hovered.isRefused ? baselineY - REFUSAL_BOX_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
             }}
           >
             <p className="font-medium text-muted-foreground">
@@ -425,7 +445,9 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
                 net {formatSignedUsd(hovered.datum.net as number)}
               </p>
             )}
-            <p className="text-muted-foreground">promotion_ad_spend_export.csv</p>
+            <p className="text-muted-foreground">
+              {hovered.datum.sourceRefs[0]?.source_file ?? 'no source on file'}
+            </p>
           </div>
         ) : null}
       </div>

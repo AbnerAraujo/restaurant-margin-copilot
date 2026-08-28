@@ -82,7 +82,12 @@ func toPromotionRoiView(rec reconcile.PromotionRoiRecord) PromotionRoiView {
 	return view
 }
 
-func newPromotionRoiResult(records []reconcile.PromotionRoiRecord) *PromotionRoiResult {
+// NewPromotionRoiResult renders already-computed PromotionRoiRecords into
+// the JSON-facing shape, preserving FR-013's null-roi-with-a-reason rule.
+// Exported for the same reason as NewDailySummaryResult: internal/httpapi's
+// GET /api/promotions serves this identical shape rather than a second,
+// parallel rendering of the same records.
+func NewPromotionRoiResult(records []reconcile.PromotionRoiRecord) *PromotionRoiResult {
 	views := make([]PromotionRoiView, 0, len(records))
 	for _, rec := range records {
 		views = append(views, toPromotionRoiView(rec))
@@ -134,7 +139,7 @@ func GetPromotionRoi(ctx context.Context, store storage.Querier, args GetPromoti
 		if len(records) == 0 {
 			return nil, &ToolError{Error: "no_data", Reason: fmt.Sprintf("no promotion found with campaign_id %q", args.CampaignID)}, nil
 		}
-		return newPromotionRoiResult(records), nil, nil
+		return NewPromotionRoiResult(records), nil, nil
 
 	case args.Platform != "" && args.Period != nil:
 		start, end, perr := args.Period.parse()
@@ -148,7 +153,7 @@ func GetPromotionRoi(ctx context.Context, store storage.Querier, args GetPromoti
 		if len(records) == 0 {
 			return nil, &ToolError{Error: "no_data", Reason: fmt.Sprintf("no promotions found for platform %q overlapping %s..%s", args.Platform, args.Period.Start, args.Period.End)}, nil
 		}
-		return newPromotionRoiResult(records), nil, nil
+		return NewPromotionRoiResult(records), nil, nil
 
 	default:
 		return nil, invalidInput("either campaign_id, or both platform and period, must be given"), nil
@@ -217,7 +222,7 @@ func ListNegativeRoiPromotions(ctx context.Context, store storage.Querier, args 
 	if qerr != nil {
 		return nil, nil, qerr
 	}
-	return newPromotionRoiResult(records), nil, nil
+	return NewPromotionRoiResult(records), nil, nil
 }
 
 // ListNegativeRoiPromotionsTool is the mcp-go Tool definition for

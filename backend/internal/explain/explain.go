@@ -43,16 +43,33 @@ const MaxTurns = mcptools.DefaultMaxToolCallsPerInteraction + 3
 // MaxAnswerTokens bounds the model's final narration turn.
 const MaxAnswerTokens = 1024
 
+// ToolInvocation is one successful MCP tool call this interaction made: the
+// tool's name and the raw JSON result it returned. Recorded so a caller can
+// derive presentation from what the DETERMINISTIC layer actually computed —
+// internal/httpapi uses it to pick a chart type (table/bar/pie) in plain Go,
+// from the tool name and the shape of its result, with no second model call
+// involved (Constitution Principle I: the model narrates, it does not decide
+// how the product renders a number).
+//
+// Errored tool calls are deliberately excluded: a typed no_data /
+// insufficient_data result is a refusal to produce a figure, and there is by
+// definition nothing to chart from one.
+type ToolInvocation struct {
+	Name       string
+	ResultJSON string
+}
+
 // Result is what Explain returns: the narrated answer (empty if the model
 // could not produce one within MaxTurns — Constitution Principle II: never
 // a partial, unlabeled answer), the provenance every tool call in this
-// interaction actually returned, and the aggregate token/cost/latency
-// across every model turn this one interaction took, ready for
-// internal/instrumentation.
+// interaction actually returned, the deterministic tool results behind it,
+// and the aggregate token/cost/latency across every model turn this one
+// interaction took, ready for internal/instrumentation.
 type Result struct {
-	AnswerText     string
-	ProvenanceRefs []string
-	ToolCallsMade  int
+	AnswerText      string
+	ProvenanceRefs  []string
+	ToolCallsMade   int
+	ToolInvocations []ToolInvocation
 
 	// IncompleteReason is set (and AnswerText left empty) when the loop
 	// exhausted MaxTurns, or the model refused, without ever producing a
@@ -141,6 +158,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		totalLatencyMs    int64
 		seenRefs          = map[string]struct{}{}
 		orderedRefs       []string
+		invocations       []ToolInvocation
 	)
 
 	for turn := 0; turn < MaxTurns; turn++ {
@@ -168,6 +186,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			return &Result{
 				IncompleteReason: "model declined to answer (category: " + resp.RefusalCategory + ")",
 				ToolCallsMade:    budget.Used(),
+				ToolInvocations:  invocations,
 				InputTokens:      totalIn, OutputTokens: totalOut,
 				EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
 			}, nil
@@ -186,10 +205,11 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			// verify that a given sentence's numbers trace to a tool call,
 			// but it never computes one either.
 			return &Result{
-				AnswerText:     resp.Text,
-				ProvenanceRefs: orderedRefs,
-				ToolCallsMade:  budget.Used(),
-				InputTokens:    totalIn, OutputTokens: totalOut,
+				AnswerText:      resp.Text,
+				ProvenanceRefs:  orderedRefs,
+				ToolCallsMade:   budget.Used(),
+				ToolInvocations: invocations,
+				InputTokens:     totalIn, OutputTokens: totalOut,
 				EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
 			}, nil
 		}
@@ -197,6 +217,9 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		toolResultBlocks := make([]anthropic.ContentBlockParamUnion, 0, len(toolUses))
 		for _, tu := range toolUses {
 			text, isError := e.callTool(ctx, tu, seenRefs, &orderedRefs)
+			if !isError {
+				invocations = append(invocations, ToolInvocation{Name: tu.Name, ResultJSON: text})
+			}
 			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(tu.ID, text, isError))
 		}
 		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
@@ -208,6 +231,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 	return &Result{
 		IncompleteReason: fmt.Sprintf("could not produce an answer within %d model turns (tool-call cap or loop guard reached)", MaxTurns),
 		ToolCallsMade:    budget.Used(),
+		ToolInvocations:  invocations,
 		InputTokens:      totalIn, OutputTokens: totalOut,
 		EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
 	}, nil

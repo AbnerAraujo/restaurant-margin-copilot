@@ -6,8 +6,19 @@ import { cn } from "@/lib/utils"
 function ScrollArea({
   className,
   children,
+  viewportRef,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  /**
+   * Handle on the scrolling element itself. Radix nests the real scroll
+   * container (`[data-radix-scroll-area-viewport]`) inside `Root`, so a ref
+   * on `Root` points at a non-scrolling wrapper. A caller that has to drive
+   * scroll position imperatively — a chat log pinning itself to the newest
+   * message — needs the viewport, and reaching for it with a DOM query from
+   * outside would couple that caller to Radix's internal markup.
+   */
+  viewportRef?: React.Ref<HTMLDivElement>
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -16,6 +27,7 @@ function ScrollArea({
     >
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
+        ref={viewportRef}
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
         {children}

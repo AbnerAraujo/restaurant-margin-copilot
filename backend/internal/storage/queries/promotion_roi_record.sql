@@ -53,3 +53,12 @@ ORDER BY period;
 -- (Constitution Principle III: a typed, bounded match, never open-ended
 -- fuzzy computation).
 SELECT DISTINCT campaign_id FROM promotion_roi_record ORDER BY campaign_id;
+
+-- name: ListAllPromotionRoiRecords :many
+-- Backs GET /api/promotions (internal/httpapi/data.go): the whole promotion
+-- set for the Promotions page, which is a deliberate full listing rather
+-- than a period query — the page's job is "every campaign on file and
+-- whether it paid for itself", and silently scoping it to a default window
+-- would hide campaigns rather than answer that question.
+SELECT * FROM promotion_roi_record
+ORDER BY period, campaign_id;

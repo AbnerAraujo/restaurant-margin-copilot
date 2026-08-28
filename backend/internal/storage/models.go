@@ -10,6 +10,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// Exact-match answer cache keyed on normalized question text. Paraphrases deliberately do NOT hit: matching them would need a model or an embedding, which would reintroduce the cost the cache exists to avoid and put a probabilistic step in front of a deterministic lookup.
+type AnswerCache struct {
+	NormalizedQuestion string             `json:"normalized_question"`
+	OriginalQuestion   string             `json:"original_question"`
+	Response           json.RawMessage    `json:"response"`
+	OriginCostUsd      pgtype.Numeric     `json:"origin_cost_usd"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
+// One row per answer served from cache — a NON-interaction. Kept out of question_interaction so that table stays exactly "model calls that really ran" (Constitution Principle VI), and so cost totals are never inflated by spend that did not happen.
+type AnswerCacheHit struct {
+	ID                      pgtype.UUID        `json:"id"`
+	NormalizedQuestion      string             `json:"normalized_question"`
+	QuestionText            string             `json:"question_text"`
+	EstimatedCostAvoidedUsd pgtype.Numeric     `json:"estimated_cost_avoided_usd"`
+	ServedAt                pgtype.Timestamptz `json:"served_at"`
+}
+
 // Deterministic daily margin computation. margin MUST be reproducible by re-running reconciliation against source_row_refs; never written by the model layer (Constitution Principle I).
 type DailyReconciliation struct {
 	Date               pgtype.Date        `json:"date"`

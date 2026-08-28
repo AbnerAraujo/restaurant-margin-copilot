@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HomePage from './HomePage'
 
@@ -24,6 +24,22 @@ function renderHomePageWithRoutes() {
 }
 
 describe('HomePage', () => {
+  // HomePage now mounts PointsCard, which fetches GET /api/badges. Stubbed
+  // so these navigation assertions don't depend on a live backend; the card's
+  // own behaviour is covered in PointsCard.test.tsx.
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ badges: [], points: { total: 0, breakdown: [] } }),
+      }),
+    )
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders exactly the three capability tiles as real links, not decorative divs', () => {
     renderHomePageWithRoutes()
 

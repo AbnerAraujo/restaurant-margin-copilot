@@ -46,6 +46,48 @@ respectively, so a badge never reads as "the brand color" and the brand
 button never reads as "a success state" — per the rule that semantic color
 must never double as the one brand accent.
 
+### Categorical chart palette
+
+A third, separate family for chart series **identity** (which platform, which
+campaign) — kept apart from both the brand accent and the status palette on
+the same rule: a pie slice must not read as "this one is good" because it
+happened to land in slot 1.
+
+| Token | Light | Dark |
+|---|---|---|
+| `--chart-1` | `#0b8a5e` | `#0e9968` |
+| `--chart-2` | `#2563eb` | `#3b74f0` |
+| `--chart-3` | `#be1e74` | `#c92d8a` |
+| `--chart-4` | `#8a6d0b` | `#9a7a0d` |
+
+Assigned in fixed order, never cycled; a fifth category folds into a neutral
+"Other" rather than getting a generated hue. Dark mode is **re-stepped from
+the same hues**, not an automatic flip — the light magenta drops to 2.84:1 on
+the dark card surface and would need a contrast relief it doesn't have.
+
+Validated, not eyeballed, with the `dataviz` skill's
+`scripts/validate_palette.js`:
+
+```
+#0b8a5e,#2563eb,#be1e74,#8a6d0b --mode light --surface "#ffffff"
+  PASS lightness band · PASS chroma floor
+  PASS CVD separation      worst adjacent ΔE 11.1 (deutan)
+  PASS normal-vision floor worst adjacent ΔE 23.9
+  PASS contrast vs surface all 4 >= 3:1
+
+#0e9968,#3b74f0,#c92d8a,#9a7a0d --mode dark --surface "#171717"
+  PASS lightness band · PASS chroma floor
+  PASS CVD separation      worst adjacent ΔE 14.0 (deutan)
+  PASS normal-vision floor worst adjacent ΔE 25.7
+  PASS contrast vs surface all 4 >= 3:1
+```
+
+Charts whose job is **polarity** rather than identity (margin per period, net
+ROI per campaign — "did this make or lose money") keep using the existing
+diverging `--success`/`--destructive` pair, with the zero baseline and direct
+labels carrying the meaning independently of colour. Colour follows the job,
+not the component.
+
 ## Where it lives
 
 - `frontend/public/favicon.svg`, `frontend/src/components/Logo/Logo.tsx`

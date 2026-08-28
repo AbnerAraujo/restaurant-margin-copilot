@@ -241,6 +241,187 @@ describe('ChatPanel', () => {
     expect(resolveAnswer).not.toHaveBeenCalled()
   })
 
+  it('renders an empty conversation as a starter-question state, and submits a suggestion', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-suggestion',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Answer from a suggestion.',
+        provenance: [],
+        askedAt: '2026-08-27T10:20:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        suggestions={['Which promotions lost money?']}
+      />,
+    )
+
+    const suggestion = screen.getByRole('button', {
+      name: 'Which promotions lost money?',
+    })
+    await user.click(suggestion)
+
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'Which promotions lost money?',
+      expect.any(Array),
+    )
+    expect(
+      await screen.findByText('Answer from a suggestion.'),
+    ).toBeInTheDocument()
+    // The starter state is for an empty thread only — it must not linger
+    // alongside a real conversation.
+    expect(suggestion).not.toBeInTheDocument()
+  })
+
+  it('surfaces a failed request as a connection error distinct from a refusal, and retries it', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockRejectedValueOnce(new Error('/api/ask returned 502: upstream down'))
+      .mockResolvedValueOnce({
+        id: 'test-answer-retry',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Answer after retry.',
+        provenance: [],
+        askedAt: '2026-08-27T10:30:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-07?{Enter}')
+
+    expect(
+      await screen.findByText(/couldn't reach the reconciliation engine/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('/api/ask returned 502: upstream down'),
+    ).toBeInTheDocument()
+    // A transport failure must never be dressed up as the product's own
+    // principled refusal.
+    expect(
+      screen.queryByText(/can't answer this one/i),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+    expect(await screen.findByText('Answer after retry.')).toBeInTheDocument()
+    expect(resolveAnswer).toHaveBeenNthCalledWith(
+      2,
+      'How did we do on 2026-08-07?',
+      expect.any(Array),
+    )
+  })
+
+  it('renders an answer’s backend-chosen visualization inline in its bubble', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-viz',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Two days had discrepancy flags.',
+        provenance: [],
+        visualization: {
+          kind: 'table',
+          title: 'Flagged days',
+          source_tool: 'list_discrepancies',
+          columns: ['Date', 'Discrepancy'],
+          rows: [['2026-08-03', 'Duplicate order removed']],
+        },
+        askedAt: '2026-08-27T10:40:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'Which days had discrepancies?{Enter}')
+
+    const answer = await screen.findByText('Two days had discrepancy flags.')
+    const bubble = answer.closest('li')
+    expect(bubble).not.toBeNull()
+    // The chart belongs to the answer, not to a separate panel beside it.
+    expect(within(bubble as HTMLElement).getByRole('table')).toBeInTheDocument()
+    expect(
+      within(bubble as HTMLElement).getByText('Duplicate order removed'),
+    ).toBeInTheDocument()
+  })
+
+  it('marks a cached answer as costing nothing, and states the saving separately', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-cached',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        cache: {
+          hit: true,
+          cost_avoided_usd: 0.00527,
+          note: 'Exact question match.',
+        },
+        askedAt: '2026-08-27T10:50:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-07?{Enter}')
+
+    await screen.findByText('Margin on 2026-08-07 was $375.82.')
+    expect(screen.getByText('Served from cache')).toBeInTheDocument()
+    // Spend and saving are two separate statements — an avoided cost must
+    // never read as money spent.
+    expect(screen.getByText(/no model call, \$0\.000 spent/i)).toBeInTheDocument()
+    expect(screen.getByText(/saved \$0\.005/)).toBeInTheDocument()
+  })
+
+  it('keeps the scroll area able to shrink below its content height', () => {
+    // Regression guard for the measured layout defect: a `flex-1` column
+    // child's automatic minimum size is its CONTENT height, so without
+    // `min-h-0` the Radix viewport never overflows, nothing is scrollable,
+    // and the composer is pushed past the panel's clipped edge.
+    const { container } = render(<ChatPanel />)
+    const scrollArea = container.querySelector('[data-slot="scroll-area"]')
+    expect(scrollArea).not.toBeNull()
+    expect(scrollArea?.parentElement?.className).toContain('min-h-0')
+  })
+
   it('submits on Enter and inserts a newline on Shift+Enter instead of submitting', async () => {
     const user = userEvent.setup()
     const resolveAnswer = vi

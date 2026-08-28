@@ -21,9 +21,10 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ambiguity"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/httpapi"
@@ -54,17 +55,39 @@ func main() {
 	}
 
 	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, dsn)
+	// A POOL, not a single pgx.Conn. A lone connection is not safe for
+	// concurrent use, and -serve now exposes four endpoints that a single
+	// page load fires in parallel (GET /api/badges alongside
+	// GET /api/reconciliation, for instance) — which surfaced as a real
+	// "conn busy: failed to deallocate cached statement(s)" 500 on the Close
+	// and Promotions pages the moment they went live against Postgres.
+	// pgxpool hands each in-flight request its own connection and satisfies
+	// storage.DBTX unchanged.
+	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		log.Fatalf("connecting to Postgres: %v", err)
 	}
-	defer func() {
-		if err := conn.Close(ctx); err != nil {
-			log.Printf("closing Postgres connection: %v", err)
-		}
-	}()
+	defer pool.Close()
 
-	store := storage.New(conn)
+	if err := pool.Ping(ctx); err != nil {
+		log.Fatalf("pinging Postgres: %v", err)
+	}
+
+	store := storage.New(pool)
+	cache := answercache.New(store)
+
+	// Cache invalidation, at the START of any ingestion run rather than the
+	// end: new source data can change any cached answer, and if the pipeline
+	// fails partway through, having already dropped the cache costs a few
+	// re-asked questions, whereas clearing only on success could leave
+	// answers cached against data that has already been partly rewritten.
+	// Correctness after new data wins over cache retention, every time.
+	if *ingestDir != "" || *ingestPromoDir != "" {
+		if err := cache.Clear(ctx); err != nil {
+			log.Fatalf("clearing the answer cache before ingestion: %v", err)
+		}
+		log.Println("answer cache cleared — new data invalidates every previously cached answer")
+	}
 
 	if *ingestDir != "" {
 		if err := pipeline.RunIngestionPipeline(*ingestDir, store); err != nil {
@@ -81,14 +104,20 @@ func main() {
 	if *serveAddr != "" {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/api/badges", badges.RegisterBadgeHandler(store))
+		// Plain read-only data endpoints backing the Close and Promotions
+		// pages. No model is involved in either request path — they read the
+		// same persisted deterministic output the MCP tools read, through the
+		// same rendering (see internal/httpapi/data.go).
+		mux.HandleFunc("/api/reconciliation", httpapi.HandleReconciliation(store))
+		mux.HandleFunc("/api/promotions", httpapi.HandlePromotions(store))
 
-		askDeps, err := buildAskDeps(ctx, store)
+		askDeps, err := buildAskDeps(ctx, store, cache)
 		if err != nil {
 			log.Fatalf("wiring POST /api/ask: %v", err)
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges (T032) and POST /api/ask (T020/T023) on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET /api/promotions and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
@@ -126,7 +155,7 @@ func withDevCORS(next http.Handler) http.Handler {
 // (internal/llmclient.New's documented default); -serve fails fast here
 // rather than at the first POST /api/ask if that's missing, matching how
 // DATABASE_URL is already checked fast above.
-func buildAskDeps(ctx context.Context, store *storage.Queries) (httpapi.Deps, error) {
+func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercache.Cache) (httpapi.Deps, error) {
 	llm := llmclient.New()
 
 	// Resolve the real data date range ONCE, from Postgres, rather than
@@ -157,6 +186,7 @@ func buildAskDeps(ctx context.Context, store *storage.Queries) (httpapi.Deps, er
 		Gate:      ambiguity.New(llm, dataStartStr, dataEndStr),
 		Explainer: explainer,
 		Logger:    instrumentation.NewLogger(storage.NewInstrumentationAdapter(store)),
+		Cache:     cache,
 	}, nil
 }
 

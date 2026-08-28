@@ -34,6 +34,7 @@ import (
 	"strings"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ambiguity"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/llmclient"
@@ -49,12 +50,24 @@ type AskRequest struct {
 // spec FR-006/FR-007 define. Fields not relevant to the given Status are
 // left empty, never populated with a placeholder.
 type AskResponse struct {
-	Status             string             `json:"status"`
-	AnswerText         string             `json:"answer_text,omitempty"`
-	ProvenanceRefs     []string           `json:"provenance_refs,omitempty"`
-	ClarifyingQuestion string             `json:"clarifying_question,omitempty"`
-	AssumptionStated   string             `json:"assumption_stated,omitempty"`
-	RefusalReason      string             `json:"refusal_reason,omitempty"`
+	Status             string   `json:"status"`
+	AnswerText         string   `json:"answer_text,omitempty"`
+	ProvenanceRefs     []string `json:"provenance_refs,omitempty"`
+	ClarifyingQuestion string   `json:"clarifying_question,omitempty"`
+	AssumptionStated   string   `json:"assumption_stated,omitempty"`
+	RefusalReason      string   `json:"refusal_reason,omitempty"`
+	// Visualization is an optional structured rendering of the SAME
+	// deterministic tool results the answer was narrated from — a table, bar
+	// chart, or pie chart. Chosen in plain Go from the tool name and result
+	// shape (visualization.go), never by a second model call. Omitted
+	// entirely when no tool result has a shape worth drawing, so the client
+	// never has to distinguish "no chart" from "an empty chart".
+	Visualization *Visualization `json:"visualization,omitempty"`
+	// Cache is set only when this response was served from the answer cache
+	// without any model call. Its presence is the client's signal that
+	// Interactions is empty because NOTHING RAN, not because measurement
+	// failed — two states a running cost panel must never confuse.
+	Cache *CacheInfo `json:"cache,omitempty"`
 	// Interactions carries this request's real, just-measured cost — one
 	// entry per model call that actually ran (the gate always; explain only
 	// if the gate let the question through) — so the frontend's running
@@ -75,12 +88,52 @@ type CostInteraction struct {
 	LatencyMs        int64   `json:"latency_ms"`
 }
 
+// CacheInfo describes a cache hit. CostAvoidedUSD is what the original model
+// calls cost — money this request did NOT spend. It is deliberately a
+// separate field from Interactions rather than a zero-cost entry inside it,
+// so no client can accidentally sum an avoided cost into a spend total.
+type CacheInfo struct {
+	Hit            bool    `json:"hit"`
+	CachedAt       string  `json:"cached_at,omitempty"`
+	CostAvoidedUSD float64 `json:"cost_avoided_usd"`
+	// Note is the disclosed limitation, carried on the wire so the UI can
+	// state it rather than implying the cache is smarter than it is.
+	Note string `json:"note,omitempty"`
+}
+
+// CacheMatchNote is the one-line statement of what this cache does and does
+// not match, shown wherever a cache hit is surfaced.
+const CacheMatchNote = "Exact question match (whitespace and case ignored). A reworded question is a new question and costs full price."
+
+// Classifier is the ambiguity gate as this handler needs it.
+// *ambiguity.Gate satisfies it directly.
+//
+// Declared as an interface rather than taking the concrete type so a test can
+// COUNT model calls. Proving "an identical question is answered twice but
+// billed once" requires observing that the gate and explainer ran exactly
+// once between the two requests, which is impossible against a struct that
+// only talks to the live Anthropic API.
+type Classifier interface {
+	Classify(ctx context.Context, question string) (*ambiguity.Decision, error)
+}
+
+// Narrator is the explanation step as this handler needs it.
+// *explain.Explainer satisfies it directly.
+type Narrator interface {
+	Explain(ctx context.Context, question, assumptionStated string) (*explain.Result, error)
+}
+
 // Deps are HandleAsk's dependencies, constructed once at process start (by
 // whatever Integration-phase wiring calls this package — not here).
 type Deps struct {
-	Gate      *ambiguity.Gate
-	Explainer *explain.Explainer
+	Gate      Classifier
+	Explainer Narrator
 	Logger    *instrumentation.Logger
+	// Cache, when non-nil, short-circuits an exact repeat question before
+	// either model call. Optional: a Deps with no Cache behaves exactly as
+	// this handler did before the cache existed, which is what keeps the
+	// cache an optimisation rather than a dependency.
+	Cache *answercache.Cache
 }
 
 // HandleAsk implements POST /api/ask. It is exported and takes its
@@ -107,6 +160,19 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		// Cache probe BEFORE the ambiguity gate — the gate is itself a real
+		// billed Haiku call, so checking after it would still spend money on
+		// every repeat. A hit returns the previously-served response verbatim,
+		// including its refusal or clarification: a question that was
+		// unanswerable an hour ago is still unanswerable now against the same
+		// data, and re-deciding it would cost two model calls to reach the
+		// same conclusion.
+		if deps.Cache != nil {
+			if served := deps.serveFromCache(ctx, w, req.Question); served {
+				return
+			}
+		}
+
 		decision, err := deps.Gate.Classify(ctx, req.Question)
 		if err != nil {
 			http.Error(w, "ambiguity gate failed: "+err.Error(), http.StatusBadGateway)
@@ -124,7 +190,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
-			writeJSON(w, http.StatusOK, AskResponse{
+			deps.writeAndCache(ctx, w, req.Question, AskResponse{
 				Status:        "refused",
 				RefusalReason: decision.RefusalReason,
 				Interactions: []CostInteraction{
@@ -145,7 +211,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
-			writeJSON(w, http.StatusOK, AskResponse{
+			deps.writeAndCache(ctx, w, req.Question, AskResponse{
 				Status:             "clarification_needed",
 				ClarifyingQuestion: decision.ClarifyingQuestion,
 				Interactions: []CostInteraction{
@@ -190,7 +256,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    result.EstimatedCostUSD,
 				LatencyMs:           result.LatencyMs,
 			})
-			writeJSON(w, http.StatusOK, AskResponse{
+			deps.writeAndCache(ctx, w, req.Question, AskResponse{
 				Status:        "refused",
 				RefusalReason: result.IncompleteReason,
 				Interactions:  []CostInteraction{gateInteraction, explainInteraction},
@@ -214,12 +280,13 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			Status:         "answered",
 			AnswerText:     result.AnswerText,
 			ProvenanceRefs: result.ProvenanceRefs,
+			Visualization:  deriveVisualization(result.ToolInvocations),
 			Interactions:   []CostInteraction{gateInteraction, explainInteraction},
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated
 		}
-		writeJSON(w, http.StatusOK, resp)
+		deps.writeAndCache(ctx, w, req.Question, resp)
 	}
 }
 
@@ -238,4 +305,83 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// serveFromCache probes the answer cache and, on a hit, writes the previously
+// served response and reports true. On a miss — or on any cache failure — it
+// reports false so the caller proceeds with the real model calls: a broken
+// cache must degrade into "pay full price", never into "fail the request" or,
+// worse, "serve something stale-looking anyway".
+//
+// The response is rewritten in exactly two ways before it goes out:
+// Interactions is emptied, because no model call ran and reporting the
+// original call's cost would charge the user twice for one API call; and
+// Cache is set, so the client can tell "zero cost because nothing ran" from
+// "zero cost because measurement failed".
+func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, question string) bool {
+	entry, err := deps.Cache.Lookup(ctx, question)
+	if err != nil {
+		log.Printf("httpapi: answer-cache lookup failed (question=%q): %v — falling through to the model", question, err)
+		return false
+	}
+	if entry == nil {
+		return false
+	}
+
+	var cached AskResponse
+	if err := json.Unmarshal(entry.ResponseJSON, &cached); err != nil {
+		log.Printf("httpapi: answer-cache entry for %q is unreadable: %v — falling through to the model", question, err)
+		return false
+	}
+
+	cached.Interactions = nil
+	cached.Cache = &CacheInfo{
+		Hit:            true,
+		CachedAt:       entry.CachedAt,
+		CostAvoidedUSD: entry.OriginCostUSD,
+		Note:           CacheMatchNote,
+	}
+
+	// The hit is instrumented in its own ledger, never as a QuestionInteraction
+	// (see internal/answercache's package doc). A failure to record it is
+	// logged loudly rather than swallowed — the same treatment logOrWarn gives
+	// a failed interaction write — but does not deny the user their answer.
+	if err := deps.Cache.RecordHit(ctx, question, entry.OriginCostUSD); err != nil {
+		log.Printf("httpapi: FAILED to record answer-cache hit (question=%q): %v", question, err)
+	}
+
+	writeJSON(w, http.StatusOK, cached)
+	return true
+}
+
+// writeAndCache writes resp and, when a cache is configured, stores it for
+// the next identical question. Caching happens AFTER the response is written
+// and never affects it: a cache write failure is a lost optimisation, not a
+// failed answer, so it is logged and otherwise ignored.
+//
+// Every outcome is cached, refusals and clarifications included. A refusal is
+// a deterministic consequence of the data on file — asking the same
+// unanswerable question twice should not cost twice — and the cache is
+// cleared wholesale the moment new data arrives, which is exactly when a
+// refusal might stop being correct.
+func (deps Deps) writeAndCache(ctx context.Context, w http.ResponseWriter, question string, resp AskResponse) {
+	writeJSON(w, http.StatusOK, resp)
+
+	if deps.Cache == nil {
+		return
+	}
+
+	var originCostUSD float64
+	for _, interaction := range resp.Interactions {
+		originCostUSD += interaction.EstimatedCostUSD
+	}
+
+	body, err := json.Marshal(resp)
+	if err != nil {
+		log.Printf("httpapi: could not serialize response for the answer cache (question=%q): %v", question, err)
+		return
+	}
+	if err := deps.Cache.Save(ctx, question, body, originCostUSD); err != nil {
+		log.Printf("httpapi: could not write answer-cache entry (question=%q): %v", question, err)
+	}
 }

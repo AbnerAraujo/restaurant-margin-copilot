@@ -97,6 +97,49 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 	return items, nil
 }
 
+const listAllPromotionRoiRecords = `-- name: ListAllPromotionRoiRecords :many
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
+ORDER BY period, campaign_id
+`
+
+// Backs GET /api/promotions (internal/httpapi/data.go): the whole promotion
+// set for the Promotions page, which is a deliberate full listing rather
+// than a period query — the page's job is "every campaign on file and
+// whether it paid for itself", and silently scoping it to a default window
+// would hide campaigns rather than answer that question.
+func (q *Queries) ListAllPromotionRoiRecords(ctx context.Context) ([]PromotionRoiRecord, error) {
+	rows, err := q.db.Query(ctx, listAllPromotionRoiRecords)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PromotionRoiRecord
+	for rows.Next() {
+		var i PromotionRoiRecord
+		if err := rows.Scan(
+			&i.ID,
+			&i.Platform,
+			&i.CampaignID,
+			&i.Period,
+			&i.Spend,
+			&i.AttributedIncrementalOrders,
+			&i.AttributedIncrementalRevenue,
+			&i.Roi,
+			&i.FlaggedNegative,
+			&i.SourceRowRefs,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDistinctCampaignIDs = `-- name: ListDistinctCampaignIDs :many
 SELECT DISTINCT campaign_id FROM promotion_roi_record ORDER BY campaign_id
 `

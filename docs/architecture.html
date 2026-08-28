@@ -265,10 +265,10 @@
 
   <section>
     <h2>Where the line sits</h2>
-    <p class="prose">The central design constraint: no number the user sees is ever produced by a model. Arithmetic happens once, in Go, against Postgres. The model layer only ever receives the result of a typed tool call and narrates it — it cannot see raw rows, and it cannot query the database on its own terms.</p>
+    <p class="prose">The central design constraint: no number the user sees is ever produced by a model. Arithmetic happens once, in Go, against Postgres. The model layer only ever receives the result of a typed tool call and narrates it — it cannot see raw rows, and it cannot query the database on its own terms. Two later additions sit on the deterministic side of that same line: an exact-match <strong>answer cache</strong> in front of the ambiguity gate, so a repeated question makes no API call at all, and a <strong>chart-type decision</strong> behind the explanation step, so whether an answer arrives as a table, a bar chart or a pie is derived in Go from which tool ran — never asked of a second model.</p>
 
     <figure>
-      <svg viewBox="0 0 1220 620" role="img" aria-label="Diagram: daily ingestion runs in Go and writes to PostgreSQL; a user question passes through an ambiguity gate (Claude Haiku 4.5) that either refuses/clarifies directly or forwards to the MCP tool layer, which reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, which answers the user. The model never queries PostgreSQL directly.">
+      <svg viewBox="0 0 1400 900" role="img" aria-label="Diagram in three lanes. Lane one, daily ingestion: delivery, POS and cost-sheet files are parsed in Go, reconciled into margins and promotion ROI flags, and written to PostgreSQL; the same run clears the answer cache, because new data can invalidate any previously cached answer. Lane two, question answering: a user question first hits a deterministic exact-match answer cache in Postgres — a hit returns the stored response with no model call at all — and only a miss reaches the Claude Haiku 4.5 ambiguity gate, which either refuses or asks a clarifying question directly, or forwards the question to the Go MCP tool layer; the tool layer reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, whose narration passes through a deterministic Go chart-type decision before reaching the React UI. Lane three, page load: the Close, Promotions and Home pages call plain read-only REST endpoints that query PostgreSQL with no model in the path.">
 
         <defs>
           <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -282,82 +282,133 @@
           </marker>
         </defs>
 
-        <text x="30" y="70" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">DAILY INGESTION — DETERMINISTIC, RUNS ONCE</text>
-        <text x="30" y="345" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">QUESTION ANSWERING — PER USER QUESTION</text>
+        <text x="30" y="42" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">DAILY INGESTION — DETERMINISTIC, RUNS ONCE</text>
+        <text x="30" y="322" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">QUESTION ANSWERING — PER USER QUESTION</text>
+        <text x="30" y="742" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">PAGE LOAD — DETERMINISTIC, NO MODEL IN THE PATH</text>
 
-        <!-- Top lane: ingestion -->
-        <rect class="box-neutral" x="40" y="90" width="190" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="135" y="119" text-anchor="middle" font-size="13" fill="currentColor">Delivery / POS /</text>
-        <text x="135" y="136" text-anchor="middle" font-size="13" fill="currentColor">cost-sheet files</text>
+        <!-- Lane 1: ingestion -->
+        <rect x="40" y="62" width="190" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="135" y="91" text-anchor="middle" font-size="13" fill="currentColor">Delivery / POS /</text>
+        <text x="135" y="108" text-anchor="middle" font-size="13" fill="currentColor">cost-sheet files</text>
 
-        <line x1="230" y1="125" x2="308" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="269" y="112" text-anchor="middle" font-size="11" fill="var(--muted)">parse, normalize</text>
+        <line x1="230" y1="97" x2="308" y2="97" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="269" y="84" text-anchor="middle" font-size="11" fill="var(--muted)">parse</text>
 
-        <rect x="310" y="90" width="220" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="420" y="119" text-anchor="middle" font-size="13" fill="currentColor">Go — reconcile margin</text>
-        <text x="420" y="136" text-anchor="middle" font-size="13" fill="currentColor">+ flag promo ROI</text>
+        <rect x="310" y="62" width="220" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="420" y="91" text-anchor="middle" font-size="13" fill="currentColor">Go — reconcile margin</text>
+        <text x="420" y="108" text-anchor="middle" font-size="13" fill="currentColor">+ flag promo ROI</text>
 
-        <line x1="530" y1="125" x2="608" y2="125" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="569" y="112" text-anchor="middle" font-size="11" fill="var(--muted)">writes margins, deltas, flags</text>
+        <line x1="530" y1="97" x2="608" y2="97" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="569" y="84" text-anchor="middle" font-size="11" fill="var(--muted)">persists</text>
 
-        <rect x="610" y="90" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
-        <line x1="610" y1="104" x2="770" y2="104" stroke="var(--det)" stroke-width="1"/>
-        <text x="690" y="132" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
+        <rect x="610" y="62" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+        <line x1="610" y1="76" x2="770" y2="76" stroke="var(--det)" stroke-width="1"/>
+        <text x="690" y="104" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
 
-        <!-- Vertical connector: the hard limit -->
-        <line x1="690" y1="160" x2="690" y2="378" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrowDet)"/>
-        <text x="705" y="255" font-size="11.5" fill="var(--det)">typed tool calls only —</text>
-        <text x="705" y="271" font-size="11.5" fill="var(--det)">no open SQL, ever</text>
+        <!-- Ingestion invalidates the cache, before it writes anything -->
+        <polyline points="420,132 420,230 272,230 272,348" fill="none" stroke="var(--alert)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowAlert)"/>
+        <text x="440" y="176" font-size="11" fill="var(--alert)">every ingestion run clears the cache first —</text>
+        <text x="440" y="191" font-size="11" fill="var(--alert)">new data can invalidate any cached answer</text>
 
-        <!-- Bottom lane: question path -->
-        <rect x="30" y="380" width="150" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="105" y="420" text-anchor="middle" font-size="13" fill="currentColor">User question</text>
+        <!-- Postgres is the one store behind all three lanes -->
+        <line x1="745" y1="132" x2="745" y2="348" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrowDet)"/>
+        <text x="760" y="252" font-size="11.5" fill="var(--det)">typed tool calls only —</text>
+        <text x="760" y="268" font-size="11.5" fill="var(--det)">no open SQL, ever</text>
 
-        <line x1="180" y1="415" x2="186" y2="415" stroke="currentColor" stroke-width="1.5"/>
+        <!-- Lane 2: question path -->
+        <rect x="20" y="350" width="130" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="85" y="390" text-anchor="middle" font-size="13" fill="currentColor">User question</text>
+
+        <line x1="150" y1="385" x2="183" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+        <!-- Answer cache: deterministic, sits IN FRONT of the gate -->
+        <rect x="185" y="350" width="175" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="272" y="378" text-anchor="middle" font-size="13" fill="currentColor">Answer cache</text>
+        <text x="272" y="395" text-anchor="middle" font-size="11" fill="var(--muted)">exact match, Postgres</text>
+        <text x="272" y="411" text-anchor="middle" font-size="10.5" fill="var(--det)">no model call on a hit</text>
+        <text x="272" y="440" text-anchor="middle" font-size="10.5" fill="var(--muted)">normalized question text</text>
+
+        <line x1="360" y1="385" x2="388" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+        <text x="374" y="372" text-anchor="middle" font-size="10.5" fill="var(--det)">miss</text>
 
         <!-- gate diamond -->
-        <polygon points="310,370 430,415 310,460 190,415" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
-        <text x="310" y="411" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
-        <text x="310" y="426" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
-        <text x="310" y="480" text-anchor="middle" font-size="10.5" fill="var(--muted)">Claude Haiku 4.5</text>
-        <line x1="186" y1="415" x2="192" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <polygon points="500,340 610,385 500,430 390,385" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
+        <text x="500" y="381" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
+        <text x="500" y="396" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
+        <text x="500" y="330" text-anchor="middle" font-size="10.5" fill="var(--muted)">Claude Haiku 4.5</text>
 
         <!-- ambiguous branch -->
-        <line x1="310" y1="460" x2="310" y2="518" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-        <text x="326" y="495" font-size="11" fill="var(--alert)">ambiguous /</text>
-        <text x="326" y="509" font-size="11" fill="var(--alert)">unanswerable</text>
+        <line x1="500" y1="430" x2="500" y2="468" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+        <text x="516" y="452" font-size="11" fill="var(--alert)">ambiguous / unanswerable</text>
 
-        <rect x="195" y="520" width="230" height="56" rx="8" fill="var(--alert-soft)" stroke="var(--alert)"/>
-        <text x="310" y="544" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
-        <text x="310" y="561" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
+        <rect x="385" y="470" width="230" height="56" rx="8" fill="var(--alert-soft)" stroke="var(--alert)"/>
+        <text x="500" y="494" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
+        <text x="500" y="511" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
 
-        <polyline points="425,548 1115,548 1115,452" fill="none" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-        <text x="770" y="540" text-anchor="middle" font-size="11" fill="var(--alert)">reaches the user directly — bypasses the model layer</text>
+        <polyline points="615,498 1300,498 1300,424" fill="none" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+        <text x="950" y="490" text-anchor="middle" font-size="11" fill="var(--alert)">reaches the user directly — bypasses the model layer</text>
+
+        <!-- cache-hit branch: straight to the UI, nothing billed -->
+        <polyline points="272,420 272,600 1345,600 1345,424" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+        <text x="800" y="592" text-anchor="middle" font-size="11" fill="var(--det)">hit — the stored response is returned verbatim; zero tokens, zero cost, and the hit is logged in its own ledger, never as a model interaction</text>
 
         <!-- answerable branch -->
-        <line x1="430" y1="415" x2="608" y2="415" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-        <text x="519" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
+        <line x1="610" y1="385" x2="668" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+        <text x="639" y="372" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
 
-        <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="690" y="410" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-        <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, typed tools)</text>
+        <rect x="670" y="350" width="150" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="745" y="380" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
+        <text x="745" y="397" text-anchor="middle" font-size="12" fill="currentColor">(Go, typed tools)</text>
 
-        <line x1="770" y1="415" x2="818" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="794" y="402" text-anchor="middle" font-size="10.5" fill="var(--muted)">numbers +</text>
-        <text x="794" y="447" text-anchor="middle" font-size="10.5" fill="var(--muted)">provenance</text>
+        <line x1="820" y1="385" x2="858" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <text x="839" y="340" text-anchor="middle" font-size="10.5" fill="var(--muted)">typed result:</text>
+        <text x="839" y="437" text-anchor="middle" font-size="10.5" fill="var(--muted)">numbers + provenance</text>
 
-        <rect x="820" y="380" width="180" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
-        <text x="910" y="410" text-anchor="middle" font-size="13" fill="currentColor">Claude Sonnet 5</text>
-        <text x="910" y="427" text-anchor="middle" font-size="13" fill="currentColor">— explain</text>
+        <rect x="860" y="350" width="160" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
+        <text x="940" y="380" text-anchor="middle" font-size="13" fill="currentColor">Claude Sonnet 5</text>
+        <text x="940" y="397" text-anchor="middle" font-size="13" fill="currentColor">— explain</text>
 
-        <line x1="1000" y1="415" x2="1028" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+        <line x1="1020" y1="385" x2="1058" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
 
-        <rect x="1030" y="380" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="1110" y="410" text-anchor="middle" font-size="13" fill="currentColor">React UI</text>
-        <text x="1110" y="427" text-anchor="middle" font-size="13" fill="currentColor">answer + provenance</text>
+        <!-- Chart-type decision: deterministic, never a second model call -->
+        <rect x="1060" y="350" width="170" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="1145" y="374" text-anchor="middle" font-size="13" fill="currentColor">Chart-type decision</text>
+        <text x="1145" y="391" text-anchor="middle" font-size="11" fill="var(--muted)">table / bar / pie / none</text>
+        <text x="1145" y="407" text-anchor="middle" font-size="10.5" fill="var(--det)">Go, from the tool result</text>
+        <text x="1145" y="440" text-anchor="middle" font-size="10.5" fill="var(--muted)">never a second model call</text>
+
+        <line x1="1230" y1="385" x2="1258" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+
+        <rect x="1260" y="350" width="130" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="1325" y="374" text-anchor="middle" font-size="13" fill="currentColor">React UI</text>
+        <text x="1325" y="391" text-anchor="middle" font-size="11" fill="currentColor">answer, chart,</text>
+        <text x="1325" y="407" text-anchor="middle" font-size="11" fill="currentColor">provenance</text>
+
+        <!-- Lane 3: plain read-only data endpoints, no model anywhere -->
+        <rect x="40" y="760" width="230" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
+        <text x="155" y="789" text-anchor="middle" font-size="13" fill="currentColor">Close / Promotions /</text>
+        <text x="155" y="806" text-anchor="middle" font-size="13" fill="currentColor">Home pages</text>
+
+        <line x1="270" y1="795" x2="328" y2="795" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+
+        <rect x="330" y="752" width="360" height="86" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="510" y="778" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/reconciliation</text>
+        <text x="510" y="797" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/promotions</text>
+        <text x="510" y="816" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/badges  (badges + points)</text>
+
+        <line x1="690" y1="795" x2="738" y2="795" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+        <text x="714" y="782" text-anchor="middle" font-size="10.5" fill="var(--det)">reads</text>
+
+        <rect x="740" y="760" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+        <line x1="740" y1="774" x2="900" y2="774" stroke="var(--det)" stroke-width="1"/>
+        <text x="820" y="802" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
+
+        <text x="930" y="783" font-size="11.5" fill="var(--det)">Same rendering as the MCP tools, from the same rows —</text>
+        <text x="930" y="799" font-size="11.5" fill="var(--det)">so a page and a chat answer about the same day</text>
+        <text x="930" y="815" font-size="11.5" fill="var(--det)">cannot disagree. Points are derived per request, never stored.</text>
 
       </svg>
-      <figcaption>Every figure the UI shows is computed left of the gate, in Go and Postgres. The model only ever receives a typed tool result and narrates it — the dashed line is the one boundary in this system that Claude never crosses.</figcaption>
+      <figcaption>Every figure the UI shows is computed left of the gate, in Go and Postgres. Two deterministic steps now bracket the model layer: an exact-match answer cache in front of it, so a repeated question costs nothing at all, and a chart-type decision behind it, so which chart an answer gets is derived from the tool result rather than asked of a second model. The dashed line is still the one boundary in this system that Claude never crosses.</figcaption>
     </figure>
 
     <div class="legend">
@@ -438,7 +489,7 @@
         <text x="945" y="425" text-anchor="middle" font-size="13" fill="currentColor">internal/instrumentation</text>
         <text x="945" y="442" text-anchor="middle" font-size="10.5" fill="var(--muted)">logs every LLM call</text>
       </svg>
-      <figcaption>internal/reconcile has zero outgoing calls — it doesn't know Postgres, MCP, or Claude exist. internal/ambiguity has no path to real data at all: it only classifies question text, so it can't leak a number even by accident. internal/explain is the one package that crosses the boundary, and only through internal/mcptools's typed port.</figcaption>
+      <figcaption>internal/reconcile has zero outgoing calls — it doesn't know Postgres, MCP, or Claude exist. internal/ambiguity has no path to real data at all: it only classifies question text, so it can't leak a number even by accident. internal/explain is the one package that crosses the boundary, and only through internal/mcptools's typed port. Two packages sit entirely on the left of the boundary and never touch a model: <code>internal/answercache</code>, which short-circuits a repeated question before internal/ambiguity runs, and <code>internal/httpapi</code>'s chart-type derivation, which reads the tool result internal/explain already received and picks the form to render it in.</figcaption>
     </figure>
   </section>
 
@@ -450,6 +501,9 @@
         <ul>
           <li>Refuses rather than estimates when data is missing or incomplete.</li>
           <li>No open SQL, no free-form computation — defined, typed MCP tools only.</li>
+          <li>Chart selection is deterministic Go, from the tool name and result shape — never a second model call deciding how a financial figure is drawn.</li>
+          <li>The answer cache matches exact question text only (whitespace and case ignored). A paraphrase is a new question and pays full price — a disclosed limitation, not a bug: semantic matching would put a probabilistic step in front of a deterministic lookup, and serving the answer to a question nobody asked is worse than paying for the call.</li>
+          <li>A cache hit is the <em>absence</em> of a model interaction. It is never written to <code>question_interaction</code>, which would fabricate an API call and inflate the cost total, and never left unrecorded — it goes to its own <code>answer_cache_hit</code> ledger carrying the cost it avoided.</li>
           <li>Timeout on every tool call; explicit cap on loop iterations.</li>
           <li>Every number carries provenance: which file, which rows, which period.</li>
         </ul>

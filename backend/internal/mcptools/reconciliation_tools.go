@@ -111,7 +111,7 @@ func GetDailySummary(ctx context.Context, q storage.Querier, date string) (*Dail
 		}
 		return nil, nil, fmt.Errorf("mcptools: get_daily_summary(%s): %w", date, err)
 	}
-	return dailyToResult(day), nil, nil
+	return NewDailySummaryResult(day), nil, nil
 }
 
 // GetMarginDelta backs the get_margin_delta tool contract: the margin
@@ -252,7 +252,14 @@ func discrepanciesFromDays(days []reconcile.DailyReconciliation) *DiscrepanciesR
 	return out
 }
 
-func dailyToResult(d reconcile.DailyReconciliation) *DailySummaryResult {
+// NewDailySummaryResult renders one already-computed
+// reconcile.DailyReconciliation into the JSON-facing shape. Exported so the
+// plain REST surface (internal/httpapi's GET /api/reconciliation) serves the
+// EXACT same shape, with the same money formatting and the same derived
+// TotalDeliveryGrossSales, as the get_daily_summary MCP tool — one
+// conversion, so the page and the model can never disagree about the same
+// day's numbers.
+func NewDailySummaryResult(d reconcile.DailyReconciliation) *DailySummaryResult {
 	gross := make(map[string]string, len(d.GrossSalesBySource))
 	var deliveryTotalCents int64
 	for source, cents := range d.GrossSalesBySource {

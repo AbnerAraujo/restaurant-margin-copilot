@@ -1,5 +1,13 @@
-import { ArrowRight, CalendarCheck, Megaphone, MessagesSquare, type LucideIcon } from 'lucide-react'
+import {
+  ArrowRight,
+  CalendarCheck,
+  Megaphone,
+  MessagesSquare,
+  type LucideIcon,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
+
+import PointsCard from '@/components/Points/PointsCard'
 
 interface CapabilityTile {
   /** Route this tile navigates to. */
@@ -45,35 +53,39 @@ const CAPABILITY_TILES: CapabilityTile[] = [
  */
 export default function HomePage() {
   return (
-    <div className="mx-auto grid max-w-3xl grid-cols-1 gap-4 sm:grid-cols-2">
-      {CAPABILITY_TILES.map(({ to, icon: Icon, title, description }) => (
-        <Link
-          key={to}
-          to={to}
-          className="group flex flex-col gap-3 rounded-lg border border-border bg-card
+    <div className="mx-auto flex max-w-3xl flex-col gap-4">
+      <PointsCard />
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {CAPABILITY_TILES.map(({ to, icon: Icon, title, description }) => (
+          <Link
+            key={to}
+            to={to}
+            className="group flex flex-col gap-3 rounded-lg border border-border bg-card
             p-5 text-left shadow-sm transition-all
             hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md
             focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <div className="flex items-center justify-between">
-            <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Icon className="size-5" aria-hidden="true" />
-            </span>
-            <ArrowRight
-              className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
-              aria-hidden="true"
-            />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold tracking-tight text-foreground">
-              {title}
-            </h2>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              {description}
-            </p>
-          </div>
-        </Link>
-      ))}
+          >
+            <div className="flex items-center justify-between">
+              <span className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Icon className="size-5" aria-hidden="true" />
+              </span>
+              <ArrowRight
+                className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary"
+                aria-hidden="true"
+              />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold tracking-tight text-foreground">
+                {title}
+              </h2>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                {description}
+              </p>
+            </div>
+          </Link>
+        ))}
+      </div>
     </div>
   )
 }

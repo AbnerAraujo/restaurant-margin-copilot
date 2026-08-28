@@ -1,6 +1,10 @@
 import { useCallback } from 'react'
 
-import ChatPanel, { type AssistantChatMessage } from '@/components/Chat/ChatPanel'
+import ChatPanel, {
+  type AnswerCacheInfo,
+  type AssistantChatMessage,
+} from '@/components/Chat/ChatPanel'
+import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { useShellOutletContext } from '@/components/Shell/AppShell'
 
@@ -22,6 +26,19 @@ interface AskApiResponse {
   clarifying_question?: string
   assumption_stated?: string
   refusal_reason?: string
+  /**
+   * Chart/table shape chosen by the backend from which typed MCP tool ran
+   * (`internal/httpapi/visualization.go`). Passed straight through — this
+   * page never decides, or overrides, the form.
+   */
+  visualization?: AnswerVisualization
+  /**
+   * Present only when the backend served this answer from its cache without
+   * any model call. When it is set, `interactions` is empty because NOTHING
+   * RAN — not because measurement failed — so the running cost total is
+   * correctly left untouched.
+   */
+  cache?: AnswerCacheInfo
   interactions?: {
     model_used: string
     input_tokens: number
@@ -99,6 +116,7 @@ export default function AskPage() {
           role: 'assistant',
           kind: 'clarification',
           text: data.clarifying_question ?? 'Could you clarify that question?',
+          cache: data.cache,
           askedAt,
         }
       }
@@ -110,6 +128,7 @@ export default function AskPage() {
           kind: 'refusal',
           text: data.refusal_reason ?? "I can't answer that from the data on file.",
           missing: [],
+          cache: data.cache,
           askedAt,
         }
       }
@@ -120,11 +139,25 @@ export default function AskPage() {
         kind: 'answer',
         text: data.answer_text ?? '',
         provenance: (data.provenance_refs ?? []).map(parseProvenanceRef),
+        visualization: data.visualization,
+        cache: data.cache,
         askedAt,
       }
     },
     [logInteractions],
   )
 
-  return <ChatPanel resolveAnswer={resolveAnswer} className="max-w-none" />
+  return (
+    <ChatPanel
+      resolveAnswer={resolveAnswer}
+      // Deliberately empty rather than ChatPanel's demo seed. That seed is a
+      // fabricated thread with invented figures ("$612.40", an Uber Eats
+      // campaign that isn't in the fixtures); rendering it on the LIVE surface
+      // put unsourced numbers in front of the owner styled exactly like real,
+      // provenance-backed answers. Same class of defect as this page calling a
+      // mock instead of /api/ask, and ruled out by the same principle.
+      initialMessages={[]}
+      className="max-w-none"
+    />
+  )
 }

@@ -255,3 +255,16 @@ func numericToCentsAnyScale(n pgtype.Numeric) (int64, error) {
 	}
 	return v.Int64(), nil
 }
+
+// LoadAllPromotionRoiRecords reads every persisted promotion record, in
+// period then campaign order. Backs GET /api/promotions — the Promotions
+// page shows the whole set rather than a window, since "which campaigns paid
+// for themselves" is not a question a default date range can answer without
+// silently omitting campaigns.
+func LoadAllPromotionRoiRecords(ctx context.Context, q Querier) ([]reconcile.PromotionRoiRecord, error) {
+	rows, err := q.ListAllPromotionRoiRecords(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return promotionRowsToDomain(rows)
+}

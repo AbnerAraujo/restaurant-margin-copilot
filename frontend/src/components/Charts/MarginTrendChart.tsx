@@ -75,20 +75,40 @@ const MARGIN = { top: 40, right: 12, bottom: 40, left: 44 }
 const PLOT_WIDTH = CHART_WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
 
-const Y_DOMAIN: [number, number] = [-250, 400]
-const Y_TICKS = [-200, 0, 200, 400]
-
 const BAR_WIDTH = 24 // mark spec: bars <= 24px thick
 const BAR_RADIUS = 4
 const MISSING_CAPSULE_HEIGHT = 28
 
-function yToPixel(value: number): number {
-  const [min, max] = Y_DOMAIN
-  const clamped = Math.min(Math.max(value, min), max)
-  return MARGIN.top + ((max - clamped) / (max - min)) * PLOT_HEIGHT
-}
+/**
+ * Y scale derived from the data rather than hard-coded. The previous fixed
+ * [-250, 400] domain was tuned to one specific fixture; against the real
+ * `/api/reconciliation` rows a day outside that window would be silently
+ * CLAMPED to the axis edge — a bar drawn shorter than the loss it represents,
+ * which is the one failure mode a margin chart must not have.
+ *
+ * Ticks are stepped on a round 100/200/500 so the labels stay readable
+ * whatever the range turns out to be.
+ */
+function buildScale(data: DailyMarginDatum[]) {
+  const values = data
+    .map((datum) => datum.margin)
+    .filter((value): value is number => value !== null)
+  const rawMin = Math.min(0, ...values)
+  const rawMax = Math.max(0, ...values)
+  const span = rawMax - rawMin || 1
+  const step = span > 2000 ? 500 : span > 800 ? 200 : 100
+  const min = Math.floor(rawMin / step) * step
+  const max = Math.ceil(rawMax / step) * step
 
-const BASELINE_Y = yToPixel(0)
+  const ticks: number[] = []
+  for (let tick = min; tick <= max; tick += step) ticks.push(tick)
+
+  const yToPixel = (value: number) => {
+    const clamped = Math.min(Math.max(value, min), max)
+    return MARGIN.top + ((max - clamped) / (max - min || 1)) * PLOT_HEIGHT
+  }
+  return { ticks, yToPixel, baselineY: yToPixel(0) }
+}
 
 /** A rect rounded only on the "data end" — the tip away from the baseline. */
 function roundedBarPath(
@@ -140,7 +160,10 @@ interface BarGeometry {
   barHeight: number
 }
 
-function buildBars(data: DailyMarginDatum[]): BarGeometry[] {
+function buildBars(
+  data: DailyMarginDatum[],
+  yToPixel: (value: number) => number,
+): BarGeometry[] {
   const slotWidth = PLOT_WIDTH / data.length
   return data.map((datum, index) => {
     const slotCenterX = MARGIN.left + slotWidth * (index + 0.5)
@@ -181,7 +204,22 @@ function MarginTrendChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
 
-  const bars = buildBars(data)
+  // Every caption below is derived from the data actually plotted. Hard-coded
+  // "14-Day" / "August 1–14" strings survived the switch to live
+  // /api/reconciliation data as captions that no longer described the chart —
+  // a mislabelled axis is a wrong number.
+  const firstDate = data[0]?.date ?? ''
+  const lastDate = data[data.length - 1]?.date ?? ''
+  const rangeLabel =
+    firstDate && lastDate
+      ? `${formatMonthDay(firstDate)} – ${formatMonthDay(lastDate)}, ${lastDate.slice(0, 4)}`
+      : 'no reconciled days on file'
+  const missingDates = data
+    .filter((datum) => datum.margin === null)
+    .map((datum) => formatMonthDay(datum.date))
+
+  const { ticks, yToPixel, baselineY } = buildScale(data)
+  const bars = buildBars(data, yToPixel)
   const values = data
     .map((d) => d.margin)
     .filter((v): v is number => v !== null)
@@ -194,7 +232,7 @@ function MarginTrendChart({
 
   return (
     <figure
-      aria-label="14-day margin trend"
+      aria-label="Daily margin trend"
       className={cn('rounded-lg border border-border bg-card p-4 sm:p-5', className)}
     >
       <figcaption className="mb-4">
@@ -202,7 +240,7 @@ function MarginTrendChart({
           Daily Close
         </p>
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
-          14-Day Margin Trend
+          {data.length}-Day Margin Trend
         </h2>
       </figcaption>
 
@@ -210,7 +248,11 @@ function MarginTrendChart({
         <svg
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
           role="img"
-          aria-label="Bar chart of daily reconciled margin from August 1 to August 14, 2026, with August 8 flagged as missing data"
+          aria-label={`Bar chart of daily reconciled margin, ${rangeLabel}${
+            missingDates.length > 0
+              ? `, with ${missingDates.join(' and ')} flagged as missing data`
+              : ''
+          }`}
           className="h-auto w-full min-w-[420px]"
         >
           <defs>
@@ -235,7 +277,7 @@ function MarginTrendChart({
           </defs>
 
           {/* Y gridlines + tick labels — recessive hairlines, one step off the surface */}
-          {Y_TICKS.map((tick) => (
+          {ticks.map((tick) => (
             <g key={tick}>
               <line
                 x1={MARGIN.left}
@@ -262,8 +304,8 @@ function MarginTrendChart({
           <line
             x1={MARGIN.left}
             x2={CHART_WIDTH - MARGIN.right}
-            y1={BASELINE_Y}
-            y2={BASELINE_Y}
+            y1={baselineY}
+            y2={baselineY}
             stroke="var(--border)"
             strokeWidth={1}
           />
@@ -301,7 +343,7 @@ function MarginTrendChart({
                   <>
                     <rect
                       x={barX}
-                      y={BASELINE_Y - MISSING_CAPSULE_HEIGHT / 2}
+                      y={baselineY - MISSING_CAPSULE_HEIGHT / 2}
                       width={BAR_WIDTH}
                       height={MISSING_CAPSULE_HEIGHT}
                       rx={4}
@@ -312,7 +354,7 @@ function MarginTrendChart({
                     />
                     <foreignObject
                       x={slotCenterX - 8}
-                      y={BASELINE_Y - MISSING_CAPSULE_HEIGHT / 2 - 20}
+                      y={baselineY - MISSING_CAPSULE_HEIGHT / 2 - 20}
                       width={16}
                       height={16}
                     >
@@ -378,14 +420,16 @@ function MarginTrendChart({
             )
           })}
 
-          {/* Single "Aug" axis label rather than repeating the month per tick */}
+          {/* Single month/year label rather than repeating it per tick.
+              Sits ABOVE the plot: on the tick row it overlapped the last
+              day-of-month tick once the day count came from live data. */}
           <text
             x={CHART_WIDTH - MARGIN.right}
-            y={CHART_HEIGHT - MARGIN.bottom + 16}
+            y={MARGIN.top - 14}
             textAnchor="end"
             className="fill-muted-foreground text-[10px]"
           >
-            Aug 2026
+            {lastDate ? `${formatMonthDay(lastDate).split(' ')[0]} ${lastDate.slice(0, 4)}` : ''}
           </text>
         </svg>
 
@@ -395,7 +439,7 @@ function MarginTrendChart({
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
               left: `${(hovered.slotCenterX / CHART_WIDTH) * 100}%`,
-              top: `${(Math.min(hovered.isMissing ? BASELINE_Y - MISSING_CAPSULE_HEIGHT / 2 : hovered.barY, BASELINE_Y) / CHART_HEIGHT) * 100 - 1}%`,
+              top: `${(Math.min(hovered.isMissing ? baselineY - MISSING_CAPSULE_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
             }}
           >
             <p className="text-muted-foreground">
@@ -435,13 +479,17 @@ function MarginTrendChart({
           <span className="size-2.5 rounded-sm bg-destructive" aria-hidden="true" />
           Loss day
         </li>
-        <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span
-            className="size-2.5 rounded-sm border border-muted-foreground/40 bg-muted"
-            aria-hidden="true"
-          />
-          No data
-        </li>
+        {/* Only advertised when a gap actually exists — a legend entry for a
+            state not present in the chart invites the reader to hunt for it. */}
+        {missingDates.length > 0 ? (
+          <li className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span
+              className="size-2.5 rounded-sm border border-muted-foreground/40 bg-muted"
+              aria-hidden="true"
+            />
+            No data
+          </li>
+        ) : null}
       </ul>
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
@@ -460,7 +508,7 @@ function MarginTrendChart({
         <div className="mt-2 overflow-x-auto">
           <table className="w-full min-w-[320px] text-left text-xs">
             <caption className="sr-only">
-              Daily reconciled margin, August 1–14, 2026
+              Daily reconciled margin, {rangeLabel}
             </caption>
             <thead>
               <tr className="border-b border-border text-muted-foreground">

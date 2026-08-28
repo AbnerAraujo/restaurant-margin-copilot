@@ -1,0 +1,391 @@
+import { useState } from 'react'
+import { ShieldAlert } from 'lucide-react'
+
+import { cn } from '@/lib/utils'
+import type { VisualizationPoint } from './answerVisualization'
+
+export interface CategoryBarChartProps {
+  title: string
+  subtitle?: string
+  valueLabel?: string
+  points: VisualizationPoint[]
+  sourceTool?: string
+  className?: string
+}
+
+// ---------------------------------------------------------------------------
+// Geometry. Horizontal bars, not vertical: the categories here are named
+// things (campaign ids, date ranges, ISO dates) whose labels do not fit under
+// a vertical tick inside a chat bubble, and rotating axis labels to make them
+// fit is an anti-pattern. Horizontal rows give every label a full line.
+// ---------------------------------------------------------------------------
+
+const CHART_WIDTH = 620
+const LABEL_GUTTER = 178
+const ROW_HEIGHT = 34
+const BAR_HEIGHT = 16 // mark spec: thin marks
+const BAR_RADIUS = 4
+const MARGIN = { top: 8, right: 84, bottom: 26 }
+const PLOT_WIDTH = CHART_WIDTH - LABEL_GUTTER - MARGIN.right
+// Wide enough for the longest label these charts actually carry — a
+// "2026-08-01 → 2026-08-07" period range at 23 characters — measured against
+// the rendered output rather than guessed, since a truncated period label
+// hides which period a bar belongs to.
+const MAX_LABEL_CHARS = 24
+const UNAVAILABLE_BOX_WIDTH = 104
+
+function truncateLabel(label: string): string {
+  return label.length <= MAX_LABEL_CHARS
+    ? label
+    : `${label.slice(0, MAX_LABEL_CHARS - 1)}…`
+}
+
+/**
+ * Domain always includes zero, so a bar's length is read against a true
+ * baseline rather than against the smallest value present — an axis that
+ * starts anywhere but zero makes a small difference look like a large one.
+ */
+function buildDomain(values: number[]): [number, number] {
+  const min = Math.min(0, ...values)
+  const max = Math.max(0, ...values)
+  const span = max - min || 1
+  const pad = span * 0.08
+  return [min - (min < 0 ? pad : 0), max + (max > 0 ? pad : 0)]
+}
+
+/** A rect rounded only on its data end — the tip away from the baseline. */
+function roundedBarPath(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  roundedEdge: 'right' | 'left',
+): string {
+  if (width <= 0) return ''
+  const r = Math.min(BAR_RADIUS, width, height / 2)
+  if (roundedEdge === 'right') {
+    return `M${x},${y} L${x + width - r},${y} Q${x + width},${y} ${x + width},${y + r} L${x + width},${y + height - r} Q${x + width},${y + height} ${x + width - r},${y + height} L${x},${y + height} Z`
+  }
+  return `M${x + width},${y} L${x + r},${y} Q${x},${y} ${x},${y + r} L${x},${y + height - r} Q${x},${y + height} ${x + r},${y + height} L${x + width},${y + height} Z`
+}
+
+/**
+ * Diverging horizontal bar chart for one answer's categories — margin per
+ * period, margin per day, net ROI per campaign.
+ *
+ * Color job is POLARITY, not identity, so this uses the app's existing
+ * diverging success/destructive pair rather than the categorical `--chart-*`
+ * hues: the reader's question is "did this make or lose money", and the
+ * categories are already separated by their own labelled rows. Position
+ * relative to the zero baseline carries the same meaning independently of
+ * colour, which is what makes that pair safe here (the same mitigation
+ * `MarginTrendChart` documents).
+ *
+ * A point the backend marked `unavailable` renders as an explicit refusal
+ * box, never a zero-length bar — a bar of length zero reads as "broke even"
+ * when the truth is "we will not estimate this" (FR-013).
+ */
+export default function CategoryBarChart({
+  title,
+  subtitle,
+  valueLabel,
+  points,
+  sourceTool,
+  className,
+}: CategoryBarChartProps) {
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
+  const [tableOpen, setTableOpen] = useState(false)
+
+  const plotHeight = points.length * ROW_HEIGHT
+  const chartHeight = plotHeight + MARGIN.top + MARGIN.bottom
+  const drawable = points.filter((point) => !point.unavailable)
+  const [min, max] = buildDomain(drawable.map((point) => point.value))
+  const xToPixel = (value: number) =>
+    LABEL_GUTTER + ((value - min) / (max - min || 1)) * PLOT_WIDTH
+  const baselineX = xToPixel(0)
+
+  const hovered = hoveredIndex === null ? null : points[hoveredIndex]
+  const hasUnavailable = points.some((point) => point.unavailable)
+  const hasNegative = drawable.some((point) => point.value < 0)
+  const hasPositive = drawable.some((point) => point.value >= 0)
+
+  return (
+    <figure
+      className={cn(
+        'rounded-lg border border-border bg-background/60 p-3',
+        className,
+      )}
+    >
+      <figcaption className="mb-2">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        {subtitle ? (
+          <p className="text-xs text-muted-foreground">{subtitle}</p>
+        ) : null}
+      </figcaption>
+
+      <div className="relative w-full overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${CHART_WIDTH} ${chartHeight}`}
+          role="img"
+          aria-label={`${title}. ${points
+            .map((point) =>
+              point.unavailable
+                ? `${point.label}: no figure, ${point.reason ?? 'unavailable'}`
+                : `${point.label}: ${point.display}`,
+            )
+            .join('. ')}`}
+          className="h-auto w-full min-w-[340px]"
+        >
+          {/* Zero baseline — the primary above/below cue, colour-independent */}
+          <line
+            x1={baselineX}
+            x2={baselineX}
+            y1={MARGIN.top}
+            y2={MARGIN.top + plotHeight}
+            stroke="var(--border)"
+            strokeWidth={1}
+          />
+
+          {points.map((point, index) => {
+            const rowY = MARGIN.top + index * ROW_HEIGHT
+            const barY = rowY + (ROW_HEIGHT - BAR_HEIGHT) / 2
+            const isPositive = point.value >= 0
+            const barX = point.unavailable
+              ? baselineX
+              : Math.min(baselineX, xToPixel(point.value))
+            const barWidth = point.unavailable
+              ? 0
+              : Math.abs(xToPixel(point.value) - baselineX)
+
+            return (
+              <g
+                key={point.label}
+                tabIndex={0}
+                role="button"
+                aria-label={
+                  point.unavailable
+                    ? `${point.label}: no figure — ${point.reason ?? 'unavailable'}`
+                    : `${point.label}: ${point.display}`
+                }
+                onMouseEnter={() => setHoveredIndex(index)}
+                onMouseLeave={() => setHoveredIndex(null)}
+                onFocus={() => setHoveredIndex(index)}
+                onBlur={() => setHoveredIndex(null)}
+                className="cursor-pointer outline-none"
+              >
+                {/* Hit target spans the whole row, wider than the mark */}
+                <rect
+                  x={0}
+                  y={rowY}
+                  width={CHART_WIDTH}
+                  height={ROW_HEIGHT}
+                  fill="transparent"
+                />
+
+                <text
+                  x={LABEL_GUTTER - 10}
+                  y={rowY + ROW_HEIGHT / 2}
+                  textAnchor="end"
+                  dominantBaseline="middle"
+                  className="fill-muted-foreground text-[11px]"
+                >
+                  {truncateLabel(point.label)}
+                </text>
+
+                {point.unavailable ? (
+                  <>
+                    <rect
+                      x={baselineX + 4}
+                      y={barY - 3}
+                      width={UNAVAILABLE_BOX_WIDTH}
+                      height={BAR_HEIGHT + 6}
+                      rx={4}
+                      fill="var(--destructive)"
+                      fillOpacity={0.06}
+                      stroke="var(--destructive)"
+                      strokeOpacity={0.4}
+                      strokeDasharray="4 3"
+                    />
+                    <text
+                      x={baselineX + 4 + UNAVAILABLE_BOX_WIDTH / 2}
+                      y={rowY + ROW_HEIGHT / 2}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      className="fill-destructive-text text-[10px] font-medium"
+                    >
+                      {point.display}
+                    </text>
+                  </>
+                ) : (
+                  <>
+                    <path
+                      d={roundedBarPath(
+                        barX,
+                        barY,
+                        barWidth,
+                        BAR_HEIGHT,
+                        isPositive ? 'right' : 'left',
+                      )}
+                      fill={
+                        isPositive ? 'var(--success)' : 'var(--destructive)'
+                      }
+                      opacity={hoveredIndex === index ? 1 : 0.92}
+                    />
+                    {/* Direct label on every bar — the category count here is
+                        always small, and a labelled bar never depends on the
+                        reader tracing back to an axis. */}
+                    <text
+                      x={
+                        isPositive
+                          ? baselineX + barWidth + 8
+                          : baselineX - barWidth - 8
+                      }
+                      y={rowY + ROW_HEIGHT / 2}
+                      textAnchor={isPositive ? 'start' : 'end'}
+                      dominantBaseline="middle"
+                      className={cn(
+                        'text-[11px] font-semibold tabular-nums',
+                        isPositive
+                          ? 'fill-success-text'
+                          : 'fill-destructive-text',
+                      )}
+                    >
+                      {point.display}
+                    </text>
+                  </>
+                )}
+              </g>
+            )
+          })}
+
+          {valueLabel ? (
+            <text
+              x={CHART_WIDTH}
+              y={chartHeight - 8}
+              textAnchor="end"
+              className="fill-muted-foreground text-[10px]"
+            >
+              {valueLabel}
+            </text>
+          ) : null}
+        </svg>
+
+        {hovered ? (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-0 z-10 -translate-x-1/2 rounded-md
+              border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
+          >
+            <p className="font-medium text-foreground">{hovered.label}</p>
+            {hovered.unavailable ? (
+              <p className="text-destructive-text">
+                {hovered.reason ?? 'No figure available'}
+              </p>
+            ) : (
+              <p
+                className={cn(
+                  'font-semibold tabular-nums',
+                  hovered.value >= 0
+                    ? 'text-success-text'
+                    : 'text-destructive-text',
+                )}
+              >
+                {hovered.display}
+              </p>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {/* Legend — three meanings, each a swatch plus text, so identity never
+          rests on colour alone. */}
+      <ul
+        aria-label="Chart legend"
+        className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1"
+      >
+        {hasPositive ? (
+          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span className="size-2.5 rounded-sm bg-success" aria-hidden="true" />
+            Above zero
+          </li>
+        ) : null}
+        {hasNegative ? (
+          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <span
+              className="size-2.5 rounded-sm bg-destructive"
+              aria-hidden="true"
+            />
+            Below zero
+          </li>
+        ) : null}
+        {hasUnavailable ? (
+          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <ShieldAlert
+              className="size-3 text-destructive-text"
+              aria-hidden="true"
+            />
+            No figure — refused, not zero
+          </li>
+        ) : null}
+      </ul>
+
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
+        {sourceTool ? (
+          <p className="text-[11px] text-muted-foreground">
+            Computed by <code className="font-mono">{sourceTool}</code>
+          </p>
+        ) : (
+          <span />
+        )}
+        <button
+          type="button"
+          onClick={() => setTableOpen((wasOpen) => !wasOpen)}
+          aria-expanded={tableOpen}
+          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2
+            hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+        >
+          {tableOpen ? 'Hide table' : 'View as table'}
+        </button>
+      </div>
+
+      {tableOpen ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <caption className="sr-only">{title}, as a table</caption>
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th scope="col" className="py-1.5 pr-4 font-medium">
+                  Category
+                </th>
+                <th scope="col" className="py-1.5 font-medium">
+                  {valueLabel ?? 'Value'}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {points.map((point) => (
+                <tr key={point.label} className="border-b border-border/60">
+                  <td className="py-1.5 pr-4 text-foreground">{point.label}</td>
+                  <td
+                    className={cn(
+                      'py-1.5 font-medium tabular-nums',
+                      point.unavailable
+                        ? 'text-destructive-text'
+                        : point.value >= 0
+                          ? 'text-success-text'
+                          : 'text-destructive-text',
+                    )}
+                  >
+                    {point.unavailable
+                      ? `${point.display} — ${point.reason ?? 'no figure'}`
+                      : point.display}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </figure>
+  )
+}
