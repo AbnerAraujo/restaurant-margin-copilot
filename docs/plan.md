@@ -229,3 +229,25 @@ when that time comes, not a task queued for now.
   package concurrently needs either a file-level split agreed in advance,
   or one agent finishing that package before the other starts, not just a
   dependency graph that happens to allow parallelism.
+- **Integration phase (wiring US2/US3/US4 into `cmd/server/main.go`)**: `go
+  test ./...` (no `-v`) reported all packages `ok` even though
+  `DATABASE_URL`/`ANTHROPIC_API_KEY` were not actually set in the shell —
+  both are `export`ed in `~/.zshrc`, which a non-interactive tool-invoked
+  Bash shell does not source, so every env-gated live test (`ambiguity`,
+  `explain`, `mcptools`) silently hit its own `t.Skip` and reported the
+  package as passing with zero visible signal that nothing real ran. A
+  background `go-build`-cache server binary was also left listening on the
+  test port from an earlier step, so an initial `curl` smoke test appeared
+  to succeed while actually talking to a stale pre-integration build (no
+  `/api/ask` route at all — that request 404'd, correctly, but for the
+  wrong reason if not checked). Caught before reporting anything, by
+  re-running `go test ./... -v` and grepping for `SKIP` specifically
+  instead of trusting `ok`, and by checking `lsof`/`ps` for what was
+  actually listening on the port before trusting a `curl` response.
+  Fixed by explicitly `source ~/.zshrc` inside the same Bash invocation
+  before any live-gated command, and by killing the stale process first.
+  Lesson: a green `go test ./...` with no `-v` cannot be trusted to prove
+  env-gated live tests ran rather than skipped — always check for `SKIP`
+  explicitly when the whole point of the run is proving a *live* call
+  happened, and never trust a successful HTTP response to a smoke test
+  without first confirming which binary/process is actually answering it.
