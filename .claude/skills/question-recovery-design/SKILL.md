@@ -252,6 +252,14 @@ second cost for exactly the hardest cases.
 
 ## Related skills
 
+- **proactive-guidance-design** — the mirror-image skill, covering the
+  success half of this same surface: the zero-state capability list before
+  the first question, and the post-answer follow-up suggestion after one
+  succeeds. This skill's move 5 (proactive capability surfacing) is that
+  skill's move 1, generalized to also fire reactively on a refusal; read it
+  for how the same `SuggestionChips`-style component should extend to a
+  post-answer placement so guidance stays one voice across the whole
+  interaction, not just the failure half of it.
 - **api-design** — for the equivalent discipline at a pure API boundary
   (structured error responses, RFC 9457 problem details) when there's no chat
   surface to render a clarification or suggestion chip into.
