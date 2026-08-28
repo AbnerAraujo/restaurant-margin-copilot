@@ -27,6 +27,10 @@
 | `golang-observability` | samber/cc-skills-golang | Go-specific structured logging/metrics for the instrumentation log |
 | `golang-database` | samber/cc-skills-golang | Go/Postgres data-access patterns, pairs with `sqlc`/`pgx` |
 | `golang-security` | samber/cc-skills-golang | Baseline Go backend security hygiene |
+| `one-pager-prd` | [lyndonkl/claude](https://github.com/lyndonkl/claude) | Structures decision-ready one-pagers/PRDs — for turning `product-strategy.md` into deliverable #2's one-page reasoning doc |
+| `inspired-product` | [wondelai/skills](https://github.com/wondelai/skills) | Marty Cagan's *Inspired*/*Empowered* framework — empowered vs. feature-factory teams, discovery/delivery dual-track, the Four Big Risks (value/usability/feasibility/viability) already echoed in our hypothesis tagging |
+
+Two sibling skills exist in the same `wondelai/skills` repo, also based on well-known product books, not installed (no immediate need): `mom-test` (Rob Fitzpatrick, customer-interview technique — moot here, no real users to interview) and `continuous-discovery` (Teresa Torres, ongoing discovery habits — more relevant to a live product than a one-shot take-home).
 
 **Project-local** (`.claude/skills` in this repo, from `specify init --integration claude`):
 
