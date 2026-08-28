@@ -22,6 +22,7 @@ export interface ExampleQuestion {
     | 'list_discrepancies'
     | 'get_promotion_roi'
     | 'list_negative_roi_promotions'
+    | 'compare_platform_economics'
   /** Short label for grouping in the "what can I ask" surface. */
   topic: string
 }
@@ -52,6 +53,11 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
     tool: 'get_promotion_roi',
     topic: 'Campaign ROI',
   },
+  {
+    text: 'Which platform costs me more in commission — iFood or Just Eat Takeaway — between 2026-08-01 and 2026-08-14?',
+    tool: 'compare_platform_economics',
+    topic: 'Platform comparison',
+  },
 ]
 
 /**
@@ -60,7 +66,7 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
  * than asked of the model, for the same reason the list above is.
  */
 export const CAPABILITY_SUMMARY =
-  'I answer questions about one restaurant’s reconciled daily margin, its discrepancies, and its promotion ROI — for 2026-08-01 through 2026-08-14, the only period this data covers.'
+  'I answer questions about one restaurant’s reconciled daily margin, its discrepancies, its promotion ROI, and how its delivery platforms compare on commission and promo cost — for 2026-08-01 through 2026-08-14, the only period this data covers.'
 
 /**
  * The same coverage window as a standalone label, for surfaces that show it as
