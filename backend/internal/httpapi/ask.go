@@ -24,6 +24,13 @@
 // as per-call, not per-question, so two rows sharing the same question_text
 // is the reading that never drops a real API call's cost — the running
 // total (SumEstimatedCostUSD) still sums correctly across both.
+//
+// specs/004-semantic-cache adds one more step between the exact-match cache
+// probe and the ambiguity gate: on an exact-match MISS against a non-empty
+// cache, deps.ParaphraseMatcher (internal/paraphrase) checks whether the
+// question means the same thing as a recently-cached one. See
+// serveFromParaphraseMatch for the full flow and its defensive
+// re-verification against the live cache before ever serving an entry.
 package httpapi
 
 import (
@@ -38,6 +45,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/llmclient"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/paraphrase"
 )
 
 // AskRequest is POST /api/ask's request body.
@@ -132,14 +140,27 @@ type CacheInfo struct {
 	Hit            bool    `json:"hit"`
 	CachedAt       string  `json:"cached_at,omitempty"`
 	CostAvoidedUSD float64 `json:"cost_avoided_usd"`
+	// MatchKind is exactly "exact" or "paraphrase" whenever Hit is true —
+	// specs/004-semantic-cache FR-004's requirement that an exact-text hit
+	// and a paraphrase-recognized hit stay distinguishable from each other
+	// (and both from a fresh answer, signaled by Cache being nil/omitted
+	// entirely) rather than collapsing into one generic "cache: hit" state.
+	MatchKind string `json:"match_kind,omitempty"`
 	// Note is the disclosed limitation, carried on the wire so the UI can
 	// state it rather than implying the cache is smarter than it is.
 	Note string `json:"note,omitempty"`
 }
 
 // CacheMatchNote is the one-line statement of what this cache does and does
-// not match, shown wherever a cache hit is surfaced.
+// not match, shown wherever an EXACT-text cache hit is surfaced.
 const CacheMatchNote = "Exact question match (whitespace and case ignored). A reworded question is a new question and costs full price."
+
+// ParaphraseMatchNote is CacheMatchNote's counterpart for a paraphrase hit
+// (specs/004-semantic-cache): unlike an exact hit, this one cost a small,
+// real amount to recognize (see Interactions on this same response) —
+// stated here so the UI never implies a paraphrase hit was free the way an
+// exact-text hit genuinely is.
+const ParaphraseMatchNote = "Recognized as the same question, worded differently, by a small verification call (its real cost is included above) — not an exact text match."
 
 // Classifier is the ambiguity gate as this handler needs it.
 // *ambiguity.Gate satisfies it directly.
@@ -159,6 +180,17 @@ type Narrator interface {
 	Explain(ctx context.Context, question, assumptionStated string) (*explain.Result, error)
 }
 
+// ParaphraseClassifier is specs/004-semantic-cache's paraphrase layer as
+// this handler needs it. *paraphrase.Matcher satisfies it directly.
+//
+// Declared as an interface for the same reason Classifier and Narrator are:
+// a test needs to COUNT and CONTROL classification calls (verified match vs.
+// hallucinated/unverifiable match vs. NONE) without making real Anthropic
+// API calls or depending on Postgres.
+type ParaphraseClassifier interface {
+	Classify(ctx context.Context, newQuestion string, candidates []answercache.Candidate) (*paraphrase.Decision, error)
+}
+
 // Deps are HandleAsk's dependencies, constructed once at process start (by
 // whatever Integration-phase wiring calls this package — not here).
 type Deps struct {
@@ -170,6 +202,14 @@ type Deps struct {
 	// this handler did before the cache existed, which is what keeps the
 	// cache an optimisation rather than a dependency.
 	Cache *answercache.Cache
+	// ParaphraseMatcher, when non-nil (and Cache is also non-nil), checks an
+	// exact-match MISS against a bounded set of recently-cached questions
+	// before falling through to the gate — specs/004-semantic-cache.
+	// Optional and additive, same as Cache itself: a Deps with no
+	// ParaphraseMatcher behaves exactly as this handler did before this
+	// feature existed (spec FR-006 — this must never weaken the existing
+	// exact-match cache's own behavior).
+	ParaphraseMatcher ParaphraseClassifier
 }
 
 // HandleAsk implements POST /api/ask. It is exported and takes its
@@ -216,6 +256,17 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		if deps.Cache != nil {
 			if served := deps.serveFromCache(ctx, w, resolved, req.Question); served {
 				return
+			}
+			// Second-tier check, ONLY on an exact-match miss: does this
+			// question mean the same thing as one already cached, just
+			// worded differently? Unlike the exact-match probe above, this
+			// one is a real (small, bounded) billed Haiku call — see
+			// serveFromParaphraseMatch for why it still runs before the
+			// ambiguity gate rather than after it.
+			if deps.ParaphraseMatcher != nil {
+				if served := deps.serveFromParaphraseMatch(ctx, w, resolved, req.Question); served {
+					return
+				}
 			}
 		}
 
@@ -389,6 +440,7 @@ func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, cach
 		Hit:            true,
 		CachedAt:       entry.CachedAt,
 		CostAvoidedUSD: entry.OriginCostUSD,
+		MatchKind:      "exact",
 		Note:           CacheMatchNote,
 	}
 
@@ -398,6 +450,105 @@ func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, cach
 	// a failed interaction write — but does not deny the user their answer.
 	if err := deps.Cache.RecordHit(ctx, cacheSubject, entry.OriginCostUSD); err != nil {
 		log.Printf("httpapi: FAILED to record answer-cache hit (question=%q): %v", askedText, err)
+	}
+
+	writeJSON(w, http.StatusOK, cached)
+	return true
+}
+
+// serveFromParaphraseMatch runs specs/004-semantic-cache's second-tier check
+// after an exact-match miss: fetch a bounded candidate set of recently
+// cached questions, ask deps.ParaphraseMatcher whether cacheSubject means
+// the same thing as one of them, and — only if that claim then verifies
+// against the REAL, CURRENT cache (not just the in-memory candidate list the
+// classifier saw a moment earlier) — serve that entry.
+//
+// Every failure mode here (no candidates, a classification error, no match,
+// or a match that fails live re-verification) returns false and changes
+// nothing: the caller falls through to the normal gate->explain flow exactly
+// as if this method did not exist, matching serveFromCache's "a broken
+// mechanism degrades to full price, never to a wrong or failed answer"
+// discipline (spec FR-002/FR-003 — uncertain or unverifiable means new).
+//
+// The double verification is deliberate, not redundant: internal/paraphrase
+// already refuses to report Matched=true unless the model's claim resolves
+// to one of the candidates it was actually shown (see resolveMatch there).
+// The second check here — a real Cache.Lookup — additionally covers the
+// window between that candidate fetch and this moment, however small: if an
+// ingestion cleared the cache in between, or the candidate came from a
+// normalized key that (for any reason) no longer resolves, this call fails
+// closed into a fresh answer instead of serving a nonexistent match.
+func (deps Deps) serveFromParaphraseMatch(ctx context.Context, w http.ResponseWriter, cacheSubject, askedText string) bool {
+	candidates, err := deps.Cache.Candidates(ctx, paraphrase.MaxCandidates)
+	if err != nil {
+		log.Printf("httpapi: paraphrase candidate fetch failed (question=%q): %v — falling through to the model", askedText, err)
+		return false
+	}
+	if len(candidates) == 0 {
+		// Nothing cached yet to possibly paraphrase — skip the classification
+		// call entirely rather than paying for a comparison against nothing
+		// (plan.md: "on a miss, if the cache is non-empty").
+		return false
+	}
+
+	decision, err := deps.ParaphraseMatcher.Classify(ctx, cacheSubject, candidates)
+	if err != nil {
+		log.Printf("httpapi: paraphrase classification failed (question=%q): %v — falling through to the model", askedText, err)
+		return false
+	}
+	if !decision.Matched {
+		return false
+	}
+
+	// Live re-verification (see doc comment above) — never serve an entry
+	// because a classifier CLAIMED a match without checking the real cache.
+	entry, err := deps.Cache.Lookup(ctx, decision.MatchedCandidate.OriginalQuestion)
+	if err != nil {
+		log.Printf("httpapi: paraphrase match verification lookup failed (question=%q, claimed match=%q): %v — falling through to the model", askedText, decision.MatchedCandidate.OriginalQuestion, err)
+		return false
+	}
+	if entry == nil {
+		log.Printf("httpapi: paraphrase classifier claimed a match (%q) that does not verify against the live cache — treating as a miss (question=%q)", decision.MatchedCandidate.OriginalQuestion, askedText)
+		return false
+	}
+
+	var cached AskResponse
+	if err := json.Unmarshal(entry.ResponseJSON, &cached); err != nil {
+		log.Printf("httpapi: paraphrase-matched cache entry for %q is unreadable: %v — falling through to the model", decision.MatchedCandidate.OriginalQuestion, err)
+		return false
+	}
+
+	// Unlike an exact-text hit, a paraphrase hit DID spend real money — the
+	// classification call itself. That real cost is reported in Interactions
+	// (the one call that actually ran this request), and the cost it avoided
+	// is reported separately in Cache.CostAvoidedUSD — two numbers, never
+	// netted into one (spec FR-005).
+	classificationInteraction := CostInteraction{
+		ModelUsed:        llmclient.ModelAmbiguityGate,
+		InputTokens:      decision.InputTokens,
+		OutputTokens:     decision.OutputTokens,
+		EstimatedCostUSD: decision.EstimatedCostUSD,
+		LatencyMs:        decision.LatencyMs,
+	}
+	cached.Interactions = []CostInteraction{classificationInteraction}
+	cached.Cache = &CacheInfo{
+		Hit:            true,
+		CachedAt:       entry.CachedAt,
+		CostAvoidedUSD: entry.OriginCostUSD,
+		MatchKind:      "paraphrase",
+		Note:           ParaphraseMatchNote,
+	}
+
+	if err := deps.Cache.RecordParaphraseMatch(ctx, answercache.ParaphraseMatchParams{
+		NewQuestion:                askedText,
+		MatchedNormalizedQuestion:  decision.MatchedCandidate.NormalizedQuestion,
+		ClassificationInputTokens:  decision.InputTokens,
+		ClassificationOutputTokens: decision.OutputTokens,
+		ClassificationCostUSD:      decision.EstimatedCostUSD,
+		ClassificationLatencyMs:    decision.LatencyMs,
+		CostAvoidedUSD:             entry.OriginCostUSD,
+	}); err != nil {
+		log.Printf("httpapi: FAILED to record paraphrase-match ledger row (question=%q): %v", askedText, err)
 	}
 
 	writeJSON(w, http.StatusOK, cached)

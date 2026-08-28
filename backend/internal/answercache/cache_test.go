@@ -16,9 +16,14 @@ import (
 // live round trip is covered separately by the integration check in
 // the live end-to-end check run against the real server.
 type fakeStore struct {
-	entries map[string]storage.AnswerCache
-	hits    []storage.CreateAnswerCacheHitParams
-	cleared int
+	entries           map[string]storage.AnswerCache
+	hits              []storage.CreateAnswerCacheHitParams
+	cleared           int
+	paraphraseMatches []storage.CreateParaphraseMatchParams
+	// insertOrder preserves insertion order for
+	// ListRecentDistinctCachedQuestions, which must return most-recent-first
+	// — a plain map has no order of its own.
+	insertOrder []string
 }
 
 func newFakeStore() *fakeStore {
@@ -40,6 +45,9 @@ func (f *fakeStore) UpsertAnswerCacheEntry(_ context.Context, arg storage.Upsert
 		Response:           arg.Response,
 		OriginCostUsd:      arg.OriginCostUsd,
 	}
+	if _, existed := f.entries[arg.NormalizedQuestion]; !existed {
+		f.insertOrder = append(f.insertOrder, arg.NormalizedQuestion)
+	}
 	f.entries[arg.NormalizedQuestion] = entry
 	return entry, nil
 }
@@ -47,12 +55,36 @@ func (f *fakeStore) UpsertAnswerCacheEntry(_ context.Context, arg storage.Upsert
 func (f *fakeStore) DeleteAllAnswerCacheEntries(_ context.Context) error {
 	f.cleared++
 	f.entries = map[string]storage.AnswerCache{}
+	f.insertOrder = nil
 	return nil
 }
 
 func (f *fakeStore) CreateAnswerCacheHit(_ context.Context, arg storage.CreateAnswerCacheHitParams) (storage.AnswerCacheHit, error) {
 	f.hits = append(f.hits, arg)
 	return storage.AnswerCacheHit{}, nil
+}
+
+// ListRecentDistinctCachedQuestions returns the most-recently-UPSERTED
+// entries first, mirroring the real query's ORDER BY created_at DESC.
+func (f *fakeStore) ListRecentDistinctCachedQuestions(_ context.Context, limit int32) ([]storage.ListRecentDistinctCachedQuestionsRow, error) {
+	out := make([]storage.ListRecentDistinctCachedQuestionsRow, 0, len(f.insertOrder))
+	for i := len(f.insertOrder) - 1; i >= 0 && int32(len(out)) < limit; i-- {
+		key := f.insertOrder[i]
+		entry, ok := f.entries[key]
+		if !ok {
+			continue
+		}
+		out = append(out, storage.ListRecentDistinctCachedQuestionsRow{
+			NormalizedQuestion: entry.NormalizedQuestion,
+			OriginalQuestion:   entry.OriginalQuestion,
+		})
+	}
+	return out, nil
+}
+
+func (f *fakeStore) CreateParaphraseMatch(_ context.Context, arg storage.CreateParaphraseMatchParams) (storage.ParaphraseMatch, error) {
+	f.paraphraseMatches = append(f.paraphraseMatches, arg)
+	return storage.ParaphraseMatch{}, nil
 }
 
 func TestNormalize(t *testing.T) {
@@ -181,5 +213,129 @@ func TestClearDropsEverySoNewDataCannotServeAStaleAnswer(t *testing.T) {
 		if entry != nil {
 			t.Errorf("Lookup(%q) still hit after Clear — a stale answer could outlive its data", question)
 		}
+	}
+}
+
+// --- specs/004-semantic-cache: Candidates / RecordParaphraseMatch --------
+
+func TestCandidatesOnAnEmptyCacheReturnsEmptyNotError(t *testing.T) {
+	cache := New(newFakeStore())
+
+	candidates, err := cache.Candidates(context.Background(), 20)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Errorf("len(candidates) = %d, want 0 on an empty cache", len(candidates))
+	}
+}
+
+func TestCandidatesReturnsMostRecentFirstAndRespectsTheLimit(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+	ctx := context.Background()
+
+	questions := []string{
+		"What was our margin on 2026-08-01?",
+		"What was our margin on 2026-08-02?",
+		"What was our margin on 2026-08-03?",
+	}
+	for _, q := range questions {
+		if err := cache.Save(ctx, q, json.RawMessage(`{"status":"answered"}`), 0.001); err != nil {
+			t.Fatalf("Save(%q): %v", q, err)
+		}
+	}
+
+	all, err := cache.Candidates(ctx, 20)
+	if err != nil {
+		t.Fatalf("Candidates: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("len(all) = %d, want 3", len(all))
+	}
+	// Most-recently-cached first (plan.md's "Candidate-set cap" ordering).
+	if all[0].OriginalQuestion != questions[2] || all[2].OriginalQuestion != questions[0] {
+		t.Errorf("Candidates order = %+v, want most-recent-first of %v", all, questions)
+	}
+	for i, c := range all {
+		if c.NormalizedQuestion != Normalize(c.OriginalQuestion) {
+			t.Errorf("candidate %d: NormalizedQuestion = %q, want Normalize(%q) = %q", i, c.NormalizedQuestion, c.OriginalQuestion, Normalize(c.OriginalQuestion))
+		}
+	}
+
+	limited, err := cache.Candidates(ctx, 2)
+	if err != nil {
+		t.Fatalf("Candidates(limit=2): %v", err)
+	}
+	if len(limited) != 2 {
+		t.Errorf("len(limited) = %d, want 2 — the cap must actually cap", len(limited))
+	}
+}
+
+func TestCandidatesWithNonPositiveLimitReturnsEmpty(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+	ctx := context.Background()
+	if err := cache.Save(ctx, "one question", json.RawMessage(`{}`), 0.001); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	candidates, err := cache.Candidates(ctx, 0)
+	if err != nil {
+		t.Fatalf("Candidates(0): %v", err)
+	}
+	if len(candidates) != 0 {
+		t.Errorf("len(candidates) = %d, want 0 for a non-positive limit", len(candidates))
+	}
+}
+
+func TestRecordParaphraseMatchWritesBothCostsSeparately(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+
+	err := cache.RecordParaphraseMatch(context.Background(), ParaphraseMatchParams{
+		NewQuestion:                " How did we do on August 7th? ",
+		MatchedNormalizedQuestion:  "what was our margin on 2026-08-07?",
+		ClassificationInputTokens:  512,
+		ClassificationOutputTokens: 8,
+		ClassificationCostUSD:      0.000552,
+		ClassificationLatencyMs:    340,
+		CostAvoidedUSD:             0.00527,
+	})
+	if err != nil {
+		t.Fatalf("RecordParaphraseMatch: %v", err)
+	}
+
+	if len(store.paraphraseMatches) != 1 {
+		t.Fatalf("len(paraphraseMatches) = %d, want 1", len(store.paraphraseMatches))
+	}
+	row := store.paraphraseMatches[0]
+	if row.NewQuestion != "How did we do on August 7th?" {
+		t.Errorf("NewQuestion = %q, want the trimmed question as asked", row.NewQuestion)
+	}
+	if row.MatchedNormalizedQuestion != "what was our margin on 2026-08-07?" {
+		t.Errorf("MatchedNormalizedQuestion = %q", row.MatchedNormalizedQuestion)
+	}
+	if !row.ClassificationCostUsd.Valid || !row.CostAvoidedUsd.Valid {
+		t.Fatal("both classification cost and cost avoided must be recorded, never left null")
+	}
+	classificationCost, err := numericToFloat(row.ClassificationCostUsd)
+	if err != nil {
+		t.Fatalf("numericToFloat(classification cost): %v", err)
+	}
+	avoidedCost, err := numericToFloat(row.CostAvoidedUsd)
+	if err != nil {
+		t.Fatalf("numericToFloat(cost avoided): %v", err)
+	}
+	// The two numbers must round-trip DISTINCTLY — spec FR-005's "never
+	// netted together into a single number".
+	if classificationCost == avoidedCost {
+		t.Fatalf("classification cost (%v) and cost avoided (%v) must not collapse into the same value", classificationCost, avoidedCost)
+	}
+	if classificationCost != 0.000552 {
+		t.Errorf("classificationCost = %v, want 0.000552", classificationCost)
+	}
+	if avoidedCost != 0.00527 {
+		t.Errorf("avoidedCost = %v, want 0.00527", avoidedCost)
 	}
 }

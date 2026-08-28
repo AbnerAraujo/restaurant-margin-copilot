@@ -4,18 +4,32 @@
 // explanation step — the whole point being that the tokens are not spent at
 // all, not that they are spent more cheaply.
 //
-// # What it does NOT do, and why that is a disclosed limitation
+// # What it does NOT do, and why that WAS a disclosed limitation
 //
 // The key is the question text, normalized only by trimming, collapsing
 // internal whitespace, and lowercasing. "How did we do on 2026-08-07?" and
 // "how was 2026-08-07" are DIFFERENT keys and the second one costs full
-// price. That is a real limitation, stated plainly rather than papered over:
-// matching paraphrases needs either a model call or an embedding lookup,
-// both of which would put a probabilistic step (and, for the model, a cost)
-// in front of what is otherwise a deterministic O(1) index probe. A cache
-// that sometimes decides two differently-worded questions "mean the same
-// thing" can also decide that wrongly, and serving the answer to a question
-// nobody asked is a worse failure than paying for the second call.
+// price on this exact-match lookup alone. That was a real limitation,
+// stated plainly rather than papered over: matching paraphrases needs
+// either a model call or an embedding lookup, both of which would put a
+// probabilistic step (and, for the model, a cost) in front of what is
+// otherwise a deterministic O(1) index probe.
+//
+// specs/004-semantic-cache narrows — but deliberately does not remove —
+// this limitation: internal/paraphrase sits IN FRONT of this exact-match
+// cache (checked only on a miss here, never replacing this lookup) and asks
+// a bounded Claude Haiku 4.5 call whether a new question means the same
+// thing as one of the most-recently-cached ones. This package's own
+// exact-match behavior is unchanged by that addition (spec FR-006) — Lookup
+// still normalizes the same way, still misses on a paraphrase by itself,
+// and still costs nothing when it hits. Candidates and RecordParaphraseMatch
+// below exist only to support that other package's I/O — reading the
+// bounded candidate set and writing its own ledger row — never to make this
+// package's own Lookup fuzzy. A cache that sometimes decides two
+// differently-worded questions "mean the same thing" can also decide that
+// wrongly, which is exactly why that decision is made by an inspectable,
+// instrumented classification call (internal/paraphrase), re-verified
+// against this package's real, current contents before anything is served.
 //
 // # Instrumentation (Constitution Principle VI)
 //
@@ -57,6 +71,13 @@ type Store interface {
 	UpsertAnswerCacheEntry(ctx context.Context, arg storage.UpsertAnswerCacheEntryParams) (storage.AnswerCache, error)
 	DeleteAllAnswerCacheEntries(ctx context.Context) error
 	CreateAnswerCacheHit(ctx context.Context, arg storage.CreateAnswerCacheHitParams) (storage.AnswerCacheHit, error)
+	// ListRecentDistinctCachedQuestions and CreateParaphraseMatch back
+	// specs/004-semantic-cache's paraphrase-aware layer (Candidates,
+	// RecordParaphraseMatch below) — added to this same Store port rather
+	// than a second one, since both still read/write tables this package
+	// alone owns (answer_cache, paraphrase_match).
+	ListRecentDistinctCachedQuestions(ctx context.Context, limit int32) ([]storage.ListRecentDistinctCachedQuestionsRow, error)
+	CreateParaphraseMatch(ctx context.Context, arg storage.CreateParaphraseMatchParams) (storage.ParaphraseMatch, error)
 }
 
 // Cache reads and writes cached answers.
@@ -152,6 +173,88 @@ func (c *Cache) RecordHit(ctx context.Context, question string, costAvoidedUSD f
 func (c *Cache) Clear(ctx context.Context) error {
 	if err := c.store.DeleteAllAnswerCacheEntries(ctx); err != nil {
 		return fmt.Errorf("answercache: clear: %w", err)
+	}
+	return nil
+}
+
+// Candidate is one existing cache entry offered to internal/paraphrase's
+// classifier as something a new question might mean the same thing as.
+// OriginalQuestion is what the classifier reads (natural, as-typed text);
+// NormalizedQuestion is what a claimed match is verified against — the same
+// key Lookup itself would derive, so "the model's answer exists in the
+// cache" means exactly "collides with a real Normalize() key", not some
+// looser textual resemblance.
+type Candidate struct {
+	NormalizedQuestion string
+	OriginalQuestion   string
+}
+
+// Candidates returns up to limit of the most-recently-cached questions,
+// most-recent-first — the bounded set specs/004-semantic-cache's plan.md
+// ("Candidate-set cap") checks a new question against instead of every
+// question ever cached. An empty cache (or limit <= 0) returns an empty
+// slice, never an error: "nothing to compare against" is the expected,
+// common case (a fresh cache, or right after an ingestion clears it), and
+// the caller (internal/httpapi) uses an empty result to skip the
+// classification call entirely rather than paying for a no-op comparison.
+func (c *Cache) Candidates(ctx context.Context, limit int) ([]Candidate, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := c.store.ListRecentDistinctCachedQuestions(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("answercache: candidates: %w", err)
+	}
+	out := make([]Candidate, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, Candidate{
+			NormalizedQuestion: row.NormalizedQuestion,
+			OriginalQuestion:   row.OriginalQuestion,
+		})
+	}
+	return out, nil
+}
+
+// ParaphraseMatchParams is what RecordParaphraseMatch persists — the real
+// classification cost incurred and the full-cycle cost it avoided, kept as
+// two distinct fields all the way to the database (spec FR-005: "never
+// netted together into a single number that overstates the saving").
+type ParaphraseMatchParams struct {
+	// NewQuestion is the question actually asked (as typed), matched to an
+	// existing entry rather than answered fresh.
+	NewQuestion string
+	// MatchedNormalizedQuestion identifies which existing cache entry was
+	// served — the Candidate.NormalizedQuestion the classifier's claim
+	// verified against.
+	MatchedNormalizedQuestion  string
+	ClassificationInputTokens  int64
+	ClassificationOutputTokens int64
+	// ClassificationCostUSD is the REAL money this classification call cost
+	// — never zero in practice, since a row is only ever written after a
+	// real Haiku call ran and returned a verified match.
+	ClassificationCostUSD   float64
+	ClassificationLatencyMs int64
+	// CostAvoidedUSD is the matched entry's own OriginCostUSD — what the
+	// full gate+explain cycle that originally produced it cost.
+	CostAvoidedUSD float64
+}
+
+// RecordParaphraseMatch writes the non-interaction, non-free ledger row for
+// a served paraphrase hit (migrations/000005's paraphrase_match table) — the
+// third state FR-004 requires be distinguishable from both a fresh model
+// call and a zero-cost exact-text hit.
+func (c *Cache) RecordParaphraseMatch(ctx context.Context, p ParaphraseMatchParams) error {
+	_, err := c.store.CreateParaphraseMatch(ctx, storage.CreateParaphraseMatchParams{
+		NewQuestion:                strings.TrimSpace(p.NewQuestion),
+		MatchedNormalizedQuestion:  p.MatchedNormalizedQuestion,
+		ClassificationInputTokens:  int32(p.ClassificationInputTokens),
+		ClassificationOutputTokens: int32(p.ClassificationOutputTokens),
+		ClassificationCostUsd:      floatToNumeric(p.ClassificationCostUSD),
+		ClassificationLatencyMs:    int32(p.ClassificationLatencyMs),
+		CostAvoidedUsd:             floatToNumeric(p.CostAvoidedUSD),
+	})
+	if err != nil {
+		return fmt.Errorf("answercache: record paraphrase match: %w", err)
 	}
 	return nil
 }

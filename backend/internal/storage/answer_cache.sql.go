@@ -86,6 +86,43 @@ func (q *Queries) GetAnswerCacheEntry(ctx context.Context, normalizedQuestion st
 	return i, err
 }
 
+const listRecentDistinctCachedQuestions = `-- name: ListRecentDistinctCachedQuestions :many
+SELECT normalized_question, original_question FROM answer_cache
+ORDER BY created_at DESC
+LIMIT $1
+`
+
+type ListRecentDistinctCachedQuestionsRow struct {
+	NormalizedQuestion string `json:"normalized_question"`
+	OriginalQuestion   string `json:"original_question"`
+}
+
+// The bounded candidate set specs/004-semantic-cache's paraphrase classifier
+// checks a new question against: the most-recently-cached questions first
+// (LIMIT applies the plan's cap — 20 at the call site — before the
+// classification prompt is built, per plan.md's "Candidate-set cap" section).
+// Already distinct by construction: normalized_question is answer_cache's
+// primary key, so this can never return two rows for the same question.
+func (q *Queries) ListRecentDistinctCachedQuestions(ctx context.Context, limit int32) ([]ListRecentDistinctCachedQuestionsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentDistinctCachedQuestions, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentDistinctCachedQuestionsRow
+	for rows.Next() {
+		var i ListRecentDistinctCachedQuestionsRow
+		if err := rows.Scan(&i.NormalizedQuestion, &i.OriginalQuestion); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const sumAnswerCacheCostAvoided = `-- name: SumAnswerCacheCostAvoided :one
 SELECT COALESCE(SUM(estimated_cost_avoided_usd), 0)::numeric AS total FROM answer_cache_hit
 `

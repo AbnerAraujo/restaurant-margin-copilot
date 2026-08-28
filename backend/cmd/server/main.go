@@ -31,6 +31,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/llmclient"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/paraphrase"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/pipeline"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
@@ -197,6 +198,11 @@ func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercach
 		Explainer: explainer,
 		Logger:    instrumentation.NewLogger(storage.NewInstrumentationAdapter(store)),
 		Cache:     cache,
+		// specs/004-semantic-cache: checked only on an exact-match cache
+		// MISS (see httpapi.HandleAsk) — shares the same Haiku model and
+		// llmclient.Client the ambiguity gate uses, one more vendor-internal
+		// use of a call this project already pays for and rate-limits.
+		ParaphraseMatcher: paraphrase.New(llm),
 	}, nil
 }
 

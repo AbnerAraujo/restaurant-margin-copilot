@@ -12,6 +12,7 @@ import (
 
 type Querier interface {
 	CountAnswerCacheHits(ctx context.Context) (int64, error)
+	CountParaphraseMatches(ctx context.Context) (int64, error)
 	// One row per answer served from cache — a non-interaction, recorded in its
 	// own ledger rather than as a fabricated question_interaction.
 	CreateAnswerCacheHit(ctx context.Context, arg CreateAnswerCacheHitParams) (AnswerCacheHit, error)
@@ -31,6 +32,10 @@ type Querier interface {
 	// way (roi: null) because both really are "no ROI is known", never a
 	// computed-looking zero.
 	CreateOwnerPromotion(ctx context.Context, arg CreateOwnerPromotionParams) (PromotionRoiRecord, error)
+	// One row per answer served via paraphrase recognition (specs/004-semantic-cache)
+	// — a real classification call that avoided a full gate+explain cycle. Both
+	// costs are recorded, never netted (spec FR-005).
+	CreateParaphraseMatch(ctx context.Context, arg CreateParaphraseMatchParams) (ParaphraseMatch, error)
 	// Writer: internal/instrumentation/ only, alongside whichever of
 	// internal/ambiguity/ or internal/explain/ ran (Constitution Principle VI).
 	CreateQuestionInteraction(ctx context.Context, arg CreateQuestionInteractionParams) (QuestionInteraction, error)
@@ -82,6 +87,13 @@ type Querier interface {
 	ListDistinctUsageDays(ctx context.Context) ([]pgtype.Date, error)
 	// Backs the list_negative_roi_promotions MCP tool contract (spec User Story 4 / SC-006).
 	ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype.Range[pgtype.Date]) ([]PromotionRoiRecord, error)
+	// The bounded candidate set specs/004-semantic-cache's paraphrase classifier
+	// checks a new question against: the most-recently-cached questions first
+	// (LIMIT applies the plan's cap — 20 at the call site — before the
+	// classification prompt is built, per plan.md's "Candidate-set cap" section).
+	// Already distinct by construction: normalized_question is answer_cache's
+	// primary key, so this can never return two rows for the same question.
+	ListRecentDistinctCachedQuestions(ctx context.Context, limit int32) ([]ListRecentDistinctCachedQuestionsRow, error)
 	// Backs an instrumentation/history view in the frontend cost panel.
 	ListRecentQuestionInteractions(ctx context.Context, limit int32) ([]QuestionInteraction, error)
 	// Backs FR-003: one real, timestamped usage event per real app-open. The
@@ -98,6 +110,11 @@ type Querier interface {
 	SumAnswerCacheCostAvoided(ctx context.Context) (pgtype.Numeric, error)
 	// Backs the running cost total the UI must show for 100% of interactions (FR-009).
 	SumEstimatedCostUSD(ctx context.Context) (pgtype.Numeric, error)
+	// The real, small cost this project's paraphrase-matching mechanism has
+	// itself spent so far (spec SC-003's "small fraction of what it avoids").
+	SumParaphraseMatchClassificationCost(ctx context.Context) (pgtype.Numeric, error)
+	// Total full-cycle spend paraphrase recognition has avoided so far.
+	SumParaphraseMatchCostAvoided(ctx context.Context) (pgtype.Numeric, error)
 	// Re-answering the same normalized question overwrites the entry rather than
 	// keeping the older one: the newer response was computed against whatever
 	// data is current, so it is the one worth serving next time.

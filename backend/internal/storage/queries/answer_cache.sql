@@ -44,3 +44,14 @@ SELECT COALESCE(SUM(estimated_cost_avoided_usd), 0)::numeric AS total FROM answe
 
 -- name: CountAnswerCacheHits :one
 SELECT COUNT(*)::bigint AS total FROM answer_cache_hit;
+
+-- name: ListRecentDistinctCachedQuestions :many
+-- The bounded candidate set specs/004-semantic-cache's paraphrase classifier
+-- checks a new question against: the most-recently-cached questions first
+-- (LIMIT applies the plan's cap — 20 at the call site — before the
+-- classification prompt is built, per plan.md's "Candidate-set cap" section).
+-- Already distinct by construction: normalized_question is answer_cache's
+-- primary key, so this can never return two rows for the same question.
+SELECT normalized_question, original_question FROM answer_cache
+ORDER BY created_at DESC
+LIMIT $1;

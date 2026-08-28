@@ -61,8 +61,13 @@ func (s *recordingInstrumentationStore) SaveQuestionInteraction(_ context.Contex
 }
 
 type memoryCacheStore struct {
-	entries map[string]storage.AnswerCache
-	hits    []storage.CreateAnswerCacheHitParams
+	entries           map[string]storage.AnswerCache
+	hits              []storage.CreateAnswerCacheHitParams
+	paraphraseMatches []storage.CreateParaphraseMatchParams
+	// insertOrder preserves insertion order for
+	// ListRecentDistinctCachedQuestions (most-recent-first, like the real
+	// ORDER BY created_at DESC query) — a plain map has no order of its own.
+	insertOrder []string
 }
 
 func newMemoryCacheStore() *memoryCacheStore {
@@ -84,18 +89,43 @@ func (m *memoryCacheStore) UpsertAnswerCacheEntry(_ context.Context, arg storage
 		Response:           arg.Response,
 		OriginCostUsd:      arg.OriginCostUsd,
 	}
+	if _, existed := m.entries[arg.NormalizedQuestion]; !existed {
+		m.insertOrder = append(m.insertOrder, arg.NormalizedQuestion)
+	}
 	m.entries[arg.NormalizedQuestion] = entry
 	return entry, nil
 }
 
 func (m *memoryCacheStore) DeleteAllAnswerCacheEntries(_ context.Context) error {
 	m.entries = map[string]storage.AnswerCache{}
+	m.insertOrder = nil
 	return nil
 }
 
 func (m *memoryCacheStore) CreateAnswerCacheHit(_ context.Context, arg storage.CreateAnswerCacheHitParams) (storage.AnswerCacheHit, error) {
 	m.hits = append(m.hits, arg)
 	return storage.AnswerCacheHit{}, nil
+}
+
+func (m *memoryCacheStore) ListRecentDistinctCachedQuestions(_ context.Context, limit int32) ([]storage.ListRecentDistinctCachedQuestionsRow, error) {
+	out := make([]storage.ListRecentDistinctCachedQuestionsRow, 0, len(m.insertOrder))
+	for i := len(m.insertOrder) - 1; i >= 0 && int32(len(out)) < limit; i-- {
+		key := m.insertOrder[i]
+		entry, ok := m.entries[key]
+		if !ok {
+			continue
+		}
+		out = append(out, storage.ListRecentDistinctCachedQuestionsRow{
+			NormalizedQuestion: entry.NormalizedQuestion,
+			OriginalQuestion:   entry.OriginalQuestion,
+		})
+	}
+	return out, nil
+}
+
+func (m *memoryCacheStore) CreateParaphraseMatch(_ context.Context, arg storage.CreateParaphraseMatchParams) (storage.ParaphraseMatch, error) {
+	m.paraphraseMatches = append(m.paraphraseMatches, arg)
+	return storage.ParaphraseMatch{}, nil
 }
 
 // --- harness ----------------------------------------------------------

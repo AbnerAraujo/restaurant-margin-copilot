@@ -44,6 +44,19 @@ type DailyReconciliation struct {
 	CommissionsBySource json.RawMessage `json:"commissions_by_source"`
 }
 
+// One row per answer served via paraphrase recognition (specs/004-semantic-cache) — a real, bounded Claude Haiku 4.5 classification call (classification_cost_usd, never zero) that avoided a full gate+explain cycle (cost_avoided_usd). Kept out of both question_interaction (this is not the ambiguity gate or explain running) and answer_cache_hit (this is not free) so all three states — fresh call, exact-text hit, paraphrase hit — stay distinguishable and no cost is ever netted or hidden.
+type ParaphraseMatch struct {
+	ID                         pgtype.UUID        `json:"id"`
+	NewQuestion                string             `json:"new_question"`
+	MatchedNormalizedQuestion  string             `json:"matched_normalized_question"`
+	ClassificationInputTokens  int32              `json:"classification_input_tokens"`
+	ClassificationOutputTokens int32              `json:"classification_output_tokens"`
+	ClassificationCostUsd      pgtype.Numeric     `json:"classification_cost_usd"`
+	ClassificationLatencyMs    int32              `json:"classification_latency_ms"`
+	CostAvoidedUsd             pgtype.Numeric     `json:"cost_avoided_usd"`
+	MatchedAt                  pgtype.Timestamptz `json:"matched_at"`
+}
+
 // roi is NULL when incremental revenue cannot be attributed (FR-013) — never estimated. Enforced by roi_requires_attribution.
 type PromotionRoiRecord struct {
 	ID                           pgtype.UUID               `json:"id"`
