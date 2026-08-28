@@ -74,21 +74,31 @@ func New(opts ...Opt) *Client {
 }
 
 // MessageRequest is the input to CreateMessage. It is intentionally narrow:
-// a model, an optional system prompt, a max token budget, and the message
-// history — nothing that would let a caller smuggle raw database rows or
-// open-ended computation through this layer (Constitution Principle III).
+// a model, an optional system prompt, a max token budget, the message
+// history, and (added for internal/explain's tool-calling loop, tasks.md
+// T021) an optional set of tool definitions — nothing that would let a
+// caller smuggle raw database rows or open-ended computation through this
+// layer (Constitution Principle III; the Tools this project ever passes
+// here come from internal/mcptools' fixed, typed set, never a free-form
+// query tool).
 type MessageRequest struct {
 	Model     string
 	System    string
 	MaxTokens int64
 	Messages  []anthropic.MessageParam
+	Tools     []anthropic.ToolUnionParam
 }
 
 // MessageResult is what every caller needs to both use the model's answer
-// and instrument the call: the text, whether the model refused, and the
-// token/latency figures internal/instrumentation logs verbatim.
+// and instrument the call: the text, whether the model refused, the
+// token/latency figures internal/instrumentation logs verbatim, and (added
+// alongside MessageRequest.Tools) the full raw content block list, so a
+// tool-calling caller can walk it for anthropic.ToolUseBlock values that
+// Text alone discards. Text remains just the concatenated text blocks, so
+// existing non-tool-calling callers (internal/ambiguity) are unaffected.
 type MessageResult struct {
 	Text            string
+	ContentBlocks   []anthropic.ContentBlockUnion
 	StopReason      anthropic.StopReason
 	Refused         bool
 	RefusalCategory string
@@ -115,6 +125,9 @@ func (c *Client) CreateMessage(ctx context.Context, req MessageRequest) (*Messag
 	if req.System != "" {
 		params.System = []anthropic.TextBlockParam{{Text: req.System}}
 	}
+	if len(req.Tools) > 0 {
+		params.Tools = req.Tools
+	}
 
 	start := time.Now()
 	resp, err := c.sdk.Messages.New(ctx, params)
@@ -124,10 +137,11 @@ func (c *Client) CreateMessage(ctx context.Context, req MessageRequest) (*Messag
 	}
 
 	result := &MessageResult{
-		StopReason:   resp.StopReason,
-		InputTokens:  resp.Usage.InputTokens,
-		OutputTokens: resp.Usage.OutputTokens,
-		Latency:      latency,
+		StopReason:    resp.StopReason,
+		ContentBlocks: resp.Content,
+		InputTokens:   resp.Usage.InputTokens,
+		OutputTokens:  resp.Usage.OutputTokens,
+		Latency:       latency,
 	}
 
 	if resp.StopReason == anthropic.StopReasonRefusal {
