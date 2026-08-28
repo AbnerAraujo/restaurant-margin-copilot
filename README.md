@@ -81,7 +81,7 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/003-platform-comparator`](specs/003-platform-comparator/spec.md) | Cross-platform economics comparator — real per-platform commission breakdown | Shipped |
 | [`specs/004-semantic-cache`](specs/004-semantic-cache/spec.md) | Paraphrase-aware answer cache — skip the LLM on a re-asked question, even reworded | Shipped |
 | [`specs/005-multi-tenant`](specs/005-multi-tenant/spec.md) | Multi-tenant support (Segment 2 expansion) | Spec + RFC only — not built, deliberately gated |
-| [`specs/007-cost-sheet-upload`](specs/007-cost-sheet-upload/spec.md) | Cost-sheet upload UI — validation, preview, template, commit-and-reconcile | In progress |
+| [`specs/007-cost-sheet-upload`](specs/007-cost-sheet-upload/spec.md) | Cost-sheet upload UI — validation, preview, template, commit-and-reconcile | Shipped |
 
 ## Real evaluation results
 
