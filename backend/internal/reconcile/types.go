@@ -57,8 +57,19 @@ type DailyReconciliation struct {
 	// total.
 	CommissionsBySource map[string]int64
 	RefundsCents        int64
-	InputCostsCents     int64
-	MarginCents         int64
-	DiscrepancyFlags    []DiscrepancyFlag
-	SourceRowRefs       []SourceRowRef
+	// RefundsBySource breaks RefundsCents down per normalized delivery-
+	// platform source key, the same keys GrossSalesBySource/
+	// CommissionsBySource use (added to close a real, measured evaluation
+	// gap: A15, "Delivery revenue on 2026-08-02, net of the refund?" —
+	// docs/product-strategy.md). It always sums back to RefundsCents. "pos"
+	// never appears here: a refunded delivery-platform row always carries
+	// its own Platform field (internal/ingest.DeliveryRecord), but POS rows
+	// have no refunded status at all in this reconciliation — a non-
+	// "completed" POS row is excluded entirely (FlagPOSNonCompletedExcluded)
+	// rather than netted as a refund, so POS can never contribute here.
+	RefundsBySource  map[string]int64
+	InputCostsCents  int64
+	MarginCents      int64
+	DiscrepancyFlags []DiscrepancyFlag
+	SourceRowRefs    []SourceRowRef
 }

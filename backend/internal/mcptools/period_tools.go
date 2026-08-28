@@ -72,8 +72,14 @@ type PeriodTotalsResult struct {
 	TotalDeliveryGrossSales string `json:"total_delivery_gross_sales"`
 	Commissions             string `json:"commissions"`
 	Refunds                 string `json:"refunds"`
-	InputCosts              string `json:"input_costs"`
-	MarginTotal             string `json:"margin_total"`
+	// RefundsBySource is the per-source sum of RefundsBySource across every
+	// day in the period, mirroring DailySummaryResult's RefundsBySource
+	// field and existing for the identical reason (A15,
+	// docs/product-strategy.md): computed in Go from each day's own
+	// real per-order refund attribution, never estimated or apportioned.
+	RefundsBySource map[string]string `json:"refunds_by_source"`
+	InputCosts      string            `json:"input_costs"`
+	MarginTotal     string            `json:"margin_total"`
 	// AvgDailyMargin is MarginTotal / DaysIncluded, computed with
 	// internal/money.DivRoundHalfUp — never a float64 divide — the same
 	// rounding convention every other ratio in this codebase
@@ -137,6 +143,7 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 	sort.Slice(days, func(i, j int) bool { return days[i].Date.Before(days[j].Date) })
 
 	grossBySourceCents := make(map[string]int64)
+	refundsBySourceCents := make(map[string]int64)
 	var commissionsCents, refundsCents, inputCostsCents, marginCents int64
 	var refs []reconcile.SourceRowRef
 	var bestDate, worstDate string
@@ -145,6 +152,9 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 	for i, d := range days {
 		for source, cents := range d.GrossSalesBySource {
 			grossBySourceCents[source] += cents
+		}
+		for source, cents := range d.RefundsBySource {
+			refundsBySourceCents[source] += cents
 		}
 		commissionsCents += d.CommissionsCents
 		refundsCents += d.RefundsCents
@@ -172,6 +182,10 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 			deliveryTotalCents += cents
 		}
 	}
+	refundsBySource := make(map[string]string, len(refundsBySourceCents))
+	for source, cents := range refundsBySourceCents {
+		refundsBySource[source] = money.FormatCents(cents)
+	}
 
 	// len(days) is at least 1 here: period.parse() already refused end <
 	// start, and the insufficient_data check above already refused any
@@ -189,6 +203,7 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 		TotalDeliveryGrossSales: money.FormatCents(deliveryTotalCents),
 		Commissions:             money.FormatCents(commissionsCents),
 		Refunds:                 money.FormatCents(refundsCents),
+		RefundsBySource:         refundsBySource,
 		InputCosts:              money.FormatCents(inputCostsCents),
 		MarginTotal:             money.FormatCents(marginCents),
 		AvgDailyMargin:          money.FormatCents(avgDailyMarginCents),
@@ -202,7 +217,7 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 // per contracts/mcp-tools.md.
 func GetPeriodTotalsTool() mcp.Tool {
 	return mcp.NewTool("get_period_totals",
-		mcp.WithDescription("Total and rank an ENTIRE period's reconciled figures in one call: gross sales by source, total delivery gross sales, commissions, refunds, input costs, margin total, average daily margin, and which single day was the best/worst by margin — each carrying source-row provenance. Call this tool directly for ANY question about a period's totals or about which day was highest/lowest (e.g. \"total supplier cost for the two-week period\", \"which day had the most profit and why\") — never answer by calling get_daily_summary once per day and adding the results yourself. Returns a typed insufficient_data error, never a total computed against partial data, if any calendar day in the period has no computed reconciliation."),
+		mcp.WithDescription("Total and rank an ENTIRE period's reconciled figures in one call: gross sales by source, total delivery gross sales, commissions, refunds (with a refunds_by_source per-platform breakdown), input costs, margin total, average daily margin, and which single day was the best/worst by margin — each carrying source-row provenance. Call this tool directly for ANY question about a period's totals or about which day was highest/lowest (e.g. \"total supplier cost for the two-week period\", \"which day had the most profit and why\") — never answer by calling get_daily_summary once per day and adding the results yourself. Returns a typed insufficient_data error, never a total computed against partial data, if any calendar day in the period has no computed reconciliation."),
 		mcp.WithReadOnlyHintAnnotation(true),
 		mcp.WithObject("period",
 			mcp.Required(),

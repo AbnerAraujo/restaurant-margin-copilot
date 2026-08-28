@@ -32,7 +32,13 @@ const dateKeyLayout = "2006-01-02"
 //     reports completed-only gross bookings; RefundsCents is the separate
 //     refunded amount; commissions are summed across completed AND
 //     refunded rows for the same order_date, since a platform reverses its
-//     commission when it reverses the order.
+//     commission when it reverses the order. RefundsBySource attributes
+//     each refund to the same normalized platform key as its original
+//     order (a refunded row always carries its own Platform field, so this
+//     is real per-order data, not an estimate) — added to close A15
+//     (docs/product-strategy.md), where "delivery revenue net of the
+//     refund" for a specific platform could not previously be answered
+//     from a single netted RefundsCents total.
 //   - Missing sources: a calendar day with POS or cost-sheet data but zero
 //     delivery rows still produces a DailyReconciliation (using whatever
 //     sources ARE present) with an explicit missing_delivery_source flag —
@@ -84,6 +90,7 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 
 	gross := map[string]int64{}
 	commissionsBySource := map[string]int64{}
+	refundsBySource := map[string]int64{}
 	var commissionsCents, refundsCents int64
 	var refs []SourceRowRef
 	flags := append([]DiscrepancyFlag{}, extraFlags...)
@@ -96,7 +103,9 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 		case "completed":
 			gross[src] += r.SubtotalCents
 		case "refunded":
-			refundsCents += abs64(r.SubtotalCents)
+			refundAmount := abs64(r.SubtotalCents)
+			refundsCents += refundAmount
+			refundsBySource[src] += refundAmount
 		}
 
 		// Commission is summed across every row for the order (completed
@@ -160,6 +169,7 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 		CommissionsCents:    commissionsCents,
 		CommissionsBySource: commissionsBySource,
 		RefundsCents:        refundsCents,
+		RefundsBySource:     refundsBySource,
 		InputCostsCents:     inputCostsCents,
 		MarginCents:         margin,
 		DiscrepancyFlags:    flags,

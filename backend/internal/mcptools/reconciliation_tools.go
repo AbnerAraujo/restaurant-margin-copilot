@@ -39,13 +39,22 @@ type DailySummaryResult struct {
 	// real violation of that split) or omit the combined figure entirely.
 	// Naming it "TotalGrossSales" instead would be wrong: that would silently
 	// fold in POS (non-delivery) revenue and inflate the delivery figure.
-	TotalDeliveryGrossSales string                      `json:"total_delivery_gross_sales"`
-	Commissions             string                      `json:"commissions"`
-	Refunds                 string                      `json:"refunds"`
-	InputCosts              string                      `json:"input_costs"`
-	Margin                  string                      `json:"margin"`
-	DiscrepancyFlags        []reconcile.DiscrepancyFlag `json:"discrepancy_flags"`
-	SourceRowRefs           []reconcile.SourceRowRef    `json:"source_row_refs"`
+	TotalDeliveryGrossSales string `json:"total_delivery_gross_sales"`
+	Commissions             string `json:"commissions"`
+	Refunds                 string `json:"refunds"`
+	// RefundsBySource breaks Refunds down per normalized delivery-platform
+	// source key, the same keys GrossSalesBySource uses (added to close
+	// A15, "Delivery revenue on 2026-08-02, net of the refund?" —
+	// docs/product-strategy.md). Computed in Go from real per-order data
+	// (internal/ingest.DeliveryRecord always carries the refunded row's own
+	// Platform), never estimated or apportioned by a flat share of the
+	// day's total. Always sums back to Refunds; "pos" never appears here
+	// (see reconcile.DailyReconciliation.RefundsBySource's doc comment).
+	RefundsBySource  map[string]string           `json:"refunds_by_source"`
+	InputCosts       string                      `json:"input_costs"`
+	Margin           string                      `json:"margin"`
+	DiscrepancyFlags []reconcile.DiscrepancyFlag `json:"discrepancy_flags"`
+	SourceRowRefs    []reconcile.SourceRowRef    `json:"source_row_refs"`
 }
 
 // PeriodMarginResult is one side of a get_margin_delta response — a
@@ -268,12 +277,17 @@ func NewDailySummaryResult(d reconcile.DailyReconciliation) *DailySummaryResult 
 			deliveryTotalCents += cents
 		}
 	}
+	refundsBySource := make(map[string]string, len(d.RefundsBySource))
+	for source, cents := range d.RefundsBySource {
+		refundsBySource[source] = money.FormatCents(cents)
+	}
 	return &DailySummaryResult{
 		Date:                    d.Date.Format(dateLayout),
 		GrossSalesBySource:      gross,
 		TotalDeliveryGrossSales: money.FormatCents(deliveryTotalCents),
 		Commissions:             money.FormatCents(d.CommissionsCents),
 		Refunds:                 money.FormatCents(d.RefundsCents),
+		RefundsBySource:         refundsBySource,
 		InputCosts:              money.FormatCents(d.InputCostsCents),
 		Margin:                  money.FormatCents(d.MarginCents),
 		DiscrepancyFlags:        d.DiscrepancyFlags,
@@ -294,7 +308,7 @@ var periodPropertySchema = map[string]any{
 func registerReconciliationTools(s *server.MCPServer, q storage.Querier) {
 	s.AddTool(
 		mcp.NewTool("get_daily_summary",
-			mcp.WithDescription("Return the deterministic DailyReconciliation for one calendar date: gross sales by source, commissions, refunds, input costs, margin, discrepancy flags, and full source-row provenance. Returns a typed no_data error, never a partial or estimated summary, if no reconciliation has been computed for that date."),
+			mcp.WithDescription("Return the deterministic DailyReconciliation for one calendar date: gross sales by source, commissions, refunds (with a refunds_by_source per-platform breakdown), input costs, margin, discrepancy flags, and full source-row provenance. Returns a typed no_data error, never a partial or estimated summary, if no reconciliation has been computed for that date."),
 			mcp.WithString("date", mcp.Required(), mcp.Description("Calendar date in YYYY-MM-DD format.")),
 		),
 		handleGetDailySummary(q),

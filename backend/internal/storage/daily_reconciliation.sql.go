@@ -13,7 +13,7 @@ import (
 )
 
 const getDailyReconciliationByDate = `-- name: GetDailyReconciliationByDate :one
-SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source FROM daily_reconciliation
+SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source, refunds_by_source FROM daily_reconciliation
 WHERE date = $1
 `
 
@@ -33,6 +33,7 @@ func (q *Queries) GetDailyReconciliationByDate(ctx context.Context, date pgtype.
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CommissionsBySource,
+		&i.RefundsBySource,
 	)
 	return i, err
 }
@@ -62,7 +63,7 @@ func (q *Queries) GetDataDateRange(ctx context.Context) (GetDataDateRangeRow, er
 }
 
 const listDailyReconciliationsInPeriod = `-- name: ListDailyReconciliationsInPeriod :many
-SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source FROM daily_reconciliation
+SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source, refunds_by_source FROM daily_reconciliation
 WHERE date >= $1 AND date <= $2
 ORDER BY date
 `
@@ -94,6 +95,7 @@ func (q *Queries) ListDailyReconciliationsInPeriod(ctx context.Context, arg List
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.CommissionsBySource,
+			&i.RefundsBySource,
 		); err != nil {
 			return nil, err
 		}
@@ -112,24 +114,26 @@ INSERT INTO daily_reconciliation (
     commissions,
     commissions_by_source,
     refunds,
+    refunds_by_source,
     input_costs,
     margin,
     discrepancy_flags,
     source_row_refs
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 ON CONFLICT (date) DO UPDATE SET
     gross_sales_by_source = EXCLUDED.gross_sales_by_source,
     commissions           = EXCLUDED.commissions,
     commissions_by_source = EXCLUDED.commissions_by_source,
     refunds               = EXCLUDED.refunds,
+    refunds_by_source     = EXCLUDED.refunds_by_source,
     input_costs           = EXCLUDED.input_costs,
     margin                = EXCLUDED.margin,
     discrepancy_flags     = EXCLUDED.discrepancy_flags,
     source_row_refs       = EXCLUDED.source_row_refs,
     updated_at            = now()
-RETURNING date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source
+RETURNING date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source, refunds_by_source
 `
 
 type UpsertDailyReconciliationParams struct {
@@ -138,6 +142,7 @@ type UpsertDailyReconciliationParams struct {
 	Commissions         pgtype.Numeric  `json:"commissions"`
 	CommissionsBySource json.RawMessage `json:"commissions_by_source"`
 	Refunds             pgtype.Numeric  `json:"refunds"`
+	RefundsBySource     json.RawMessage `json:"refunds_by_source"`
 	InputCosts          pgtype.Numeric  `json:"input_costs"`
 	Margin              pgtype.Numeric  `json:"margin"`
 	DiscrepancyFlags    json.RawMessage `json:"discrepancy_flags"`
@@ -152,6 +157,7 @@ func (q *Queries) UpsertDailyReconciliation(ctx context.Context, arg UpsertDaily
 		arg.Commissions,
 		arg.CommissionsBySource,
 		arg.Refunds,
+		arg.RefundsBySource,
 		arg.InputCosts,
 		arg.Margin,
 		arg.DiscrepancyFlags,
@@ -170,6 +176,7 @@ func (q *Queries) UpsertDailyReconciliation(ctx context.Context, arg UpsertDaily
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.CommissionsBySource,
+		&i.RefundsBySource,
 	)
 	return i, err
 }

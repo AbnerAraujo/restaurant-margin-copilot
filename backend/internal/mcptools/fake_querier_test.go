@@ -94,6 +94,7 @@ func (f *fakeQuerier) UpsertDailyReconciliation(_ context.Context, arg storage.U
 		Commissions:         arg.Commissions,
 		CommissionsBySource: arg.CommissionsBySource,
 		Refunds:             arg.Refunds,
+		RefundsBySource:     arg.RefundsBySource,
 		InputCosts:          arg.InputCosts,
 		Margin:              arg.Margin,
 		DiscrepancyFlags:    arg.DiscrepancyFlags,

@@ -36,6 +36,10 @@ func SaveDailyReconciliation(ctx context.Context, q Querier, day reconcile.Daily
 	if err != nil {
 		return DailyReconciliation{}, fmt.Errorf("storage: marshal commissions_by_source: %w", err)
 	}
+	refundsBySourceJSON, err := marshalCentsMap(day.RefundsBySource)
+	if err != nil {
+		return DailyReconciliation{}, fmt.Errorf("storage: marshal refunds_by_source: %w", err)
+	}
 	flagsJSON, err := marshalOrEmptyArray(day.DiscrepancyFlags)
 	if err != nil {
 		return DailyReconciliation{}, fmt.Errorf("storage: marshal discrepancy_flags: %w", err)
@@ -51,6 +55,7 @@ func SaveDailyReconciliation(ctx context.Context, q Querier, day reconcile.Daily
 		Commissions:         centsToNumeric(day.CommissionsCents),
 		CommissionsBySource: commissionsBySourceJSON,
 		Refunds:             centsToNumeric(day.RefundsCents),
+		RefundsBySource:     refundsBySourceJSON,
 		InputCosts:          centsToNumeric(day.InputCostsCents),
 		Margin:              centsToNumeric(day.MarginCents),
 		DiscrepancyFlags:    flagsJSON,
@@ -81,6 +86,10 @@ func rowToDomain(row DailyReconciliation) (reconcile.DailyReconciliation, error)
 	commissionsBySource, err := unmarshalCentsMap(row.CommissionsBySource)
 	if err != nil {
 		return reconcile.DailyReconciliation{}, fmt.Errorf("storage: unmarshal commissions_by_source: %w", err)
+	}
+	refundsBySource, err := unmarshalCentsMap(row.RefundsBySource)
+	if err != nil {
+		return reconcile.DailyReconciliation{}, fmt.Errorf("storage: unmarshal refunds_by_source: %w", err)
 	}
 	var flags []reconcile.DiscrepancyFlag
 	if err := json.Unmarshal(nonNilJSON(row.DiscrepancyFlags), &flags); err != nil {
@@ -114,6 +123,7 @@ func rowToDomain(row DailyReconciliation) (reconcile.DailyReconciliation, error)
 		CommissionsCents:    commissions,
 		CommissionsBySource: commissionsBySource,
 		RefundsCents:        refunds,
+		RefundsBySource:     refundsBySource,
 		InputCostsCents:     inputCosts,
 		MarginCents:         margin,
 		DiscrepancyFlags:    flags,
@@ -127,8 +137,8 @@ func rowToDomain(row DailyReconciliation) (reconcile.DailyReconciliation, error)
 // jsonb has no native fixed-point numeric type, and storing raw integer
 // cents there would silently disagree with how commissions/refunds/
 // input_costs/margin are represented in the same row. Shared by
-// gross_sales_by_source and commissions_by_source, which are persisted and
-// read back identically.
+// gross_sales_by_source, commissions_by_source, and refunds_by_source, which
+// are all persisted and read back identically.
 func marshalCentsMap(cents map[string]int64) (json.RawMessage, error) {
 	decimals := make(map[string]string, len(cents))
 	for source, c := range cents {

@@ -94,6 +94,15 @@ func TestComputeDailyReconciliations_RefundNetsCorrectly(t *testing.T) {
 	require.Equal(t, int64(1635), day.CommissionsBySource["just_eat_takeaway"])
 	require.Equal(t, day.CommissionsCents, day.CommissionsBySource["ifood"]+day.CommissionsBySource["just_eat_takeaway"], "per-source commission must sum back to the day's total")
 
+	// RefundsBySource (A15, docs/product-strategy.md): order 0007's
+	// -34.50 refund row carries platform "iFood", so the day's entire
+	// refund total attributes to iFood alone — Just Eat Takeaway had no
+	// refund this day and must not appear in the map at all (fixtures/
+	// README.md's only refund in the whole 14-day window is this one).
+	require.Equal(t, int64(3450), day.RefundsBySource["ifood"], "the day's only refund (order 0007) is iFood's")
+	require.NotContains(t, day.RefundsBySource, "just_eat_takeaway", "no refund happened on Just Eat Takeaway this day")
+	require.Equal(t, day.RefundsCents, day.RefundsBySource["ifood"], "per-source refund must sum back to the day's total")
+
 	require.Equal(t, int64(22375), day.GrossSalesBySource["pos"])
 	require.Equal(t, int64(54550), day.InputCostsCents)
 	require.Equal(t, int64(-22709), day.MarginCents, "2026-08-02 margin: (72.50+81.75+223.75) - 25.09 - 34.50 - 545.50 = -227.09")
@@ -132,6 +141,7 @@ func TestComputeDailyReconciliations_CleanDayMatchesHandComputation(t *testing.T
 	require.Equal(t, int64(1525), day.CommissionsBySource["just_eat_takeaway"], "6.20 + 9.05")
 	require.NotContains(t, day.CommissionsBySource, "pos", "POS orders carry no commission at all")
 	require.Zero(t, day.RefundsCents)
+	require.Empty(t, day.RefundsBySource, "no refund happened on 2026-08-01, so the map must be empty, not zero-valued entries")
 	require.Equal(t, int64(32000), day.InputCostsCents)
 	require.Equal(t, int64(4326), day.MarginCents, "(69.50+76.25+248.75) - 31.24 - 0 - 320.00 = 43.26")
 	require.False(t, hasFlagType(day.DiscrepancyFlags, FlagMissingDeliverySource))

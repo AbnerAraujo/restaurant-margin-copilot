@@ -34,6 +34,7 @@ func TestGetDailySummary_ReturnsPersistedDay_Fake(t *testing.T) {
 		GrossSalesBySource: map[string]int64{"ifood": 5000, "pos": 3000},
 		CommissionsCents:   1150,
 		RefundsCents:       200,
+		RefundsBySource:    map[string]int64{"ifood": 200},
 		InputCostsCents:    1000,
 		MarginCents:        5650, // 5000+3000-1150-200-1000
 		DiscrepancyFlags: []reconcile.DiscrepancyFlag{
@@ -55,6 +56,8 @@ func TestGetDailySummary_ReturnsPersistedDay_Fake(t *testing.T) {
 	require.Equal(t, "50.00", result.TotalDeliveryGrossSales, "must be ifood only (50.00) — pos (30.00) is dine-in, not delivery revenue")
 	require.Equal(t, "11.50", result.Commissions)
 	require.Equal(t, "2.00", result.Refunds)
+	require.Equal(t, "2.00", result.RefundsBySource["ifood"], "A15: the day's only refund must be attributable to the platform it actually came from")
+	require.NotContains(t, result.RefundsBySource, "pos", "POS never contributes to RefundsBySource")
 	require.Equal(t, "10.00", result.InputCosts)
 	require.Equal(t, "56.50", result.Margin)
 	require.Len(t, result.DiscrepancyFlags, 1)

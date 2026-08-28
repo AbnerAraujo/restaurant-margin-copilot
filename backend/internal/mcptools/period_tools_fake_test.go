@@ -32,7 +32,8 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 	// day 3: gross ifood 10.00, pos 10.00; commission 1.00; refund 0;
 	//   input costs 50.00; margin = 10+10-1-0-50 = -31.00
 	// totals: ifood 80.00, pos 80.00 -> delivery total 80.00 (pos excluded)
-	//   commissions 10.00, refunds 2.00, input costs 75.00
+	//   commissions 10.00, refunds 2.00 (all Just Eat Takeaway's, from day 2),
+	//   input costs 75.00
 	//   margin total = 65.00+39.00-31.00 = 73.00
 	//   avg daily margin = 73.00 / 3 = 24.33 (round-half-up on 24.333...)
 	//   best day: 2020-04-01 (65.00); worst day: 2020-04-03 (-31.00)
@@ -51,7 +52,7 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 	}
 	for _, d := range days {
 		date := sentinelDate(t, d.date)
-		_, err := storage.SaveDailyReconciliation(ctx, q, reconcile.DailyReconciliation{
+		day := reconcile.DailyReconciliation{
 			Date:               date,
 			GrossSalesBySource: map[string]int64{"ifood": d.ifoodCents, "pos": d.posCents},
 			CommissionsCents:   d.commissionCents,
@@ -59,7 +60,15 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 			InputCostsCents:    d.inputCostCents,
 			MarginCents:        d.marginCents,
 			SourceRowRefs:      []reconcile.SourceRowRef{{File: "test.csv", Row: 1}},
-		})
+		}
+		// Attribute day 2's refund to Just Eat Takeaway (A15,
+		// docs/product-strategy.md) — a distinct source from the ifood
+		// gross above, so this test also proves RefundsBySource isn't
+		// silently keyed the same as GrossSalesBySource by accident.
+		if d.refundCents != 0 {
+			day.RefundsBySource = map[string]int64{"just_eat_takeaway": d.refundCents}
+		}
+		_, err := storage.SaveDailyReconciliation(ctx, q, day)
 		require.NoError(t, err)
 	}
 
@@ -76,6 +85,8 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 	require.Equal(t, "80.00", result.TotalDeliveryGrossSales, "must be ifood only — pos is not delivery revenue")
 	require.Equal(t, "10.00", result.Commissions)
 	require.Equal(t, "2.00", result.Refunds)
+	require.Equal(t, "2.00", result.RefundsBySource["just_eat_takeaway"], "period sum of RefundsBySource must attribute the whole 2.00 to the platform it actually came from")
+	require.NotContains(t, result.RefundsBySource, "ifood", "ifood had zero refunds across the period")
 	require.Equal(t, "75.00", result.InputCosts)
 	require.Equal(t, "73.00", result.MarginTotal)
 	require.Equal(t, "24.33", result.AvgDailyMargin, "73.00/3 = 24.333..., round-half-up to 24.33")

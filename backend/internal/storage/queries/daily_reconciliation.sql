@@ -6,18 +6,20 @@ INSERT INTO daily_reconciliation (
     commissions,
     commissions_by_source,
     refunds,
+    refunds_by_source,
     input_costs,
     margin,
     discrepancy_flags,
     source_row_refs
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
 )
 ON CONFLICT (date) DO UPDATE SET
     gross_sales_by_source = EXCLUDED.gross_sales_by_source,
     commissions           = EXCLUDED.commissions,
     commissions_by_source = EXCLUDED.commissions_by_source,
     refunds               = EXCLUDED.refunds,
+    refunds_by_source     = EXCLUDED.refunds_by_source,
     input_costs           = EXCLUDED.input_costs,
     margin                = EXCLUDED.margin,
     discrepancy_flags     = EXCLUDED.discrepancy_flags,

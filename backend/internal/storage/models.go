@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-// Exact-match answer cache keyed on normalized question text. Paraphrases deliberately do NOT hit: matching them would need a model or an embedding, which would reintroduce the cost the cache exists to avoid and put a probabilistic step in front of a deterministic lookup.
+// Exact-match answer cache keyed on normalized question text. Paraphrases do NOT hit THIS lookup — matching them here would need a model or an embedding, reintroducing the cost this exact-match table exists to avoid. specs/004-semantic-cache later added a second-tier check in front of this table (see internal/paraphrase) that DOES let a paraphrase reach a cached answer: one bounded Claude Haiku 4.5 call on an exact-match miss, verified against this table's real, current contents before ever being served. That is a disclosed, bounded, re-verified cost, not the unbounded one this comment originally ruled out — see internal/paraphrase's package doc for the full reasoning. This table's own behavior (key, normalization, zero-cost hit) is unchanged by that addition.
 type AnswerCache struct {
 	NormalizedQuestion string             `json:"normalized_question"`
 	OriginalQuestion   string             `json:"original_question"`
@@ -55,6 +55,8 @@ type DailyReconciliation struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 	// Per-source (delivery-platform) breakdown of the day's commission, summing to the same total as the commissions column — added for specs/003-platform-comparator's compare_platform_economics tool, which needs a platform's real per-order commission, never a flat-rate estimate (FR-001).
 	CommissionsBySource json.RawMessage `json:"commissions_by_source"`
+	// Per-source (delivery-platform) breakdown of the day's refunds, summing to the same total as the refunds column — added to close A15 (docs/product-strategy.md), a real measured eval gap: refunds could not previously be attributed to a specific platform even though internal/ingest.DeliveryRecord always carries the Platform of the refunded row.
+	RefundsBySource json.RawMessage `json:"refunds_by_source"`
 }
 
 // One row per answer served via paraphrase recognition (specs/004-semantic-cache) — a real, bounded Claude Haiku 4.5 classification call (classification_cost_usd, never zero) that avoided a full gate+explain cycle (cost_avoided_usd). Kept out of both question_interaction (this is not the ambiguity gate or explain running) and answer_cache_hit (this is not free) so all three states — fresh call, exact-text hit, paraphrase hit — stay distinguishable and no cost is ever netted or hidden.
