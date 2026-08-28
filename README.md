@@ -48,6 +48,23 @@ go run ./backend/cmd/server -serve :8080                    # backend API
 cd frontend && npm install && npm run dev                   # frontend (Vite)
 ```
 
+### Installing it as a Mac app
+
+The frontend is a real PWA (`vite-plugin-pwa`, a real manifest and service
+worker — check with either backend and frontend above running:
+
+1. Open `http://localhost:5173` in Chrome.
+2. Click the install icon (⊕) at the right of the address bar, or Chrome
+   menu → **Cast, save, and share** → **Install My Business Steward…**.
+3. It opens in its own window and lands in Launchpad/Spotlight as
+   **Steward**, with a real Dock icon.
+
+The installed app still talks to `localhost:8080` — the backend needs to be
+running (`go run ./backend/cmd/server -serve :8080`) whenever you open it,
+same as any other local-first tool in this repo. The service worker only
+caches the app's own JS/CSS/icons; it never caches `/api/*`, so every
+number you see always comes from a live request, never a stale cache.
+
 ## Documentation map
 
 Everything here was produced through a real spec-driven process — Definition
