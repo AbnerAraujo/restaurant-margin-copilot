@@ -72,6 +72,11 @@ func ParseDeliveryExport(r io.Reader, sourceFile string) ([]DeliveryRecord, erro
 	colCampaign := h.find("campaign_id", "campaign", "campaign_code")
 	colNotes := h.find("notes", "note", "comment", "comments")
 
+	// One date-format resolver for the whole file (see date.go's doc
+	// comment): order_date and refund_date share one convention within a
+	// single export, so both columns feed the same per-file detection.
+	dateRes := newDateFormatResolver(gatherDateStrings(rows[1:], colOrderDate, colRefundDate))
+
 	var out []DeliveryRecord
 	for i, row := range rows[1:] {
 		rowNum := i + 2 // header occupies row 1
@@ -79,7 +84,7 @@ func ParseDeliveryExport(r io.Reader, sourceFile string) ([]DeliveryRecord, erro
 			continue
 		}
 
-		orderDate, err := parseDate(get(row, colOrderDate))
+		orderDate, err := dateRes.parse(get(row, colOrderDate))
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: order_date: %w", sourceFile, rowNum, err)
 		}
@@ -116,7 +121,7 @@ func ParseDeliveryExport(r io.Reader, sourceFile string) ([]DeliveryRecord, erro
 		}
 		if colRefundDate >= 0 {
 			if raw := get(row, colRefundDate); raw != "" {
-				refundDate, err := parseDate(raw)
+				refundDate, err := dateRes.parse(raw)
 				if err != nil {
 					return nil, fmt.Errorf("ingest: %s row %d: refund_date: %w", sourceFile, rowNum, err)
 				}
@@ -163,6 +168,9 @@ func ParsePOSExport(r io.Reader, sourceFile string) ([]POSRecord, error) {
 	colPayment := h.find("payment_method", "payment_type", "tender")
 	colStatus := h.find("status", "order_status")
 
+	// See ParseDeliveryExport's comment: one resolver per file, not per row.
+	dateRes := newDateFormatResolver(gatherDateStrings(rows[1:], colOrderDate))
+
 	var out []POSRecord
 	for i, row := range rows[1:] {
 		rowNum := i + 2
@@ -170,7 +178,7 @@ func ParsePOSExport(r io.Reader, sourceFile string) ([]POSRecord, error) {
 			continue
 		}
 
-		orderDate, err := parseDate(get(row, colOrderDate))
+		orderDate, err := dateRes.parse(get(row, colOrderDate))
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: order_date: %w", sourceFile, rowNum, err)
 		}
@@ -235,6 +243,9 @@ func ParseCostSheet(r io.Reader, sourceFile string) ([]CostInvoiceRecord, error)
 	}
 	colNotes := h.find("notes", "note", "comment", "comments")
 
+	// See ParseDeliveryExport's comment: one resolver per file, not per row.
+	dateRes := newDateFormatResolver(gatherDateStrings(rows[1:], colInvoiceDate))
+
 	var out []CostInvoiceRecord
 	for i, row := range rows[1:] {
 		rowNum := i + 2
@@ -242,7 +253,7 @@ func ParseCostSheet(r io.Reader, sourceFile string) ([]CostInvoiceRecord, error)
 			continue
 		}
 
-		invoiceDate, err := parseDate(get(row, colInvoiceDate))
+		invoiceDate, err := dateRes.parse(get(row, colInvoiceDate))
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: invoice_date: %w", sourceFile, rowNum, err)
 		}

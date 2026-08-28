@@ -144,6 +144,53 @@ func TestParsePOSExport_InconsistentDateFormatResolvedCorrectly(t *testing.T) {
 	require.Equal(t, int64(7850), r.GrossCents)
 }
 
+// --- Per-file (not per-row) date format resolution ---
+// fixtures/README.md irregularity #4 documents the DD/MM-vs-MM/DD
+// difference as systematic PER FILE, not a row-by-row toss-up. A file's
+// format must be established once, from its own unambiguous rows (any row
+// with one part > 12), and a later row that unambiguously contradicts that
+// established format must be rejected rather than silently reinterpreted
+// under its own (different) unambiguous reading.
+func TestParsePOSExport_RowDisagreeingWithFilesEstablishedFormatIsRejected(t *testing.T) {
+	// Row 1's date "25/03/2026" is unambiguous (25 > 12): day=25, month=3 ->
+	// DD/MM/YYYY. That establishes this file's format as DD/MM.
+	// Row 2's date "03/25/2026" is ALSO unambiguous (25 > 12, but in the
+	// second slot): the only way to read it validly is month=03, day=25 ->
+	// MM/DD/YYYY, which contradicts the DD/MM format row 1 established.
+	csvData := `order_id,order_date,gross_amount
+POS-1,25/03/2026,10.00
+POS-2,03/25/2026,12.00
+`
+	_, err := ParsePOSExport(strings.NewReader(csvData), "synthetic.csv")
+	require.Error(t, err, "a row whose only valid reading contradicts the file's established date format must be rejected, not silently reinterpreted")
+	require.Contains(t, err.Error(), "row 3")
+}
+
+// A file where every row agrees on one format (all DD/MM here) must still
+// parse cleanly — this is the non-regression companion to the disagreement
+// test above, confirming per-file detection doesn't reject consistent data.
+func TestParsePOSExport_ConsistentFileFormatAllRowsAgree(t *testing.T) {
+	csvData := `order_id,order_date,gross_amount
+POS-1,25/03/2026,10.00
+POS-2,01/08/2026,12.00
+POS-3,17/01/2026,9.50
+`
+	records, err := ParsePOSExport(strings.NewReader(csvData), "synthetic.csv")
+	require.NoError(t, err)
+	require.Len(t, records, 3)
+
+	byID := make(map[string]POSRecord, len(records))
+	for _, r := range records {
+		byID[r.OrderID] = r
+	}
+	require.Equal(t, mustDate(t, "2026-03-25"), byID["POS-1"].OrderDate)
+	// POS-2's "01/08/2026" is ambiguous on its own, but the file's format
+	// was already established as DD/MM by POS-1 and POS-3, so it must
+	// resolve to day=1, month=8 (August 1st), consistent with the file.
+	require.Equal(t, mustDate(t, "2026-08-01"), byID["POS-2"].OrderDate)
+	require.Equal(t, mustDate(t, "2026-01-17"), byID["POS-3"].OrderDate)
+}
+
 func TestParseCostSheet_ParsesAllInvoices(t *testing.T) {
 	records, err := ParseCostSheet(openFixture(t, fixtureCostFile), fixtureCostFile)
 	require.NoError(t, err)

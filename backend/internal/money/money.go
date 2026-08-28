@@ -51,6 +51,13 @@ func ParseFixedPoint(s string, decimals int) (int64, error) {
 		whole = "0"
 	}
 	if hasFrac {
+		// A trailing dot with nothing after it ("34.") is malformed input,
+		// not a valid zero-fraction number — silently treating it as "34.00"
+		// would misparse a truncated/corrupt value into a confident number
+		// (Constitution Principle II: refuse rather than guess).
+		if frac == "" {
+			return 0, fmt.Errorf("money: %q has a trailing decimal point with no digits after it", s)
+		}
 		if len(frac) > decimals {
 			return 0, fmt.Errorf("money: %q has more than %d decimal places", s, decimals)
 		}

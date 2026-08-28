@@ -8,16 +8,24 @@ WHERE normalized_question = $1;
 -- Re-answering the same normalized question overwrites the entry rather than
 -- keeping the older one: the newer response was computed against whatever
 -- data is current, so it is the one worth serving next time.
+--
+-- schema_version is always written explicitly as the CURRENT
+-- answercache.CurrentSchemaVersion (see migration 000007) — never left to a
+-- column default — so a later mismatch on read means exactly one thing:
+-- this row predates (or postdates, after a rollback) the reader's own
+-- AskResponse shape.
 INSERT INTO answer_cache (
     normalized_question,
     original_question,
     response,
-    origin_cost_usd
-) VALUES ($1, $2, $3, $4)
+    origin_cost_usd,
+    schema_version
+) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (normalized_question) DO UPDATE SET
     original_question = EXCLUDED.original_question,
     response          = EXCLUDED.response,
     origin_cost_usd   = EXCLUDED.origin_cost_usd,
+    schema_version    = EXCLUDED.schema_version,
     created_at        = now()
 RETURNING *;
 

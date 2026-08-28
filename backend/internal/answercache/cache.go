@@ -80,6 +80,26 @@ type Store interface {
 	CreateParaphraseMatch(ctx context.Context, arg storage.CreateParaphraseMatchParams) (storage.ParaphraseMatch, error)
 }
 
+// CurrentSchemaVersion is the version of the httpapi.AskResponse JSON shape
+// this build writes into answer_cache.response and expects to read back.
+//
+// Bump this whenever AskResponse's shape changes in a way that would make an
+// old cached blob mean something different once unmarshalled by the new
+// code — a new field the frontend now depends on being present (the
+// Visualization/Cache/MatchKind additions this project has already made are
+// exactly the kind of change that requires a bump), a renamed/removed field,
+// or a changed meaning for an existing field. A cosmetic change that leaves
+// every existing field's meaning intact does not need one.
+//
+// migration 000007 added the schema_version column with no default: every
+// row written before that migration has NULL there. Lookup treats NULL and
+// any version other than this constant identically — a cache miss, not a
+// hit — so a stale-shaped response is never served with false confidence
+// (the same "invalidate rather than risk serving a stale shape" discipline
+// frontend/src/lib/chatStorage.ts's THREADS_VERSION already applies to
+// browser-persisted chat threads).
+const CurrentSchemaVersion int32 = 1
+
 // Cache reads and writes cached answers.
 type Cache struct {
 	store Store
@@ -125,6 +145,16 @@ func (c *Cache) Lookup(ctx context.Context, question string) (*Entry, error) {
 		return nil, fmt.Errorf("answercache: lookup: %w", err)
 	}
 
+	// A NULL schema_version (a row written before migration 000007) or any
+	// version other than CurrentSchemaVersion (a row written by a different
+	// build of AskResponse) is treated exactly like a miss, never served —
+	// see CurrentSchemaVersion's doc comment. This is a miss, not an error:
+	// the caller falls through to a fresh answer exactly as it would for any
+	// other cache miss.
+	if !row.SchemaVersion.Valid || row.SchemaVersion.Int32 != CurrentSchemaVersion {
+		return nil, nil
+	}
+
 	cost, err := numericToFloat(row.OriginCostUsd)
 	if err != nil {
 		return nil, fmt.Errorf("answercache: lookup: origin_cost_usd: %w", err)
@@ -149,6 +179,7 @@ func (c *Cache) Save(ctx context.Context, question string, responseJSON json.Raw
 		OriginalQuestion:   strings.TrimSpace(question),
 		Response:           responseJSON,
 		OriginCostUsd:      floatToNumeric(originCostUSD),
+		SchemaVersion:      pgtype.Int4{Int32: CurrentSchemaVersion, Valid: true},
 	})
 	if err != nil {
 		return fmt.Errorf("answercache: save: %w", err)

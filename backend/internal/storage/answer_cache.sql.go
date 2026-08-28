@@ -67,7 +67,7 @@ func (q *Queries) DeleteAllAnswerCacheEntries(ctx context.Context) error {
 }
 
 const getAnswerCacheEntry = `-- name: GetAnswerCacheEntry :one
-SELECT normalized_question, original_question, response, origin_cost_usd, created_at FROM answer_cache
+SELECT normalized_question, original_question, response, origin_cost_usd, created_at, schema_version FROM answer_cache
 WHERE normalized_question = $1
 `
 
@@ -82,6 +82,7 @@ func (q *Queries) GetAnswerCacheEntry(ctx context.Context, normalizedQuestion st
 		&i.Response,
 		&i.OriginCostUsd,
 		&i.CreatedAt,
+		&i.SchemaVersion,
 	)
 	return i, err
 }
@@ -140,14 +141,16 @@ INSERT INTO answer_cache (
     normalized_question,
     original_question,
     response,
-    origin_cost_usd
-) VALUES ($1, $2, $3, $4)
+    origin_cost_usd,
+    schema_version
+) VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (normalized_question) DO UPDATE SET
     original_question = EXCLUDED.original_question,
     response          = EXCLUDED.response,
     origin_cost_usd   = EXCLUDED.origin_cost_usd,
+    schema_version    = EXCLUDED.schema_version,
     created_at        = now()
-RETURNING normalized_question, original_question, response, origin_cost_usd, created_at
+RETURNING normalized_question, original_question, response, origin_cost_usd, created_at, schema_version
 `
 
 type UpsertAnswerCacheEntryParams struct {
@@ -155,17 +158,25 @@ type UpsertAnswerCacheEntryParams struct {
 	OriginalQuestion   string          `json:"original_question"`
 	Response           json.RawMessage `json:"response"`
 	OriginCostUsd      pgtype.Numeric  `json:"origin_cost_usd"`
+	SchemaVersion      pgtype.Int4     `json:"schema_version"`
 }
 
 // Re-answering the same normalized question overwrites the entry rather than
 // keeping the older one: the newer response was computed against whatever
 // data is current, so it is the one worth serving next time.
+//
+// schema_version is always written explicitly as the CURRENT
+// answercache.CurrentSchemaVersion (see migration 000007) — never left to a
+// column default — so a later mismatch on read means exactly one thing:
+// this row predates (or postdates, after a rollback) the reader's own
+// AskResponse shape.
 func (q *Queries) UpsertAnswerCacheEntry(ctx context.Context, arg UpsertAnswerCacheEntryParams) (AnswerCache, error) {
 	row := q.db.QueryRow(ctx, upsertAnswerCacheEntry,
 		arg.NormalizedQuestion,
 		arg.OriginalQuestion,
 		arg.Response,
 		arg.OriginCostUsd,
+		arg.SchemaVersion,
 	)
 	var i AnswerCache
 	err := row.Scan(
@@ -174,6 +185,7 @@ func (q *Queries) UpsertAnswerCacheEntry(ctx context.Context, arg UpsertAnswerCa
 		&i.Response,
 		&i.OriginCostUsd,
 		&i.CreatedAt,
+		&i.SchemaVersion,
 	)
 	return i, err
 }

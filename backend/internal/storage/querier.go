@@ -124,6 +124,12 @@ type Querier interface {
 	// Re-answering the same normalized question overwrites the entry rather than
 	// keeping the older one: the newer response was computed against whatever
 	// data is current, so it is the one worth serving next time.
+	//
+	// schema_version is always written explicitly as the CURRENT
+	// answercache.CurrentSchemaVersion (see migration 000007) — never left to a
+	// column default — so a later mismatch on read means exactly one thing:
+	// this row predates (or postdates, after a rollback) the reader's own
+	// AskResponse shape.
 	UpsertAnswerCacheEntry(ctx context.Context, arg UpsertAnswerCacheEntryParams) (AnswerCache, error)
 	// Writer: internal/reconcile/ only. The model layer never calls this.
 	UpsertDailyReconciliation(ctx context.Context, arg UpsertDailyReconciliationParams) (DailyReconciliation, error)

@@ -17,6 +17,8 @@ type AnswerCache struct {
 	Response           json.RawMessage    `json:"response"`
 	OriginCostUsd      pgtype.Numeric     `json:"origin_cost_usd"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	// Version of the httpapi.AskResponse JSON shape stored in response, per answercache.CurrentSchemaVersion. NULL (pre-migration rows) or any value other than the current constant is treated as a cache miss on read, never served — the same discipline frontend/src/lib/chatStorage.ts applies to browser-persisted chat threads via THREADS_VERSION.
+	SchemaVersion pgtype.Int4 `json:"schema_version"`
 }
 
 // One row per answer served from cache — a NON-interaction. Kept out of question_interaction so that table stays exactly "model calls that really ran" (Constitution Principle VI), and so cost totals are never inflated by spend that did not happen.

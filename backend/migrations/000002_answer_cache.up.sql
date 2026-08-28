@@ -35,9 +35,17 @@ CREATE TABLE answer_cache (
 
 COMMENT ON TABLE answer_cache IS
     'Exact-match answer cache keyed on normalized question text. Paraphrases '
-    'deliberately do NOT hit: matching them would need a model or an '
-    'embedding, which would reintroduce the cost the cache exists to avoid '
-    'and put a probabilistic step in front of a deterministic lookup.';
+    'do NOT hit THIS lookup — matching them here would need a model or an '
+    'embedding, reintroducing the cost this exact-match table exists to '
+    'avoid. specs/004-semantic-cache later added a second-tier check in '
+    'front of this table (see internal/paraphrase) that DOES let a '
+    'paraphrase reach a cached answer: one bounded Claude Haiku 4.5 call on '
+    'an exact-match miss, verified against this table''s real, current '
+    'contents before ever being served. That is a disclosed, bounded, '
+    're-verified cost, not the unbounded one this comment originally ruled '
+    'out — see internal/paraphrase''s package doc for the full reasoning. '
+    'This table''s own behavior (key, normalization, zero-cost hit) is '
+    'unchanged by that addition.';
 
 CREATE TABLE answer_cache_hit (
     id                          UUID PRIMARY KEY DEFAULT gen_random_uuid(),

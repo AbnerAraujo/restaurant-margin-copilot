@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
@@ -44,6 +45,7 @@ func (f *fakeStore) UpsertAnswerCacheEntry(_ context.Context, arg storage.Upsert
 		OriginalQuestion:   arg.OriginalQuestion,
 		Response:           arg.Response,
 		OriginCostUsd:      arg.OriginCostUsd,
+		SchemaVersion:      arg.SchemaVersion,
 	}
 	if _, existed := f.entries[arg.NormalizedQuestion]; !existed {
 		f.insertOrder = append(f.insertOrder, arg.NormalizedQuestion)
@@ -213,6 +215,88 @@ func TestClearDropsEverySoNewDataCannotServeAStaleAnswer(t *testing.T) {
 		if entry != nil {
 			t.Errorf("Lookup(%q) still hit after Clear — a stale answer could outlive its data", question)
 		}
+	}
+}
+
+// --- Finding 6: schema_version invalidation ------------------------------
+//
+// answer_cache.response is a full serialized httpapi.AskResponse, whose
+// shape has grown fields (Visualization, Cache, MatchKind). Go's lenient
+// JSON decoding means a stale-shaped blob unmarshals "successfully" but
+// silently missing those fields — indistinguishable from a legitimate
+// chart-less answer. schema_version exists so Lookup can tell the
+// difference and refuse to serve it, the same way frontend/src/lib/
+// chatStorage.ts's THREADS_VERSION invalidates an old-shape stored thread.
+
+func TestLookupRejectsEntryWithNullSchemaVersion(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+
+	// Simulate a row written before migration 000007 added the column:
+	// schema_version is NULL (pgtype.Int4{Valid: false}), never written via
+	// Save/UpsertAnswerCacheEntry (which always sets it explicitly).
+	key := Normalize("How did we do on 2026-08-07?")
+	store.entries[key] = storage.AnswerCache{
+		NormalizedQuestion: key,
+		OriginalQuestion:   "How did we do on 2026-08-07?",
+		Response:           json.RawMessage(`{"status":"answered"}`),
+		OriginCostUsd:      floatToNumeric(0.005),
+		SchemaVersion:      pgtype.Int4{Valid: false},
+	}
+	store.insertOrder = append(store.insertOrder, key)
+
+	entry, err := cache.Lookup(context.Background(), "How did we do on 2026-08-07?")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if entry != nil {
+		t.Fatal("a NULL schema_version (pre-migration row) must be treated as a miss, never served")
+	}
+}
+
+func TestLookupRejectsEntryWithMismatchedSchemaVersion(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+
+	key := Normalize("How did we do on 2026-08-07?")
+	store.entries[key] = storage.AnswerCache{
+		NormalizedQuestion: key,
+		OriginalQuestion:   "How did we do on 2026-08-07?",
+		Response:           json.RawMessage(`{"status":"answered"}`),
+		OriginCostUsd:      floatToNumeric(0.005),
+		SchemaVersion:      pgtype.Int4{Int32: CurrentSchemaVersion + 1, Valid: true},
+	}
+	store.insertOrder = append(store.insertOrder, key)
+
+	entry, err := cache.Lookup(context.Background(), "How did we do on 2026-08-07?")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if entry != nil {
+		t.Fatal("a schema_version mismatch must be treated as a miss, never served")
+	}
+}
+
+func TestSaveWritesTheCurrentSchemaVersionAndLookupThenHits(t *testing.T) {
+	store := newFakeStore()
+	cache := New(store)
+	ctx := context.Background()
+
+	if err := cache.Save(ctx, "How did we do?", json.RawMessage(`{"status":"answered"}`), 0.005); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	stored := store.entries[Normalize("How did we do?")]
+	if !stored.SchemaVersion.Valid || stored.SchemaVersion.Int32 != CurrentSchemaVersion {
+		t.Fatalf("SchemaVersion = %+v, want a valid CurrentSchemaVersion (%d)", stored.SchemaVersion, CurrentSchemaVersion)
+	}
+
+	entry, err := cache.Lookup(ctx, "How did we do?")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if entry == nil {
+		t.Fatal("a freshly-saved entry (current schema version) must hit")
 	}
 }
 

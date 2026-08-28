@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -65,7 +66,9 @@ func ComputeDailyReconciliations(delivery []ingest.DeliveryRecord, pos []ingest.
 	for k := range dateSet {
 		dateKeys = append(dateKeys, k)
 	}
-	sortStrings(dateKeys)
+	// Dates format lexicographically the same as chronologically
+	// (YYYY-MM-DD), so a plain lexicographic string sort is correct here.
+	slices.Sort(dateKeys)
 
 	days := make([]DailyReconciliation, 0, len(dateKeys))
 	for _, dk := range dateKeys {
@@ -227,16 +230,6 @@ func groupBy[T any](items []T, keyFn func(T) string) map[string][]T {
 		out[k] = append(out[k], item)
 	}
 	return out
-}
-
-func sortStrings(s []string) {
-	// Dates format lexicographically the same as chronologically
-	// (YYYY-MM-DD), so a plain insertion sort keeps this dependency-free.
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j-1] > s[j]; j-- {
-			s[j-1], s[j] = s[j], s[j-1]
-		}
-	}
 }
 
 func abs64(v int64) int64 {

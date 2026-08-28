@@ -67,6 +67,11 @@ func ParsePromotionExport(r io.Reader, sourceFile string) ([]PromotionSpendRecor
 	colPlacement := h.find("placement_type", "placement", "ad_type", "campaign_type")
 	colNotes := h.find("notes", "note", "comment", "comments")
 
+	// See ingest.go's ParseDeliveryExport comment: one resolver per file,
+	// not per row. period_start and period_end share this file's one
+	// convention, so both columns feed the same detection.
+	dateRes := newDateFormatResolver(gatherDateStrings(rows[1:], colPeriodStart, colPeriodEnd))
+
 	var out []PromotionSpendRecord
 	for i, row := range rows[1:] {
 		rowNum := i + 2 // header occupies row 1
@@ -74,11 +79,11 @@ func ParsePromotionExport(r io.Reader, sourceFile string) ([]PromotionSpendRecor
 			continue
 		}
 
-		periodStart, err := parseDate(get(row, colPeriodStart))
+		periodStart, err := dateRes.parse(get(row, colPeriodStart))
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: period_start: %w", sourceFile, rowNum, err)
 		}
-		periodEnd, err := parseDate(get(row, colPeriodEnd))
+		periodEnd, err := dateRes.parse(get(row, colPeriodEnd))
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: period_end: %w", sourceFile, rowNum, err)
 		}
