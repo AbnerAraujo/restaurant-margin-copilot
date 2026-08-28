@@ -33,3 +33,14 @@ WHERE date = $1;
 SELECT * FROM daily_reconciliation
 WHERE date >= $1 AND date <= $2
 ORDER BY date;
+
+-- name: GetDataDateRange :one
+-- Backs the date-grounding fix (docs/plan.md mistakes log: "date-year
+-- grounding defect"): the actual inclusive min/max date this product has
+-- ANY reconciled data for, resolved once at process start
+-- (cmd/server/main.go) and handed into internal/ambiguity's gate and
+-- internal/explain's system prompt as plain strings, so relative date
+-- language ("today", "this week", a year-less date) resolves against the
+-- real data's own range instead of the host machine's wall-clock date or
+-- a hardcoded literal that could drift from the fixtures actually loaded.
+SELECT MIN(date)::date AS min_date, MAX(date)::date AS max_date FROM daily_reconciliation;

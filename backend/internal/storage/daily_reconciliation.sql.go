@@ -36,6 +36,30 @@ func (q *Queries) GetDailyReconciliationByDate(ctx context.Context, date pgtype.
 	return i, err
 }
 
+const getDataDateRange = `-- name: GetDataDateRange :one
+SELECT MIN(date)::date AS min_date, MAX(date)::date AS max_date FROM daily_reconciliation
+`
+
+type GetDataDateRangeRow struct {
+	MinDate pgtype.Date `json:"min_date"`
+	MaxDate pgtype.Date `json:"max_date"`
+}
+
+// Backs the date-grounding fix (docs/plan.md mistakes log: "date-year
+// grounding defect"): the actual inclusive min/max date this product has
+// ANY reconciled data for, resolved once at process start
+// (cmd/server/main.go) and handed into internal/ambiguity's gate and
+// internal/explain's system prompt as plain strings, so relative date
+// language ("today", "this week", a year-less date) resolves against the
+// real data's own range instead of the host machine's wall-clock date or
+// a hardcoded literal that could drift from the fixtures actually loaded.
+func (q *Queries) GetDataDateRange(ctx context.Context) (GetDataDateRangeRow, error) {
+	row := q.db.QueryRow(ctx, getDataDateRange)
+	var i GetDataDateRangeRow
+	err := row.Scan(&i.MinDate, &i.MaxDate)
+	return i, err
+}
+
 const listDailyReconciliationsInPeriod = `-- name: ListDailyReconciliationsInPeriod :many
 SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at FROM daily_reconciliation
 WHERE date >= $1 AND date <= $2

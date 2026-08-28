@@ -97,6 +97,39 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 	return items, nil
 }
 
+const listDistinctCampaignIDs = `-- name: ListDistinctCampaignIDs :many
+SELECT DISTINCT campaign_id FROM promotion_roi_record ORDER BY campaign_id
+`
+
+// Backs the campaign-lookup fuzzy-match fix (docs/plan.md mistakes log:
+// "campaign name/entity lookup defect"): the real, bounded set of
+// campaign_id values that actually exist, so a human-readable name or
+// shortened form (e.g. "LUNCHFIX", or the full display name "Banner Ad -
+// Lunch Fix Menu (JET-CAMP-LUNCHFIX)") can be matched against the known
+// set in Go code (internal/mcptools) rather than requiring an exact
+// string match or letting the model guess an id that doesn't exist
+// (Constitution Principle III: a typed, bounded match, never open-ended
+// fuzzy computation).
+func (q *Queries) ListDistinctCampaignIDs(ctx context.Context) ([]string, error) {
+	rows, err := q.db.Query(ctx, listDistinctCampaignIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var campaign_id string
+		if err := rows.Scan(&campaign_id); err != nil {
+			return nil, err
+		}
+		items = append(items, campaign_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listNegativeRoiPromotions = `-- name: ListNegativeRoiPromotions :many
 SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
 WHERE flagged_negative = true AND period && $1::daterange

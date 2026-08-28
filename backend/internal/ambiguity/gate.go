@@ -8,11 +8,23 @@
 //
 // This package has no import path to internal/mcptools or internal/storage
 // at all (docs/technical-rfc.md's module architecture diagram): it
-// classifies question text only and never touches real data. It also never
-// writes a QuestionInteraction row itself — internal/httpapi.HandleAsk does
-// that, via internal/instrumentation, for every branch (including the
-// refusal/clarification paths that never reach internal/explain) per
-// tasks.md's T022/T026 note.
+// classifies question text only and never touches real data itself. The
+// one exception, deliberately kept narrow: New takes the data's actual
+// min/max date range as plain strings (resolved once by the caller, via
+// internal/storage.LoadDataDateRange, at process start) so the gate's
+// system prompt can ground relative date language ("today", "this week", a
+// year-less date) against what the data really covers, instead of either a
+// hardcoded literal that can drift from the fixtures actually loaded, or
+// the host machine's wall-clock date — see systemPrompt's "Date grounding"
+// paragraph and docs/plan.md's mistakes log ("date-year grounding
+// defect") for the bug this fixes. This package still never queries
+// Postgres, never imports internal/storage, and never touches question
+// data beyond the string it's asked to classify.
+//
+// It also never writes a QuestionInteraction row itself —
+// internal/httpapi.HandleAsk does that, via internal/instrumentation, for
+// every branch (including the refusal/clarification paths that never reach
+// internal/explain) per tasks.md's T022/T026 note.
 package ambiguity
 
 import (
@@ -65,12 +77,18 @@ type Decision struct {
 // Gate wraps an llmclient.Client to run this project's answerable /
 // ambiguous / unanswerable classification.
 type Gate struct {
-	client *llmclient.Client
+	client       *llmclient.Client
+	systemPrompt string
 }
 
 // New constructs a Gate over client (internal/llmclient, Phase 1).
-func New(client *llmclient.Client) *Gate {
-	return &Gate{client: client}
+// dataStart/dataEnd are the actual inclusive min/max date (YYYY-MM-DD) this
+// product has reconciled data for — the caller (cmd/server/main.go)
+// resolves these once via internal/storage.LoadDataDateRange at process
+// start, so the gate's classification prompt reflects the real data
+// actually loaded rather than a hardcoded literal baked into this package.
+func New(client *llmclient.Client, dataStart, dataEnd string) *Gate {
+	return &Gate{client: client, systemPrompt: buildSystemPrompt(dataStart, dataEnd)}
 }
 
 // gateResponse is the fixed JSON shape systemPrompt instructs the model to
@@ -95,7 +113,7 @@ func (g *Gate) Classify(ctx context.Context, question string) (*Decision, error)
 
 	resp, err := g.client.CreateMessage(ctx, llmclient.MessageRequest{
 		Model:     llmclient.ModelAmbiguityGate,
-		System:    systemPrompt,
+		System:    g.systemPrompt,
 		MaxTokens: MaxOutputTokens,
 		Messages: []anthropic.MessageParam{
 			anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
@@ -197,27 +215,52 @@ func extractJSONObject(text string) string {
 	return text[start : end+1]
 }
 
-// systemPrompt encodes CLAUDE.md's "Pre-processing gate before execution"
-// and spec FR-006 directly: what data this product has (so the model can
-// tell a genuinely unanswerable question from an answerable one), and the
-// exact three-way classification with its ambiguous-case rule (clarify OR
-// state an assumption, never both, never neither).
-const systemPrompt = `You are the ambiguity/answerability gate for a restaurant margin-reconciliation copilot. You do not answer questions and you do not compute numbers — you only classify the question that follows.
+// systemPromptTemplate encodes CLAUDE.md's "Pre-processing gate before
+// execution" and spec FR-006 directly: what data this product has (so the
+// model can tell a genuinely unanswerable question from an answerable
+// one), and the exact three-way classification with its ambiguous-case
+// rule (clarify OR state an assumption, never both, never neither).
+//
+// %[1]s/%[2]s are the actual data date range (buildSystemPrompt's
+// dataStart/dataEnd) substituted in twice each: once in the plain data
+// description, and once in the "Date grounding" paragraph, which is the
+// direct fix for the year-omission/wrong-year defect docs/plan.md's
+// mistakes log records (a question with no year, or relative language
+// like "today"/"this week", was sometimes resolved against the real
+// wall-clock system date — or worse, an invented year like 2024 — instead
+// of the only period this product actually has data for).
+const systemPromptTemplate = `You are the ambiguity/answerability gate for a restaurant margin-reconciliation copilot. You do not answer questions and you do not compute numbers — you only classify the question that follows.
 
 Data actually available to this product (nothing else exists — do not assume any other data source, platform, supplier, or time period is present):
 - A single independent restaurant/bar, single currency, single time zone.
-- Daily reconciled margin data (gross sales by source, commissions, refunds, input costs, computed margin, discrepancy flags) for the fixed period 2026-08-01 through 2026-08-14 inclusive. A handful of days in that window are deliberately messy (a duplicate order, a refund crossing into a later week, one day with zero delivery-platform data) but every day in the window has SOME reconciled data.
+- Daily reconciled margin data (gross sales by source, commissions, refunds, input costs, computed margin, discrepancy flags) for the fixed period %[1]s through %[2]s inclusive. A handful of days in that window are deliberately messy (a duplicate order, a refund crossing into a later week, one day with zero delivery-platform data) but every day in the window has SOME reconciled data.
 - Promotion/ad-spend campaigns on two delivery platforms (iFood, Just Eat Takeaway) within that same period, with computed ROI where the incremental revenue can be attributed, and explicitly "cannot attribute" for at least one campaign.
-- Nothing before 2026-08-01 or after 2026-08-14 exists. No other restaurant, location, supplier, platform, or currency exists.
+- Nothing before %[1]s or after %[2]s exists. No other restaurant, location, supplier, platform, or currency exists.
+
+Date grounding — read this before classifying any question that mentions a date:
+- This product's only notion of "now"/"today" is %[2]s, the last date it has any data for. Never use the real-world current calendar date for that purpose — you do not know it reliably, and guessing at it (including inventing a plausible-sounding year) is exactly the failure this rule exists to prevent.
+- Relative language — "today", "yesterday", "this week", "last week", "the weekend" — MUST be resolved as an offset from %[2]s, not from the real world's current date. E.g. "this week" is a trailing window ending %[2]s; "last week" is the 7 days before that.
+- A date given without a year (e.g. "August 3rd", "the 2nd", "Aug 1") MUST be assumed to fall in the one year this data actually spans (between %[1]s and %[2]s) — resolve it to that year directly. Do not ask a clarifying question about the year, and never state or imply a different year (e.g. the real-world current year, or any other guess) anywhere in "reason", "clarifying_question", or "assumption_stated".
+- Only classify a dated question as "unanswerable" for being outside the range if, once resolved per the rule above, the date still plainly falls outside %[1]s..%[2]s (e.g. a full date that explicitly names a different year, or a month/day that cannot exist within this window at all).
 
 Classify the question into exactly one of:
 - "answerable": it can be answered from the data above with no ambiguity about what's being asked.
-- "ambiguous": the question is answerable in principle, but has more than one reasonable interpretation (e.g. a vague date range like "the weekend" or "this week" without a clear anchor, a pronoun/reference with no clear antecedent). For an ambiguous question, either:
+- "ambiguous": the question is answerable in principle, but has more than one reasonable interpretation (e.g. a vague date range like "the weekend" without a clear anchor once resolved per the date-grounding rule above, or a pronoun/reference with no clear antecedent). For an ambiguous question, either:
   - ask ONE specific clarifying question that would resolve it (set "clarifying_question"), OR
-  - if a reasonable default assumption is obvious and stating it plainly would let you proceed safely (e.g. "week" defaults to a trailing 7-day window ending on the most recent available date), state that assumption instead (set "assumption_stated") — never both, never neither.
-- "unanswerable": the question references data this product does not have at all (a date outside 2026-08-01..2026-08-14, a supplier/platform/restaurant not listed above, or a question that isn't about this restaurant's margin/reconciliation/promotions at all). Give a specific "reason" naming what's missing.
+  - if a reasonable default assumption is obvious and stating it plainly would let you proceed safely (e.g. "week" defaults to a trailing 7-day window ending %[2]s), state that assumption instead (set "assumption_stated") — never both, never neither.
+- "unanswerable": the question references data this product does not have at all (a date outside %[1]s..%[2]s once resolved per the date-grounding rule above, a supplier/platform/restaurant not listed above, or a question that isn't about this restaurant's margin/reconciliation/promotions at all). Give a specific "reason" naming what's missing.
 
 Reply with ONLY a single JSON object, no other text, no markdown fence, in exactly this shape:
 {"classification": "answerable" | "ambiguous" | "unanswerable", "clarifying_question": "...", "assumption_stated": "...", "reason": "..."}
 
 Leave clarifying_question/assumption_stated/reason as empty strings ("") whenever they don't apply to the classification you chose.`
+
+// buildSystemPrompt substitutes the real data date range into
+// systemPromptTemplate. dataStart/dataEnd are expected in YYYY-MM-DD form
+// (internal/storage.LoadDataDateRange's format), but this function does not
+// itself validate that — an obviously malformed value would simply produce
+// a prompt the model can't use sensibly, surfaced immediately by every live
+// call failing classification, not a silent wrong answer.
+func buildSystemPrompt(dataStart, dataEnd string) string {
+	return fmt.Sprintf(systemPromptTemplate, dataStart, dataEnd)
+}

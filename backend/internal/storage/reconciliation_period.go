@@ -24,6 +24,28 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 )
 
+// LoadDataDateRange returns the actual inclusive [start, end] this product
+// has ANY reconciled data for — the real min/max of daily_reconciliation's
+// date column, not a hardcoded literal. Callers (cmd/server/main.go) use
+// this once at process start to hand internal/ambiguity's gate and
+// internal/explain's system prompt the data's own reference frame, so
+// relative date language ("today", "this week", a year-less date) grounds
+// against what the data actually covers instead of the host machine's
+// wall-clock date — the fix for the "date-year grounding defect" recorded
+// in docs/plan.md's mistakes log. Returns an error (never a zero-value
+// range silently treated as valid) if the table is empty — there is no
+// sensible "today" to ground against before any reconciliation has run.
+func LoadDataDateRange(ctx context.Context, q Querier) (start, end time.Time, err error) {
+	row, err := q.GetDataDateRange(ctx)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("storage: get data date range: %w", err)
+	}
+	if !row.MinDate.Valid || !row.MaxDate.Valid {
+		return time.Time{}, time.Time{}, fmt.Errorf("storage: no daily_reconciliation rows exist yet — cannot resolve a data date range")
+	}
+	return row.MinDate.Time, row.MaxDate.Time, nil
+}
+
 // LoadDailyReconciliationsInPeriod reads every persisted DailyReconciliation
 // row whose date falls within [start, end] inclusive, ordered by date, and
 // converts each into internal/reconcile's domain representation. A date in

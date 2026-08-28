@@ -16,12 +16,31 @@ type Querier interface {
 	CreateQuestionInteraction(ctx context.Context, arg CreateQuestionInteractionParams) (QuestionInteraction, error)
 	// Backs the get_daily_summary MCP tool contract.
 	GetDailyReconciliationByDate(ctx context.Context, date pgtype.Date) (DailyReconciliation, error)
+	// Backs the date-grounding fix (docs/plan.md mistakes log: "date-year
+	// grounding defect"): the actual inclusive min/max date this product has
+	// ANY reconciled data for, resolved once at process start
+	// (cmd/server/main.go) and handed into internal/ambiguity's gate and
+	// internal/explain's system prompt as plain strings, so relative date
+	// language ("today", "this week", a year-less date) resolves against the
+	// real data's own range instead of the host machine's wall-clock date or
+	// a hardcoded literal that could drift from the fixtures actually loaded.
+	GetDataDateRange(ctx context.Context) (GetDataDateRangeRow, error)
 	// Backs the get_promotion_roi MCP tool contract (campaign_id input form).
 	GetPromotionRoiByCampaign(ctx context.Context, campaignID string) ([]PromotionRoiRecord, error)
 	// Backs the get_promotion_roi MCP tool contract (platform+period input form).
 	GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg GetPromotionRoiByPlatformAndPeriodParams) ([]PromotionRoiRecord, error)
 	// Backs get_margin_delta / list_discrepancies, which operate over a range.
 	ListDailyReconciliationsInPeriod(ctx context.Context, arg ListDailyReconciliationsInPeriodParams) ([]DailyReconciliation, error)
+	// Backs the campaign-lookup fuzzy-match fix (docs/plan.md mistakes log:
+	// "campaign name/entity lookup defect"): the real, bounded set of
+	// campaign_id values that actually exist, so a human-readable name or
+	// shortened form (e.g. "LUNCHFIX", or the full display name "Banner Ad -
+	// Lunch Fix Menu (JET-CAMP-LUNCHFIX)") can be matched against the known
+	// set in Go code (internal/mcptools) rather than requiring an exact
+	// string match or letting the model guess an id that doesn't exist
+	// (Constitution Principle III: a typed, bounded match, never open-ended
+	// fuzzy computation).
+	ListDistinctCampaignIDs(ctx context.Context) ([]string, error)
 	// Backs the list_negative_roi_promotions MCP tool contract (spec User Story 4 / SC-006).
 	ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype.Range[pgtype.Date]) ([]PromotionRoiRecord, error)
 	// Backs an instrumentation/history view in the frontend cost panel.

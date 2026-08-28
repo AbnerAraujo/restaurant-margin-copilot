@@ -14,7 +14,9 @@ package ambiguity
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -97,8 +99,17 @@ func TestParseGateResponse_RejectsMalformedJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "not valid JSON")
 }
 
+// testDataStart/testDataEnd mirror the real fixture range
+// (backend/fixtures/README.md, 2026-08-01..14) — tests that don't care
+// about the exact date-grounding text still need a well-formed range for
+// New to build a usable system prompt.
+const (
+	testDataStart = "2026-08-01"
+	testDataEnd   = "2026-08-14"
+)
+
 func TestClassify_RejectsEmptyQuestion(t *testing.T) {
-	g := New(llmclient.New())
+	g := New(llmclient.New(), testDataStart, testDataEnd)
 	_, err := g.Classify(context.Background(), "   ")
 	require.ErrorIs(t, err, ErrEmptyQuestion)
 }
@@ -115,7 +126,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 		t.Skip("ANTHROPIC_API_KEY not set; skipping live Claude Haiku 4.5 smoke test")
 	}
 
-	g := New(llmclient.New())
+	g := New(llmclient.New(), testDataStart, testDataEnd)
 	ctx := context.Background()
 
 	t.Run("answerable", func(t *testing.T) {
