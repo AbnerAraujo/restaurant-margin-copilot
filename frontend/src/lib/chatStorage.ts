@@ -72,6 +72,28 @@ function writeJSON(key: string, value: unknown): void {
 }
 
 /**
+ * Wipes persisted thread history so the next `loadThreadStore()` starts
+ * completely fresh, per `ErrorBoundary`'s `onReset` — the real incident this
+ * module's doc comment describes (a stale, pre-schema-change message
+ * crashing the renderer) means clicking "Reset" on the chat page must clear
+ * THIS key, not just the component's own error state, or the boundary
+ * re-reads the same poisoned thread and crashes again immediately.
+ *
+ * Deliberately leaves `PROMPTS_KEY` alone: saved prompts are plain strings
+ * that never change shape (see `THREADS_VERSION`'s comment above), so they
+ * are never the cause of this class of crash, and wiping a user's saved
+ * prompts on an unrelated chat-render failure would be its own new defect.
+ */
+export function clearThreadStorage(): void {
+  try {
+    window.localStorage.removeItem(THREADS_KEY)
+  } catch {
+    // Same "never fail harder than the thing we're recovering from" rule as
+    // writeJSON above.
+  }
+}
+
+/**
  * Per-message shape check, not just per-thread. This is the specific gap
  * that let a real bug through once already: `ChatMessage`'s shape changed
  * more than once (ErrorChatMessage added, AnswerCacheInfo added) without a

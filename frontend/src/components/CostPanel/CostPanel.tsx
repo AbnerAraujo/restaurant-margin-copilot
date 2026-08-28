@@ -29,6 +29,46 @@ function sum(values: number[]): number {
   return values.reduce((total, value) => total + value, 0)
 }
 
+// One millionth of a dollar. `estimated_cost_usd` (llmclient.EstimateCostUSD)
+// prices Haiku/Sonnet tokens at $1-$10 per million tokens, so a single call
+// is routinely a few hundredths of a cent (e.g. $0.00051) — an order of
+// magnitude too small for integer *cents* to represent without rounding
+// every call to $0.00. Micro-dollars is the smallest minor unit that still
+// holds this project's own display precision (three decimal places) exactly.
+const MICRO_USD_PER_USD = 1_000_000
+
+function toMicroUsd(amountUsd: number): number {
+  return Math.round(amountUsd * MICRO_USD_PER_USD)
+}
+
+/**
+ * Sums cost figures as integer micro-dollars rather than summing the raw
+ * floats directly. This total is a genuine exception to `stat.tsx`'s "a
+ * presentation component never does arithmetic" rule — see that file's doc
+ * comment for the boundary this draws — because there is no server-side
+ * figure to fetch instead: `estimated_cost_usd` per interaction is real
+ * reconciliation-adjacent math (`llmclient.EstimateCostUSD`), but *this*
+ * total is a running sum across an ephemeral, browser-local session
+ * (`AppShell`'s in-memory `interactions` state) that the backend has no
+ * concept of — `SumEstimatedCostUSD` sums the entire, unscoped
+ * `question_interaction` table and isn't reachable from any HTTP endpoint
+ * this page calls. Inventing a session-scoped backend endpoint just to move
+ * this one sum server-side would be new product surface for a cost-telemetry
+ * display, not a fix for a reconciliation defect.
+ *
+ * What IS worth fixing, and what this function actually does: summing many
+ * small IEEE-754 floats (as low as $0.0001) directly can accumulate binary
+ * rounding drift exactly the way `0.1 + 0.2 !== 0.3` does. Converting each
+ * figure to an integer number of micro-dollars, summing those as integers,
+ * then converting back, makes the summation itself exact — the same
+ * technique `internal/money` uses in cents, sized for this domain's smaller
+ * unit.
+ */
+function sumCostUsd(costsUsd: number[]): number {
+  const totalMicroUsd = sum(costsUsd.map(toMicroUsd))
+  return totalMicroUsd / MICRO_USD_PER_USD
+}
+
 /**
  * The running-cost stat required by FR-009: a small, always-visible corner
  * pill (never a hero element, per design-tokens.md §4) showing session cost
@@ -39,7 +79,7 @@ function CostPanel({ interactions, className }: CostPanelProps) {
   const [open, setOpen] = useState(false)
   const detailId = useId()
 
-  const totalCostUsd = sum(interactions.map((i) => i.estimated_cost_usd))
+  const totalCostUsd = sumCostUsd(interactions.map((i) => i.estimated_cost_usd))
   const totalTokens = sum(
     interactions.map((i) => i.input_tokens + i.output_tokens),
   )

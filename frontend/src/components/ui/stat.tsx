@@ -20,6 +20,18 @@ import { cn } from '@/lib/utils'
  * living on the client, which is the same defect class as an LLM computing a
  * figure.
  *
+ * Scope: this is a rule about *reconciliation* figures — sales, margin,
+ * commissions, refunds, week-over-week deltas — numbers that came from
+ * ledger data and where a client-side re-derivation would be a second,
+ * possibly-divergent implementation of that math. It is not a blanket ban on
+ * any arithmetic anywhere in the client. `CostPanel`'s running session-cost
+ * total is the one documented exception: it sums per-call cost *estimates*
+ * (already model-usage telemetry, not ledger money) across an ephemeral
+ * browser session the backend has no matching concept of to sum server-side.
+ * See `CostPanel.tsx`'s `sumCostUsd` for why that specific sum stays
+ * client-side and how it avoids the float-summation drift that would
+ * otherwise apply.
+ *
  * Structure follows the linear-app density model: label as a micro overline,
  * value in tabular figures at a much larger step (extreme scale contrast, not
  * a timid one), cells separated by hairlines rather than each getting its own

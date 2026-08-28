@@ -5,6 +5,7 @@ import {
   MAX_THREADS,
   activeThread,
   addSavedPrompt,
+  clearThreadStorage,
   deriveThreadTitle,
   loadSavedPrompts,
   loadThreadStore,
@@ -83,6 +84,18 @@ describe('chatStorage', () => {
     ])
     expect(long.length).toBeLessThanOrEqual(43)
     expect(long.endsWith('…')).toBe(true)
+  })
+
+  it('clearThreadStorage wipes thread history so the next load starts fresh, but leaves saved prompts alone', () => {
+    persistActiveThread(loadThreadStore(), [userMessage('a question that later broke rendering')])
+    addSavedPrompt(loadSavedPrompts(), 'a prompt worth keeping')
+
+    clearThreadStorage()
+
+    const reloaded = loadThreadStore()
+    expect(reloaded.threads).toHaveLength(1)
+    expect(activeThread(reloaded)?.messages).toEqual([])
+    expect(loadSavedPrompts().map((p) => p.text)).toContain('a prompt worth keeping')
   })
 
   it('survives a corrupted or hand-edited storage key rather than crashing', () => {

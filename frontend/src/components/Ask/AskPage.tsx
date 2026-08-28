@@ -8,6 +8,7 @@ import ChatPanel, {
 } from '@/components/Chat/ChatPanel'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
+import { postJson } from '@/lib/api'
 import { useShellOutletContext } from '@/components/Shell/AppShell'
 
 // ---------------------------------------------------------------------------
@@ -17,9 +18,12 @@ import { useShellOutletContext } from '@/components/Shell/AppShell'
 // Sonnet 5 explanation step. The backend returns one CostInteraction per
 // model call that actually ran, so the cost panel reflects this session's
 // real measured spend, never a placeholder figure.
+//
+// The request goes through `postJson` from `lib/api` — the same helper every
+// other page uses — rather than a page-local `fetch`, so this page honors
+// `VITE_API_BASE_URL` like the rest of the app instead of always hitting
+// localhost.
 // ---------------------------------------------------------------------------
-
-const API_BASE = 'http://localhost:8080'
 
 interface AskApiResponse {
   status: 'answered' | 'clarification_needed' | 'refused'
@@ -99,30 +103,20 @@ export default function AskPage() {
       _history: ChatMessage[],
       pendingClarification?: PendingClarification,
     ): Promise<AssistantChatMessage> => {
-      const response = await fetch(`${API_BASE}/api/ask`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        // The clarification context travels as structured fields, not merged
-        // into `question`: the backend composes the resolved question itself
-        // (ambiguity.ComposeFollowUp) so question_interaction.question_text
-        // stays exactly what the owner typed.
-        body: JSON.stringify({
-          question,
-          pending_clarification: pendingClarification
-            ? {
-                original_question: pendingClarification.originalQuestion,
-                clarifying_question: pendingClarification.clarifyingQuestion,
-              }
-            : undefined,
-        }),
+      // The clarification context travels as structured fields, not merged
+      // into `question`: the backend composes the resolved question itself
+      // (ambiguity.ComposeFollowUp) so question_interaction.question_text
+      // stays exactly what the owner typed.
+      const data = await postJson<AskApiResponse>('/api/ask', {
+        question,
+        pending_clarification: pendingClarification
+          ? {
+              original_question: pendingClarification.originalQuestion,
+              clarifying_question: pendingClarification.clarifyingQuestion,
+            }
+          : undefined,
       })
 
-      if (!response.ok) {
-        const detail = await response.text()
-        throw new Error(`/api/ask returned ${response.status}: ${detail}`)
-      }
-
-      const data = (await response.json()) as AskApiResponse
       if (data.interactions && data.interactions.length > 0) {
         logInteractions(data.interactions)
       }

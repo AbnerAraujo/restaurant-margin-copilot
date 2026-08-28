@@ -4,10 +4,11 @@ import { createBrowserRouter, type RouteObject } from 'react-router-dom'
 import AppShell from '@/components/Shell/AppShell'
 import AskPage from '@/components/Ask/AskPage'
 import ClosePage from '@/components/Close/ClosePage'
-import ErrorBoundary from '@/components/ErrorBoundary'
+import ErrorBoundary, { RouteErrorBoundary } from '@/components/ErrorBoundary'
 // Real, already-built capability-tile grid (a parallel agent's work) — not a
 // stub, reused as-is per redesign-spec.md §3.
 import HomePage from '@/components/Home/HomePage'
+import { clearThreadStorage } from '@/lib/chatStorage'
 import PlatformsPage from '@/components/Platforms/PlatformsPage'
 import PointsPage from '@/components/Points/PointsPage'
 import PromotionsPage from '@/components/Promotions/PromotionsPage'
@@ -33,12 +34,37 @@ function withBoundary(name: string, element: ReactNode) {
 export const routes: RouteObject[] = [
   {
     path: '/',
-    element: <AppShell />,
+    // The shell itself (sidebar, mobile nav bar, the pinned CostPanel) sits
+    // outside every per-page boundary above, so a crash in the chrome —
+    // not any one routed page — used to take down the whole app with
+    // React's default blank-screen behaviour and no `/api/client-errors`
+    // report. Wrapped the same way every page already is.
+    element: (
+      <ErrorBoundary component="App shell">
+        <AppShell />
+      </ErrorBoundary>
+    ),
+    // Covers the other gap: a failed loader or a malformed route object
+    // never reaches `<AppShell />`'s render at all, so the boundary above
+    // can't catch it — only `errorElement` sees a router-level failure.
+    errorElement: <RouteErrorBoundary component="App shell" />,
     children: [
       { index: true, element: withBoundary('Home', <HomePage />) },
       { path: 'close', element: withBoundary('Today’s Close', <ClosePage />) },
       { path: 'upload', element: withBoundary('Upload cost sheet', <UploadPage />) },
-      { path: 'ask', element: withBoundary('Ask', <AskPage />) },
+      {
+        path: 'ask',
+        // Direct wiring rather than `withBoundary`, which has no `onReset`
+        // parameter: this is the one page persisting anything a crash could
+        // itself have poisoned (see chatStorage.ts's doc comment for the
+        // real incident), so Reset here must also clear that thread history
+        // before re-rendering, or it reruns straight into the same crash.
+        element: (
+          <ErrorBoundary component="Ask" onReset={clearThreadStorage}>
+            <AskPage />
+          </ErrorBoundary>
+        ),
+      },
       { path: 'promotions', element: withBoundary('Promotions', <PromotionsPage />) },
       { path: 'platforms', element: withBoundary('Platforms', <PlatformsPage />) },
       { path: 'points', element: withBoundary('Points', <PointsPage />) },

@@ -35,6 +35,26 @@ describe('CostPanel', () => {
     expect(screen.getByText('$0.005')).toBeInTheDocument()
   })
 
+  it('sums many fractional-cent interactions to the exact expected total', () => {
+    // Summed via integer micro-dollars rather than a raw float `reduce`
+    // (CostPanel.tsx's `sumCostUsd`) precisely so this kind of sum is exact
+    // regardless of how many interactions accumulate over a session — at
+    // these real-world magnitudes (llmclient.EstimateCostUSD prices a call
+    // at a few hundredths of a cent) a naive float sum happens to render
+    // identically at 3 decimals too, so this pins the correct total rather
+    // than asserting a visible float-vs-fixed-point divergence.
+    const oneHundredCalls: CostInteraction[] = Array.from({ length: 100 }, () => ({
+      model_used: 'claude-haiku-4-5',
+      input_tokens: 1,
+      output_tokens: 1,
+      estimated_cost_usd: 0.0001,
+      latency_ms: 1,
+    }))
+    render(<CostPanel interactions={oneHundredCalls} />)
+    // 100 * 0.0001 = 0.01 exactly.
+    expect(screen.getByText('$0.010')).toBeInTheDocument()
+  })
+
   it('keeps the detail panel (tokens/latency) collapsed until the pill is clicked', () => {
     render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
     expect(screen.queryByRole('group', { name: /session cost detail/i })).not.toBeInTheDocument()
