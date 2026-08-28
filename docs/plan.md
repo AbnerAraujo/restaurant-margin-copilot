@@ -202,3 +202,30 @@ when that time comes, not a task queued for now.
   collides with something real. This is exactly the kind of gap the
   test-plan.md's "honesty check on the agents' own reports" section warned
   about — verify independently, don't just trust a clean self-report.
+- **Phase 6 (User Story 4, T028-T032), building in parallel with Phase 4/5
+  (US2/US3)**: both phases' agents were writing into
+  `backend/internal/mcptools` at the same time, on the same filesystem, with
+  no coordination beyond "US4 has no dependency on US1's pipeline" in
+  tasks.md — which is true for the *reconciliation* dependency but says
+  nothing about two agents sharing one Go package concurrently. Caught
+  mid-task when a freshly-written
+  `backend/internal/storage/reconciliation_period.go` showed up as
+  "changed on disk since last read" moments after being written (the
+  concurrent agent had rewritten it for its own get_margin_delta/
+  list_discrepancies purposes, keeping the same function signature by
+  chance), and `go build` started failing on `mark3labs/mcp-go` go.sum
+  entries neither agent's own `go get` alone accounted for. Resolved by
+  re-reading the shared files before touching them again and conforming
+  US4's `promo_tools.go` to the `Period`/`ToolError`/`dateLayout` types and
+  the `(*Result, *ToolError, error)` core-function convention the US2/US3
+  agent had already established in `mcptools/types.go`, rather than
+  defining a second, competing set of equivalent types in the same package.
+  No functional damage resulted (`go build`/`go test ./...` passed clean
+  afterward, and the concurrent agent's own files were left untouched and
+  unstaged for it to commit separately), but it was closer to a real
+  collision than comfortable. Lesson: "independent user stories" in
+  tasks.md describes computation/data dependencies, not filesystem/package
+  -ownership boundaries — running two agents against the same shared Go
+  package concurrently needs either a file-level split agreed in advance,
+  or one agent finishing that package before the other starts, not just a
+  dependency graph that happens to allow parallelism.
