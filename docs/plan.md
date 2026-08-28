@@ -83,15 +83,60 @@ in the plan instead of living only behind a link.
 - [ ] Demo recorded or rehearsed live, including at least one on-screen refusal
 - [ ] Final read-through against the constitution and the hard-truth rules on background claims before walking in
 
-## Presentation notes (save for Day 5)
+## Presentation spec (build LAST — only after the application itself works, per explicit instruction)
 
-- Present the product-strategy narrative (5 problems → Objective/KRs →
-  5 products → Product A decision, all in `docs/product-strategy.md`) framed
-  as a **Double Diamond** (Discover → Define → Develop → Deliver): Discover
-  = the 5 candidate problems researched from real iFood/JET/industry data;
-  Define = the OKR Objective and 4 Key Results; Develop = the 5 candidate
-  products scored against the objective; Deliver = the Product A decision
-  and what got built. Not built yet — a presentation-design task for later.
+Format: **HTML, landing-page style** — not slides/PPT. A product-selling
+presentation, not a deck. Must fit a 14" MacBook screen (design at roughly
+1512×982 logical px / 16:10.4, so it reads as "one screen" without forced
+scrolling per section — a snap-scroll or full-height-section landing page
+pattern fits this well). Always in English regardless of what language we
+work in day to day. Before building: check `artifact-design` and `design`
+skills (already available this session) and look for a more specific
+HTML-presentation skill if one exists — don't default to a generic deck
+look.
+
+**Section-by-section outline** (each a landing-page section, not a literal
+PowerPoint slide, but keep the one-section-one-idea discipline slides imply):
+
+1. **One-pager**: product strategy — vision, OKR Objective, all 4 Key
+   Results (not just the chosen path — show the ranking), the hypotheses
+   (all of them, tagged, with which one was actually tested and why),
+   success KPIs. This is the section the earlier "Double Diamond" framing
+   (Discover=5 problems → Define=OKR/KRs → Develop=5 products → Deliver=
+   Product A) belongs to, if it still reads well at build time — treat that
+   framing as a serving suggestion for this section, not a separate section.
+2. **Gamification solution** — the full badge system: what's built now
+   (Reconciliation category) and the roadmap categories (Growth, Engagement,
+   Campaign-Creation), the quiet-not-loud design rationale from the real
+   B2B gamification research already in `product-strategy.md`.
+3. **Demo** — a section that hands off to a LIVE demo (not a recording
+   embedded here) — this section just sets up what's about to be shown.
+4. **Architecture** — pull from `docs/architecture.html`'s two diagrams
+   (flow + ports-and-adapters module view) rather than redrawing from
+   scratch.
+5. **Roadmap** — features already designed but explicitly not implemented:
+   Growth/Engagement/Campaign-Creation badges, the cross-platform economics
+   comparator (Product D from the 5-products comparison), Segment 2
+   (non-Prosus customers), the semantic-memory/LLMOps harness idea (framed
+   as a Phase 2 vision, not a commitment).
+6. **DOR** — one full section, pulled from `docs/dor.md`.
+7. **PRD** — one full section, pulled from `docs/prd.md`.
+8. **RFC** — one full section, pulled from `docs/technical-rfc.md`.
+9. **User stories & acceptance criteria** — one full section, pulled from
+   `specs/001-margin-reconciliation-qa/spec.md`.
+10. **How this was actually built** — the closing section. Emphasize this
+    was not just an application, but a full reasoning line: the SDD process
+    (constitution → spec → plan → tasks → analyze), the skills/plugins/MCP
+    actually used (`docs/tooling.md`), which model was used where and the
+    real cost/quality trade-off evaluated for each (`docs/technical-rfc.md`'s
+    model-choice rationale) — explicitly emphasize token discipline as a
+    deliberate value, not an afterthought, and show the actual approximate
+    dollar cost spent on live API calls during the build (from the harness
+    phase's real, reported cost — not an estimate invented for the slide).
+
+**Do not build any of this until explicitly told to** — the instruction was
+"only do the presentation last." This section is the spec to build from
+when that time comes, not a task queued for now.
 
 ## Running log of real mistakes (fill in as we go — do not backfill from memory later)
 
