@@ -95,6 +95,20 @@ func TestSaveAndLoadDailyReconciliation_RoundTripsExactly(t *testing.T) {
 	require.NotEmpty(t, target.SourceRowRefs)
 	require.NotContains(t, target.GrossSalesBySource, "ifood", "sanity check: this day has zero delivery rows, so the gross_sales_by_source map must omit the key entirely")
 
+	// Retarget onto a sentinel date far outside the real fixture period
+	// (2026-08-01..14) before touching the live database. This test shares
+	// a live Postgres instance with real `cmd/server -ingest` pipeline runs
+	// (see quickstart.md) — an earlier version of this test used the real
+	// 2026-08-08 as both its subject AND its primary key, so its own
+	// cleanup (`DELETE WHERE date = target.Date`) silently deleted the real
+	// pipeline's legitimately-computed row for that day when both ran
+	// against the same database (caught in independent verification, see
+	// docs/plan.md's mistakes log). Keeping every other field from the real
+	// 2026-08-08 computation preserves exactly what this test needs to
+	// exercise (the missing-delivery jsonb shape); only the primary key
+	// changes, so cleanup can never touch real data again.
+	target.Date = time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
+
 	t.Cleanup(func() {
 		_, err := conn.Exec(context.Background(), "DELETE FROM daily_reconciliation WHERE date = $1", target.Date)
 		if err != nil {

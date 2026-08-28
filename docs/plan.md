@@ -83,14 +83,6 @@ in the plan instead of living only behind a link.
 - [ ] Demo recorded or rehearsed live, including at least one on-screen refusal
 - [ ] Final read-through against the constitution and the hard-truth rules on background claims before walking in
 
-## Running log of real mistakes (overnight build, Phase 1: Setup + Foundational)
-
-- `.gitignore`'s `.env.*` rule was silently blocking `.env.example` (a secret-free template) from ever being committed — fixed with a narrow `!.env.example` exception rather than loosening the actual secret rule.
-- `go mod tidy` dropped `anthropic-sdk-go`/`mcp-go`/`pgx` as unused indirect deps immediately after `go get` added them, since no code imported them yet — had to re-add once real code existed. Note for later: don't run `go mod tidy` before every dependency is actually wired into code.
-- The `shadcn` CLI only reads the root `tsconfig.json` for the `@/*` path alias (ours lived in `tsconfig.app.json`) and silently wrote a literal `./@/components/ui/button.tsx` directory instead of resolving the alias — fixed by duplicating the alias into the root tsconfig.
-- Fixture promotion attribution ended up computed as a tag-join over delivery orders rather than pre-baked numbers, reading spec.md's Assumptions more literally than data-model.md's table alone suggests — flagged for whoever implements `internal/reconcile` next, in case that reading needs revisiting.
-- Migrations and sqlc queries were only statically validated (no live Postgres available at build time) — running them for real afterward against colima-backed Postgres confirmed the schema exactly matches `data-model.md`, including the DB-level CHECK constraints mirroring Principles I/II/IV/VI. No discrepancy found, but this was verified independently, not just trusted from the agent's own report.
-
 ## Presentation notes (save for Day 5)
 
 - Present the product-strategy narrative (5 problems → Objective/KRs →
@@ -103,7 +95,12 @@ in the plan instead of living only behind a link.
 
 ## Running log of real mistakes (fill in as we go — do not backfill from memory later)
 
-- Phase 3 (User Story 1, T011-T017): the live-Postgres integration test's
+- **Phase 1 (Setup + Foundational)**: `.gitignore`'s `.env.*` rule was silently blocking `.env.example` (a secret-free template) from ever being committed — fixed with a narrow `!.env.example` exception rather than loosening the actual secret rule.
+- **Phase 1**: `go mod tidy` dropped `anthropic-sdk-go`/`mcp-go`/`pgx` as unused indirect deps immediately after `go get` added them, since no code imported them yet — had to re-add once real code existed. Note for later: don't run `go mod tidy` before every dependency is actually wired into code.
+- **Phase 1**: the `shadcn` CLI only reads the root `tsconfig.json` for the `@/*` path alias (ours lived in `tsconfig.app.json`) and silently wrote a literal `./@/components/ui/button.tsx` directory instead of resolving the alias — fixed by duplicating the alias into the root tsconfig.
+- **Phase 1**: fixture promotion attribution ended up computed as a tag-join over delivery orders rather than pre-baked numbers, reading spec.md's Assumptions more literally than data-model.md's table alone suggests — flagged for whoever implements `internal/reconcile` next.
+- **Phase 1**: migrations and sqlc queries were only statically validated at build time (no live Postgres yet) — running them for real afterward against colima-backed Postgres confirmed the schema exactly matches `data-model.md`. No discrepancy found, but verified independently, not just trusted from the agent's own report.
+- **Phase 3 (User Story 1, T011-T017)**: the live-Postgres integration test's
   cleanup initially used `defer conn.Close(ctx)` alongside a separate
   `t.Cleanup(func() { conn.Exec(...DELETE...) })` to remove the test row.
   Go runs a function's own `defer`s when the test function body returns,
@@ -138,3 +135,25 @@ in the plan instead of living only behind a link.
   those tests were themselves verified independently of the code being
   tested — a test whose golden values were back-computed from the
   implementation proves nothing.
+- **Phase 3, caught in independent verification, not by the agent itself**:
+  the agent's own report claimed all 14 days persisted correctly, but a
+  direct `psql` query found only 13 rows in `daily_reconciliation` — 2026-08-08
+  (margin 152.50) was missing, and the sum of the remaining 13
+  ($329.55) was short of the claimed total (482.05) by exactly 152.50.
+  Root cause: the live-Postgres integration test used `2026-08-08` as its
+  own synthetic test fixture date — the same primary key as the real
+  pipeline's legitimately-computed row for that day, in the same shared
+  database — and its cleanup (`DELETE WHERE date = '2026-08-08'`) silently
+  destroyed the real pipeline output along with its own test row. The
+  agent's cleanup-ordering fix (above) was real and correct, but didn't
+  cover this second, independent issue, because the agent only checked that
+  *its own* test row was removed, not whether the delete had collateral
+  damage. Re-running `go run ./cmd/server -ingest fixtures` restored the
+  correct 14-row state (verified again by direct query). Lesson: an
+  integration test that shares a live database with real pipeline runs
+  must use a sentinel key clearly outside the real data's range (e.g. a
+  date far outside the fixture period), never a real, in-range value —
+  even a well-ordered cleanup can delete more than it created if the key
+  collides with something real. This is exactly the kind of gap the
+  test-plan.md's "honesty check on the agents' own reports" section warned
+  about — verify independently, don't just trust a clean self-report.
