@@ -24,16 +24,18 @@ import (
 // invoked, never by the response looking similar.
 
 type countingGate struct {
-	calls        int
-	decision     ambiguity.Decision
-	lastQuestion string
-	lastPending  *ambiguity.PendingClarification
+	calls              int
+	decision           ambiguity.Decision
+	lastQuestion       string
+	lastPending        *ambiguity.PendingClarification
+	lastPreviousAnswer *ambiguity.PreviousExchange
 }
 
-func (g *countingGate) Classify(_ context.Context, question string, pending *ambiguity.PendingClarification) (*ambiguity.Decision, error) {
+func (g *countingGate) Classify(_ context.Context, question string, pending *ambiguity.PendingClarification, previousAnswer *ambiguity.PreviousExchange) (*ambiguity.Decision, error) {
 	g.calls++
 	g.lastQuestion = question
 	g.lastPending = pending
+	g.lastPreviousAnswer = previousAnswer
 	decision := g.decision
 	return &decision, nil
 }

@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import ChatPanel, {
   derivePendingClarification,
+  derivePreviousExchange,
   type AssistantChatMessage,
   type ChatMessage,
 } from './ChatPanel'
@@ -82,6 +83,94 @@ describe('derivePendingClarification', () => {
       originalQuestion: 'Which days had discrepancies this month?',
       clarifyingQuestion: 'Do you mean August 2026?',
     })
+  })
+})
+
+describe('derivePreviousExchange', () => {
+  const question: ChatMessage = {
+    id: 'u1',
+    role: 'user',
+    text: 'What was our margin on 2026-08-05?',
+    askedAt: '2026-08-27T10:00:00Z',
+  }
+  const answer: ChatMessage = {
+    id: 'a1',
+    role: 'assistant',
+    kind: 'answer',
+    text: 'Margin on 2026-08-05 was $612.40.',
+    provenance: [],
+    askedAt: '2026-08-27T10:00:02Z',
+  }
+
+  it('pairs the previous answer with the question it answered', () => {
+    expect(derivePreviousExchange([question, answer])).toEqual({
+      question: 'What was our margin on 2026-08-05?',
+      answerText: 'Margin on 2026-08-05 was $612.40.',
+    })
+  })
+
+  it('returns nothing when the last message is not a real answer', () => {
+    const clarification: ChatMessage = {
+      id: 'a2',
+      role: 'assistant',
+      kind: 'clarification',
+      text: 'Which period did you mean?',
+      askedAt: '2026-08-27T10:00:05Z',
+    }
+    const refusal: ChatMessage = {
+      id: 'a3',
+      role: 'assistant',
+      kind: 'refusal',
+      text: 'no data',
+      missing: [],
+      askedAt: '2026-08-27T10:00:06Z',
+    }
+    const errorMsg: ChatMessage = {
+      id: 'a4',
+      role: 'assistant',
+      kind: 'error',
+      text: 'connection failed',
+      question: 'x',
+      askedAt: '2026-08-27T10:00:07Z',
+    }
+    expect(derivePreviousExchange([question, clarification])).toBeUndefined()
+    expect(derivePreviousExchange([question, refusal])).toBeUndefined()
+    expect(derivePreviousExchange([question, errorMsg])).toBeUndefined()
+    expect(derivePreviousExchange([])).toBeUndefined()
+    expect(derivePreviousExchange([question])).toBeUndefined()
+  })
+
+  it('skips back past intervening assistant turns to find the real question', () => {
+    const priorRefusal: ChatMessage = {
+      id: 'a0',
+      role: 'assistant',
+      kind: 'refusal',
+      text: 'no',
+      missing: [],
+      askedAt: '2026-08-27T09:59:00Z',
+    }
+    expect(derivePreviousExchange([priorRefusal, question, answer])).toEqual({
+      question: 'What was our margin on 2026-08-05?',
+      answerText: 'Margin on 2026-08-05 was $612.40.',
+    })
+  })
+
+  // Mutual exclusivity with derivePendingClarification is by construction
+  // (each only fires on a different last-message kind), asserted directly
+  // here rather than trusted: the same tail can never satisfy both.
+  it('never returns a value at the same time as derivePendingClarification', () => {
+    expect(derivePreviousExchange([question, answer])).toBeDefined()
+    expect(derivePendingClarification([question, answer])).toBeUndefined()
+
+    const clarification: ChatMessage = {
+      id: 'c1',
+      role: 'assistant',
+      kind: 'clarification',
+      text: 'Which period?',
+      askedAt: '2026-08-27T10:00:05Z',
+    }
+    expect(derivePendingClarification([question, clarification])).toBeDefined()
+    expect(derivePreviousExchange([question, clarification])).toBeUndefined()
   })
 })
 
@@ -238,7 +327,9 @@ describe('ChatPanel', () => {
       expect.arrayContaining([
         expect.objectContaining({ text: 'How did we do yesterday?' }),
       ]),
-      // No clarification was pending, so no context is attached.
+      // No clarification was pending and no prior answer exists yet (this is
+      // the first message), so neither context is attached.
+      undefined,
       undefined,
     )
     expect(input).not.toBeDisabled()
@@ -299,6 +390,10 @@ describe('ChatPanel', () => {
       'Option A',
       expect.any(Array),
       { originalQuestion: 'Which period did you mean?', clarifyingQuestion: 'Which range did you mean?' },
+      // The last message was a clarification, not an answer, so no
+      // previous-exchange context is attached — the two are mutually
+      // exclusive by construction.
+      undefined,
     )
   })
 
@@ -366,6 +461,7 @@ describe('ChatPanel', () => {
       'Which promotions lost money?',
       expect.any(Array),
       undefined,
+      undefined,
     )
     expect(
       await screen.findByText('Answer from a suggestion.'),
@@ -419,6 +515,9 @@ describe('ChatPanel', () => {
       2,
       'How did we do on 2026-08-07?',
       expect.any(Array),
+      undefined,
+      // The prior message was a connection ERROR, not a real answer, so no
+      // previous-exchange context is attached to the retry.
       undefined,
     )
   })
@@ -521,6 +620,15 @@ describe('ChatPanel', () => {
       'Were there any discrepancies on 2026-08-07?',
       expect.any(Array),
       undefined,
+      // The previous message WAS a real answer, so tapping a follow-up chip
+      // carries that answer's context — the one-hop mechanism this feature
+      // adds — even though this particular chip's text is self-contained.
+      // Deciding whether it's actually a follow-up is the gate's job, not
+      // this component's.
+      {
+        question: 'How did we do on 2026-08-07?',
+        answerText: 'Margin on 2026-08-07 was $375.82.',
+      },
     )
     expect(
       await screen.findByText('No discrepancies were flagged on 2026-08-07.'),

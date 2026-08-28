@@ -5,6 +5,7 @@ import ChatPanel, {
   type AnswerCacheInfo,
   type AssistantChatMessage,
   type PendingClarification,
+  type PreviousExchange,
 } from '@/components/Chat/ChatPanel'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
@@ -109,17 +110,26 @@ export default function AskPage() {
       question: string,
       _history: ChatMessage[],
       pendingClarification?: PendingClarification,
+      previousExchange?: PreviousExchange,
     ): Promise<AssistantChatMessage> => {
-      // The clarification context travels as structured fields, not merged
-      // into `question`: the backend composes the resolved question itself
-      // (ambiguity.ComposeFollowUp) so question_interaction.question_text
-      // stays exactly what the owner typed.
+      // Both contexts travel as structured fields, not merged into
+      // `question`: the backend composes the resolved question itself
+      // (ambiguity.ComposeFollowUp / ambiguity.ComposeAnswerFollowUp) so
+      // question_interaction.question_text stays exactly what the owner
+      // typed. ChatPanel derives at most one of these per submission (see
+      // derivePendingClarification/derivePreviousExchange) — never both.
       const data = await postJson<AskApiResponse>('/api/ask', {
         question,
         pending_clarification: pendingClarification
           ? {
               original_question: pendingClarification.originalQuestion,
               clarifying_question: pendingClarification.clarifyingQuestion,
+            }
+          : undefined,
+        previous_exchange: previousExchange
+          ? {
+              question: previousExchange.question,
+              answer_text: previousExchange.answerText,
             }
           : undefined,
       })

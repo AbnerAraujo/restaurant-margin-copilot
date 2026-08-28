@@ -148,6 +148,61 @@ func TestParseWriterResponse_RejectsMalformedJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "not valid JSON")
 }
 
+// TestComposeAnswerFollowUp_* are pure unit tests over the ANSWER-side
+// follow-up composition (the counterpart to ask_clarification_test.go's
+// TestComposeFollowUpIsDeterministicAndInertodWithoutContext, which covers
+// ComposeFollowUp), asserting the EXACT composed text rather than just
+// checking it's non-empty — this string is what the gate classifies, what
+// explain narrates, and what the answer cache keys on, so its exact shape
+// is load-bearing, not incidental.
+
+func TestComposeAnswerFollowUp_NilPreviousReturnsQuestionUnchanged(t *testing.T) {
+	require.Equal(t, "and the day before?", ComposeAnswerFollowUp("and the day before?", nil))
+}
+
+func TestComposeAnswerFollowUp_EmptyAnswerTextTreatedAsNoContext(t *testing.T) {
+	previous := &PreviousExchange{Question: "What was our margin on 2026-08-05?", AnswerText: "   "}
+	require.Equal(t, "and the day before?", ComposeAnswerFollowUp("and the day before?", previous))
+}
+
+func TestComposeAnswerFollowUp_ComposesTheExactExpectedText(t *testing.T) {
+	previous := &PreviousExchange{
+		Question:   "What was our margin on 2026-08-05?",
+		AnswerText: "Margin on 2026-08-05 was $612.40 on $2,180.00 in gross sales.",
+	}
+	got := ComposeAnswerFollowUp("and the day before?", previous)
+	want := "and the day before?" +
+		"\n\n[Previous exchange context] The user previously asked: \"What was our margin on 2026-08-05?\" and was told: \"Margin on 2026-08-05 was $612.40 on $2,180.00 in gross sales.\"" +
+		"\nThe text above this block is what they have now said. This may be a follow-up to that previous exchange, or it may be a brand new, unrelated question — decide which from its content. If it is a follow-up, classify its resolved meaning (the new text interpreted in light of the previous question and answer) as the question to classify."
+	require.Equal(t, want, got)
+}
+
+func TestComposeAnswerFollowUp_TrimsWhitespaceInPreviousFields(t *testing.T) {
+	previous := &PreviousExchange{Question: "  orig question  ", AnswerText: "  the answer  "}
+	got := ComposeAnswerFollowUp("why?", previous)
+	require.Contains(t, got, `"orig question"`)
+	require.Contains(t, got, `"the answer"`)
+	require.NotContains(t, got, "  orig question  ")
+}
+
+func TestComposeAnswerFollowUp_IsDeterministic(t *testing.T) {
+	previous := &PreviousExchange{Question: "orig", AnswerText: "answer"}
+	require.Equal(t, ComposeAnswerFollowUp("reply", previous), ComposeAnswerFollowUp("reply", previous),
+		"composition must be deterministic — it is the cache key")
+}
+
+// A follow-up to a real ANSWER must never be confused, at the composition
+// layer, with a reply to a CLARIFYING question — the two produce visibly
+// different marker text ("[Previous exchange context]" vs. "[Follow-up
+// context]") so the gate's system prompt sections can never be misapplied
+// to the wrong case.
+func TestComposeAnswerFollowUp_UsesADistinctMarkerFromClarificationFollowUp(t *testing.T) {
+	previous := &PreviousExchange{Question: "orig", AnswerText: "answer"}
+	got := ComposeAnswerFollowUp("why?", previous)
+	require.Contains(t, got, "[Previous exchange context]")
+	require.NotContains(t, got, "[Follow-up context]")
+}
+
 // testDataStart/testDataEnd mirror the real fixture range
 // (backend/fixtures/README.md, 2026-08-01..14) — tests that don't care
 // about the exact date-grounding text still need a well-formed range for
@@ -159,7 +214,7 @@ const (
 
 func TestClassify_RejectsEmptyQuestion(t *testing.T) {
 	g := New(llmclient.New(), testDataStart, testDataEnd)
-	_, err := g.Classify(context.Background(), "   ", nil)
+	_, err := g.Classify(context.Background(), "   ", nil, nil)
 	require.ErrorIs(t, err, ErrEmptyQuestion)
 }
 
@@ -179,7 +234,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("answerable", func(t *testing.T) {
-		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-03?", nil)
+		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-03?", nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAnswerable, d.Result)
 		require.Greater(t, d.InputTokens, int64(0))
@@ -188,7 +243,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("unanswerable", func(t *testing.T) {
-		d, err := g.Classify(ctx, "How much did we spend with our cheese supplier in September 2026?", nil)
+		d, err := g.Classify(ctx, "How much did we spend with our cheese supplier in September 2026?", nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateUnanswerable, d.Result)
 		require.NotEmpty(t, d.RefusalReason)
@@ -206,7 +261,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("ambiguous", func(t *testing.T) {
-		d, err := g.Classify(ctx, "How did we do over the weekend?", nil)
+		d, err := g.Classify(ctx, "How did we do over the weekend?", nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAmbiguous, d.Result)
 		require.True(t, d.ClarifyingQuestion != "" || d.AssumptionStated != "")
@@ -223,7 +278,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("answerable question costs exactly the gate's single Haiku call", func(t *testing.T) {
-		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-05?", nil)
+		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-05?", nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAnswerable, d.Result)
 		require.Nil(t, d.Writer, "an answerable question must never trigger the second Sonnet writing pass — no cost change for the common case")
@@ -257,7 +312,7 @@ func TestGate_Classify_DateGroundingRegression(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		t.Run(fmt.Sprintf("run_%d", i), func(t *testing.T) {
-			d, err := g.Classify(ctx, "How did we do this week?", nil)
+			d, err := g.Classify(ctx, "How did we do this week?", nil, nil)
 			require.NoError(t, err)
 
 			// The specific worst-case failure: inventing a year the data

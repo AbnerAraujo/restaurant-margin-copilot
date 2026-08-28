@@ -76,6 +76,23 @@ type AskRequest struct {
 	// It also mirrors how AssumptionStated already flows from the gate into
 	// the explanation step: resolved context travels as its own typed field.
 	PendingClarification *PendingClarification `json:"pending_clarification,omitempty"`
+	// PreviousExchange is set when the immediately preceding assistant
+	// message was a real ANSWER (not a clarification, refusal, or error)
+	// that Question might be a follow-up to — "and the day before?", "why?",
+	// "what about the week after that?". A request carries at most ONE of
+	// PendingClarification/PreviousExchange, never both: a message is either
+	// replying to a clarifying question or potentially following up on an
+	// answer, never both at once (see ChatPanel.tsx's derivation logic,
+	// which makes the two mutually exclusive by construction — each is only
+	// ever derived from a different last-message kind).
+	//
+	// Same design note as PendingClarification: the client sends the raw
+	// pieces (the previous question, the previous answer text), not a
+	// pre-merged sentence, so question_interaction.question_text stays
+	// exactly what the owner typed ("and the day before?") while the gate
+	// still gets everything it needs to classify it — see
+	// ambiguity.ComposeAnswerFollowUp.
+	PreviousExchange *PreviousExchange `json:"previous_exchange,omitempty"`
 }
 
 // PendingClarification is the wire form of ambiguity.PendingClarification.
@@ -91,6 +108,22 @@ func (p *PendingClarification) toGateContext() *ambiguity.PendingClarification {
 	return &ambiguity.PendingClarification{
 		OriginalQuestion:   strings.TrimSpace(p.OriginalQuestion),
 		ClarifyingQuestion: strings.TrimSpace(p.ClarifyingQuestion),
+	}
+}
+
+// PreviousExchange is the wire form of ambiguity.PreviousExchange.
+type PreviousExchange struct {
+	Question   string `json:"question"`
+	AnswerText string `json:"answer_text"`
+}
+
+func (p *PreviousExchange) toGateContext() *ambiguity.PreviousExchange {
+	if p == nil || strings.TrimSpace(p.AnswerText) == "" || strings.TrimSpace(p.Question) == "" {
+		return nil
+	}
+	return &ambiguity.PreviousExchange{
+		Question:   strings.TrimSpace(p.Question),
+		AnswerText: strings.TrimSpace(p.AnswerText),
 	}
 }
 
@@ -187,7 +220,7 @@ const ParaphraseMatchNote = "Recognized as the same question, worded differently
 // once between the two requests, which is impossible against a struct that
 // only talks to the live Anthropic API.
 type Classifier interface {
-	Classify(ctx context.Context, question string, pending *ambiguity.PendingClarification) (*ambiguity.Decision, error)
+	Classify(ctx context.Context, question string, pending *ambiguity.PendingClarification, previousAnswer *ambiguity.PreviousExchange) (*ambiguity.Decision, error)
 }
 
 // Narrator is the explanation step as this handler needs it.
@@ -263,14 +296,27 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		ctx := r.Context()
 
 		pending := req.PendingClarification.toGateContext()
+		previousAnswer := req.PreviousExchange.toGateContext()
 		// resolved is the self-contained question this request really asks:
-		// identical to req.Question for a normal question, and the original
-		// question plus its clarification context for a follow-up reply.
-		// It is what the gate classifies, what the explanation step narrates,
-		// and — critically — what the answer cache keys on. Keying a
-		// follow-up on the bare reply would let "yes" answering one
-		// clarification serve the cached answer to a different one.
+		// identical to req.Question for a normal question, the original
+		// question plus its clarification context for a follow-up reply to a
+		// CLARIFICATION, or the previous question plus its real answer text
+		// for a follow-up that might be replying to an ANSWER. It is what the
+		// gate classifies, what the explanation step narrates, and —
+		// critically — what the answer cache keys on. Keying a follow-up on
+		// the bare reply would let "yes" answering one clarification (or "and
+		// the day before?" following one answer) serve the cached answer
+		// meant for a different prior exchange.
+		//
+		// pending and previousAnswer are never both non-nil in a
+		// well-formed request (the client derives at most one of them — see
+		// PreviousExchange's doc comment); pending takes precedence if
+		// somehow both arrive, mirroring Classify's own defensive fallback
+		// ordering.
 		resolved := ambiguity.ComposeFollowUp(req.Question, pending)
+		if pending == nil {
+			resolved = ambiguity.ComposeAnswerFollowUp(req.Question, previousAnswer)
+		}
 
 		// Cache probe BEFORE the ambiguity gate — the gate is itself a real
 		// billed Haiku call, so checking after it would still spend money on
@@ -296,7 +342,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			}
 		}
 
-		decision, err := deps.Gate.Classify(ctx, req.Question, pending)
+		decision, err := deps.Gate.Classify(ctx, req.Question, pending, previousAnswer)
 		if err != nil {
 			// ambiguity.Gate.Classify's error contract returns (nil, err) on
 			// every failure path, so there is no partial Decision here to

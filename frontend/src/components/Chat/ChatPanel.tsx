@@ -85,6 +85,28 @@ export interface PendingClarification {
   clarifyingQuestion: string
 }
 
+/**
+ * The immediately preceding question and the real ANSWER it got — what a
+ * follow-up to an answer needs in order to be classifiable at all ("and the
+ * day before?", "why?", "what about the week after that?"). The answer-side
+ * counterpart to {@link PendingClarification}: that type exists because a
+ * bare reply to a clarifying question is meaningless without the question it
+ * was answering, and this closes the identical gap for a follow-up to a real
+ * answer, which previously had no equivalent mechanism at all — every such
+ * question was classified against the gate in total isolation and would
+ * almost certainly misfire.
+ *
+ * Deliberately exactly one hop, mirroring PendingClarification's own
+ * discipline (see its doc comment) and the backend's
+ * `ambiguity.PreviousExchange`: never a growing transcript, just the
+ * immediately preceding question and the answer text the user actually
+ * read.
+ */
+export interface PreviousExchange {
+  question: string
+  answerText: string
+}
+
 export interface UserChatMessage {
   id: string
   role: 'user'
@@ -191,6 +213,7 @@ export interface ChatPanelProps {
     question: string,
     history: ChatMessage[],
     pendingClarification?: PendingClarification,
+    previousExchange?: PreviousExchange,
   ) => Promise<AssistantChatMessage>
   /**
    * Starter questions offered when the conversation is empty (Nielsen #6,
@@ -249,6 +272,45 @@ export function derivePendingClarification(
       return {
         originalQuestion: candidate.text,
         clarifyingQuestion: last.text,
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Reads the previous-answer context off the tail of the conversation: the
+ * last message is a real ANSWER (never a clarification, refusal, or error),
+ * and the question it answered is the most recent user message before it.
+ *
+ * Mutually exclusive with {@link derivePendingClarification} by
+ * construction, not by any extra heuristic here: that one only returns a
+ * value when the last message is a clarification, this one only when it's
+ * an answer, so a submitted question can never carry both — and never needs
+ * client-side guessing about which one applies. Gate/explain classification
+ * server-side is what decides whether a follow-up is actually relevant to
+ * the previous answer at all (see ambiguity.ComposeAnswerFollowUp) — this
+ * function's only job is attaching the ONE hop of context that makes that
+ * classification possible, exactly like derivePendingClarification already
+ * does for the clarification case.
+ *
+ * Returns undefined when the last message is anything else (a clarification,
+ * a refusal, an error, or an empty conversation), so a normal question never
+ * accidentally carries a previous-answer context it doesn't need.
+ */
+export function derivePreviousExchange(
+  history: ChatMessage[],
+): PreviousExchange | undefined {
+  const last = history[history.length - 1]
+  if (!last || last.role !== 'assistant' || last.kind !== 'answer') {
+    return undefined
+  }
+  for (let i = history.length - 2; i >= 0; i--) {
+    const candidate = history[i]
+    if (candidate.role === 'user') {
+      return {
+        question: candidate.text,
+        answerText: last.text,
       }
     }
   }
@@ -953,8 +1015,12 @@ export default function ChatPanel({
       if (!text || isPending) return
 
       // Derived from the history BEFORE this message is appended — the
-      // clarification being answered is the one currently on screen.
+      // clarification being answered (or the answer this might be a
+      // follow-up to) is the one currently on screen. Mutually exclusive by
+      // construction (see each function's doc comment): at most one of
+      // these is ever defined for a given submission.
       const pendingClarification = derivePendingClarification(messages)
+      const previousExchange = derivePreviousExchange(messages)
 
       const userMessage: UserChatMessage = {
         id: nextMessageId('user'),
@@ -975,6 +1041,7 @@ export default function ChatPanel({
           text,
           [...messages, userMessage],
           pendingClarification,
+          previousExchange,
         )
         setMessages((previous) => [...previous, answer])
       } catch (error) {

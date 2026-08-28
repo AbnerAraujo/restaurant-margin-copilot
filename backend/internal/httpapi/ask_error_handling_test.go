@@ -39,7 +39,7 @@ type erroringGate struct {
 	err error
 }
 
-func (g *erroringGate) Classify(_ context.Context, _ string, _ *ambiguity.PendingClarification) (*ambiguity.Decision, error) {
+func (g *erroringGate) Classify(_ context.Context, _ string, _ *ambiguity.PendingClarification, _ *ambiguity.PreviousExchange) (*ambiguity.Decision, error) {
 	return nil, g.err
 }
 
@@ -47,7 +47,7 @@ func (g *erroringGate) Classify(_ context.Context, _ string, _ *ambiguity.Pendin
 // cost, so tests exercising the EXPLAIN error path can reach it at all.
 type fixedAnswerableGate struct{}
 
-func (fixedAnswerableGate) Classify(_ context.Context, _ string, _ *ambiguity.PendingClarification) (*ambiguity.Decision, error) {
+func (fixedAnswerableGate) Classify(_ context.Context, _ string, _ *ambiguity.PendingClarification, _ *ambiguity.PreviousExchange) (*ambiguity.Decision, error) {
 	return &ambiguity.Decision{
 		Result:           instrumentation.GateAnswerable,
 		InputTokens:      10,

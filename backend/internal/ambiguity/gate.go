@@ -151,6 +151,43 @@ type PendingClarification struct {
 	ClarifyingQuestion string
 }
 
+// PreviousExchange is the immediately preceding question and its real
+// ANSWER — the counterpart to PendingClarification for the gap that
+// mechanism never covered: a follow-up to an actual answer ("and the day
+// before?", "why?", "what about the week after that?"), not a reply to a
+// clarifying question.
+//
+// Before this type existed, every such follow-up was classified against
+// the gate in total isolation — "and the day before?" on its own is
+// unclassifiable (no antecedent for "the day before" relative to anything),
+// so the gate would almost certainly misfire: ambiguous when it shouldn't
+// be, or unanswerable, or occasionally answerable against a wrong guessed
+// date. This is what made the product feel like a stateless search box
+// rather than a conversation for exactly this, very common, phrasing.
+//
+// Deliberately typed the same narrow way as PendingClarification, for the
+// same reason (see that type's doc comment): exactly the immediately
+// preceding question and the answer text the user was actually given,
+// never a growing transcript. This is the direct discipline arXiv
+// 2602.07338 ("Intent Mismatch Causes LLMs to Get Lost in Multi-Turn
+// Conversation") argues for — a model given loose, unbounded conversational
+// history drifts from what the user actually meant; one typed hop bounds
+// that risk exactly the way it already does for the clarification case.
+//
+// Unlike PendingClarification, receiving a PreviousExchange does NOT mean
+// the new text is definitely a follow-up — the user may equally be asking a
+// brand new, unrelated question right after an answer. Deciding which is
+// exactly this gate's classification job (see systemPromptTemplate's
+// "Follow-ups to a previous answer" section), not something ComposeAnswerFollowUp
+// or its caller should presume.
+type PreviousExchange struct {
+	// Question is the immediately preceding question that was actually
+	// answered (not a clarifying question, refusal, or error).
+	Question string
+	// AnswerText is the answer text the user was actually given for Question.
+	AnswerText string
+}
+
 // Gate wraps an llmclient.Client to run this project's answerable /
 // ambiguous / unanswerable classification.
 type Gate struct {
@@ -188,12 +225,22 @@ type gateResponse struct {
 // pending, when non-nil, says that question is a REPLY to a clarifying
 // question this gate asked earlier. The pair is classified together as one
 // resolved question — see PendingClarification for the defect this fixes.
-func (g *Gate) Classify(ctx context.Context, question string, pending *PendingClarification) (*Decision, error) {
+//
+// previousAnswer, when non-nil, says the immediately preceding assistant
+// message was a real ANSWER (not a clarification) that question might be a
+// follow-up to — see PreviousExchange. A single request never carries both:
+// pending takes precedence if somehow both are set (a defensive default,
+// not an expected input — the caller composes at most one of them from the
+// visible conversation).
+func (g *Gate) Classify(ctx context.Context, question string, pending *PendingClarification, previousAnswer *PreviousExchange) (*Decision, error) {
 	if strings.TrimSpace(question) == "" {
 		return nil, ErrEmptyQuestion
 	}
 
 	resolved := ComposeFollowUp(question, pending)
+	if pending == nil || strings.TrimSpace(pending.ClarifyingQuestion) == "" {
+		resolved = ComposeAnswerFollowUp(question, previousAnswer)
+	}
 
 	resp, err := g.client.CreateMessage(ctx, llmclient.MessageRequest{
 		Model:     llmclient.ModelAmbiguityGate,
@@ -466,6 +513,39 @@ func ComposeFollowUp(question string, pending *PendingClarification) string {
 	)
 }
 
+// ComposeAnswerFollowUp renders a question plus the immediately preceding
+// answered exchange into the single self-contained prompt the gate
+// classifies — the ANSWER-side counterpart to ComposeFollowUp's
+// CLARIFICATION-side composition. See PreviousExchange's doc comment for
+// the gap this closes (a follow-up to a real answer had no equivalent
+// mechanism at all before this) and for why it is deliberately exactly one
+// hop, never a growing transcript.
+//
+// Like ComposeFollowUp, this is plain deterministic string assembly in Go,
+// never a model call, and is exported for the same reason: internal/httpapi
+// needs the identical composition for the explanation step's input and for
+// the answer cache's key. A bare repeat like "and the day before?" MUST NOT
+// be the cache key on its own — two different prior answers followed by the
+// identical bare phrase would otherwise collide, and the second would be
+// served the first one's (now wrong) answer.
+//
+// Unlike ComposeFollowUp, the composed text does NOT assert that the new
+// text IS a follow-up — previous may be entirely irrelevant to a brand new
+// question the user happens to ask right after an answer. Deciding that is
+// this gate's classification job (systemPromptTemplate's "Follow-ups to a
+// previous answer" section), not something this function should presume.
+func ComposeAnswerFollowUp(question string, previous *PreviousExchange) string {
+	if previous == nil || strings.TrimSpace(previous.AnswerText) == "" {
+		return question
+	}
+	return fmt.Sprintf(
+		"%s\n\n[Previous exchange context] The user previously asked: %q and was told: %q\nThe text above this block is what they have now said. This may be a follow-up to that previous exchange, or it may be a brand new, unrelated question — decide which from its content. If it is a follow-up, classify its resolved meaning (the new text interpreted in light of the previous question and answer) as the question to classify.",
+		question,
+		strings.TrimSpace(previous.Question),
+		strings.TrimSpace(previous.AnswerText),
+	)
+}
+
 // parseGateResponse is the pure, model-independent half of this package's
 // logic (tasks.md T024's unit-test target): given the raw text a gate call
 // produced, extract and validate the fixed JSON shape systemPrompt
@@ -595,6 +675,12 @@ Follow-up replies — read this before classifying any input containing a "[Foll
 - If the reply genuinely does not resolve it — for example a bare "yes" to an either/or question where either branch remains possible — classify "ambiguous" and ask ONE more specific clarifying question that names the remaining options explicitly. Do not refuse.
 - Only classify "unanswerable" here if the RESOLVED question is itself outside the data described above (e.g. the reply pins the question to a date outside %[1]s..%[2]s).
 - Classify the resolved question fresh, on its own terms — never silently carry forward an interpretation, assumption, or unstated context from any earlier exchange beyond the exact follow-up pair you are given here. This pair is the entire conversational history you get, deliberately (see this package's doc comment on PendingClarification); treat it as such rather than reasoning as if a longer transcript existed behind it.
+
+Follow-ups to a previous answer — read this before classifying any input containing a "[Previous exchange context]" block:
+- That block means the immediately preceding assistant message was a real ANSWER (not a clarifying question), and the text above the block MIGHT be a follow-up to it — "and the day before?", "why?", "what about last month instead?", a bare "and Sunday?". Unlike the "[Follow-up context]" case above, this is NOT guaranteed to be a follow-up at all: the user may just as easily be asking a brand new, self-contained question right after getting an answer.
+- Decide which, from the content of the new text alone. If it plausibly continues or references the previous question/answer (a pronoun, an implicit comparison, an elliptical date/period reference, a bare "why?"), resolve it against that previous exchange and classify the RESOLVED meaning — exactly as you would classify any other question, following every rule above (date grounding, evaluative language, etc.) against that resolved meaning.
+- If the new text reads as a complete, unrelated question on its own (a different topic, a fully-specified new date or period, a different tool-shaped request), classify it on its own terms and ignore the previous exchange entirely — do not force a follow-up reading onto a question that does not need one.
+- Same anti-drift discipline as the clarification case above: this one prior exchange is the entire conversational history you get, deliberately. Never reason as if a longer transcript existed behind it, and never treat this resolved question as itself carrying forward into some further, later exchange beyond it.
 
 Classify the question into exactly one of:
 - "answerable": it can be answered from the data above with no ambiguity about what's being asked.
