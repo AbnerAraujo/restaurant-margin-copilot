@@ -2,7 +2,6 @@ import * as React from 'react'
 import {
   ArrowDown,
   Bookmark,
-  Bot,
   CalendarRange,
   FileText,
   History,
@@ -22,6 +21,7 @@ import {
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Chip } from '@/components/ui/page'
+import Logo from '@/components/Logo/Logo'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
@@ -406,9 +406,20 @@ export async function mockResolveAnswer(
 function ChatAvatar({
   role,
   tone = 'neutral',
+  pending = false,
 }: {
   role: 'user' | 'assistant'
   tone?: 'neutral' | 'warning' | 'destructive'
+  /**
+   * True only for the bubble standing in for a real model call in flight
+   * (PendingBubble). The mark loops the same door-swing the launch splash
+   * plays once, for exactly as long as this instance stays mounted —
+   * finishing the call unmounts the pending bubble and replaces it with a
+   * real, fully static answer/clarification/refusal/error bubble, so
+   * "static once finished" falls out of the message list swapping
+   * components rather than needing its own stop condition here.
+   */
+  pending?: boolean
 }) {
   const toneClasses =
     tone === 'warning'
@@ -425,7 +436,11 @@ function ChatAvatar({
         {role === 'user' ? (
           <User className="size-3.5" />
         ) : (
-          <Bot className="size-3.5" />
+          <Logo
+            variant="icon"
+            size={16}
+            doorAnimation={pending ? 'loop' : undefined}
+          />
         )}
       </AvatarFallback>
     </Avatar>
@@ -702,7 +717,7 @@ function PendingBubble() {
       className="flex items-center gap-2 text-muted-foreground"
       aria-live="polite"
     >
-      <ChatAvatar role="assistant" />
+      <ChatAvatar role="assistant" pending />
       <span className="inline-flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-border bg-card px-3 py-2 text-xs">
         <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
         Checking the reconciled numbers…

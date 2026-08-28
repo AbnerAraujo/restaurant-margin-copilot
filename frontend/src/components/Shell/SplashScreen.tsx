@@ -4,7 +4,7 @@ import Logo from '@/components/Logo/Logo'
 
 /**
  * A real launch splash, not a tiny sidebar-icon tweak. The batwing-door
- * swing (Logo's `animateOnMount`) is the exact same CSS as
+ * swing (Logo's `doorAnimation="once"`) is the exact same CSS as
  * docs/presentation.html's .coverMark, and that swing is genuinely
  * imperceptible at the sidebar's 36-40px logo size — the same relative
  * scaleX motion that reads as a clear "doors opening" gesture at the
@@ -49,7 +49,7 @@ export default function SplashScreen() {
         phase === 'fading' ? 'pointer-events-none opacity-0' : 'opacity-100'
       }`}
     >
-      <Logo variant="icon" size={140} animateOnMount />
+      <Logo variant="icon" size={140} doorAnimation="once" />
     </div>
   )
 }

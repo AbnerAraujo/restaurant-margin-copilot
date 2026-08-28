@@ -253,24 +253,34 @@
 }
 
 /* The batwing café-door swing, lifted verbatim from docs/presentation.html's
-   cover-slide mark (.coverMark) — same keyframes, same 2.4s/.3s timing, so
-   the app's own opening moment reads as the same brand gesture as the
-   deck's opening slide. Plays once on mount (the reduced-motion collapse
-   above already handles the accessibility case globally, so nothing extra
-   is needed here). transform-box: fill-box is required because the door
+   cover-slide mark (.coverMark) — same keyframes, same easing, so both the
+   app's launch splash and the chat's "thinking" indicator read as the same
+   brand gesture as the deck's opening slide. Two trigger classes share one
+   keyframe: `.door-swing-once` (2.4s + .3s delay, plays once, settles back
+   to the static rest frame — the launch splash) and `.door-swing-loop`
+   (faster, no delay, repeats — the chat avatar while a real model call is
+   in flight, stopped dead by simply unmounting the pending bubble once an
+   answer arrives, never animated again on a finished message). The
+   reduced-motion collapse above already handles the accessibility case
+   globally for both. transform-box: fill-box is required because the door
    polygons' own coordinates, not the SVG viewport, are what "left/right
    center" should hinge around. */
 @layer components {
   .door-l,
   .door-r {
     transform-box: fill-box;
-    animation: door-swing 2.4s ease-out 0.3s both;
   }
   .door-l {
     transform-origin: left center;
   }
   .door-r {
     transform-origin: right center;
+  }
+  .door-swing-once {
+    animation: door-swing 2.4s ease-out 0.3s both;
+  }
+  .door-swing-loop {
+    animation: door-swing 1.8s ease-in-out infinite;
   }
   @keyframes door-swing {
     0% {
