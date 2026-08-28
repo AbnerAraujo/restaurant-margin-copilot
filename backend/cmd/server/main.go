@@ -121,6 +121,10 @@ func main() {
 		// endpoint registered directly here rather than through
 		// internal/mcptools.
 		mux.HandleFunc("/api/usage", httpapi.HandleRecordUsage(store))
+		// POST /api/client-errors: the frontend ErrorBoundary's "retro feed"
+		// — a real crash report, logged so the next one leaves a queryable
+		// trace instead of depending on someone noticing and describing it.
+		mux.HandleFunc("/api/client-errors", httpapi.HandleRecordClientError(store))
 
 		askDeps, err := buildAskDeps(ctx, store, cache)
 		if err != nil {
@@ -128,7 +132,7 @@ func main() {
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, POST /api/client-errors, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

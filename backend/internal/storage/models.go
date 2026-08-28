@@ -28,6 +28,17 @@ type AnswerCacheHit struct {
 	ServedAt                pgtype.Timestamptz `json:"served_at"`
 }
 
+// One row per frontend crash caught by the ErrorBoundary (frontend/src/components/ErrorBoundary.tsx). Read-only feed for retrospectives, not a support ticket queue — no auth, no PII collected on purpose (single-owner prototype, per the same scope constraint as everywhere else in this build).
+type ClientErrorReport struct {
+	ID         pgtype.UUID        `json:"id"`
+	Message    string             `json:"message"`
+	Component  pgtype.Text        `json:"component"`
+	Stack      pgtype.Text        `json:"stack"`
+	Url        pgtype.Text        `json:"url"`
+	UserAgent  pgtype.Text        `json:"user_agent"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+}
+
 // Deterministic daily margin computation. margin MUST be reproducible by re-running reconciliation against source_row_refs; never written by the model layer (Constitution Principle I).
 type DailyReconciliation struct {
 	Date               pgtype.Date        `json:"date"`
