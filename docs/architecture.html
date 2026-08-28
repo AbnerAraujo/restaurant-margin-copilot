@@ -1,11 +1,30 @@
 <title>Restaurant Margin Copilot</title>
+
+<!-- ===================================================================
+     PUBLISHED ARTIFACT (the live, shareable version of this file):
+     https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441
+
+     Redeploy with: Artifact tool, action "publish", file_path this file,
+     url the link above. Do NOT publish without that url — omitting it
+     creates a second artifact and orphans the link people already have.
+     This URL was lost once before; that is why it is recorded here.
+     =================================================================== -->
+
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
 <style>
+  /* ---------------------------------------------------------------
+     Document tokens. Light palette on bare :root; dark redefined
+     twice (media query guarded against an explicit light choice, and
+     the data-theme stamp) so all three viewer states resolve.
+     --------------------------------------------------------------- */
   :root{
     --ink:#1E241F;
     --paper:#E7ECDE;
     --paper-raised:#F4F6EC;
+    --paper-sunk:#DDE3D2;
     --rule:#C6CDB6;
+    --rule-soft:#D5DBC6;
     --muted:#5B6551;
     --det:#1F6F78;
     --det-soft:#D7E9E7;
@@ -14,15 +33,17 @@
     --alert:#A83E2C;
     --alert-soft:#F2DAD3;
     --font-display:'IBM Plex Serif', Georgia, 'Times New Roman', serif;
-    --font-body:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-mono:'IBM Plex Mono', 'SF Mono', Consolas, monospace;
+    --font-body:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono:'IBM Plex Mono', 'SF Mono', ui-monospace, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark){
     :root:not([data-theme="light"]){
       --ink:#E7ECDE;
       --paper:#12160F;
       --paper-raised:#1A1F15;
+      --paper-sunk:#0C0F0A;
       --rule:#333B29;
+      --rule-soft:#262D1E;
       --muted:#9AA48A;
       --det:#5CC2B9;
       --det-soft:#173330;
@@ -36,7 +57,9 @@
     --ink:#E7ECDE;
     --paper:#12160F;
     --paper-raised:#1A1F15;
+    --paper-sunk:#0C0F0A;
     --rule:#333B29;
+    --rule-soft:#262D1E;
     --muted:#9AA48A;
     --det:#5CC2B9;
     --det-soft:#173330;
@@ -46,7 +69,7 @@
     --alert-soft:#3A241D;
   }
 
-  *{box-sizing:border-box;}
+  *{ box-sizing:border-box; }
   body{
     background:var(--paper);
     color:var(--ink);
@@ -54,528 +77,1371 @@
     line-height:1.55;
     -webkit-font-smoothing:antialiased;
   }
-  .page{
-    max-width:920px;
-    margin:0 auto;
-    padding:64px 28px 100px;
-  }
   ::selection{ background:var(--det-soft); color:var(--ink); }
+  :focus-visible{ outline:2px solid var(--det); outline-offset:3px; border-radius:3px; }
+
+  .page{ max-width:1120px; margin:0 auto; padding:56px 28px 96px; }
 
   a{ color:var(--det); }
-  h1,h2,h3{ font-family:var(--font-display); text-wrap:balance; margin:0; }
+  h1,h2,h3,h4{ font-family:var(--font-display); text-wrap:balance; margin:0; font-weight:600; }
   p{ margin:0; }
+  ul,ol{ margin:0; }
+
+  code, .mono{ font-family:var(--font-mono); }
+  code{ font-size:.9em; background:var(--paper-raised); padding:1px 5px; border-radius:4px; border:1px solid var(--rule-soft); }
 
   .eyebrow{
-    font-family:var(--font-mono);
-    font-size:12px;
-    letter-spacing:.14em;
-    text-transform:uppercase;
-    color:var(--muted);
+    font-family:var(--font-mono); font-size:12px; letter-spacing:.14em;
+    text-transform:uppercase; color:var(--muted);
   }
 
+  /* --- hero ---------------------------------------------------- */
   header.hero{
-    display:flex;
-    flex-direction:column;
-    gap:14px;
-    padding-bottom:36px;
-    border-bottom:1px solid var(--rule);
-    margin-bottom:48px;
+    display:flex; flex-direction:column; gap:14px;
+    padding-bottom:28px; border-bottom:1px solid var(--rule);
   }
-  header.hero h1{ font-size:clamp(32px,5vw,46px); font-weight:600; }
-  header.hero .dek{
-    font-size:17px;
-    color:var(--muted);
-    max-width:62ch;
-  }
-  .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  header.hero h1{ font-size:clamp(32px,5vw,46px); }
+  header.hero .dek{ font-size:17px; color:var(--muted); max-width:66ch; }
+  .chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
   .chip{
-    font-family:var(--font-mono);
-    font-size:12px;
-    padding:5px 10px;
-    border:1px solid var(--rule);
-    border-radius:5px;
-    color:var(--muted);
-    background:var(--paper-raised);
+    font-family:var(--font-mono); font-size:12px; padding:5px 10px;
+    border:1px solid var(--rule); border-radius:5px;
+    color:var(--muted); background:var(--paper-raised);
   }
-  .chip.status{
-    border-color:var(--det);
-    color:var(--det);
-  }
+  .chip.live{ border-color:var(--det); color:var(--det); }
 
-  section{ margin-bottom:56px; }
+  /* --- tabs ---------------------------------------------------- */
+  .tabs{
+    display:flex; gap:4px; margin:0 0 40px;
+    border-bottom:1px solid var(--rule); flex-wrap:wrap;
+  }
+  .tabs button{
+    appearance:none; background:none; border:0; cursor:pointer;
+    font-family:var(--font-body); font-size:15px; color:var(--muted);
+    padding:16px 18px; border-bottom:2px solid transparent;
+    margin-bottom:-1px; display:flex; align-items:baseline; gap:9px;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  .tabs button .n{ font-family:var(--font-mono); font-size:11px; opacity:.7; }
+  .tabs button:hover{ color:var(--ink); }
+  .tabs button[aria-selected="true"]{ color:var(--ink); border-bottom-color:var(--det); font-weight:500; }
+  .tabs button[aria-selected="true"] .n{ color:var(--det); opacity:1; }
+  [role="tabpanel"][hidden]{ display:none; }
+
+  /* --- sections ------------------------------------------------ */
+  section{ margin-bottom:52px; }
   section > h2{
-    font-size:14px;
-    font-family:var(--font-mono);
-    text-transform:uppercase;
-    letter-spacing:.1em;
-    color:var(--muted);
-    margin-bottom:16px;
-    display:flex;
-    align-items:center;
-    gap:12px;
+    font-size:14px; font-family:var(--font-mono); text-transform:uppercase;
+    letter-spacing:.1em; color:var(--muted); margin-bottom:16px;
+    display:flex; align-items:center; gap:12px;
   }
-  section > h2::after{
-    content:"";
-    flex:1;
-    height:1px;
-    background:var(--rule);
-  }
+  section > h2::after{ content:""; flex:1; height:1px; background:var(--rule); }
 
-  .prose{ max-width:66ch; font-size:16px; }
+  .prose{ max-width:70ch; font-size:16px; }
   .prose + .prose{ margin-top:14px; }
+  .lede{ font-size:18px; max-width:68ch; }
 
-  figure{ margin:28px 0 0; }
-  figure svg{ display:block; width:100%; height:auto; }
-  figcaption{
-    margin-top:14px;
-    font-size:14px;
-    color:var(--muted);
-    max-width:70ch;
-  }
+  figure{ margin:26px 0 0; }
+  .figscroll{ overflow-x:auto; }
+  figure svg{ display:block; width:100%; height:auto; min-width:760px; }
+  figcaption{ margin-top:16px; font-size:14.5px; color:var(--muted); max-width:74ch; }
 
-  .legend{
-    display:flex;
-    flex-wrap:wrap;
-    gap:18px;
-    margin-top:18px;
-    font-size:13px;
-  }
-  .legend span{ display:inline-flex; align-items:center; gap:7px; }
-  .swatch{ width:12px; height:12px; border-radius:3px; display:inline-block; border:1px solid var(--rule); }
+  .legend{ display:flex; flex-wrap:wrap; gap:8px 20px; margin-top:18px; font-size:13.5px; }
+  .legend span{ display:inline-flex; align-items:center; gap:8px; }
+  .swatch{ width:13px; height:13px; border-radius:3px; display:inline-block; border:1px solid var(--rule); }
 
-  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-  @media (max-width:640px){ .cols{ grid-template-columns:1fr; } }
-
+  /* --- generic surfaces ---------------------------------------- */
   .card{
-    background:var(--paper-raised);
-    border:1px solid var(--rule);
-    border-radius:10px;
-    padding:22px;
+    background:var(--paper-raised); border:1px solid var(--rule);
+    border-radius:10px; padding:22px;
   }
-  .card h3{ font-size:16px; font-weight:600; margin-bottom:10px; }
+  .card h3{ font-size:16.5px; margin-bottom:10px; }
+  .card ul{ padding-left:18px; font-size:14.5px; }
+  .card li + li{ margin-top:9px; }
   .card.hard{ border-left:3px solid var(--alert); }
   .card.soft{ border-left:3px solid var(--prob); }
-  .card ul{ margin:0; padding-left:18px; font-size:14.5px; }
-  .card li + li{ margin-top:8px; }
 
-  .tiles{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
-  @media (max-width:700px){ .tiles{ grid-template-columns:1fr; } }
-  .tile{
+  .cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .cols3{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+  @media (max-width:760px){ .cols, .cols3{ grid-template-columns:1fr; } }
+
+  /* the "not built" treatment — deliberately hueless and dashed so it
+     can never be mistaken for the alert (a real hard limit) or the
+     probabilistic purple. Mirrors PointsCard's roadmap block. */
+  .roadmap{
+    border:1px dashed var(--rule); border-radius:10px;
+    background:var(--paper-sunk); padding:22px;
+    background-image:repeating-linear-gradient(135deg, transparent 0 9px, var(--rule-soft) 9px 10px);
+  }
+  .roadmap > *{ position:relative; }
+  .roadmap .eyebrow{ display:flex; align-items:center; gap:8px; }
+  .roadmap h3{ font-size:16.5px; margin:8px 0 10px; }
+  .roadmap p{ font-size:14.5px; max-width:66ch; }
+  .roadmap p + p{ margin-top:10px; }
+
+  .callout{
+    border-left:3px solid var(--det); background:var(--det-soft);
+    padding:16px 20px; border-radius:0 8px 8px 0; font-size:15px;
+    max-width:78ch;
+  }
+  .callout.alert{ border-left-color:var(--alert); background:var(--alert-soft); }
+  .callout strong{ font-weight:600; }
+
+  /* --- tables --------------------------------------------------- */
+  .tablewrap{ overflow-x:auto; border:1px solid var(--rule); border-radius:10px; background:var(--paper-raised); }
+  table{ border-collapse:collapse; width:100%; font-size:14px; min-width:620px; }
+  th, td{ text-align:left; padding:11px 16px; border-bottom:1px solid var(--rule-soft); vertical-align:top; }
+  thead th{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--muted); background:var(--paper-sunk);
+    border-bottom:1px solid var(--rule); white-space:nowrap;
+  }
+  tbody tr:last-child td{ border-bottom:0; }
+  td.mono, th.mono{ font-family:var(--font-mono); font-size:12.5px; }
+  .num{ font-variant-numeric:tabular-nums; }
+  .yes{ color:var(--det); font-weight:500; }
+  .no{ color:var(--muted); }
+
+  /* --- token swatch grid (tab 1) -------------------------------- */
+  .tokengrid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(232px,1fr)); gap:14px; }
+  .token{
+    border:1px solid var(--rule); border-radius:10px; overflow:hidden;
     background:var(--paper-raised);
-    border:1px solid var(--rule);
-    border-radius:10px;
-    padding:20px;
   }
-  .tile .n{ font-family:var(--font-mono); font-size:26px; font-variant-numeric:tabular-nums; }
-  .tile .label{ font-size:13px; color:var(--muted); margin-top:6px; }
-  .tile .method{ font-size:13px; margin-top:12px; }
-  .tile .target{
-    display:inline-block;
-    margin-top:12px;
-    font-family:var(--font-mono);
-    font-size:11px;
-    letter-spacing:.06em;
-    text-transform:uppercase;
-    color:var(--det);
-    background:var(--det-soft);
-    padding:3px 8px;
-    border-radius:4px;
+  .token .chipbar{ display:flex; height:56px; }
+  .token .chipbar i{ flex:1; display:block; }
+  .token .meta{ padding:11px 13px 13px; }
+  .token .name{ font-family:var(--font-mono); font-size:12.5px; }
+  .token .vals{ font-family:var(--font-mono); font-size:11px; color:var(--muted); margin-top:5px; display:flex; gap:10px; }
+  .token .use{ font-size:12.5px; color:var(--muted); margin-top:8px; line-height:1.45; }
+
+  .modelabel{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted);
   }
 
-  ol.build{ list-style:none; margin:0; padding:0; counter-reset:step; }
-  ol.build li{
-    counter-increment:step;
-    display:grid;
-    grid-template-columns:34px 1fr;
-    gap:14px;
-    padding:14px 0;
-    border-top:1px solid var(--rule);
-    font-size:15px;
+  /* --- live component specimens (tab 1) ------------------------- */
+  .specpair{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:760px){ .specpair{ grid-template-columns:1fr; } }
+  .specframe{ border:1px solid var(--rule); border-radius:10px; overflow:hidden; }
+  .specframe > .cap{
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em;
+    text-transform:uppercase; padding:8px 14px;
+    background:var(--paper-sunk); color:var(--muted);
+    border-bottom:1px solid var(--rule);
   }
+
+  /* The app's OWN tokens, verbatim from frontend/src/index.css, scoped
+     so specimens render on the app's real surface in both of its themes
+     regardless of which theme this document is being read in. Every
+     colour below is set explicitly — nothing inherits from the doc. */
+  .app{
+    --background:oklch(1 0 0);
+    --foreground:oklch(0.145 0 0);
+    --card:oklch(1 0 0);
+    --muted-c:oklch(0.97 0 0);
+    --muted-foreground:oklch(0.535 0 0);
+    --secondary:oklch(0.97 0 0);
+    --secondary-foreground:oklch(0.205 0 0);
+    --accent:oklch(0.97 0 0);
+    --border:oklch(0.922 0 0);
+    --primary:#0e6e52;
+    --primary-foreground:#ffffff;
+    --destructive:oklch(0.577 0.245 27.325);
+    --destructive-text:color-mix(in oklch, var(--destructive) 82%, black);
+    --success:#16a34a;
+    --success-text:#166534;
+    --warning:#d97706;
+    --warning-text:#92400e;
+    --chart-1:#0b8a5e; --chart-2:#2563eb; --chart-3:#be1e74; --chart-4:#8a6d0b;
+    --radius:0.5rem;
+
+    background:var(--background);
+    color:var(--foreground);
+    font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding:22px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+  .app.dark{
+    --background:oklch(0.145 0 0);
+    --foreground:oklch(0.985 0 0);
+    --card:oklch(0.205 0 0);
+    --muted-c:oklch(0.269 0 0);
+    --muted-foreground:oklch(0.708 0 0);
+    --secondary:oklch(0.269 0 0);
+    --secondary-foreground:oklch(0.985 0 0);
+    --accent:oklch(0.269 0 0);
+    --border:oklch(1 0 0 / 18%);
+    --primary:#1fa876;
+    --destructive:oklch(0.704 0.191 22.216);
+    --destructive-text:color-mix(in oklch, var(--destructive) 75%, white);
+    --success:#22c55e;
+    --success-text:#4ade80;
+    --warning:#f59e0b;
+    --warning-text:#fbbf24;
+    --chart-1:#0e9968; --chart-2:#3b74f0; --chart-3:#c92d8a; --chart-4:#9a7a0d;
+  }
+  .app .row{ display:flex; flex-wrap:wrap; gap:9px; align-items:center; }
+  .app .grouplabel{
+    font-size:11px; font-weight:500; text-transform:uppercase;
+    letter-spacing:.06em; color:var(--muted-foreground);
+  }
+  .app .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    height:36px; padding:0 16px; border-radius:calc(var(--radius) - 2px);
+    font-size:14px; font-weight:500; border:1px solid transparent;
+    cursor:default; white-space:nowrap; font-family:inherit;
+  }
+  .app .btn.primary{ background:var(--primary); color:var(--primary-foreground); }
+  .app .btn.secondary{ background:var(--secondary); color:var(--secondary-foreground); }
+  .app .btn.outline{ background:var(--background); color:var(--foreground); border-color:var(--border); }
+  .app .btn.ghost{ background:var(--accent); color:var(--foreground); }
+  .app .btn.destructive{ background:var(--destructive); color:#fff; }
+  /* the app drops destructive to 60% on a dark ground (dark:bg-destructive/60) */
+  .app.dark .btn.destructive{ background:color-mix(in srgb, var(--destructive) 60%, var(--background)); }
+  .app .btn.link{ background:none; color:var(--primary); text-decoration:underline; text-underline-offset:4px; padding:0; height:auto; }
+  .app .btn.sm{ height:32px; padding:0 12px; font-size:13px; }
+  .app .btn.xs{ height:24px; padding:0 8px; font-size:12px; }
+
+  .app .pill{
+    display:inline-flex; align-items:center; gap:5px;
+    border-radius:9999px; padding:2px 9px;
+    font-size:12px; font-weight:500; border:1px solid;
+  }
+  .app .pill.success{ border-color:color-mix(in srgb, var(--success) 25%, transparent); background:color-mix(in srgb, var(--success) 10%, transparent); color:var(--success-text); }
+  .app .pill.warning{ border-color:color-mix(in srgb, var(--warning) 25%, transparent); background:color-mix(in srgb, var(--warning) 10%, transparent); color:var(--warning-text); }
+  .app .pill.danger{ border-color:color-mix(in srgb, var(--destructive) 25%, transparent); background:color-mix(in srgb, var(--destructive) 10%, transparent); color:var(--destructive-text); }
+  .app .pill .dot{ width:7px; height:7px; border-radius:50%; display:block; }
+
+  .app .banner{
+    display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+    border:1px solid color-mix(in srgb, var(--warning) 25%, transparent);
+    background:color-mix(in srgb, var(--warning) 10%, transparent);
+    color:var(--warning-text);
+    border-radius:calc(var(--radius) - 2px); padding:8px 12px;
+    font-size:12px; font-weight:500;
+  }
+  .app .banner .detail{ color:var(--muted-foreground); font-weight:400; }
+  .app .banner .when{ margin-left:auto; color:var(--muted-foreground); font-weight:400; }
+
+  .app table.grid{ width:100%; min-width:0; border-collapse:collapse; font-size:12px; }
+  .app table.grid th{
+    background:none; border:0; border-bottom:1px solid var(--border);
+    color:var(--muted-foreground); font-family:inherit; font-size:12px;
+    font-weight:500; letter-spacing:0; text-transform:none; padding:6px 16px 6px 0;
+  }
+  .app table.grid td{
+    border:0; border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent);
+    padding:6px 16px 6px 0; color:var(--foreground);
+  }
+  .app table.grid tr:last-child td{ border-bottom:0; }
+  .app table.grid td:first-child{ font-weight:500; white-space:nowrap; }
+  .app table.grid td.n{ font-variant-numeric:tabular-nums; }
+  .app .gridfig{
+    border:1px solid var(--border); border-radius:var(--radius);
+    background:color-mix(in srgb, var(--background) 60%, transparent); padding:12px;
+  }
+  .app .gridfig .t{ font-size:14px; font-weight:500; }
+  .app .gridfig .s{ font-size:12px; color:var(--muted-foreground); margin-bottom:8px; }
+
+  .app .legendrow{ display:flex; flex-wrap:wrap; gap:6px 16px; font-size:12px; align-items:center; }
+  .app .legendrow span{ display:inline-flex; align-items:center; gap:6px; color:var(--foreground); }
+  .app .legendrow i{ width:10px; height:10px; border-radius:2px; display:block; }
+
+  .app .cite{
+    display:inline-flex; align-items:center; gap:6px; font-size:12px;
+    color:var(--muted-foreground); text-decoration:underline;
+    text-decoration-style:dotted; text-underline-offset:2px;
+  }
+  .app .costpill{
+    display:inline-flex; align-items:center; gap:6px;
+    border:1px solid var(--border); background:var(--card);
+    border-radius:9999px; padding:6px 12px;
+    box-shadow:0 1px 2px rgb(0 0 0 / .06);
+  }
+  .app .costpill .k{ font-size:12px; color:var(--muted-foreground); }
+  .app .costpill .v{ font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; }
+
+  .app .typespec{ display:flex; flex-direction:column; gap:14px; }
+  .app .typerow{ display:grid; grid-template-columns:1fr; gap:3px; }
+  .app .typerow .k{ font-size:10.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground); }
+  .app .t-title{ font-size:24px; font-weight:600; letter-spacing:-.02em; }
+  .app .t-eyebrow{ font-size:12px; font-weight:500; text-transform:uppercase; letter-spacing:.05em; color:var(--muted-foreground); }
+  .app .t-body{ font-size:14px; line-height:1.65; }
+  .app .t-helper{ font-size:12px; color:var(--muted-foreground); }
+  .app .t-hero{ font-size:30px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.02em; }
+  .app .t-data{ font-size:14px; font-weight:500; font-variant-numeric:tabular-nums; }
+  .app .t-delta{ font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; color:var(--success-text); }
+  .app .t-delta.down{ color:var(--destructive-text); }
+
+  .app .markrow{ display:flex; align-items:flex-end; gap:22px; flex-wrap:wrap; }
+  .app .lockup{ display:flex; align-items:center; gap:10px; }
+  .app .lockup .l1{ font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); line-height:1.2; }
+  .app .lockup .l2{ font-size:18px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
+
+  /* --- misc ----------------------------------------------------- */
+  ol.build{ list-style:none; padding:0; counter-reset:step; }
+  ol.build li{
+    counter-increment:step; display:grid; grid-template-columns:34px 1fr;
+    gap:14px; padding:13px 0; border-top:1px solid var(--rule-soft); font-size:15px;
+  }
+  ol.build li:first-child{ border-top:1px solid var(--rule); }
   ol.build li:last-child{ border-bottom:1px solid var(--rule); }
   ol.build li::before{
     content:counter(step, decimal-leading-zero);
-    font-family:var(--font-mono);
-    color:var(--det);
-    font-size:14px;
-    padding-top:1px;
+    font-family:var(--font-mono); color:var(--det); font-size:13px; padding-top:2px;
   }
+  /* the li is a grid container, so its content must sit in ONE element —
+     bare text plus an inline <strong> would become two grid items and
+     stack into a one-word-per-line column. */
+  ol.build li > span{ display:block; }
 
-  .checklist{ display:flex; flex-direction:column; gap:0; }
-  .checkrow{
-    display:grid;
-    grid-template-columns:22px 1fr auto;
-    align-items:center;
-    gap:12px;
-    padding:11px 0;
-    border-top:1px solid var(--rule);
-    font-size:14.5px;
-  }
-  .checklist .checkrow:last-child{ border-bottom:1px solid var(--rule); }
-  .mark{
-    width:18px; height:18px; border-radius:5px;
-    display:flex; align-items:center; justify-content:center;
-    font-family:var(--font-mono); font-size:11px;
-    border:1px solid var(--rule);
-  }
-  .mark.done{ background:var(--det-soft); border-color:var(--det); color:var(--det); }
-  .mark.pending{ color:var(--muted); }
-  .tag{
-    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:.06em;
-    color:var(--muted);
-  }
-  .tag.done{ color:var(--det); }
+  .kv{ display:grid; grid-template-columns:auto 1fr; gap:8px 18px; font-size:14.5px; }
+  .kv dt{ font-family:var(--font-mono); font-size:12.5px; color:var(--muted); padding-top:3px; }
+  .kv dd{ margin:0; }
 
   footer{
-    margin-top:64px;
-    padding-top:20px;
-    border-top:1px solid var(--rule);
-    font-size:13px;
-    color:var(--muted);
-    display:flex;
-    justify-content:space-between;
-    flex-wrap:wrap;
-    gap:8px;
+    margin-top:64px; padding-top:20px; border-top:1px solid var(--rule);
+    font-size:13px; color:var(--muted);
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;
   }
 
-  code{ font-family:var(--font-mono); font-size:0.92em; background:var(--paper-raised); padding:1px 5px; border-radius:4px; }
+  @media (prefers-reduced-motion: reduce){
+    *{ transition-duration:.01ms !important; animation-duration:.01ms !important; }
+  }
 </style>
 
 <div class="page">
 
   <header class="hero">
-    <span class="eyebrow">Prototype architecture</span>
+    <span class="eyebrow">Technical reference</span>
     <h1>Restaurant Margin Copilot</h1>
-    <p class="dek">Daily close and margin alert for an independent restaurant. Ingests delivery-platform exports, POS exports, and a supplier cost sheet; reconciles them; and answers plain-language questions about the day and the week — flagging what changed and why, before the month closes and it's too late to act.</p>
+    <p class="dek">Daily close and margin alert for an independent restaurant. Go computes every number; two Claude models interpret the question and narrate the answer, and neither ever does arithmetic. This is the reference for how that is actually built &mdash; the design system it ships with, the deterministic engine underneath it, and the whole system with its limits stated rather than hidden.</p>
     <div class="chips">
-      <span class="chip">Go</span>
-      <span class="chip">PostgreSQL</span>
-      <span class="chip">MCP</span>
-      <span class="chip">React</span>
-      <span class="chip">Anthropic API</span>
-      <span class="chip status">● setup in progress</span>
+      <span class="chip">Go 1.x</span>
+      <span class="chip">PostgreSQL 16</span>
+      <span class="chip">MCP &middot; mark3labs/mcp-go</span>
+      <span class="chip">React &middot; Vite &middot; Tailwind v4</span>
+      <span class="chip">Claude Haiku 4.5 + Sonnet 5</span>
+      <span class="chip live">&#9679; prototype, single instance</span>
     </div>
   </header>
 
-  <section>
-    <h2>The job to be done</h2>
-    <p class="prose">The owner already receives all the numbers they need — a delivery-platform payout file, a POS export, a cost sheet — but nobody reconciles them daily, because it's tedious and error-prone by hand. Margin slippage is usually discovered when the month closes: too late to change anything about the week that already happened. This product closes that gap by doing the reconciliation automatically, every day, and letting the owner ask about it in plain language.</p>
-    <p class="prose">It is deliberately <em>not</em> a general restaurant assistant, not an empty chat box, and not a multi-agent system for its own sake. It is one narrow job, done in a way where every number is verifiable.</p>
-  </section>
+  <div class="tabs" role="tablist" aria-label="Reference sections">
+    <button role="tab" id="tab-design" aria-controls="panel-design" aria-selected="true"><span class="n">01</span> Design system</button>
+    <button role="tab" id="tab-reconciliation" aria-controls="panel-reconciliation" aria-selected="false"><span class="n">02</span> Reconciliation engine</button>
+    <button role="tab" id="tab-architecture" aria-controls="panel-architecture" aria-selected="false"><span class="n">03</span> Full architecture</button>
+  </div>
 
-  <section>
-    <h2>Where the line sits</h2>
-    <p class="prose">The central design constraint: no number the user sees is ever produced by a model. Arithmetic happens once, in Go, against Postgres. The model layer only ever receives the result of a typed tool call and narrates it — it cannot see raw rows, and it cannot query the database on its own terms. Two later additions sit on the deterministic side of that same line: an exact-match <strong>answer cache</strong> in front of the ambiguity gate, so a repeated question makes no API call at all, and a <strong>chart-type decision</strong> behind the explanation step, so whether an answer arrives as a table, a bar chart or a pie is derived in Go from which tool ran — never asked of a second model.</p>
+  <!-- ==============================================================
+       TAB 1 — DESIGN SYSTEM
+       ============================================================== -->
+  <div role="tabpanel" id="panel-design" aria-labelledby="tab-design">
 
-    <figure>
-      <svg viewBox="0 0 1400 900" role="img" aria-label="Diagram in three lanes. Lane one, daily ingestion: delivery, POS and cost-sheet files are parsed in Go, reconciled into margins and promotion ROI flags, and written to PostgreSQL; the same run clears the answer cache, because new data can invalidate any previously cached answer. Lane two, question answering: a user question first hits a deterministic exact-match answer cache in Postgres — a hit returns the stored response with no model call at all — and only a miss reaches the Claude Haiku 4.5 ambiguity gate, which either refuses or asks a clarifying question directly, or forwards the question to the Go MCP tool layer; the tool layer reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, whose narration passes through a deterministic Go chart-type decision before reaching the React UI. Lane three, page load: the Close, Promotions and Home pages call plain read-only REST endpoints that query PostgreSQL with no model in the path.">
+    <p class="prose lede">Everything below is what <code>frontend/src/index.css</code> and the components around it actually ship today &mdash; read out of the source, not proposed. The app is <strong>My Business Steward</strong>; the repository and this document keep the working name.</p>
 
-        <defs>
-          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
-          </marker>
-          <marker id="arrowDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
-          </marker>
-          <marker id="arrowAlert" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--alert)"/>
-          </marker>
-        </defs>
+    <section style="margin-top:44px;">
+      <h2>The mark</h2>
+      <p class="prose">Two batwing caf&eacute;/kitchen doors: tall frame posts with a lintel, short panels hinged mid-frame, each a hexagon tapering to a point at the centre gap. Green for the &ldquo;in the red / in the green&rdquo; idiom this product exists to help a restaurant cross. Its three colours are <strong>fixed hex values, not theme tokens</strong> &mdash; the mark keeps one identity in both themes, which is why the specimen below looks identical on either ground.</p>
 
-        <text x="30" y="42" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">DAILY INGESTION — DETERMINISTIC, RUNS ONCE</text>
-        <text x="30" y="322" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">QUESTION ANSWERING — PER USER QUESTION</text>
-        <text x="30" y="742" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">PAGE LOAD — DETERMINISTIC, NO MODEL IN THE PATH</text>
+      <div class="specpair" style="margin-top:22px;">
+        <div class="specframe">
+          <div class="cap">App surface &mdash; light</div>
+          <div class="app">
+            <div class="markrow">
+              <svg width="64" height="64" viewBox="0 0 100 100" role="img" aria-label="My Business Steward mark">
+                <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
+                <line x1="20" y1="14" x2="20" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                <line x1="80" y1="14" x2="80" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                <line x1="20" y1="14" x2="80" y2="14" stroke="#5A6B5E" stroke-width="4"/>
+                <polygon points="20,34 39,34 48,52 39,70 20,70" fill="#1F9D55"/>
+                <polygon points="80,34 61,34 52,52 61,70 80,70" fill="#1F9D55"/>
+              </svg>
+              <div class="lockup">
+                <svg width="36" height="36" viewBox="0 0 100 100" role="img" aria-label="My Business Steward">
+                  <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
+                  <line x1="20" y1="14" x2="20" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                  <line x1="80" y1="14" x2="80" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                  <line x1="20" y1="14" x2="80" y2="14" stroke="#5A6B5E" stroke-width="4"/>
+                  <polygon points="20,34 39,34 48,52 39,70 20,70" fill="#1F9D55"/>
+                  <polygon points="80,34 61,34 52,52 61,70 80,70" fill="#1F9D55"/>
+                </svg>
+                <div>
+                  <div class="l1">My Business</div>
+                  <div class="l2">Steward</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">App surface &mdash; dark</div>
+          <div class="app dark">
+            <div class="markrow">
+              <svg width="64" height="64" viewBox="0 0 100 100" role="img" aria-label="My Business Steward mark">
+                <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
+                <line x1="20" y1="14" x2="20" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                <line x1="80" y1="14" x2="80" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                <line x1="20" y1="14" x2="80" y2="14" stroke="#5A6B5E" stroke-width="4"/>
+                <polygon points="20,34 39,34 48,52 39,70 20,70" fill="#1F9D55"/>
+                <polygon points="80,34 61,34 52,52 61,70 80,70" fill="#1F9D55"/>
+              </svg>
+              <div class="lockup">
+                <svg width="36" height="36" viewBox="0 0 100 100" role="img" aria-label="My Business Steward">
+                  <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
+                  <line x1="20" y1="14" x2="20" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                  <line x1="80" y1="14" x2="80" y2="90" stroke="#5A6B5E" stroke-width="4"/>
+                  <line x1="20" y1="14" x2="80" y2="14" stroke="#5A6B5E" stroke-width="4"/>
+                  <polygon points="20,34 39,34 48,52 39,70 20,70" fill="#1F9D55"/>
+                  <polygon points="80,34 61,34 52,52 61,70 80,70" fill="#1F9D55"/>
+                </svg>
+                <div>
+                  <div class="l1">My Business</div>
+                  <div class="l2">Steward</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <!-- Lane 1: ingestion -->
-        <rect x="40" y="62" width="190" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="135" y="91" text-anchor="middle" font-size="13" fill="currentColor">Delivery / POS /</text>
-        <text x="135" y="108" text-anchor="middle" font-size="13" fill="currentColor">cost-sheet files</text>
+      <dl class="kv" style="margin-top:20px;">
+        <dt>#100D0C</dt><dd>Ink field &mdash; the rounded plate the doors sit in.</dd>
+        <dt>#5A6B5E</dt><dd>Frame posts and lintel. Muted on purpose, so the doors carry the mark.</dd>
+        <dt>#1F9D55</dt><dd>The door panels. Close to the brand green but not the same value &mdash; the mark is not driven by <code>--primary</code>.</dd>
+      </dl>
+      <p class="prose" style="margin-top:16px;">Source: <code>frontend/src/components/Logo/Logo.tsx</code>. Two variants ship: <code>icon</code> (mark only) and <code>lockup</code> (mark + &ldquo;My Business / Steward&rdquo;), the default.</p>
+    </section>
 
-        <line x1="230" y1="97" x2="308" y2="97" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="269" y="84" text-anchor="middle" font-size="11" fill="var(--muted)">parse</text>
+    <section>
+      <h2>Colour &mdash; three families that never borrow from each other</h2>
+      <p class="prose">The governing rule, and the reason there are three palettes rather than one: <strong>a semantic colour must never double as the brand accent, and neither may be reused as a chart series colour.</strong> A pie slice must not read as &ldquo;this one is good&rdquo; because it landed in slot one; a primary button must not read as a success state.</p>
 
-        <rect x="310" y="62" width="220" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="420" y="91" text-anchor="middle" font-size="13" fill="currentColor">Go — reconcile margin</text>
-        <text x="420" y="108" text-anchor="middle" font-size="13" fill="currentColor">+ flag promo ROI</text>
+      <h3 style="font-size:16px;margin:26px 0 12px;">Brand accent</h3>
+      <div class="tokengrid">
+        <div class="token">
+          <div class="chipbar"><i style="background:#0e6e52"></i><i style="background:#1fa876"></i></div>
+          <div class="meta">
+            <div class="name">--primary</div>
+            <div class="vals"><span>#0E6E52</span><span>#1FA876</span></div>
+            <div class="use">CTAs, links, active nav. Deliberately teal-leaning so it never converges on <code>--success</code>. Never used for danger.</div>
+          </div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:#ffffff;border-right:1px solid var(--rule)"></i><i style="background:#ffffff"></i></div>
+          <div class="meta">
+            <div class="name">--primary-foreground</div>
+            <div class="vals"><span>#FFFFFF</span><span>#FFFFFF</span></div>
+            <div class="use">Text and icons on a solid primary fill. 6.23:1 against the light primary.</div>
+          </div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:color-mix(in oklch, #0e6e52 88%, black)"></i><i style="background:color-mix(in oklch, #1fa876 88%, white)"></i></div>
+          <div class="meta">
+            <div class="name">--primary-hover</div>
+            <div class="vals"><span>mix 88% + black</span></div>
+            <div class="use">Derived with <code>color-mix</code>, not a second hardcoded hex. Light darkens toward black; dark lightens toward white.</div>
+          </div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:color-mix(in oklch, #0e6e52 76%, black)"></i><i style="background:color-mix(in oklch, #1fa876 78%, white)"></i></div>
+          <div class="meta">
+            <div class="name">--primary-active</div>
+            <div class="vals"><span>76% light</span><span>78% dark</span></div>
+            <div class="use">Pressed state. Same derivation rule.</div>
+          </div>
+        </div>
+      </div>
+      <p class="prose" style="margin-top:14px;font-size:14.5px;color:var(--muted);">Subtle brand tints (the faint wash behind an active nav item, the Points card header) use Tailwind's opacity modifier &mdash; <code>bg-primary/10</code>, <code>border-primary/25</code> &mdash; rather than separate tokens, so both themes adapt for free.</p>
 
-        <line x1="530" y1="97" x2="608" y2="97" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="569" y="84" text-anchor="middle" font-size="11" fill="var(--muted)">persists</text>
+      <h3 style="font-size:16px;margin:30px 0 12px;">Semantic status</h3>
+      <div class="tokengrid">
+        <div class="token">
+          <div class="chipbar"><i style="background:#16a34a"></i><i style="background:#22c55e"></i></div>
+          <div class="meta">
+            <div class="name">--success / --success-text</div>
+            <div class="vals"><span>#16A34A &middot; #166534</span></div>
+            <div class="use">&ldquo;Clean Close&rdquo; badge, positive ROI, resolved states. Yellow-leaning, so it never reads as the brand green.</div>
+          </div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:#d97706"></i><i style="background:#f59e0b"></i></div>
+          <div class="meta">
+            <div class="name">--warning / --warning-text</div>
+            <div class="vals"><span>#D97706 &middot; #92400E</span></div>
+            <div class="use">&ldquo;Discrepancy Catcher&rdquo;. A caught anomaly is the system working, not a failure &mdash; amber, never red.</div>
+          </div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:oklch(0.577 0.245 27.325)"></i><i style="background:oklch(0.704 0.191 22.216)"></i></div>
+          <div class="meta">
+            <div class="name">--destructive / -text</div>
+            <div class="vals"><span>oklch(.577 .245 27.3)</span></div>
+            <div class="use">Negative-ROI flags, refusals, hard errors. Genuine bad news only.</div>
+          </div>
+        </div>
+      </div>
+      <p class="prose" style="margin-top:14px;font-size:14.5px;color:var(--muted);">Each family carries a <code>-text</code> variant tuned to be legible <em>on a pale tint of itself</em>, which is what the quiet-pill recipe uses. The base value is reserved for solid fills, dots and icons.</p>
+      <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">Both <code>-text</code> values were <strong>re-stepped after measuring, not taken from the Tailwind ramp</strong>: <code>#15803D</code> on the success tint measured 4.49:1 &mdash; a real axe failure &mdash; and <code>#B45309</code> on the warning tint sat exactly on 4.50:1 with no margin. One step darker each clears it with room (6.40:1 and 6.36:1). The base fill colours were left untouched, so badges and chart bars keep the exact hues the palette validation was run against. <code>--muted-foreground</code> moved the same way, from <code>oklch(0.556)</code> to <code>oklch(0.535)</code>, because at the old value it failed on the brand-tinted panel header at the 12&ndash;14px sizes it is actually used at.</p>
 
-        <rect x="610" y="62" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
-        <line x1="610" y1="76" x2="770" y2="76" stroke="var(--det)" stroke-width="1"/>
-        <text x="690" y="104" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
+      <h3 style="font-size:16px;margin:30px 0 12px;">Categorical chart palette</h3>
+      <div class="tokengrid">
+        <div class="token">
+          <div class="chipbar"><i style="background:#0b8a5e"></i><i style="background:#0e9968"></i></div>
+          <div class="meta"><div class="name">--chart-1</div><div class="vals"><span>#0B8A5E</span><span>#0E9968</span></div><div class="use">First series &mdash; often the in-house POS.</div></div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:#2563eb"></i><i style="background:#3b74f0"></i></div>
+          <div class="meta"><div class="name">--chart-2</div><div class="vals"><span>#2563EB</span><span>#3B74F0</span></div><div class="use">Second series &mdash; a delivery platform.</div></div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:#be1e74"></i><i style="background:#c92d8a"></i></div>
+          <div class="meta"><div class="name">--chart-3</div><div class="vals"><span>#BE1E74</span><span>#C92D8A</span></div><div class="use">Third series.</div></div>
+        </div>
+        <div class="token">
+          <div class="chipbar"><i style="background:#8a6d0b"></i><i style="background:#9a7a0d"></i></div>
+          <div class="meta"><div class="name">--chart-4</div><div class="vals"><span>#8A6D0B</span><span>#9A7A0D</span></div><div class="use">Fourth series. A fifth category folds into a neutral &ldquo;Other&rdquo; rather than getting a generated hue.</div></div>
+        </div>
+      </div>
 
-        <!-- Ingestion invalidates the cache, before it writes anything -->
-        <polyline points="420,132 420,230 272,230 272,348" fill="none" stroke="var(--alert)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrowAlert)"/>
-        <text x="440" y="176" font-size="11" fill="var(--alert)">every ingestion run clears the cache first —</text>
-        <text x="440" y="191" font-size="11" fill="var(--alert)">new data can invalidate any cached answer</text>
+      <div class="callout" style="margin-top:20px;">
+        <strong>Validated, not eyeballed.</strong> Both rows were checked with the <code>dataviz</code> skill's <code>scripts/validate_palette.js</code> and recorded in <code>docs/brand.md</code>: lightness band, chroma floor, CVD separation (worst adjacent &Delta;E 11.1 deutan light, 14.0 dark), normal-vision floor (23.9 / 25.7) and contrast vs surface. Contrast was re-checked independently while writing this page: light values run 4.36&ndash;5.79:1 on <code>#FFFFFF</code>, dark values 3.61&ndash;4.93:1 on the dark card &mdash; all clear of the 3:1 floor a non-text mark needs. Dark mode is <em>re-stepped from the same hues</em>, never an automatic flip: the light magenta falls to 2.84:1 on the dark card and would fail.
+      </div>
 
-        <!-- Postgres is the one store behind all three lanes -->
-        <line x1="745" y1="132" x2="745" y2="348" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrowDet)"/>
-        <text x="760" y="252" font-size="11.5" fill="var(--det)">typed tool calls only —</text>
-        <text x="760" y="268" font-size="11.5" fill="var(--det)">no open SQL, ever</text>
+      <p class="prose" style="margin-top:20px;">Charts whose job is <strong>polarity</strong> rather than identity &mdash; margin per period, net ROI per campaign, &ldquo;did this make or lose money&rdquo; &mdash; use the diverging <code>--success</code>/<code>--destructive</code> pair instead, with a zero baseline and direct labels carrying the meaning independently of colour. Colour follows the job, not the component.</p>
 
-        <!-- Lane 2: question path -->
-        <rect x="20" y="350" width="130" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="85" y="390" text-anchor="middle" font-size="13" fill="currentColor">User question</text>
+      <h3 style="font-size:16px;margin:30px 0 12px;">Neutrals</h3>
+      <p class="prose">Inherited from the shadcn scaffold and left alone, in <code>oklch</code>: <code>--background</code> / <code>--foreground</code> (page canvas and body text), <code>--card</code> (one step off the canvas), <code>--muted</code> / <code>--muted-foreground</code>, <code>--border</code>, <code>--input</code>, <code>--ring</code>. Light mode is a true white canvas; dark is <code>oklch(0.145 0 0)</code> with cards at <code>oklch(0.205 0 0)</code>. No new greys are introduced anywhere in the app.</p>
+    </section>
 
-        <line x1="150" y1="385" x2="183" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+    <section>
+      <h2>Type</h2>
+      <p class="prose">The app ships <strong>no webfont</strong>. It renders in the platform UI stack, which is a deliberate call for a phone-first tool a time-poor owner glances at: no font-loading flash, no layout shift on a slow connection, and text that already looks native on the device it's read on. All hierarchy is carried by size, weight and colour.</p>
+      <p class="prose" style="margin-top:12px;">Every piece of UI text maps to exactly one of the roles below, and <strong>every numeric value gets <code>tabular-nums</code></strong> so digits don't jitter when a figure updates or when numbers stack in a column. Nothing larger than <code>text-3xl</code> exists in the app &mdash; it is a glanceable tool, not a marketing page.</p>
 
-        <!-- Answer cache: deterministic, sits IN FRONT of the gate -->
-        <rect x="185" y="350" width="175" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="272" y="378" text-anchor="middle" font-size="13" fill="currentColor">Answer cache</text>
-        <text x="272" y="395" text-anchor="middle" font-size="11" fill="var(--muted)">exact match, Postgres</text>
-        <text x="272" y="411" text-anchor="middle" font-size="10.5" fill="var(--det)">no model call on a hit</text>
-        <text x="272" y="440" text-anchor="middle" font-size="10.5" fill="var(--muted)">normalized question text</text>
+      <div class="specpair" style="margin-top:22px;">
+        <div class="specframe">
+          <div class="cap">Type roles &mdash; light</div>
+          <div class="app">
+            <div class="typespec">
+              <div class="typerow"><span class="k">Page title &middot; text-2xl font-semibold tracking-tight</span><span class="t-title">Today&rsquo;s close</span></div>
+              <div class="typerow"><span class="k">Eyebrow &middot; text-xs font-medium uppercase tracking-wide</span><span class="t-eyebrow">Reconciliation</span></div>
+              <div class="typerow"><span class="k">Hero data number &middot; text-3xl tabular-nums</span><span class="t-hero">$1,284.60</span></div>
+              <div class="typerow"><span class="k">Body &middot; text-sm leading-relaxed</span><span class="t-body">Margin fell $84.20 against the trailing three-day average, almost all of it commission on the delivery platform.</span></div>
+              <div class="typerow"><span class="k">Inline data + delta</span><span><span class="t-data">$412.05</span> &nbsp;<span class="t-delta">+12.4%</span> &nbsp;<span class="t-delta down">&minus;3.2pp</span></span></div>
+              <div class="typerow"><span class="k">Helper &middot; text-xs muted</span><span class="t-helper">Computed 06:12, from three source files.</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">Type roles &mdash; dark</div>
+          <div class="app dark">
+            <div class="typespec">
+              <div class="typerow"><span class="k">Page title &middot; text-2xl font-semibold tracking-tight</span><span class="t-title">Today&rsquo;s close</span></div>
+              <div class="typerow"><span class="k">Eyebrow &middot; text-xs font-medium uppercase tracking-wide</span><span class="t-eyebrow">Reconciliation</span></div>
+              <div class="typerow"><span class="k">Hero data number &middot; text-3xl tabular-nums</span><span class="t-hero">$1,284.60</span></div>
+              <div class="typerow"><span class="k">Body &middot; text-sm leading-relaxed</span><span class="t-body">Margin fell $84.20 against the trailing three-day average, almost all of it commission on the delivery platform.</span></div>
+              <div class="typerow"><span class="k">Inline data + delta</span><span><span class="t-data">$412.05</span> &nbsp;<span class="t-delta">+12.4%</span> &nbsp;<span class="t-delta down">&minus;3.2pp</span></span></div>
+              <div class="typerow"><span class="k">Helper &middot; text-xs muted</span><span class="t-helper">Computed 06:12, from three source files.</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        <line x1="360" y1="385" x2="388" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-        <text x="374" y="372" text-anchor="middle" font-size="10.5" fill="var(--det)">miss</text>
+    <section>
+      <h2>Spacing, radius, layout</h2>
+      <p class="prose">Tailwind's default 4px scale, unmodified &mdash; there are no custom spacing tokens. The conventions that are actually enforced in component code:</p>
+      <div class="tablewrap" style="margin-top:18px;">
+        <table>
+          <thead><tr><th>Context</th><th>Value</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td>Page gutter</td><td class="mono">px-4 sm:px-6 lg:px-8</td><td>Phone-first; the gutter grows, the column does not.</td></tr>
+            <tr><td>Content column</td><td class="mono">max-w-content &rarr; --content-max: 1200px</td><td>One measure for every route, registered through Tailwind v4's <code>--container-*</code> namespace. It replaced an ad-hoc <code>max-w-3xl</code> repeated across five page components, which left more than half a laptop's content area empty.</td></tr>
+            <tr><td>Prose measure</td><td class="mono">max-w-prose-measure &rarr; 68ch</td><td>Held to the 60&ndash;75ch readability band and applied to narration text, so a model's paragraph never runs the full 1200px.</td></tr>
+            <tr><td>Card padding</td><td class="mono">p-4 sm:p-5</td><td>&mdash;</td></tr>
+            <tr><td>Section gap</td><td class="mono">space-y-4 / gap-4</td><td>Layout does the spacing; siblings are never spaced with per-element margins.</td></tr>
+            <tr><td>Label + value cluster</td><td class="mono">gap-1 &ndash; gap-1.5</td><td>Tight enough to read as one unit.</td></tr>
+            <tr><td>Radius ladder</td><td class="mono">--radius: 0.5rem</td><td>Four rungs, each with a job, rather than one radius on everything: <code>sm</code> 4px inline and list, <code>md</code> 6px controls, <code>lg</code> 8px cards, <code>xl</code> 12px section panels &mdash; all derived from the base with <code>calc()</code>.</td></tr>
+            <tr><td>Radius, pills</td><td class="mono">rounded-full</td><td>The pill shape is what makes a badge read as a badge.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
-        <!-- gate diamond -->
-        <polygon points="500,340 610,385 500,430 390,385" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
-        <text x="500" y="381" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
-        <text x="500" y="396" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
-        <text x="500" y="330" text-anchor="middle" font-size="10.5" fill="var(--muted)">Claude Haiku 4.5</text>
+    <section>
+      <h2>Components in use</h2>
+      <p class="prose">Live specimens, both themes, built from the same token values the components use. These are the patterns that actually appear in the shipped UI.</p>
 
-        <!-- ambiguous branch -->
-        <line x1="500" y1="430" x2="500" y2="468" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-        <text x="516" y="452" font-size="11" fill="var(--alert)">ambiguous / unanswerable</text>
+      <h3 style="font-size:16px;margin:26px 0 12px;">Buttons</h3>
+      <p class="prose" style="font-size:14.5px;color:var(--muted);margin-bottom:16px;">Six variants and eight sizes, defined once as a <code>cva</code> recipe in <code>components/ui/button.tsx</code>. Focus is a 3px <code>ring-ring/50</code> plus a border shift &mdash; never removed.</p>
+      <div class="specpair">
+        <div class="specframe">
+          <div class="cap">Light</div>
+          <div class="app">
+            <span class="grouplabel">Variants</span>
+            <div class="row">
+              <span class="btn primary">Run today&rsquo;s close</span>
+              <span class="btn secondary">Secondary</span>
+              <span class="btn outline">Outline</span>
+              <span class="btn ghost">Ghost</span>
+              <span class="btn destructive">Destructive</span>
+              <span class="btn link">Link</span>
+            </div>
+            <span class="grouplabel">Sizes</span>
+            <div class="row">
+              <span class="btn primary xs">xs</span>
+              <span class="btn primary sm">sm</span>
+              <span class="btn primary">default</span>
+            </div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">Dark</div>
+          <div class="app dark">
+            <span class="grouplabel">Variants</span>
+            <div class="row">
+              <span class="btn primary">Run today&rsquo;s close</span>
+              <span class="btn secondary">Secondary</span>
+              <span class="btn outline">Outline</span>
+              <span class="btn ghost">Ghost</span>
+              <span class="btn destructive">Destructive</span>
+              <span class="btn link">Link</span>
+            </div>
+            <span class="grouplabel">Sizes</span>
+            <div class="row">
+              <span class="btn primary xs">xs</span>
+              <span class="btn primary sm">sm</span>
+              <span class="btn primary">default</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <rect x="385" y="470" width="230" height="56" rx="8" fill="var(--alert-soft)" stroke="var(--alert)"/>
-        <text x="500" y="494" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
-        <text x="500" y="511" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
+      <h3 style="font-size:16px;margin:32px 0 12px;">Badges &mdash; the quiet-pill recipe</h3>
+      <p class="prose" style="font-size:14.5px;color:var(--muted);margin-bottom:16px;">Faint tint at 10%, border at 25%, the <code>-text</code> variant for the label. Always <code>text-xs font-medium</code>. Never a modal, never a toast, never animated in &mdash; this is a financial tool for a time-poor owner, not a game. A badge with a detail worth its own beat becomes a single-line banner at <code>px-3 py-2 rounded-md</code>. With no fired badges it renders <em>nothing</em>: the quiet state for a badge system is silence, not an empty placeholder.</p>
+      <div class="specpair">
+        <div class="specframe">
+          <div class="cap">Light</div>
+          <div class="app">
+            <div class="row">
+              <span class="pill success"><span class="dot" style="background:var(--success)"></span>Clean Close</span>
+              <span class="pill warning"><span class="dot" style="background:var(--warning)"></span>Discrepancy Catcher</span>
+              <span class="pill danger"><span class="dot" style="background:var(--destructive)"></span>Negative ROI</span>
+            </div>
+            <div class="banner">
+              <span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--warning);display:block"></span>
+              <span>Discrepancy Catcher</span>
+              <span class="detail">Caught 1 duplicate charge in the delivery export</span>
+              <span class="when">Aug 7</span>
+            </div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">Dark</div>
+          <div class="app dark">
+            <div class="row">
+              <span class="pill success"><span class="dot" style="background:var(--success)"></span>Clean Close</span>
+              <span class="pill warning"><span class="dot" style="background:var(--warning)"></span>Discrepancy Catcher</span>
+              <span class="pill danger"><span class="dot" style="background:var(--destructive)"></span>Negative ROI</span>
+            </div>
+            <div class="banner">
+              <span class="dot" style="width:7px;height:7px;border-radius:50%;background:var(--warning);display:block"></span>
+              <span>Discrepancy Catcher</span>
+              <span class="detail">Caught 1 duplicate charge in the delivery export</span>
+              <span class="when">Aug 7</span>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <polyline points="615,498 1300,498 1300,424" fill="none" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-        <text x="950" y="490" text-anchor="middle" font-size="11" fill="var(--alert)">reaches the user directly — bypasses the model layer</text>
+      <h3 style="font-size:16px;margin:32px 0 12px;">Chart legend &amp; data grid</h3>
+      <p class="prose" style="font-size:14.5px;color:var(--muted);margin-bottom:16px;">Legend swatches take <code>--chart-1..4</code> in fixed order, never cycled. The grid is deliberately plain &mdash; no sorting, no filtering, no pagination: these carry a handful of rows scoped to one answer, and every control added is one more thing the reader must understand before trusting the number. Wide content scrolls inside its own container so a long detail cell never pushes the chat bubble sideways.</p>
+      <div class="specpair">
+        <div class="specframe">
+          <div class="cap">Light</div>
+          <div class="app">
+            <div class="legendrow">
+              <span><i style="background:var(--chart-1)"></i>In-house POS</span>
+              <span><i style="background:var(--chart-2)"></i>iFood</span>
+              <span><i style="background:var(--chart-3)"></i>Just Eat Takeaway</span>
+              <span><i style="background:var(--chart-4)"></i>Other</span>
+            </div>
+            <div class="gridfig">
+              <div class="t">Flagged days</div>
+              <div class="s">3 of 14 reconciled days carried a discrepancy flag</div>
+              <table class="grid">
+                <thead><tr><th>Date</th><th>Discrepancy</th><th>Detail</th></tr></thead>
+                <tbody>
+                  <tr><td>2026-08-03</td><td>Duplicate order removed</td><td>order 4471 duplicated &mdash; counted once</td></tr>
+                  <tr><td>2026-08-07</td><td>Missing delivery source</td><td>POS and cost data only</td></tr>
+                  <tr><td>2026-08-11</td><td>Anomaly threshold exceeded</td><td class="n">&minus;24.6% vs trailing 3-day</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">Dark</div>
+          <div class="app dark">
+            <div class="legendrow">
+              <span><i style="background:var(--chart-1)"></i>In-house POS</span>
+              <span><i style="background:var(--chart-2)"></i>iFood</span>
+              <span><i style="background:var(--chart-3)"></i>Just Eat Takeaway</span>
+              <span><i style="background:var(--chart-4)"></i>Other</span>
+            </div>
+            <div class="gridfig">
+              <div class="t">Flagged days</div>
+              <div class="s">3 of 14 reconciled days carried a discrepancy flag</div>
+              <table class="grid">
+                <thead><tr><th>Date</th><th>Discrepancy</th><th>Detail</th></tr></thead>
+                <tbody>
+                  <tr><td>2026-08-03</td><td>Duplicate order removed</td><td>order 4471 duplicated &mdash; counted once</td></tr>
+                  <tr><td>2026-08-07</td><td>Missing delivery source</td><td>POS and cost data only</td></tr>
+                  <tr><td>2026-08-11</td><td>Anomaly threshold exceeded</td><td class="n">&minus;24.6% vs trailing 3-day</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
 
-        <!-- cache-hit branch: straight to the UI, nothing billed -->
-        <polyline points="272,420 272,600 1345,600 1345,424" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-        <text x="800" y="592" text-anchor="middle" font-size="11" fill="var(--det)">hit — the stored response is returned verbatim; zero tokens, zero cost, and the hit is logged in its own ledger, never as a model interaction</text>
+      <h3 style="font-size:16px;margin:32px 0 12px;">Provenance citation &amp; the cost pill</h3>
+      <p class="prose" style="font-size:14.5px;color:var(--muted);margin-bottom:16px;">Every number carries a citation: source file, rows, period. The dotted underline says &ldquo;this is a citation, not prose&rdquo; at a glance. A refused answer renders <em>no</em> citation rather than an empty one. The running-cost pill is a fixed bottom-right stat at <code>shadow-sm</code> &mdash; always visible, never competing with the day's margin figure.</p>
+      <div class="specpair">
+        <div class="specframe">
+          <div class="cap">Light</div>
+          <div class="app">
+            <div class="row">
+              <span class="cite">POS export &middot; rows 12&ndash;47 &middot; Aug 21</span>
+              <span class="cite">delivery_platform_export.csv &middot; row 118</span>
+            </div>
+            <div class="row"><span class="costpill"><span class="k">Session cost</span><span class="v">$0.014</span></span></div>
+          </div>
+        </div>
+        <div class="specframe">
+          <div class="cap">Dark</div>
+          <div class="app dark">
+            <div class="row">
+              <span class="cite">POS export &middot; rows 12&ndash;47 &middot; Aug 21</span>
+              <span class="cite">delivery_platform_export.csv &middot; row 118</span>
+            </div>
+            <div class="row"><span class="costpill"><span class="k">Session cost</span><span class="v">$0.014</span></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-        <!-- answerable branch -->
-        <line x1="610" y1="385" x2="668" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-        <text x="639" y="372" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
+    <section>
+      <h2>The honesty pattern</h2>
+      <p class="prose">One component convention matters more than any colour rule here, because it is how this product handles the gap between what is built and what is pitched. <code>PointsCard.tsx</code> puts a <strong>real, derived balance</strong> and an explicitly-labelled <strong>roadmap block</strong> in the same card, in the same voice, separated visually by a border and a muted ground. The roadmap half is written as a destination, not as a disabled button: there is nothing to click, and pretending otherwise would be exactly the fabricated capability the whole product refuses to ship.</p>
+      <p class="prose" style="margin-top:12px;">The same split is used on this page's third tab, for the same reason.</p>
+      <div class="callout" style="margin-top:20px;">
+        <strong>The rule in one line.</strong> If a figure is real, show it and cite it. If it is not built, say so in the same breath, in the same card, and give it a visual treatment that cannot be mistaken for a live control.
+      </div>
+    </section>
+  </div>
 
-        <rect x="670" y="350" width="150" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="745" y="380" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-        <text x="745" y="397" text-anchor="middle" font-size="12" fill="currentColor">(Go, typed tools)</text>
+  <!-- ==============================================================
+       TAB 2 — RECONCILIATION ENGINE
+       ============================================================== -->
+  <div role="tabpanel" id="panel-reconciliation" aria-labelledby="tab-reconciliation" hidden>
 
-        <line x1="820" y1="385" x2="858" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-        <text x="839" y="340" text-anchor="middle" font-size="10.5" fill="var(--muted)">typed result:</text>
-        <text x="839" y="437" text-anchor="middle" font-size="10.5" fill="var(--muted)">numbers + provenance</text>
+    <p class="prose lede">This is the part of the system that produces every number the product will ever show. It is ordinary Go, run from a CLI flag, against ordinary Postgres.</p>
 
-        <rect x="860" y="350" width="160" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
-        <text x="940" y="380" text-anchor="middle" font-size="13" fill="currentColor">Claude Sonnet 5</text>
-        <text x="940" y="397" text-anchor="middle" font-size="13" fill="currentColor">— explain</text>
-
-        <line x1="1020" y1="385" x2="1058" y2="385" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-
-        <!-- Chart-type decision: deterministic, never a second model call -->
-        <rect x="1060" y="350" width="170" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="1145" y="374" text-anchor="middle" font-size="13" fill="currentColor">Chart-type decision</text>
-        <text x="1145" y="391" text-anchor="middle" font-size="11" fill="var(--muted)">table / bar / pie / none</text>
-        <text x="1145" y="407" text-anchor="middle" font-size="10.5" fill="var(--det)">Go, from the tool result</text>
-        <text x="1145" y="440" text-anchor="middle" font-size="10.5" fill="var(--muted)">never a second model call</text>
-
-        <line x1="1230" y1="385" x2="1258" y2="385" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-
-        <rect x="1260" y="350" width="130" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="1325" y="374" text-anchor="middle" font-size="13" fill="currentColor">React UI</text>
-        <text x="1325" y="391" text-anchor="middle" font-size="11" fill="currentColor">answer, chart,</text>
-        <text x="1325" y="407" text-anchor="middle" font-size="11" fill="currentColor">provenance</text>
-
-        <!-- Lane 3: plain read-only data endpoints, no model anywhere -->
-        <rect x="40" y="760" width="230" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="155" y="789" text-anchor="middle" font-size="13" fill="currentColor">Close / Promotions /</text>
-        <text x="155" y="806" text-anchor="middle" font-size="13" fill="currentColor">Home pages</text>
-
-        <line x1="270" y1="795" x2="328" y2="795" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-
-        <rect x="330" y="752" width="360" height="86" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="510" y="778" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/reconciliation</text>
-        <text x="510" y="797" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/promotions</text>
-        <text x="510" y="816" text-anchor="middle" font-size="12.5" font-family="var(--font-mono)" fill="currentColor">GET /api/badges  (badges + points)</text>
-
-        <line x1="690" y1="795" x2="738" y2="795" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-        <text x="714" y="782" text-anchor="middle" font-size="10.5" fill="var(--det)">reads</text>
-
-        <rect x="740" y="760" width="160" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
-        <line x1="740" y1="774" x2="900" y2="774" stroke="var(--det)" stroke-width="1"/>
-        <text x="820" y="802" text-anchor="middle" font-size="13" fill="currentColor">PostgreSQL</text>
-
-        <text x="930" y="783" font-size="11.5" fill="var(--det)">Same rendering as the MCP tools, from the same rows —</text>
-        <text x="930" y="799" font-size="11.5" fill="var(--det)">so a page and a chat answer about the same day</text>
-        <text x="930" y="815" font-size="11.5" fill="var(--det)">cannot disagree. Points are derived per request, never stored.</text>
-
-      </svg>
-      <figcaption>Every figure the UI shows is computed left of the gate, in Go and Postgres. Two deterministic steps now bracket the model layer: an exact-match answer cache in front of it, so a repeated question costs nothing at all, and a chart-type decision behind it, so which chart an answer gets is derived from the tool result rather than asked of a second model. The dashed line is still the one boundary in this system that Claude never crosses.</figcaption>
-    </figure>
-
-    <div class="legend">
-      <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic — code, no model, ground truth</span>
-      <span><i class="swatch" style="background:var(--prob-soft);border-color:var(--prob)"></i>Probabilistic — model, interprets and narrates only</span>
-      <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit — refuses rather than guesses</span>
+    <div class="callout" style="margin-top:26px;">
+      <strong>Zero model involvement in anything on this tab.</strong> No Anthropic API key is needed to run any of it. No prompt exists in any of these packages. <code>internal/reconcile</code> does no I/O at all &mdash; it takes parsed records and returns computed structs, and it does not know that Postgres, MCP, or Claude exist. It was built and proven with tests <em>before the first LLM call existed in the repository</em>, which is the whole reason the numbers can be trusted later.
     </div>
-  </section>
 
-  <section>
-    <h2>Module architecture — ports &amp; adapters</h2>
-    <p class="prose">The flow diagram above shows what happens when a question arrives. This shows how the Go code itself is organized, so the boundary above is enforced by the package dependency graph — not just a rule someone has to remember.</p>
+    <section style="margin-top:44px;">
+      <h2>The pipeline</h2>
 
-    <figure>
-      <svg viewBox="0 0 1240 520" role="img" aria-label="Diagram: internal/ingest and cmd/server call into internal/reconcile, the pure domain core with zero outgoing calls. cmd/server also persists results to internal/storage. internal/mcptools queries internal/storage read-only. A dashed boundary marks the only crossing point for LLM code: internal/explain (Claude Sonnet 5) calls internal/mcptools for tool results; internal/ambiguity (Claude Haiku 4.5) has no path to real data at all, since it only classifies question text. Both log to internal/instrumentation.">
-        <defs>
-          <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
-          </marker>
-          <marker id="arrow2Det" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
-          </marker>
-        </defs>
+      <figure>
+        <div class="figscroll">
+        <svg viewBox="0 0 1240 1012" role="img" aria-label="Diagram of the deterministic reconciliation pipeline in four numbered stages, plus a stage zero. Stage zero: every ingestion run clears the whole answer cache before a single row is written. Stage one: three source CSV files — a delivery-platform export, a POS export and a supplier cost sheet — feed into stage two. Stage two: internal/ingest parses each with a typed parser, matching columns by keyword and resolving two different date formats, refusing rather than misparsing anything else. Stage three: internal/reconcile, pure domain logic with no I/O, performs duplicate removal and refund netting, computes margin per calendar day as gross minus commission minus refunds minus input costs, applies a twenty percent anomaly threshold against a trailing three-day average, emits five named discrepancy flags, and computes promotion ROI by tag-joining on campaign identifier, leaving ROI nil rather than zero when attribution is unavailable. Stage four: results are persisted to PostgreSQL in the daily_reconciliation and promotion_roi_record tables.">
 
-        <line x1="775" y1="40" x2="775" y2="480" stroke="var(--alert)" stroke-width="1.5" stroke-dasharray="6 4"/>
-        <text x="785" y="55" font-size="11.5" fill="var(--alert)">Principle III boundary —</text>
-        <text x="785" y="70" font-size="11.5" fill="var(--alert)">the only crossing point</text>
+          <defs>
+            <marker id="rArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
+            </marker>
+          </defs>
 
-        <rect x="30" y="70" width="180" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)"/>
-        <text x="120" y="100" text-anchor="middle" font-size="13" fill="currentColor">internal/ingest</text>
-        <text x="120" y="117" text-anchor="middle" font-size="11" fill="var(--muted)">parses CSV exports</text>
+          <!-- stage 0 -->
+          <text x="40" y="34" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">0 &#183; INVALIDATE, FIRST</text>
+          <rect x="40" y="46" width="1160" height="86" rx="10" fill="var(--alert-soft)" stroke="var(--alert)" stroke-dasharray="6 4"/>
+          <text x="64" y="74" font-size="13.5" font-weight="600" fill="currentColor">Clear the whole answer cache &mdash; before a single row is written</text>
+          <text x="64" y="97" font-size="11.5" fill="currentColor">New data can change any cached answer. If the run then fails partway, a dropped cache costs a few re-asked questions;</text>
+          <text x="64" y="115" font-size="11.5" fill="currentColor">clearing only on success could leave answers cached against data that has already been partly rewritten.</text>
 
-        <rect x="30" y="260" width="180" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)"/>
-        <text x="120" y="290" text-anchor="middle" font-size="13" fill="currentColor">cmd/server</text>
-        <text x="120" y="307" text-anchor="middle" font-size="11" fill="var(--muted)">HTTP entrypoint</text>
+          <!-- stage 1 -->
+          <text x="40" y="164" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">1 &#183; SOURCE FILES</text>
+          <rect x="40" y="176" width="360" height="80" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="220" y="206" text-anchor="middle" font-size="13" fill="currentColor">Delivery-platform export</text>
+          <text x="220" y="228" text-anchor="middle" font-size="11" fill="var(--muted)">orders, commission, refunds, campaign tags</text>
 
-        <line x1="210" y1="105" x2="255" y2="180" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrow2Det)"/>
-        <text x="245" y="150" font-size="10.5" fill="var(--det)">parsed records</text>
-        <line x1="210" y1="295" x2="255" y2="240" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrow2Det)"/>
-        <text x="240" y="270" font-size="10.5" fill="var(--det)">invokes</text>
+          <rect x="440" y="176" width="360" height="80" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="620" y="206" text-anchor="middle" font-size="13" fill="currentColor">In-house POS export</text>
+          <text x="620" y="228" text-anchor="middle" font-size="11" fill="var(--muted)">gross sales, order status</text>
 
-        <rect x="260" y="150" width="210" height="100" rx="8" fill="var(--det-soft)" stroke="var(--det)" stroke-width="2.5"/>
-        <text x="365" y="190" text-anchor="middle" font-size="13.5" fill="currentColor">internal/reconcile</text>
-        <text x="365" y="207" text-anchor="middle" font-size="11" fill="var(--muted)">pure domain logic</text>
-        <text x="365" y="228" text-anchor="middle" font-size="10.5" fill="var(--det)">zero outgoing calls</text>
+          <rect x="840" y="176" width="360" height="80" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="1020" y="206" text-anchor="middle" font-size="13" fill="currentColor">Supplier cost sheet</text>
+          <text x="1020" y="228" text-anchor="middle" font-size="11" fill="var(--muted)">invoice date, amount</text>
 
-        <line x1="470" y1="200" x2="515" y2="105" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrow2Det)"/>
-        <line x1="210" y1="290" x2="515" y2="105" stroke="var(--det)" stroke-width="1.2" stroke-dasharray="2 3" marker-end="url(#arrow2Det)" opacity="0.6"/>
-        <text x="530" y="200" font-size="10.5" fill="var(--det)">cmd/server persists result</text>
+          <!-- funnel into stage 2 -->
+          <path d="M220,256 L220,284 L1020,284 L1020,256" fill="none" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="620" y1="256" x2="620" y2="284" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="620" y1="284" x2="620" y2="318" stroke="var(--det)" stroke-width="1.5" marker-end="url(#rArrow)"/>
 
-        <rect x="520" y="70" width="190" height="70" rx="8" fill="var(--paper-raised)" stroke="var(--det)"/>
-        <text x="615" y="100" text-anchor="middle" font-size="13" fill="currentColor">internal/storage</text>
-        <text x="615" y="117" text-anchor="middle" font-size="11" fill="var(--muted)">sqlc + pgx</text>
+          <!-- stage 2 -->
+          <text x="40" y="310" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">2 &#183; PARSE</text>
+          <rect x="40" y="324" width="1160" height="104" rx="10" fill="var(--paper-raised)" stroke="var(--det)"/>
+          <text x="64" y="352" font-size="13.5" font-weight="600" fill="currentColor">internal/ingest &mdash; one typed parser per source</text>
+          <text x="64" y="376" font-size="11.5" fill="currentColor">Columns are matched by keyword, not by fixed position, so a renamed or reordered header doesn&rsquo;t silently drop a field.</text>
+          <text x="64" y="396" font-size="11.5" fill="currentColor">Dates: 2026-08-07 from the platform, 07/08/2026 from the POS. Resolved by whichever part exceeds 12, else DD/MM/YYYY &mdash; a</text>
+          <text x="64" y="414" font-size="11.5" fill="currentColor">documented assumption. Anything outside those forms is a parse error, never a silent misparse onto the wrong day.</text>
 
-        <rect x="520" y="260" width="190" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-        <text x="615" y="290" text-anchor="middle" font-size="13" fill="currentColor">internal/mcptools</text>
-        <text x="615" y="307" text-anchor="middle" font-size="11" fill="var(--muted)">typed tool port</text>
+          <line x1="620" y1="428" x2="620" y2="466" stroke="var(--det)" stroke-width="1.5" marker-end="url(#rArrow)"/>
 
-        <line x1="615" y1="140" x2="615" y2="255" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrow2Det)"/>
-        <text x="630" y="200" font-size="10.5" fill="var(--det)">queries, read-only</text>
+          <!-- stage 3 -->
+          <text x="40" y="458" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">3 &#183; RECONCILE</text>
+          <rect x="40" y="472" width="1160" height="352" rx="12" fill="var(--det-soft)" stroke="var(--det)" stroke-width="2"/>
+          <text x="64" y="502" font-size="13.5" font-weight="600" fill="currentColor">internal/reconcile &mdash; pure domain logic. No I/O: it does not know Postgres, MCP or Claude exist.</text>
 
-        <line x1="710" y1="295" x2="845" y2="295" stroke="var(--prob)" stroke-width="1.5" marker-end="url(#arrow2)"/>
-        <text x="778" y="282" text-anchor="middle" font-size="10.5" fill="var(--prob)">tool calls</text>
+          <rect x="64" y="518" width="360" height="120" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="80" y="546" font-size="13" font-weight="600" fill="currentColor">Dedupe &amp; refund netting</text>
+          <text x="80" y="570" font-size="11.5" fill="currentColor">Byte-identical duplicate delivery rows</text>
+          <text x="80" y="588" font-size="11.5" fill="currentColor">collapse to one, flagged by row number.</text>
+          <text x="80" y="612" font-size="11.5" fill="currentColor">Refunds net against the original order&rsquo;s</text>
+          <text x="80" y="630" font-size="11.5" fill="currentColor">date; the commission reversal nets with it.</text>
 
-        <rect x="850" y="70" width="190" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)" stroke-dasharray="4 3"/>
-        <text x="945" y="100" text-anchor="middle" font-size="13" fill="currentColor">internal/ambiguity</text>
-        <text x="945" y="117" text-anchor="middle" font-size="11" fill="var(--muted)">Claude Haiku 4.5</text>
+          <rect x="440" y="518" width="360" height="120" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="456" y="546" font-size="13" font-weight="600" fill="currentColor">Margin, per calendar day</text>
+          <text x="456" y="570" font-size="11.5" fill="currentColor">gross &minus; commission &minus; refunds &minus; input costs</text>
+          <text x="456" y="594" font-size="11.5" fill="currentColor">Commission is recomputed from subtotal &times;</text>
+          <text x="456" y="612" font-size="11.5" fill="currentColor">rate, then cross-checked against the file.</text>
+          <text x="456" y="630" font-size="11.5" fill="currentColor">Integer cents throughout &mdash; never float64.</text>
 
-        <rect x="850" y="260" width="190" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
-        <text x="945" y="290" text-anchor="middle" font-size="13" fill="currentColor">internal/explain</text>
-        <text x="945" y="307" text-anchor="middle" font-size="11" fill="var(--muted)">Claude Sonnet 5</text>
+          <rect x="816" y="518" width="360" height="120" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="832" y="546" font-size="13" font-weight="600" fill="currentColor">Anomaly threshold</text>
+          <text x="832" y="570" font-size="11.5" fill="currentColor">A day is flagged when gross revenue deviates</text>
+          <text x="832" y="588" font-size="11.5" fill="currentColor">more than 20% from a trailing 3-day average.</text>
+          <text x="832" y="612" font-size="11.5" fill="currentColor">A day missing its delivery export is neither</text>
+          <text x="832" y="630" font-size="11.5" fill="currentColor">flagged nor let into any other day&rsquo;s baseline.</text>
 
-        <line x1="945" y1="140" x2="945" y2="395" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
-        <line x1="945" y1="330" x2="945" y2="395" stroke="currentColor" stroke-width="1.2" marker-end="url(#arrow2)"/>
-        <text x="960" y="370" font-size="10.5" fill="var(--muted)">logs</text>
+          <rect x="64" y="654" width="548" height="150" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="80" y="682" font-size="13" font-weight="600" fill="currentColor">Discrepancy flags &mdash; five, every one named</text>
+          <text x="80" y="708" font-family="var(--font-mono)" font-size="11" fill="var(--det)">duplicate_order_removed &#183; missing_delivery_source</text>
+          <text x="80" y="726" font-family="var(--font-mono)" font-size="11" fill="var(--det)">commission_mismatch &#183; pos_non_completed_row_excluded</text>
+          <text x="80" y="744" font-family="var(--font-mono)" font-size="11" fill="var(--det)">anomaly_threshold_exceeded</text>
+          <text x="80" y="770" font-size="11.5" fill="currentColor">A day with no delivery rows still produces a reconciliation, carrying</text>
+          <text x="80" y="788" font-size="11.5" fill="currentColor">the missing-source flag. Never zeroed, never dropped.</text>
 
-        <rect x="850" y="400" width="190" height="60" rx="8" fill="var(--paper-raised)" stroke="var(--rule)"/>
-        <text x="945" y="425" text-anchor="middle" font-size="13" fill="currentColor">internal/instrumentation</text>
-        <text x="945" y="442" text-anchor="middle" font-size="10.5" fill="var(--muted)">logs every LLM call</text>
-      </svg>
-      <figcaption>internal/reconcile has zero outgoing calls — it doesn't know Postgres, MCP, or Claude exist. internal/ambiguity has no path to real data at all: it only classifies question text, so it can't leak a number even by accident. internal/explain is the one package that crosses the boundary, and only through internal/mcptools's typed port. Two packages sit entirely on the left of the boundary and never touch a model: <code>internal/answercache</code>, which short-circuits a repeated question before internal/ambiguity runs, and <code>internal/httpapi</code>'s chart-type derivation, which reads the tool result internal/explain already received and picks the form to render it in.</figcaption>
-    </figure>
-  </section>
+          <rect x="628" y="654" width="548" height="150" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="644" y="682" font-size="13" font-weight="600" fill="currentColor">Promotion ROI</text>
+          <text x="644" y="708" font-size="11.5" fill="currentColor">Tag-join on campaign_id, completed rows only, after the same</text>
+          <text x="644" y="726" font-size="11.5" fill="currentColor">dedupe pass. ROI = attributed incremental revenue &minus; spend.</text>
+          <text x="644" y="752" font-size="11.5" fill="currentColor">No tagged orders &rarr; orders, revenue and ROI are all nil together.</text>
+          <text x="644" y="770" font-size="11.5" fill="currentColor">Never a zero: a zero would read as &ldquo;broke even&rdquo; when the truth</text>
+          <text x="644" y="788" font-size="11.5" fill="currentColor">is &ldquo;unknown&rdquo;. The refusal is enforced here, at the source.</text>
 
-  <section>
-    <h2>Hard limits &amp; soft limits</h2>
-    <div class="cols">
-      <div class="card hard">
-        <h3>Hard limits</h3>
-        <ul>
-          <li>Refuses rather than estimates when data is missing or incomplete.</li>
-          <li>No open SQL, no free-form computation — defined, typed MCP tools only.</li>
-          <li>Chart selection is deterministic Go, from the tool name and result shape — never a second model call deciding how a financial figure is drawn.</li>
-          <li>The answer cache matches exact question text only (whitespace and case ignored). A paraphrase is a new question and pays full price — a disclosed limitation, not a bug: semantic matching would put a probabilistic step in front of a deterministic lookup, and serving the answer to a question nobody asked is worse than paying for the call.</li>
-          <li>A cache hit is the <em>absence</em> of a model interaction. It is never written to <code>question_interaction</code>, which would fabricate an API call and inflate the cost total, and never left unrecorded — it goes to its own <code>answer_cache_hit</code> ledger carrying the cost it avoided.</li>
-          <li>Timeout on every tool call; explicit cap on loop iterations.</li>
-          <li>Every number carries provenance: which file, which rows, which period.</li>
-        </ul>
+          <line x1="620" y1="824" x2="620" y2="870" stroke="var(--det)" stroke-width="1.5" marker-end="url(#rArrow)"/>
+
+          <!-- stage 4 -->
+          <text x="40" y="862" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">4 &#183; PERSIST</text>
+          <rect x="140" y="874" width="960" height="112" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="140" y1="890" x2="1100" y2="890" stroke="var(--det)" stroke-width="1"/>
+          <text x="168" y="908" font-size="13" font-weight="600" fill="currentColor">PostgreSQL</text>
+          <rect x="168" y="918" width="440" height="48" rx="7" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="388" y="939" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="currentColor">daily_reconciliation</text>
+          <text x="388" y="956" text-anchor="middle" font-size="10.5" fill="var(--muted)">one row per calendar day, with its flags and row refs</text>
+          <rect x="632" y="918" width="440" height="48" rx="7" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="852" y="939" text-anchor="middle" font-family="var(--font-mono)" font-size="12" fill="currentColor">promotion_roi_record</text>
+          <text x="852" y="956" text-anchor="middle" font-size="10.5" fill="var(--muted)">one row per campaign per period</text>
+        </svg>
+        </div>
+        <figcaption>Run by <code>go run ./cmd/server -ingest &lt;dir&gt;</code> (and <code>-ingest-promo</code> for stage 3's right-hand half). Stage 0 is a precondition rather than a data flow, which is why no arrow leaves it. Everything from stage 1 to stage 4 is one process, one pass, no network calls of any kind.</figcaption>
+      </figure>
+
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic &mdash; code, no model, ground truth</span>
+        <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit &mdash; refuses rather than guesses</span>
       </div>
-      <div class="card soft">
-        <h3>Soft limits</h3>
-        <ul>
-          <li>The model is nudged toward the right framing, not hard-coded to one phrasing.</li>
-          <li>Free to self-correct on rephrasings and unexpected question shapes.</li>
-          <li>Clarifying questions are asked rather than assumptions being silently made.</li>
-          <li>Assumptions that <em>are</em> taken are always stated back to the user.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <h2>Evaluation plan</h2>
-    <p class="prose">A harness in <code>evaluation/</code> that produces real numbers for the write-up — including where it fails. Nothing below is measured yet; these are the targets the harness is built against.</p>
-    <div class="tiles" style="margin-top:20px;">
-      <div class="tile">
-        <div class="n">15–20</div>
-        <div class="label">Accuracy questions</div>
-        <div class="method">Known correct answers computed independently from the fixture data.</div>
-        <div class="target">Target: run &amp; report</div>
+    <section>
+      <h2>The five discrepancy flags, in full</h2>
+      <p class="prose">The fixture data contains deliberate mess &mdash; a duplicate order, a refund, a missing day, an inconsistent date format &mdash; because the mess is what makes reconciliation logic worth showing. Each flag names what happened and which rows it happened to, so an adjustment is never silent.</p>
+      <div class="tablewrap" style="margin-top:18px;">
+        <table>
+          <thead><tr><th>Flag</th><th>Fires when</th><th>What the engine does</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="mono">duplicate_order_removed</td>
+              <td>Two delivery rows are identical across platform, order id, timestamps, all amounts, status, campaign and notes.</td>
+              <td>Counts it once. The flag names both row numbers and the file. Treated as an export or webhook-retry glitch, not a second line item.</td>
+            </tr>
+            <tr>
+              <td class="mono">missing_delivery_source</td>
+              <td>A calendar day has POS or cost data but zero delivery rows.</td>
+              <td>Still produces a reconciliation for that day from whatever sources exist. Delivery revenue is <em>absent</em>, not zeroed, and the day is excluded from every other day's anomaly baseline.</td>
+            </tr>
+            <tr>
+              <td class="mono">commission_mismatch</td>
+              <td>The file's own <code>commission_amount</code> differs by more than a cent from <code>subtotal &times; rate</code>.</td>
+              <td>Uses the recomputed figure and flags the discrepancy with both values. The file's number is checked, never trusted.</td>
+            </tr>
+            <tr>
+              <td class="mono">pos_non_completed_row_excluded</td>
+              <td>A POS row carries a status other than completed (or blank).</td>
+              <td>Excludes it from gross sales and says so, rather than quietly including or dropping it.</td>
+            </tr>
+            <tr>
+              <td class="mono">anomaly_threshold_exceeded</td>
+              <td>Total gross revenue deviates more than 20% from a trailing 3-day average of complete days.</td>
+              <td>Flags the day with the actual figures and the threshold. 20% is set just above this fixture set's real peak variance (~18% at a 3-day window) &mdash; tunable, not asserted as universal.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div class="tile">
-        <div class="n">5 × 3</div>
-        <div class="label">Consistency phrasings</div>
-        <div class="method">5 questions asked 3 different ways each — do the answers agree?</div>
-        <div class="target">Target: run &amp; report</div>
-      </div>
-      <div class="tile">
-        <div class="n">5</div>
-        <div class="label">Refusal-correctness questions</div>
-        <div class="method">Unanswerable from the data. Correct behavior is refusal, not a plausible guess.</div>
-        <div class="target">Target: run &amp; report</div>
-      </div>
-    </div>
-  </section>
+    </section>
 
-  <section>
-    <h2>Build order</h2>
-    <p class="prose">Deliberately sequenced — if the interface is polished before the numbers are right, the challenge is failed.</p>
-    <ol class="build">
-      <li>Fixture data first, including the deliberate mess: a duplicate order, a refund, a missing day, an inconsistent date format.</li>
-      <li>Deterministic reconciliation engine in Go, proven with tests — before any LLM call exists.</li>
-      <li>MCP server wrapping the reconciliation engine as a fixed set of typed tools.</li>
-      <li>Model layer, starting with the ambiguity gate.</li>
-      <li>Instrumentation — tokens, cost, latency, refusal rate — from the first API call.</li>
-      <li>Evaluation harness, before polishing the interface.</li>
-      <li>React frontend last.</li>
-    </ol>
-  </section>
+    <section>
+      <h2>Modelling choices that are visible on purpose</h2>
+      <div class="cols">
+        <div class="card">
+          <h3>Supplier costs are point-allocated</h3>
+          <p style="font-size:14.5px;">Costs land on their own invoice date only &mdash; no smoothing or amortisation across the gap to the next invoice. Real supplier billing isn't daily, so a day without an invoice contributes zero input cost. That is a known, visible modelling choice, not a hidden average.</p>
+        </div>
+        <div class="card">
+          <h3>Refunds net to the original order date</h3>
+          <p style="font-size:14.5px;">Not the settlement date. Platform exports carry <code>order_date</code> as the original order's date, so netting there keeps the day's margin honest. Gross sales report completed bookings only; refunds are a separate field.</p>
+        </div>
+        <div class="card">
+          <h3>Attribution is a tagging convention</h3>
+          <p style="font-size:14.5px;">Promotion ROI is a tag-join on <code>campaign_id</code>, not statistical multi-touch attribution modelling. It is deterministic and reproducible, and it is stated as a convention rather than presented as a causal claim.</p>
+        </div>
+        <div class="card">
+          <h3>Money is integer cents, everywhere</h3>
+          <p style="font-size:14.5px;"><code>internal/money</code> owns every conversion; <code>float64</code> never touches a currency amount. Even the dollar value the chart layer uses for bar heights is derived from cents by that package, not by a JavaScript parse of a formatted string.</p>
+        </div>
+      </div>
+    </section>
 
-  <section>
-    <h2>Setup status</h2>
-    <div class="checklist">
-      <div class="checkrow"><span class="mark done">✓</span><span>Project scaffolded, local git repo initialized</span><span class="tag done">done</span></div>
-      <div class="checkrow"><span class="mark done">✓</span><span>Sanitized spec (<code>CLAUDE.md</code>) and <code>.gitignore</code> committed</span><span class="tag done">done</span></div>
-      <div class="checkrow"><span class="mark done">✓</span><span>SDD skill installed for spec-driven workflow</span><span class="tag done">done</span></div>
-      <div class="checkrow"><span class="mark done">✓</span><span>MCP library selected — <code>mark3labs/mcp-go</code>, in-process with the Go engine</span><span class="tag done">done</span></div>
-      <div class="checkrow"><span class="mark pending">–</span><span>Toolchain install — Homebrew, Go, Node, <code>gh</code>, Docker</span><span class="tag">pending (user)</span></div>
-      <div class="checkrow"><span class="mark pending">–</span><span>Private GitHub repository created</span><span class="tag">pending</span></div>
-      <div class="checkrow"><span class="mark pending">–</span><span>PostgreSQL via Docker Compose</span><span class="tag">pending</span></div>
-      <div class="checkrow"><span class="mark pending">–</span><span>Fixture data + reconciliation engine</span><span class="tag">pending</span></div>
-    </div>
-  </section>
+    <section>
+      <h2>Why it was built first</h2>
+      <p class="prose">The build order was fixed before anything was written, and not reordered:</p>
+      <ol class="build" style="margin-top:16px;">
+        <li><span>Fixture data, including the deliberate mess.</span></li>
+        <li><span>The deterministic reconciliation engine in Go, proven with tests &mdash; <strong>before any LLM call existed</strong>.</span></li>
+        <li><span>The MCP server, wrapping that engine as a fixed set of typed tools.</span></li>
+        <li><span>The model layer, starting with the ambiguity gate.</span></li>
+        <li><span>Instrumentation &mdash; tokens, cost, latency, refusal rate &mdash; from the first API call.</span></li>
+        <li><span>The evaluation harness, before polishing the interface.</span></li>
+        <li><span>The React frontend, last.</span></li>
+      </ol>
+      <p class="prose" style="margin-top:18px;">If the demo is beautiful and the numbers are wrong, the challenge is failed. This ordering is the mechanism that prevents it.</p>
+    </section>
+  </div>
+
+  <!-- ==============================================================
+       TAB 3 — FULL ARCHITECTURE
+       ============================================================== -->
+  <div role="tabpanel" id="panel-architecture" aria-labelledby="tab-architecture" hidden>
+
+    <p class="prose lede">One Go process, one Postgres database, one React app, and two Claude models used for exactly two jobs. Below is all of it, including the parts that are not built.</p>
+
+    <section style="margin-top:44px;">
+      <h2>The system, top to bottom</h2>
+      <p class="prose">Three UI surfaces sit on three HTTP surfaces, and all three read the same Postgres. Only one of them has a model anywhere in its request path.</p>
+
+      <figure>
+        <div class="figscroll">
+        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation and GET /api/promotions; and GET /api/badges. Third layer: a single PostgreSQL database holding five tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache and answer_cache_hit. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
+          <defs>
+            <marker id="aArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
+            </marker>
+          </defs>
+
+          <text x="40" y="48" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">CLIENT</text>
+          <rect x="40" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="64" y="96" font-size="13.5" font-weight="600" fill="currentColor">Ask &mdash; the chat page</text>
+          <text x="64" y="120" font-size="11.5" fill="var(--muted)">The only surface with a model behind it.</text>
+          <text x="64" y="138" font-size="11.5" fill="var(--muted)">Answer, chart, provenance, running cost.</text>
+
+          <rect x="450" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="474" y="96" font-size="13.5" font-weight="600" fill="currentColor">Close &middot; Promotions</text>
+          <text x="474" y="120" font-size="11.5" fill="var(--muted)">Charts of the reconciled days and</text>
+          <text x="474" y="138" font-size="11.5" fill="var(--muted)">campaign ROI. No chat, no model.</text>
+
+          <rect x="860" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="884" y="96" font-size="13.5" font-weight="600" fill="currentColor">Home</text>
+          <text x="884" y="120" font-size="11.5" fill="var(--muted)">Reconciliation badges and Steward</text>
+          <text x="884" y="138" font-size="11.5" fill="var(--muted)">Points. No chat, no model.</text>
+
+          <line x1="230" y1="152" x2="230" y2="196" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="640" y1="152" x2="640" y2="196" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="1050" y1="152" x2="1050" y2="196" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+
+          <text x="40" y="186" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">HTTP</text>
+          <rect x="40" y="200" width="380" height="100" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
+          <text x="64" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">POST /api/ask</text>
+          <text x="64" y="252" font-size="11.5" fill="currentColor">Cache &rarr; Haiku 4.5 gate &rarr; typed Go tools</text>
+          <text x="64" y="270" font-size="11.5" fill="currentColor">&rarr; Sonnet 5 narration &rarr; Go chart choice.</text>
+          <text x="64" y="290" font-size="11" fill="var(--prob)">Detailed below.</text>
+
+          <rect x="450" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="474" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/reconciliation</text>
+          <text x="474" y="248" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/promotions</text>
+          <text x="474" y="272" font-size="11.5" fill="currentColor">No model. Returns internal/mcptools&rsquo; own</text>
+          <text x="474" y="290" font-size="11.5" fill="currentColor">result shapes &mdash; one rendering, so nothing drifts.</text>
+
+          <rect x="860" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="884" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/badges</text>
+          <text x="884" y="252" font-size="11.5" fill="currentColor">No model. Badges and points are derived</text>
+          <text x="884" y="270" font-size="11.5" fill="currentColor">per request from the reconciled days &mdash;</text>
+          <text x="884" y="290" font-size="11.5" fill="currentColor">a pure function, never stored.</text>
+
+          <line x1="230" y1="300" x2="230" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="640" y1="300" x2="640" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="1050" y1="300" x2="1050" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+
+          <text x="40" y="382" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">STORE</text>
+          <rect x="40" y="396" width="1200" height="128" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="40" y1="414" x2="1240" y2="414" stroke="var(--det)" stroke-width="1"/>
+          <text x="64" y="438" font-size="13.5" font-weight="600" fill="currentColor">PostgreSQL 16 &mdash; the single source of truth for all three surfaces</text>
+          <text x="64" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">daily_reconciliation</text>
+          <text x="64" y="484" font-size="10.5" fill="var(--muted)">one row per day</text>
+          <text x="290" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">promotion_roi_record</text>
+          <text x="290" y="484" font-size="10.5" fill="var(--muted)">one row per campaign period</text>
+          <text x="560" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">question_interaction</text>
+          <text x="560" y="484" font-size="10.5" fill="var(--muted)">one row per real model call</text>
+          <text x="810" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">answer_cache</text>
+          <text x="810" y="484" font-size="10.5" fill="var(--muted)">exact-match question &rarr; response</text>
+          <text x="1050" y="466" font-family="var(--font-mono)" font-size="11.5" fill="var(--det)">answer_cache_hit</text>
+          <text x="1050" y="484" font-size="10.5" fill="var(--muted)">cost avoided, kept separate</text>
+          <text x="64" y="508" font-size="11" fill="var(--muted)">One container: margin-copilot-postgres. One database. One volume. No replica, no failover &mdash; see the honesty note below.</text>
+
+          <line x1="640" y1="600" x2="640" y2="528" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+
+          <text x="440" y="586" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">WRITER</text>
+          <rect x="440" y="600" width="400" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)" stroke-dasharray="5 4"/>
+          <text x="464" y="628" font-family="var(--font-mono)" font-size="12" fill="currentColor">-ingest / -ingest-promo</text>
+          <text x="464" y="652" font-size="11.5" fill="currentColor">Clears answer_cache, then writes the two</text>
+          <text x="464" y="670" font-size="11.5" fill="currentColor">reconciliation tables. Run by hand from the</text>
+          <text x="464" y="688" font-size="11.5" fill="currentColor">CLI &mdash; there is no scheduler in this build.</text>
+        </svg>
+        </div>
+        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code> and <code>GET /api/promotions</code> deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day cannot drift apart, because there is only one of them.</figcaption>
+      </figure>
+    </section>
+
+    <section>
+      <h2>Inside <code>POST /api/ask</code></h2>
+      <p class="prose">Five steps, of which two are model calls and three are plain Go. The deterministic and probabilistic steps alternate &mdash; which is why the boundary in this system is not a line on a map but a rule about what each step is permitted to do.</p>
+
+      <figure>
+        <div class="figscroll">
+        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Haiku 4.5 ambiguity gate, which either refuses or asks a clarifying question — returned straight to the user, with the explanation step never running — or passes the question to the Go MCP tool layer. That layer reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
+          <defs>
+            <marker id="bDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
+            </marker>
+            <marker id="bAlert" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--alert)"/>
+            </marker>
+          </defs>
+
+          <!-- Postgres band -->
+          <rect x="230" y="56" width="1045" height="74" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="230" y1="72" x2="1275" y2="72" stroke="var(--det)" stroke-width="1"/>
+          <text x="254" y="94" font-size="13" font-weight="600" fill="currentColor">PostgreSQL &mdash; the one store behind every box below</text>
+          <text x="254" y="116" font-family="var(--font-mono)" font-size="11" fill="var(--muted)">answer_cache &#183; answer_cache_hit &#183; daily_reconciliation &#183; promotion_roi_record &#183; question_interaction</text>
+
+          <line x1="320" y1="248" x2="320" y2="134" stroke="var(--det)" stroke-width="1.5" marker-start="url(#bDet)" marker-end="url(#bDet)"/>
+          <text x="334" y="196" font-size="11" fill="var(--det)">reads + writes answer_cache</text>
+          <line x1="790" y1="248" x2="790" y2="134" stroke="var(--det)" stroke-width="1.5" marker-start="url(#bDet)" marker-end="url(#bDet)"/>
+          <text x="804" y="196" font-size="11" fill="var(--det)">typed reads only &mdash; no open SQL, ever</text>
+
+          <!-- main row -->
+          <text x="560" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Haiku 4.5</text>
+          <text x="995" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
+
+          <rect x="40" y="250" width="170" height="90" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
+          <text x="125" y="288" text-anchor="middle" font-size="13" fill="currentColor">React UI</text>
+          <text x="125" y="308" text-anchor="middle" font-size="11" fill="var(--muted)">asks, and</text>
+          <text x="125" y="324" text-anchor="middle" font-size="11" fill="var(--muted)">receives</text>
+
+          <rect x="230" y="250" width="180" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="320" y="284" text-anchor="middle" font-size="13" fill="currentColor">Answer cache</text>
+          <text x="320" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">exact match on the</text>
+          <text x="320" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">normalized question</text>
+
+          <polygon points="560,250 660,295 560,340 460,295" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
+          <text x="560" y="291" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
+          <text x="560" y="307" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
+
+          <rect x="705" y="250" width="170" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="790" y="284" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
+          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">five typed Go tools,</text>
+          <text x="790" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">5s timeout, 8-call cap</text>
+
+          <rect x="915" y="250" width="160" height="90" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
+          <text x="995" y="288" text-anchor="middle" font-size="13" fill="currentColor">Explain</text>
+          <text x="995" y="308" text-anchor="middle" font-size="11" fill="var(--muted)">narrates the result;</text>
+          <text x="995" y="324" text-anchor="middle" font-size="11" fill="var(--muted)">computes nothing</text>
+
+          <rect x="1115" y="250" width="160" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="1195" y="282" text-anchor="middle" font-size="13" fill="currentColor">Chart-type</text>
+          <text x="1195" y="298" text-anchor="middle" font-size="13" fill="currentColor">decision</text>
+          <text x="1195" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">table / bar / pie / none</text>
+
+          <line x1="210" y1="295" x2="226" y2="295" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <line x1="410" y1="295" x2="456" y2="295" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <line x1="660" y1="295" x2="701" y2="295" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <line x1="875" y1="295" x2="911" y2="295" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <line x1="1075" y1="295" x2="1111" y2="295" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+
+          <text x="433" y="362" text-anchor="middle" font-size="11" fill="var(--det)">miss</text>
+          <text x="680" y="362" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
+          <text x="893" y="362" text-anchor="middle" font-size="11" fill="var(--det)">typed result</text>
+          <text x="1093" y="362" text-anchor="middle" font-size="11" fill="var(--prob)">narration</text>
+
+          <!-- refusal -->
+          <line x1="560" y1="340" x2="560" y2="396" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#bAlert)"/>
+          <text x="574" y="392" font-size="11" fill="var(--alert)">ambiguous / unanswerable</text>
+          <rect x="445" y="400" width="230" height="72" rx="9" fill="var(--alert-soft)" stroke="var(--alert)"/>
+          <text x="560" y="428" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
+          <text x="560" y="446" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
+          <text x="560" y="464" text-anchor="middle" font-size="10.5" fill="var(--alert)">the explanation step never runs</text>
+
+          <!-- returns -->
+          <path d="M320,340 L320,375 L130,375 L130,345" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <text x="334" y="379" font-size="11" fill="var(--det)">hit &mdash; no model call, nothing billed</text>
+
+          <path d="M445,436 L85,436 L85,345" fill="none" stroke="var(--alert)" stroke-width="1.5" marker-end="url(#bAlert)"/>
+          <text x="150" y="428" font-size="11" fill="var(--alert)">straight to the user</text>
+
+          <path d="M1195,340 L1195,520 L20,520 L20,295 L36,295" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <text x="620" y="512" font-size="11" fill="var(--det)">answer + chart + provenance</text>
+        </svg>
+        </div>
+        <figcaption>Two deterministic steps bracket the model layer: an exact-match cache in front of it, so a repeated question makes no API call at all, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Haiku call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat.</figcaption>
+      </figure>
+
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic &mdash; code, no model, ground truth</span>
+        <span><i class="swatch" style="background:var(--prob-soft);border-color:var(--prob)"></i>Probabilistic &mdash; model, interprets and narrates only</span>
+        <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit &mdash; refuses rather than guesses</span>
+      </div>
+    </section>
+
+    <section>
+      <h2>Two models, two jobs, and why each one</h2>
+      <div class="cols">
+        <div class="card soft">
+          <h3>Claude Haiku 4.5 &mdash; the ambiguity gate</h3>
+          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at 512 output tokens.</p>
+          <ul style="font-size:14.5px;padding-left:18px;">
+            <li><strong>Why the cheap model:</strong> this is classification, not reasoning. Frontier capability buys nothing and costs 5&times; more per token.</li>
+            <li><strong>Why it cannot leak a number:</strong> the package has no import path to <code>internal/storage</code> or <code>internal/mcptools</code> at all. It sees question text and nothing else. The one exception is deliberate and narrow &mdash; it is handed the data's real min/max date range as two plain strings, so &ldquo;today&rdquo; grounds against what the data covers rather than the host machine's clock.</li>
+            <li>On ambiguity it either asks a clarifying question or proceeds with the assumption <em>stated back to the user</em>. It never silently assumes.</li>
+          </ul>
+        </div>
+        <div class="card soft">
+          <h3>Claude Sonnet 5 &mdash; the explanation step</h3>
+          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/explain</code>. Owns a tool-calling loop against the typed MCP tools &mdash; direct Anthropic API calls with the tool definitions attached, no agent framework. Capped at 1024 output tokens and 11 turns.</p>
+          <ul style="font-size:14.5px;padding-left:18px;">
+            <li><strong>Why not Opus or Fable:</strong> it narrates an already-computed number. That does not need frontier reasoning, and paying for it would be spending on the one step where a wrong answer is <em>impossible anyway</em>, because the figure came from Go.</li>
+            <li><strong>Why not Haiku:</strong> it does need to sequence several tool calls and hold a period's worth of figures straight while writing an owner-legible sentence.</li>
+            <li>Its non-test imports are exactly two packages: <code>internal/llmclient</code> and <code>internal/mcptools</code>. It has no path to <code>internal/storage</code>. Every number it sees arrived through a typed tool result.</li>
+          </ul>
+        </div>
+      </div>
+      <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $1/$5 per MTok for Haiku, $2/$10 for Sonnet &mdash; and an unrecognised model id is an error, not a silent zero.</p>
+    </section>
+
+    <section>
+      <h2>The boundary, enforced by the import graph</h2>
+      <p class="prose">The split is not a convention someone has to remember. It is the package dependency graph, and it would take a deliberate new import to break.</p>
+      <div class="tablewrap" style="margin-top:18px;">
+        <table>
+          <thead><tr><th>Package</th><th>Non-test imports within the project</th><th>Touches a model?</th><th>Touches Postgres?</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">internal/reconcile</td><td class="mono">ingest, money</td><td class="no">no</td><td class="no">no &mdash; no I/O at all</td></tr>
+            <tr><td class="mono">internal/ingest</td><td class="mono">money</td><td class="no">no</td><td class="no">no</td></tr>
+            <tr><td class="mono">internal/storage</td><td class="mono">ingest, reconcile, instrumentation, money</td><td class="no">no</td><td class="yes">yes &mdash; sqlc + pgx</td></tr>
+            <tr><td class="mono">internal/mcptools</td><td class="mono">reconcile, storage, money</td><td class="no">no</td><td class="yes">read-only</td></tr>
+            <tr><td class="mono">internal/answercache</td><td class="mono">storage</td><td class="no">no</td><td class="yes">yes</td></tr>
+            <tr><td class="mono">internal/badges</td><td class="mono">reconcile, storage</td><td class="no">no</td><td class="yes">read-only</td></tr>
+            <tr><td class="mono">internal/ambiguity</td><td class="mono">llmclient, instrumentation</td><td class="yes">Haiku 4.5</td><td class="no"><strong>no import path exists</strong></td></tr>
+            <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
+            <tr><td class="mono">internal/httpapi</td><td class="mono">ambiguity, explain, answercache, mcptools, instrumentation, llmclient, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="prose" style="margin-top:16px;font-size:14.5px;color:var(--muted);"><code>internal/httpapi</code> is the one package that sees both sides &mdash; that is its job. It sequences the interaction and it also owns the chart-type derivation, which is deterministic Go reading a tool result the model already received.</p>
+    </section>
+
+    <section>
+      <h2>The answer cache</h2>
+      <p class="prose">An exact-match lookup in Postgres, keyed on the question text normalised by trimming, collapsing internal whitespace and lowercasing. On a hit the previously-served response is returned verbatim &mdash; refusals and clarifications included, because a question that was unanswerable an hour ago is still unanswerable against the same data, and re-deciding it would cost two model calls to reach the same conclusion.</p>
+      <div class="cols" style="margin-top:20px;">
+        <div class="card hard">
+          <h3>The disclosed limitation</h3>
+          <p style="font-size:14.5px;">&ldquo;How did we do on 2026-08-07?&rdquo; and &ldquo;how was 2026-08-07&rdquo; are different keys, and the second pays full price. Matching paraphrases needs a model call or an embedding lookup &mdash; either would put a probabilistic step in front of what is otherwise an O(1) index probe. A cache that decides two differently-worded questions mean the same thing can decide that <em>wrongly</em>, and serving the answer to a question nobody asked is a worse failure than paying for the second call.</p>
+        </div>
+        <div class="card hard">
+          <h3>A hit is the absence of a model call</h3>
+          <p style="font-size:14.5px;">So it is never written to <code>question_interaction</code>, which would fabricate an API call and inflate the running cost total with money nobody spent &mdash; and never left unrecorded, which would make real product activity invisible. It gets its own <code>answer_cache_hit</code> ledger carrying the cost it <em>avoided</em>. A saving, reported as a saving, never summed into spend. The response carries a separate <code>cache</code> field rather than a zero-cost entry, so no client can accidentally add the two together.</p>
+        </div>
+      </div>
+      <div class="callout alert" style="margin-top:20px;">
+        <strong>Invalidation is wholesale, and it happens first.</strong> Every ingestion run drops the entire cache before it writes anything. New source data can change any cached answer and there is no cheap way to know which; if the pipeline then fails partway, having already dropped the cache costs a few re-asked questions, whereas clearing only on success could leave answers cached against data that has already been partly rewritten. Correctness after new data beats retention, every time.
+      </div>
+    </section>
+
+    <section>
+      <h2>The chart-type decision</h2>
+      <p class="prose">Which chart an answer gets is decided in plain Go, in <code>internal/httpapi/visualization.go</code>, from which typed tool actually ran and the shape of its deterministic result. It is never a second model call and never a field the narration model fills in. Asking a model &ldquo;bar or pie?&rdquo; would put the <em>presentation of a financial figure</em> back on the probabilistic side of the line for no benefit &mdash; the tool name already tells us the question's shape with certainty.</p>
+      <div class="tablewrap" style="margin-top:18px;">
+        <table>
+          <thead><tr><th>Tool that ran</th><th>Form</th><th>Reasoning</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">list_discrepancies</td><td>Table</td><td>Date, flag types and free-text detail &mdash; three columns of mixed text, which is a table's job. A clean period returns no visualization at all, because an empty table reads as failure rather than &ldquo;nothing found&rdquo;.</td></tr>
+            <tr><td class="mono">get_margin_delta</td><td>Bar, two marks</td><td>Period A vs period B. The delta is deliberately <em>not</em> a third bar &mdash; it is a different measure, and putting a difference on the same axis as the magnitudes it came from double-counts the same money visually. It becomes the subtitle.</td></tr>
+            <tr><td class="mono">get_promotion_roi<br>list_negative_roi_promotions</td><td>Bar, or table for one</td><td>2+ campaigns is a magnitude comparison across named categories. A single campaign becomes a table: the content is its several columns of detail, and a one-bar bar chart is an anti-pattern.</td></tr>
+            <tr><td class="mono">get_daily_summary</td><td>Nothing / bar / pie</td><td>Nothing for a single day &mdash; the sentence already carries the figure. 2+ days becomes a bar of margin per day. One day splitting across 3&ndash;6 sources becomes a pie of gross sales by source, the one genuine part-to-whole here. A two-slice pie is never produced.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="prose" style="margin-top:16px;">When several recognised tools run in one interaction, a <strong>fixed priority</strong> applies rather than &ldquo;whichever ran last&rdquo;: priority is deterministic and testable, whereas call order depends on the model's own sequencing and would make the same question render differently on different runs. An unattributable promotion is carried through as an explicit <em>unavailable</em> mark &mdash; never a zero-height bar, which would read as &ldquo;broke even&rdquo; rather than &ldquo;unknown&rdquo;.</p>
+    </section>
+
+    <section>
+      <h2>Hard limits &amp; soft limits</h2>
+      <div class="cols">
+        <div class="card hard">
+          <h3>Hard limits</h3>
+          <ul>
+            <li>Refuses rather than estimates when data is missing or incomplete. A confidently wrong margin figure is worse than a refusal.</li>
+            <li>No open SQL, no free-form computation. Five defined, typed MCP tools, and nothing else.</li>
+            <li>5-second timeout on every tool call and a hard 8-call cap per interaction, enforced in mcp-go's own dispatch middleware &mdash; not something an individual handler has to remember. Exceeding either returns a typed error the model can see and self-correct from, rather than crashing or truncating the interaction.</li>
+            <li>30-second bound on every model call.</li>
+            <li>Chart selection is deterministic Go &mdash; never a second model call deciding how a financial figure is drawn.</li>
+            <li>Every number carries provenance: which file, which rows, which period. A refused answer carries none, rather than a fake one.</li>
+            <li>Every model call is logged with its real tokens, cost, latency, and whether the refusal or clarification path fired. A question that reaches the explanation step writes <em>two</em> rows, one per API call &mdash; merging them would mean dropping one call's cost.</li>
+          </ul>
+        </div>
+        <div class="card soft">
+          <h3>Soft limits</h3>
+          <ul>
+            <li>The model is nudged toward the right framing, not hard-coded to one phrasing, so it can self-correct on rephrasings and unexpected question shapes.</li>
+            <li>Clarifying questions are asked rather than assumptions silently made &mdash; and any assumption that <em>is</em> taken is stated back.</li>
+            <li>A clarification reply travels as typed context, not as a pre-merged sentence, so <code>question_interaction.question_text</code> stays exactly what the user typed (&ldquo;yes&rdquo;) instead of recording a question they never asked.</li>
+            <li>One-tap clarification options are phrasings of a <em>reply</em>, never facts. Whichever is picked is posted back and re-classified from scratch, exactly as if it had been typed.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Redundancy: there is none, and that is the honest answer</h2>
+      <p class="prose">This is a take-home prototype, and the deployment topology is exactly as small as it looks. Nothing in the diagrams above is drawn as redundant because nothing is.</p>
+      <div class="tablewrap" style="margin-top:18px;">
+        <table>
+          <thead><tr><th>Component</th><th>What actually runs</th><th>Failure behaviour today</th></tr></thead>
+          <tbody>
+            <tr><td>Database</td><td>One <code>postgres:16-alpine</code> container, <code>margin-copilot-postgres</code>, one named volume.</td><td>Container or volume lost &rarr; all reconciled data lost. No replica, no streaming standby, no backup job, no PITR.</td></tr>
+            <tr><td>Backend</td><td>One Go process, started by hand with <code>-serve :8080</code>.</td><td>Process exits &rarr; the API is down. No supervisor, no health-check restart, no second instance, no load balancer.</td></tr>
+            <tr><td>Frontend</td><td>The Vite dev server on :5173.</td><td>Not a production build, not served by anything but Vite.</td></tr>
+            <tr><td>Ingestion</td><td>A CLI flag, run manually against a directory.</td><td>No scheduler, no queue, no retry. If it fails halfway the cache is already cleared, which is deliberate &mdash; correctness over retention.</td></tr>
+            <tr><td>Connections</td><td>A <code>pgxpool</code>, not a single connection.</td><td>This one <em>is</em> real, and it was a real bug: a lone <code>pgx.Conn</code> is not safe for concurrent use and produced &ldquo;conn busy&rdquo; 500s the moment one page load fired several endpoints in parallel.</td></tr>
+            <tr><td>CORS</td><td>A hard-coded allow for <code>http://localhost:5173</code>.</td><td>A local convenience, not a policy. It allows one known origin rather than <code>*</code>, but a real deployment would derive it from configuration.</td></tr>
+            <tr><td>Auth</td><td>None. There are no users, no sessions, no tenancy.</td><td>Anyone who can reach the port can call every endpoint.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="roadmap" style="margin-top:26px;">
+        <p class="eyebrow">Where this would have to go &mdash; not built</p>
+        <h3>What production would actually need</h3>
+        <p>Listed as a destination, not as a disabled feature. None of it exists in this repository, and none of it is stubbed: there is no config flag that turns any of it on.</p>
+        <p><strong>Data durability first.</strong> Managed Postgres with automated backups and point-in-time recovery, before anything else &mdash; the reconciled history is the product, and today a lost volume loses it. A read replica only becomes worth it once read load justifies the replication lag, which at one restaurant's data it does not.</p>
+        <p><strong>Then the process.</strong> More than one backend instance behind a load balancer, with a real health endpoint and graceful shutdown. The backend is already stateless apart from the pool, so this is mostly deployment work rather than a rewrite &mdash; the answer cache and the interaction log already live in Postgres, not in memory.</p>
+        <p><strong>Then ingestion.</strong> A scheduled, idempotent, resumable job with retries and a dead-letter path, instead of a CLI flag. Cache invalidation would move from &ldquo;drop everything&rdquo; to a scoped invalidation keyed on the dates the run actually touched &mdash; wholesale clearing is the right call at this size and the wrong one at any real volume.</p>
+        <p><strong>Then everything a multi-tenant product needs</strong> and this prototype deliberately has none of: authentication, per-restaurant data isolation, rate limiting on <code>/api/ask</code>, a real CORS policy from configuration, and secrets from a secret manager rather than a shell profile.</p>
+        <p><strong>And one thing that is genuinely not obvious:</strong> the per-interaction cost log already in <code>question_interaction</code> is the raw material for a spend budget per tenant. Getting that right is a product decision about what happens when an owner hits their cap &mdash; degrade to cached answers only, or refuse &mdash; and refusing is more in keeping with everything else here.</p>
+      </div>
+    </section>
+
+    <section>
+      <h2>What was deliberately not built</h2>
+      <div class="cols3">
+        <div class="card">
+          <h3>No agent framework</h3>
+          <p style="font-size:14.5px;">Direct Anthropic API calls with the MCP tool definitions attached. The tool-calling loop is about forty lines of Go with an explicit turn cap, which is less code than configuring a framework and far easier to reason about when something goes wrong.</p>
+        </div>
+        <div class="card">
+          <h3>No multi-agent architecture</h3>
+          <p style="font-size:14.5px;">Two model calls with two clearly different jobs is not a multi-agent system, and calling it one would be dressing up a pipeline. There is no orchestrator, no agent-to-agent messaging, and nothing that would benefit from either.</p>
+        </div>
+        <div class="card">
+          <h3>No semantic cache</h3>
+          <p style="font-size:14.5px;">Covered above: it would buy hit rate at the cost of putting a probabilistic step in front of a deterministic lookup. The limitation is disclosed in the API response itself, on every hit.</p>
+        </div>
+        <div class="card">
+          <h3>No open query tool</h3>
+          <p style="font-size:14.5px;">A &ldquo;run this SQL&rdquo; tool would answer more questions and would also let a model compute a number. That is the one thing this architecture exists to prevent, so it is not offered even as an internal convenience.</p>
+        </div>
+        <div class="card">
+          <h3>No point redemption</h3>
+          <p style="font-size:14.5px;">The Steward Points balance is real &mdash; a deterministic function of closes already run, 10 per clean close, 25 per caught discrepancy. Spending them needs an integration with promotional tooling this build has no access to, so it ships as a stated direction rather than a button that does nothing.</p>
+        </div>
+        <div class="card">
+          <h3>No badge categories beyond reconciliation</h3>
+          <p style="font-size:14.5px;">Growth, Engagement and Campaign-Creation categories are named in the product strategy as roadmap and are deliberately absent from the code, rather than present and inert.</p>
+        </div>
+      </div>
+    </section>
+  </div>
 
   <footer>
-    <span>restaurant-margin-copilot — internal architecture reference</span>
+    <span>restaurant-margin-copilot &mdash; internal technical reference</span>
     <span>Prosus / Toqan technical challenge</span>
   </footer>
-
 </div>
+
+<script>
+(function(){
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role="tab"]'));
+  var panels = tabs.map(function(t){ return document.getElementById(t.getAttribute('aria-controls')); });
+
+  function select(index, focus){
+    tabs.forEach(function(tab, i){
+      var on = i === index;
+      tab.setAttribute('aria-selected', on ? 'true' : 'false');
+      tab.setAttribute('tabindex', on ? '0' : '-1');
+      panels[i].hidden = !on;
+    });
+    if (focus) tabs[index].focus();
+    var name = tabs[index].id.replace('tab-', '');
+    if (location.hash.slice(1) !== name) history.replaceState(null, '', '#' + name);
+  }
+
+  tabs.forEach(function(tab, i){
+    tab.addEventListener('click', function(){ select(i, false); window.scrollTo({top:0, behavior:'auto'}); });
+    tab.addEventListener('keydown', function(e){
+      var next = null;
+      if (e.key === 'ArrowRight') next = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft') next = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') next = 0;
+      else if (e.key === 'End') next = tabs.length - 1;
+      if (next !== null){ e.preventDefault(); select(next, true); }
+    });
+  });
+
+  var initial = tabs.findIndex(function(t){ return t.id === 'tab-' + location.hash.slice(1); });
+  select(initial >= 0 ? initial : 0, false);
+})();
+</script>

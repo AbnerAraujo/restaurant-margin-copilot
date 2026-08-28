@@ -22,14 +22,17 @@ running-cost panel (FR-009) is a small persistent stat, not a hero metric.
 
 ### 1.1 Brand accent (primary)
 
-`#EA1D2C` — an iFood-inspired warm, appetite-associated red. This is a
-commonly-cited third-party sourced value, **not** confirmed from an official
-iFood brand guideline. It is inspiration for the accent, not a trademark
-clone — do not use any iFood logo, wordmark, or copy iFood's exact UI chrome.
+`#0E6E52` light / `#1FA876` dark — "prosperity emerald," the color of the
+batwing café-door mark (`docs/brand.md`) and of the "in the red / in the
+green" financial idiom this product's whole job is to help a restaurant
+cross. An earlier iteration explored an iFood-inspired red; that direction
+was rejected (see `docs/brand.md`'s rejected-directions list) in favor of
+this green, which is also kept deliberately distinct from `--success` below
+so a badge is never mistaken for the brand accent.
 
 | Token | Class | Light | Dark | Use |
 |---|---|---|---|---|
-| `--primary` | `bg-primary` / `text-primary` | `#EA1D2C` | `#F0384A` | Primary CTA fills, active nav/tab indicator, links, focus accents |
+| `--primary` | `bg-primary` / `text-primary` | `#0E6E52` | `#1FA876` | Primary CTA fills, active nav/tab indicator, links, focus accents, the logo's door color |
 | `--primary-foreground` | `text-primary-foreground` | `#FFFFFF` | `#FFFFFF` | Text/icons on a solid `bg-primary` |
 | `--primary-hover` | `hover:bg-primary-hover` | mixed 12% black | mixed 12% white | Hover state on primary buttons/links |
 | `--primary-active` | `active:bg-primary-active` | mixed 24% black | mixed 22% white | Pressed state |
@@ -199,7 +202,7 @@ present, never competing with the day's margin figure for attention.
 ## 5. Quick reference — what's new vs. already-existing in `index.css`
 
 **New tokens added** (see `frontend/src/index.css` `:root`/`.dark`/`@theme`):
-`--primary` (value changed to brand red), `--primary-hover`,
+`--primary` (value changed to the brand's prosperity-emerald green), `--primary-hover`,
 `--primary-active`, `--destructive-foreground`, `--destructive-text`,
 `--success`, `--success-foreground`, `--success-text`, `--warning`,
 `--warning-foreground`, `--warning-text` — each exposed as a Tailwind color
