@@ -1,4 +1,11 @@
-import { BadgeCheck, ShieldCheck, type LucideIcon } from 'lucide-react'
+import {
+  BadgeCheck,
+  CalendarCheck,
+  Rocket,
+  ShieldCheck,
+  TrendingUp,
+  type LucideIcon,
+} from 'lucide-react'
 
 import { Chip } from '@/components/ui/page'
 import { cn } from '@/lib/utils'
@@ -7,22 +14,34 @@ import type { PointsLine } from './usePoints'
 const LINE_ICON: Record<PointsLine['code'], LucideIcon> = {
   clean_close: BadgeCheck,
   discrepancy_catcher: ShieldCheck,
+  growth: TrendingUp,
+  engagement: CalendarCheck,
+  campaign_creation: Rocket,
 }
 
 /** Fill used for that line's share of the composition bar. */
 const LINE_FILL: Record<PointsLine['code'], string> = {
   clean_close: 'bg-success',
   discrepancy_catcher: 'bg-warning',
+  growth: 'bg-primary',
+  engagement: 'bg-accent-foreground',
+  campaign_creation: 'bg-destructive',
 }
 
 const LINE_SWATCH_TEXT: Record<PointsLine['code'], string> = {
   clean_close: 'text-success-text',
   discrepancy_catcher: 'text-warning-text',
+  growth: 'text-primary',
+  engagement: 'text-foreground',
+  campaign_creation: 'text-destructive-text',
 }
 
 const LINE_BLURB: Record<PointsLine['code'], string> = {
   clean_close: 'Days closed clean',
   discrepancy_catcher: 'Days something was caught',
+  growth: 'Promotions that paid for themselves',
+  engagement: 'Real days you opened the app',
+  campaign_creation: 'Flagged campaigns you replaced',
 }
 
 /**

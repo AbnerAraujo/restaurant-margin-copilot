@@ -1,9 +1,16 @@
-import { BadgeCheck, ShieldCheck, type LucideIcon } from 'lucide-react'
+import {
+  BadgeCheck,
+  CalendarCheck,
+  Rocket,
+  ShieldCheck,
+  TrendingUp,
+  type LucideIcon,
+} from 'lucide-react'
 
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
-import { usePoints } from './usePoints'
+import { usePoints, type BadgeCode } from './usePoints'
 
 /**
  * `/points` — the full Steward Points surface, reachable from the sidebar so
@@ -19,11 +26,11 @@ export default function PointsPage() {
   const { data } = usePoints()
   const breakdown = data?.points.breakdown ?? []
 
-  const earnedFor = (code: 'clean_close' | 'discrepancy_catcher') =>
+  const earnedFor = (code: BadgeCode) =>
     breakdown.find((line) => line.code === code)
 
   const RULES: {
-    code: 'clean_close' | 'discrepancy_catcher'
+    code: BadgeCode
     name: string
     each: number
     icon: LucideIcon
@@ -43,6 +50,27 @@ export default function PointsPage() {
       icon: ShieldCheck,
       when: 'A day reconciles with at least one flag: a duplicate order, a missing source, a commission mismatch, or an anomaly.',
     },
+    {
+      code: 'growth',
+      name: 'Growth',
+      each: POINTS_PER_BADGE.growth,
+      icon: TrendingUp,
+      when: 'A promotion closes with a positive, attributable ROI — spend paid for itself.',
+    },
+    {
+      code: 'engagement',
+      name: 'Week One',
+      each: POINTS_PER_BADGE.engagement,
+      icon: CalendarCheck,
+      when: 'You open the app on 7 distinct real calendar days — never simulated, never pre-seeded.',
+    },
+    {
+      code: 'campaign_creation',
+      name: 'Campaign Launcher',
+      each: POINTS_PER_BADGE.campaign_creation,
+      icon: Rocket,
+      when: 'You log a new promotion marked as replacing one flagged negative-ROI — acting on the insight, not just logging a campaign.',
+    },
   ]
 
   return (
@@ -53,8 +81,8 @@ export default function PointsPage() {
         meta={
           <>
             <Chip>Derived at read time</Chip>
-            <Chip>No streak bonuses</Chip>
-            <Chip>No points for logging in</Chip>
+            <Chip>No fabricated streaks</Chip>
+            <Chip>Every point traces to a real action</Chip>
           </>
         }
       />

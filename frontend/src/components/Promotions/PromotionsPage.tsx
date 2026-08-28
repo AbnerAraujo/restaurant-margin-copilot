@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
 
 import PromoRoiChart, {
   type PromotionRoiDatum,
 } from '@/components/Charts/PromoRoiChart'
+import LogReplacementForm from '@/components/Promotions/LogReplacementForm'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { StatGroup, StatSkeleton } from '@/components/ui/stat'
@@ -33,6 +34,11 @@ interface PromotionApi {
   reason?: string
   flagged_negative: boolean
   source_row_refs: SourceRowRefApi[]
+  /** "ingested" (file pipeline) or "owner_created" (POST /api/promotions,
+   * spec 002 User Story 3) — and, only on the latter with a replacement
+   * claim, the flagged campaign it names. */
+  origin?: string
+  replaces_campaign_id?: string | null
 }
 
 interface PromotionsApiResponse {
@@ -91,6 +97,17 @@ export default function PromotionsPage() {
   const [promotions, setPromotions] = useState<PromotionApi[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const loadPromotions = useCallback(() => {
+    return getJson<PromotionsApiResponse>('/api/promotions')
+      .then((response) => {
+        setPromotions(response.promotions)
+        setError(null)
+      })
+      .catch((caught: unknown) => {
+        setError(caught instanceof Error ? caught.message : String(caught))
+      })
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     getJson<PromotionsApiResponse>('/api/promotions')
@@ -116,6 +133,16 @@ export default function PromotionsPage() {
     promotions?.filter((promotion) => promotion.flagged_negative).length ?? 0
   const unattributableCount =
     promotions?.filter((promotion) => promotion.roi === null).length ?? 0
+
+  // The flagged rows this page already shows — LogReplacementForm's
+  // "replaces" dropdown is populated ONLY from this list (SC-003: no step
+  // requiring data the owner doesn't already have on screen).
+  const flaggedCampaigns = (promotions ?? [])
+    .filter((promotion) => promotion.flagged_negative)
+    .map((promotion) => ({
+      campaignId: promotion.campaign_id,
+      platform: promotion.platform,
+    }))
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -182,6 +209,18 @@ export default function PromotionsPage() {
         />
       ) : null}
 
+      {/* User Story 3's write path: log a new promotion, optionally framed
+          as replacing one of the flagged rows above. Rendered once
+          `promotions` has loaded (successfully or empty) — a skeleton state
+          for the form itself would be a form with nothing to reference yet. */}
+      {!error && promotions ? (
+        <LogReplacementForm
+          flaggedCampaigns={flaggedCampaigns}
+          onCreated={() => {
+            void loadPromotions()
+          }}
+        />
+      ) : null}
     </PageContainer>
   )
 }

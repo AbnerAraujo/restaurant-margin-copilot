@@ -1,0 +1,201 @@
+package httpapi
+
+// POST /api/promotions: the owner logging a new promotion record directly in
+// the app (spec 002-badge-expansion User Story 3). A genuine write path, not
+// an MCP tool — the model never creates a promotion, so this stays outside
+// the Principle III tool boundary the same way GET /api/promotions and
+// GET /api/badges already do (see data.go's package doc), just on the write
+// side instead of the read side.
+//
+// FR-007 is enforced HERE, server-side, against the live database, not
+// against whatever the client's own UI currently shows: a "replaces" claim
+// is re-verified by looking up the referenced campaign_id's OWN
+// flagged_negative fact at submission time, exactly the fact
+// list_negative_roi_promotions itself would report. A client cannot forge
+// this by lying about what it displayed.
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
+
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
+)
+
+// CreatePromotionRequest is POST /api/promotions' request body (FR-005/
+// FR-006): the same shape ingested promotions already carry (campaign
+// identifier, platform, date range, spend) plus an optional "replaces"
+// reference — deliberately not a full promotion-management payload (no
+// attribution fields: an owner-created record has not been through
+// attribution, per CreateOwnerPromotion's own doc comment).
+type CreatePromotionRequest struct {
+	Platform   string `json:"platform"`
+	CampaignID string `json:"campaign_id"`
+	Period     Period `json:"period"`
+	// Spend is a decimal string ("120.00"), matching every other money field
+	// this API accepts/returns (internal/money.FormatCents' convention) —
+	// never a float, which could silently misrepresent a cents value.
+	Spend string `json:"spend"`
+	// Replaces is the campaign_id of an existing promotion this new record
+	// is framed as replacing. Omitted or empty means no replacement claim —
+	// FR-008: no claim, no Campaign-Creation badge, and no FR-007 check
+	// runs at all.
+	Replaces string `json:"replaces,omitempty"`
+}
+
+// Period is the {start, end} shape this request body uses — a local type
+// rather than reusing mcptools.Period, since that type's date-parsing method
+// is unexported to its own package (deliberately: internal/mcptools' three-
+// way ToolError return is a model-facing convention this plain REST endpoint
+// doesn't share).
+type Period struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// CreatePromotionResponse is POST /api/promotions' success body: the created
+// record, rendered through the exact same mcptools.PromotionRoiView shape
+// GET /api/promotions and get_promotion_roi use (FR-005's "renders through
+// the same surfaces"), plus whether logging it earned a Campaign-Creation
+// badge — so the frontend form can say so immediately without a second
+// GET /api/badges round trip.
+type CreatePromotionResponse struct {
+	Promotion           mcptools.PromotionRoiView `json:"promotion"`
+	EarnedCampaignBadge bool                      `json:"earned_campaign_creation_badge"`
+}
+
+// HandleCreatePromotion implements POST /api/promotions.
+func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
+			return
+		}
+
+		var req CreatePromotionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", fmt.Sprintf("could not parse request body as JSON: %v", err))
+			return
+		}
+
+		platform := strings.TrimSpace(req.Platform)
+		campaignID := strings.TrimSpace(req.CampaignID)
+		replaces := strings.TrimSpace(req.Replaces)
+
+		var missing []string
+		if platform == "" {
+			missing = append(missing, "platform")
+		}
+		if campaignID == "" {
+			missing = append(missing, "campaign_id")
+		}
+		if req.Period.Start == "" || req.Period.End == "" {
+			missing = append(missing, "period.start/period.end")
+		}
+		if req.Spend == "" {
+			missing = append(missing, "spend")
+		}
+		if len(missing) > 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("missing required field(s): %s", strings.Join(missing, ", ")))
+			return
+		}
+
+		start, end, err := parseStrictPeriod(req.Period.Start, req.Period.End)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input", err.Error())
+			return
+		}
+
+		spendCents, err := money.ParseCents(req.Spend)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input", fmt.Sprintf("spend %q is not a valid decimal amount: %v", req.Spend, err))
+			return
+		}
+		if spendCents < 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input", "spend must not be negative")
+			return
+		}
+
+		var replacesPtr *string
+		if replaces != "" {
+			// FR-007: refuse, rather than trust, an unverified "replaces"
+			// claim — re-check the REAL, current flagged_negative fact for
+			// this exact campaign_id, not whatever the submitting client's
+			// own UI happened to be showing when the form was filled in.
+			flagged, err := storage.IsCampaignFlaggedNegative(r.Context(), q, replaces)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+			if !flagged {
+				writeJSONError(w, http.StatusUnprocessableEntity, "replaces_not_flagged_negative",
+					fmt.Sprintf("campaign_id %q is not currently flagged negative-ROI by list_negative_roi_promotions — refusing the replaces claim. The promotion can still be logged without a replaces reference.", replaces))
+				return
+			}
+			replacesPtr = &replaces
+		}
+
+		created, err := storage.CreateOwnerPromotion(r.Context(), q, storage.NewOwnerPromotion{
+			Platform:           platform,
+			CampaignID:         campaignID,
+			PeriodStart:        start,
+			PeriodEnd:          end,
+			SpendCents:         spendCents,
+			ReplacesCampaignID: replacesPtr,
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				writeJSONError(w, http.StatusConflict, "already_exists",
+					fmt.Sprintf("a promotion for platform %q, campaign_id %q, and this exact period already exists", platform, campaignID))
+				return
+			}
+			writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+			return
+		}
+
+		view := mcptools.NewPromotionRoiResult([]reconcile.PromotionRoiRecord{created}).Promotions[0]
+		writeJSON(w, http.StatusCreated, CreatePromotionResponse{
+			Promotion:           view,
+			EarnedCampaignBadge: replacesPtr != nil,
+		})
+	}
+}
+
+// parseStrictPeriod parses a required {start, end} pair, refusing (rather
+// than defaulting) a malformed date or an end before its start — this
+// endpoint has no "omitted means everything" convention the way the
+// read-only GET endpoints do, since a promotion record MUST have a real
+// period.
+func parseStrictPeriod(startStr, endStr string) (start, end time.Time, err error) {
+	start, err = time.Parse(dateLayout, startStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("period.start %q is not YYYY-MM-DD", startStr)
+	}
+	end, err = time.Parse(dateLayout, endStr)
+	if err != nil {
+		return time.Time{}, time.Time{}, fmt.Errorf("period.end %q is not YYYY-MM-DD", endStr)
+	}
+	if end.Before(start) {
+		return time.Time{}, time.Time{}, fmt.Errorf("period.end %s is before period.start %s", endStr, startStr)
+	}
+	return start, end, nil
+}
+
+// isUniqueViolation reports whether err is Postgres' unique_violation
+// (SQLSTATE 23505) — the promotion_roi_record_platform_campaign_period_idx
+// constraint firing because this exact platform/campaign_id/period already
+// exists. Rendered as 409 Conflict rather than a generic 500, since it is a
+// well-formed, entirely expected outcome of a duplicate submission, not an
+// infrastructure failure.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}

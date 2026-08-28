@@ -8,16 +8,37 @@ import { POINTS_PER_BADGE } from './pointValues'
  * DERIVED at read time from the badges in the same payload — there is no
  * points table and nothing accrues a balance in the background.
  */
+export type BadgeCode =
+  | 'clean_close'
+  | 'discrepancy_catcher'
+  | 'growth'
+  | 'engagement'
+  | 'campaign_creation'
+
 export interface PointsLine {
-  code: 'clean_close' | 'discrepancy_catcher'
+  code: BadgeCode
   name: string
   count: number
   points_each: number
   points: number
 }
 
+/** One entry in `badges` — every field FR-009 requires beyond date/code:
+ * `category` distinguishes which of the four badge categories a code
+ * belongs to (Reconciliation is the only one with two codes), and the rest
+ * are populated only for the badge types they apply to. */
+export interface BadgeEntry {
+  date: string
+  code: BadgeCode
+  name: string
+  category: 'reconciliation' | 'growth' | 'engagement' | 'campaign_creation'
+  campaign_id?: string
+  replaces_campaign_id?: string
+  usage_days?: number
+}
+
 export interface BadgesResponse {
-  badges: { date: string; code: string }[]
+  badges: BadgeEntry[]
   points: { total: number; breakdown: PointsLine[] }
 }
 

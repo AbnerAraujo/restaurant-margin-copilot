@@ -12,9 +12,14 @@ function stubBadgesResponse(body: unknown) {
 
 const EARNED_RESPONSE = {
   badges: [
-    { date: '2026-08-01', code: 'clean_close' },
-    { date: '2026-08-02', code: 'clean_close' },
-    { date: '2026-08-03', code: 'discrepancy_catcher' },
+    { date: '2026-08-01', code: 'clean_close', name: 'Clean Close', category: 'reconciliation' },
+    { date: '2026-08-02', code: 'clean_close', name: 'Clean Close', category: 'reconciliation' },
+    {
+      date: '2026-08-03',
+      code: 'discrepancy_catcher',
+      name: 'Discrepancy Catcher',
+      category: 'reconciliation',
+    },
   ],
   points: {
     total: 45,
@@ -97,6 +102,32 @@ describe('PointsCard', () => {
     // the figure rather than only the zero case.
     expect(
       screen.getByText(/not awarded for signing up/i),
+    ).toBeInTheDocument()
+  })
+
+  it('counts "days reconciled" from Reconciliation badges only, never a Growth/Engagement/Campaign-Creation badge', async () => {
+    stubBadgesResponse({
+      badges: [
+        { date: '2026-08-01', code: 'clean_close', name: 'Clean Close', category: 'reconciliation' },
+        { date: '2026-08-07', code: 'growth', name: 'Growth', category: 'growth', campaign_id: 'X' },
+        { date: '2026-08-14', code: 'engagement', name: 'Week One', category: 'engagement', usage_days: 7 },
+      ],
+      points: {
+        total: 25,
+        breakdown: [
+          { code: 'clean_close', name: 'Clean Close', count: 1, points_each: 10, points: 10 },
+          { code: 'growth', name: 'Growth', count: 1, points_each: 15, points: 15 },
+        ],
+      },
+    })
+    render(<PointsCard />)
+
+    // 1 Reconciliation badge among the 3 total — "days reconciled" must read
+    // 1, not 3, even though the total point balance (25) reflects all of them.
+    expect(
+      await screen.findByRole('status', {
+        name: '25 Steward Points from 1 day already reconciled',
+      }),
     ).toBeInTheDocument()
   })
 

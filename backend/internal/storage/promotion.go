@@ -145,6 +145,12 @@ func PromotionRoiRecordToDomain(row PromotionRoiRecord) (reconcile.PromotionRoiR
 		SpendCents:      spendCents,
 		FlaggedNegative: row.FlaggedNegative,
 		SourceRowRefs:   refs,
+		Origin:          row.Origin,
+		CreatedAt:       row.CreatedAt.Time,
+	}
+	if row.ReplacesCampaignID.Valid {
+		replaces := row.ReplacesCampaignID.String
+		rec.ReplacesCampaignID = &replaces
 	}
 	if row.AttributedIncrementalOrders.Valid {
 		n := int(row.AttributedIncrementalOrders.Int32)
@@ -254,6 +260,77 @@ func numericToCentsAnyScale(n pgtype.Numeric) (int64, error) {
 		return 0, fmt.Errorf("numeric value %s out of int64 cents range", v.String())
 	}
 	return v.Int64(), nil
+}
+
+// IsCampaignFlaggedNegative reports whether ANY persisted promotion_roi_record
+// for campaignID currently has flagged_negative = true — the exact fact
+// list_negative_roi_promotions itself surfaces, queried directly by
+// campaign_id rather than by period. Backs FR-007's server-side
+// re-verification of a POST /api/promotions "replaces" claim: the handler
+// must not trust a client-supplied flag, and must not assume a period,
+// since the owner may reasonably reference a flagged campaign without
+// re-typing its exact date range.
+func IsCampaignFlaggedNegative(ctx context.Context, q Querier, campaignID string) (bool, error) {
+	records, err := q.GetPromotionRoiByCampaign(ctx, campaignID)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range records {
+		if r.FlaggedNegative {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// NewOwnerPromotion is the plain-Go input to CreateOwnerPromotion —
+// internal/httpapi's POST /api/promotions handler builds this after FR-007's
+// validation has already run; this function performs no validation of its
+// own beyond what the CreateOwnerPromotion sqlc query's own CHECK
+// constraints enforce, per this package's doc comment ("nothing here
+// computes a number"). Named distinctly from the sqlc-generated
+// CreateOwnerPromotionParams (this file's own inverse-conversion pattern —
+// see PromotionRoiRecordToDomain — rather than a name collision with
+// generated code).
+type NewOwnerPromotion struct {
+	Platform           string
+	CampaignID         string
+	PeriodStart        time.Time
+	PeriodEnd          time.Time
+	SpendCents         int64
+	ReplacesCampaignID *string
+}
+
+// CreateOwnerPromotion inserts a new owner_created promotion_roi_record
+// (User Story 3 / FR-005-FR-008). Unlike SavePromotionRoiRecord, this is a
+// plain insert with no ON CONFLICT upsert: a second submission naming the
+// same platform/campaign_id/period is a genuine duplicate attempt from a
+// person, not a re-run of the same deterministic pipeline, so it surfaces as
+// a real unique-violation error for the handler to render as a 409, not a
+// silent overwrite.
+func CreateOwnerPromotion(ctx context.Context, q Querier, p NewOwnerPromotion) (reconcile.PromotionRoiRecord, error) {
+	refsJSON, err := marshalOrEmptyArray[reconcile.SourceRowRef](nil)
+	if err != nil {
+		return reconcile.PromotionRoiRecord{}, fmt.Errorf("storage: marshal source_row_refs: %w", err)
+	}
+
+	var replaces pgtype.Text
+	if p.ReplacesCampaignID != nil {
+		replaces = pgtype.Text{String: *p.ReplacesCampaignID, Valid: true}
+	}
+
+	row, err := q.CreateOwnerPromotion(ctx, CreateOwnerPromotionParams{
+		Platform:           p.Platform,
+		CampaignID:         p.CampaignID,
+		Period:             PromotionPeriodRange(p.PeriodStart, p.PeriodEnd),
+		Spend:              centsToNumeric(p.SpendCents),
+		SourceRowRefs:      refsJSON,
+		ReplacesCampaignID: replaces,
+	})
+	if err != nil {
+		return reconcile.PromotionRoiRecord{}, err
+	}
+	return PromotionRoiRecordToDomain(row)
 }
 
 // LoadAllPromotionRoiRecords reads every persisted promotion record, in

@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Outlet, useOutletContext } from 'react-router-dom'
 
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
 import Sidebar, { MobileNavBar } from '@/components/Shell/Sidebar'
+import { postJson } from '@/lib/api'
 
 /**
  * What a routed page can read/do with the shell-level running-cost total.
@@ -35,6 +36,22 @@ export default function AppShell() {
   const logInteractions = (newInteractions: CostInteraction[]) => {
     setInteractions((previous) => [...previous, ...newInteractions])
   }
+
+  // The real usage-event ping backing Engagement badges (spec
+  // 002-badge-expansion, FR-003). Fired once per mount of the SHELL, not per
+  // routed page: `<Outlet>` swaps children as the owner navigates between
+  // `/close`, `/ask`, `/promotions`, etc., but this component itself does
+  // not remount on those transitions, so this effect runs once per real
+  // app load/session — never once per page view, which would let ordinary
+  // in-app navigation inflate "distinct days used" (plan.md's Frontend
+  // changes: "not per page navigation"). The actual "never double-count a
+  // calendar day" guarantee still lives entirely server-side (a unique
+  // index on a generated column, migrations/000003) — this effect firing
+  // more than once (a hot reload, a second tab) is harmless by
+  // construction, not by care taken here.
+  useEffect(() => {
+    postJson('/api/usage').catch(() => undefined)
+  }, [])
 
   return (
     // h-screen + overflow-hidden, not min-h-screen: the shell owns exactly

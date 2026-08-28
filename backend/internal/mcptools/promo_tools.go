@@ -43,6 +43,16 @@ type PromotionRoiView struct {
 	Reason                       string                   `json:"reason,omitempty"`
 	FlaggedNegative              bool                     `json:"flagged_negative"`
 	SourceRowRefs                []reconcile.SourceRowRef `json:"source_row_refs"`
+	// Origin/ReplacesCampaignID back spec 002-badge-expansion's User Story 3:
+	// "ingested" (the file pipeline, every pre-002 record) or
+	// "owner_created" (POST /api/promotions), and — only on an
+	// owner_created record with a replacement claim — the flagged campaign
+	// it names. Rendered here so the Promotions page can show an
+	// owner-logged replacement through the exact same surface as an
+	// ingested campaign (FR-005's "renders through the same surfaces"),
+	// distinguished rather than indistinguishable.
+	Origin             string  `json:"origin"`
+	ReplacesCampaignID *string `json:"replaces_campaign_id,omitempty"`
 }
 
 // PromotionRoiResult is get_promotion_roi's and
@@ -60,9 +70,11 @@ func toPromotionRoiView(rec reconcile.PromotionRoiRecord) PromotionRoiView {
 			Start: rec.PeriodStart.Format(dateLayout),
 			End:   rec.PeriodEnd.Format(dateLayout),
 		},
-		Spend:           money.FormatCents(rec.SpendCents),
-		FlaggedNegative: rec.FlaggedNegative,
-		SourceRowRefs:   rec.SourceRowRefs,
+		Spend:              money.FormatCents(rec.SpendCents),
+		FlaggedNegative:    rec.FlaggedNegative,
+		SourceRowRefs:      rec.SourceRowRefs,
+		Origin:             rec.Origin,
+		ReplacesCampaignID: rec.ReplacesCampaignID,
 	}
 	if rec.AttributedIncrementalOrders != nil {
 		view.AttributedIncrementalOrders = rec.AttributedIncrementalOrders
@@ -74,6 +86,15 @@ func toPromotionRoiView(rec reconcile.PromotionRoiRecord) PromotionRoiView {
 	if rec.ROICents != nil {
 		s := money.FormatCents(*rec.ROICents)
 		view.ROI = &s
+	} else if rec.Origin == reconcile.OriginOwnerCreated {
+		// A different fact from FR-013's "we tried and could not attribute"
+		// — an owner-created record (spec 002 User Story 3) has never been
+		// through attribution at all, since no delivery-platform data has
+		// been tagged to it yet. Both render as roi: null (never a
+		// computed-looking zero), but the reason distinguishes "tried,
+		// failed" from "hasn't run yet" rather than overloading one string
+		// for two different facts.
+		view.Reason = "not_yet_attributed"
 	} else {
 		// FR-013, enforced at the tool boundary too: roi stays null and the
 		// caller is told exactly why, never a computed-looking value.

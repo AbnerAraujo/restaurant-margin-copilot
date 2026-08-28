@@ -15,6 +15,22 @@ type Querier interface {
 	// One row per answer served from cache — a non-interaction, recorded in its
 	// own ledger rather than as a fabricated question_interaction.
 	CreateAnswerCacheHit(ctx context.Context, arg CreateAnswerCacheHitParams) (AnswerCacheHit, error)
+	// Backs POST /api/promotions (User Story 3): the owner logging a new
+	// promotion record directly in the app, per FR-005/FR-006. Deliberately a
+	// plain INSERT, not the same ON CONFLICT upsert UpsertPromotionRoiRecord
+	// uses for the ingestion pipeline — a second submission with the same
+	// platform/campaign_id/period is a genuine new attempt from a human, not a
+	// re-run of the same deterministic computation, so a unique-violation here
+	// should surface as a real "that campaign already exists" error
+	// (internal/httpapi), not silently overwrite what's there.
+	//
+	// attributed_incremental_orders/revenue and roi are never supplied here: an
+	// owner-created record has not been through attribution at all (no
+	// delivery-platform data has been tagged to it yet), which is a DIFFERENT
+	// fact from FR-013's "unattributable after trying" — both render the same
+	// way (roi: null) because both really are "no ROI is known", never a
+	// computed-looking zero.
+	CreateOwnerPromotion(ctx context.Context, arg CreateOwnerPromotionParams) (PromotionRoiRecord, error)
 	// Writer: internal/instrumentation/ only, alongside whichever of
 	// internal/ambiguity/ or internal/explain/ ran (Constitution Principle VI).
 	CreateQuestionInteraction(ctx context.Context, arg CreateQuestionInteractionParams) (QuestionInteraction, error)
@@ -59,10 +75,25 @@ type Querier interface {
 	// (Constitution Principle III: a typed, bounded match, never open-ended
 	// fuzzy computation).
 	ListDistinctCampaignIDs(ctx context.Context) ([]string, error)
+	// Backs Engagement badge evaluation (FR-004): every distinct UTC calendar
+	// day the app has genuinely been opened on, oldest first. The unique index
+	// on occurred_on already guarantees one row per day, so this is a plain
+	// ordered read, not a DISTINCT/GROUP BY doing real deduplication work.
+	ListDistinctUsageDays(ctx context.Context) ([]pgtype.Date, error)
 	// Backs the list_negative_roi_promotions MCP tool contract (spec User Story 4 / SC-006).
 	ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype.Range[pgtype.Date]) ([]PromotionRoiRecord, error)
 	// Backs an instrumentation/history view in the frontend cost panel.
 	ListRecentQuestionInteractions(ctx context.Context, limit int32) ([]QuestionInteraction, error)
+	// Backs FR-003: one real, timestamped usage event per real app-open. The
+	// ON CONFLICT no-op is the actual mechanism behind "no double-counting
+	// within a calendar day, no manual dedup required of the caller" (spec 002
+	// User Story 2 Acceptance Scenario 3) — occurred_on is a generated column
+	// with a unique index (migrations/000003), so a second ping on the same UTC
+	// day can never insert a second row. DO NOTHING has no RETURNING row on a
+	// conflict, so the Go caller (internal/httpapi) does its own
+	// already-recorded-today check rather than relying on this query's return
+	// value alone; see storage/usage_event.go's RecordUsageEvent wrapper.
+	RecordUsageEvent(ctx context.Context) (UsageEvent, error)
 	// Total model spend the cache has avoided so far.
 	SumAnswerCacheCostAvoided(ctx context.Context) (pgtype.Numeric, error)
 	// Backs the running cost total the UI must show for 100% of interactions (FR-009).

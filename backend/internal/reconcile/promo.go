@@ -36,7 +36,35 @@ type PromotionRoiRecord struct {
 	// known").
 	FlaggedNegative bool
 	SourceRowRefs   []SourceRowRef
+
+	// Origin, ReplacesCampaignID, and CreatedAt back spec
+	// 002-badge-expansion's Campaign-Creation badge (internal/badges) — they
+	// do not exist for the pre-002 ingestion path in any meaningful sense
+	// beyond their defaults, which is why ComputePromotionRoiRecords below
+	// never sets them: every record it produces is, by construction,
+	// OriginIngested with no replaces reference.
+
+	// Origin is OriginIngested for every record ComputePromotionRoiRecords
+	// produces (the file pipeline) and OriginOwnerCreated for a record
+	// created directly through POST /api/promotions (internal/httpapi).
+	Origin string
+	// ReplacesCampaignID is set only on an OriginOwnerCreated record whose
+	// creation was framed as replacing a promotion already flagged
+	// negative-ROI (FR-006/FR-007) — nil on every ingested record and on an
+	// owner-created record with no replacement claim.
+	ReplacesCampaignID *string
+	// CreatedAt is when this row was first written to Postgres — the
+	// Campaign-Creation badge is dated to this field specifically (not to
+	// PeriodStart/PeriodEnd), since what it acknowledges is the act of
+	// logging the replacement, not any campaign's own calendar period.
+	CreatedAt time.Time
 }
+
+// Origin values for PromotionRoiRecord.Origin (spec 002-badge-expansion).
+const (
+	OriginIngested     = "ingested"
+	OriginOwnerCreated = "owner_created"
+)
 
 // ComputePromotionRoiRecords turns raw promotion spend records and the
 // delivery-platform export into one PromotionRoiRecord per promotion,
@@ -78,6 +106,7 @@ func ComputePromotionRoiRecords(promos []ingest.PromotionSpendRecord, delivery [
 			PeriodEnd:     p.PeriodEnd,
 			SpendCents:    p.SpendCents,
 			SourceRowRefs: []SourceRowRef{p.Ref},
+			Origin:        OriginIngested,
 		}
 
 		if len(matches) > 0 {

@@ -26,7 +26,13 @@ export default function PointsCard({ className }: { className?: string }) {
 
   const total = data?.points.total ?? 0
   const breakdown = data?.points.breakdown ?? []
-  const daysClosed = data?.badges.length ?? 0
+  // Reconciliation badges only: spec 002 added three more badge categories
+  // to this same response, and a Growth/Engagement/Campaign-Creation badge
+  // is not a reconciled day — counting all of `badges` here would overstate
+  // "days reconciled" the moment any of the new categories fires.
+  const daysClosed =
+    data?.badges.filter((badge) => badge.category === 'reconciliation')
+      .length ?? 0
 
   return (
     <Panel
@@ -63,7 +69,7 @@ export default function PointsCard({ className }: { className?: string }) {
                 <Stat
                   label="Days reconciled"
                   value={String(daysClosed)}
-                  caption="Every point traces to one of these"
+                  caption="Reconciliation points trace to these"
                 />
               </StatGroup>
             </div>

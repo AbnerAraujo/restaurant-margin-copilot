@@ -114,7 +114,7 @@ func TestBuildResponseWireContract(t *testing.T) {
 	body, err := json.Marshal(BuildResponse([]reconcile.DailyReconciliation{
 		day("2026-08-01"),
 		day("2026-08-03", reconcile.FlagDuplicateOrderRemoved),
-	}))
+	}, nil, nil))
 	if err != nil {
 		t.Fatalf("marshalling response: %v", err)
 	}

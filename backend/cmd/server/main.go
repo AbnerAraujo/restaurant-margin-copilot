@@ -109,7 +109,12 @@ func main() {
 		// same persisted deterministic output the MCP tools read, through the
 		// same rendering (see internal/httpapi/data.go).
 		mux.HandleFunc("/api/reconciliation", httpapi.HandleReconciliation(store))
-		mux.HandleFunc("/api/promotions", httpapi.HandlePromotions(store))
+		mux.HandleFunc("/api/promotions", methodSplit(httpapi.HandlePromotions(store), httpapi.HandleCreatePromotion(store)))
+		// POST /api/usage: the real app-open ping backing Engagement badges
+		// (spec 002-badge-expansion). No model involved, same as every other
+		// endpoint registered directly here rather than through
+		// internal/mcptools.
+		mux.HandleFunc("/api/usage", httpapi.HandleRecordUsage(store))
 
 		askDeps, err := buildAskDeps(ctx, store, cache)
 		if err != nil {
@@ -117,7 +122,7 @@ func main() {
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET /api/promotions and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, POST /api/usage, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
@@ -193,3 +198,20 @@ func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercach
 // dateLayout matches internal/mcptools' own YYYY-MM-DD convention for every
 // date string this product hands to the model layer.
 const dateLayout = "2006-01-02"
+
+// methodSplit lets one route (/api/promotions) dispatch to two different
+// handlers by HTTP method — GET for the existing read-only listing, POST
+// for spec 002's new owner-created-promotion write path — rather than
+// registering a second URL for what is conceptually the same resource.
+// Each handler already refuses its own wrong-method case (405), so an
+// unrecognised method here just falls through to whichever handler was
+// picked and lets its own check report it.
+func methodSplit(get, post http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			post(w, r)
+			return
+		}
+		get(w, r)
+	}
+}

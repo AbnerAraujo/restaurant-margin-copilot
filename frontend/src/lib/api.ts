@@ -22,3 +22,38 @@ export async function getJson<T>(path: string): Promise<T> {
   }
   return (await response.json()) as T
 }
+
+/**
+ * POSTs a JSON body, turning a non-2xx into a thrown `ApiError` carrying the
+ * server's own error code/detail (spec 002-badge-expansion's POST
+ * /api/promotions and POST /api/usage both use this) — same "surface the
+ * real message" discipline as `getJson`, plus a typed `code` field so a
+ * caller can react to a specific refusal (e.g. FR-007's
+ * `replaces_not_flagged_negative`) without parsing prose.
+ */
+export class ApiError extends Error {
+  code: string
+  constructor(code: string, detail: string) {
+    super(detail)
+    this.code = code
+  }
+}
+
+export async function postJson<T>(path: string, body?: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const raw = await response.text()
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; detail?: string }
+      throw new ApiError(parsed.error ?? 'unknown_error', parsed.detail ?? raw)
+    } catch (caught) {
+      if (caught instanceof ApiError) throw caught
+      throw new Error(`${path} returned ${response.status}: ${raw.trim()}`)
+    }
+  }
+  return (await response.json()) as T
+}

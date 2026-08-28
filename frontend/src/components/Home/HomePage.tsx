@@ -12,7 +12,7 @@ import { Link } from 'react-router-dom'
 
 import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
-import { usePoints } from '@/components/Points/usePoints'
+import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
@@ -51,18 +51,23 @@ interface CapabilityTile {
   title: string
   description: string
   /**
-   * Which badge code's points this area actually earns, or null when the
-   * area earns none today.
+   * Which badge code(s) this area earns points from, summed for the tile's
+   * own subtotal (never `data.points.total`, which is now the sum across
+   * ALL FIVE codes since spec 002-badge-expansion — reading the grand total
+   * here would overstate what closing/asking/promoting each specifically
+   * earns).
    *
-   * Null is the honest answer for Ask and Promotions: docs/product-strategy.md
-   * scopes the Engagement and Campaign-Creation badge categories as roadmap,
-   * and only the Reconciliation category is built. Showing a live-looking
-   * "points earned" figure on an area that earns nothing would be inventing
-   * a reward, which is the same class of fabrication as inventing a number.
+   * Every tile earns something real as of spec 002: Ask earns Engagement
+   * (opening the app on real, distinct days) and Promotions earns Growth +
+   * Campaign-Creation (a profitable campaign, or replacing a flagged one).
+   * Before this spec, Ask/Promotions were the honest "roadmap, not earning
+   * yet" case — that label would now itself be a fabrication in the other
+   * direction (spec 002 FR-011), so the roadmap branch this component used
+   * to have is gone, not merely relabelled.
    */
-  earns: 'clean_close' | 'discrepancy_catcher' | null
-  /** What the roadmap category would be called, when earns is null. */
-  roadmapCategory?: string
+  earns: BadgeCode[]
+  /** Forward-looking "what's next" copy shown under the earned subtotal. */
+  nextHint: string
 }
 
 // Order matches the sidebar's nav order (redesign-spec.md §2.2/§3.3) so the
@@ -74,57 +79,52 @@ const CAPABILITY_TILES: CapabilityTile[] = [
     icon: CalendarCheck,
     title: "Today's Close",
     description: 'Margin, badges, and the rows behind every figure.',
-    earns: 'clean_close',
+    earns: ['clean_close', 'discrepancy_catcher'],
+    nextHint: `next close: +${POINTS_PER_BADGE.clean_close} clean, +${POINTS_PER_BADGE.discrepancy_catcher} if it catches something`,
   },
   {
     to: '/ask',
     icon: MessagesSquare,
     title: 'Ask about your margin',
     description: 'A grounded answer, or an honest refusal.',
-    earns: null,
-    roadmapCategory: 'Engagement points',
+    earns: ['engagement'],
+    nextHint: `+${POINTS_PER_BADGE.engagement} pts for a new real day used — "Week One" at 7 distinct days`,
   },
   {
     to: '/promotions',
     icon: Megaphone,
     title: 'Promotion ROI',
     description: "Which campaigns paid for themselves, and which we won't guess at.",
-    earns: null,
-    roadmapCategory: 'Campaign points',
+    earns: ['growth', 'campaign_creation'],
+    nextHint: `+${POINTS_PER_BADGE.growth} per profitable campaign, +${POINTS_PER_BADGE.campaign_creation} for replacing a flagged one`,
   },
 ]
 
+/** Sums only the breakdown lines for this tile's own codes — never
+ * `points.total`, which is the sum across all five codes as of spec 002. */
+function subtotalFor(breakdown: PointsLine[], codes: BadgeCode[]): number {
+  return breakdown
+    .filter((line) => codes.includes(line.code))
+    .reduce((sum, line) => sum + line.points, 0)
+}
+
 /**
- * Per-tile points line: what this area has actually earned, and what the next
- * close there is worth. Reconciliation is the only category that earns today,
- * so the other two tiles say so plainly instead of showing a zero that would
- * read as "you have failed to earn any".
+ * Per-tile points line: what THIS area specifically has earned (its own
+ * codes' subtotal, per the tile's `earns` list) and what's next there. Every
+ * tile earns for real as of spec 002-badge-expansion — there is no more
+ * "roadmap, not earning yet" case to render.
  */
 function TilePoints({ tile }: { tile: CapabilityTile }) {
   const { data } = usePoints()
 
-  if (tile.earns === null) {
-    return (
-      <p className="mt-4 border-t border-border pt-3 text-micro text-muted-foreground">
-        <span className="font-medium">{tile.roadmapCategory}</span>: roadmap,
-        not earning yet
-      </p>
-    )
-  }
-
-  // The Close tile is the whole Reconciliation category: both badge types
-  // are earned by closing a day, so its balance is the full total.
-  const total = data?.points.total ?? null
+  const subtotal = data ? subtotalFor(data.points.breakdown, tile.earns) : null
 
   return (
     <p className="mt-4 flex flex-wrap items-baseline gap-x-2 border-t border-border pt-3 text-micro text-muted-foreground">
       <span className="font-medium text-foreground">
-        {total === null ? '—' : total.toLocaleString('en-US')} pts earned
+        {subtotal === null ? '—' : subtotal.toLocaleString('en-US')} pts earned
       </span>
-      <span>
-        next close: +{POINTS_PER_BADGE.clean_close} clean, +
-        {POINTS_PER_BADGE.discrepancy_catcher} if it catches something
-      </span>
+      <span>{tile.nextHint}</span>
     </p>
   )
 }

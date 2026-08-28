@@ -12,8 +12,77 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createOwnerPromotion = `-- name: CreateOwnerPromotion :one
+INSERT INTO promotion_roi_record (
+    platform,
+    campaign_id,
+    period,
+    spend,
+    flagged_negative,
+    source_row_refs,
+    origin,
+    replaces_campaign_id
+) VALUES (
+    $1, $2, $3, $4, false, $5, 'owner_created', $6
+)
+RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id
+`
+
+type CreateOwnerPromotionParams struct {
+	Platform           string                    `json:"platform"`
+	CampaignID         string                    `json:"campaign_id"`
+	Period             pgtype.Range[pgtype.Date] `json:"period"`
+	Spend              pgtype.Numeric            `json:"spend"`
+	SourceRowRefs      json.RawMessage           `json:"source_row_refs"`
+	ReplacesCampaignID pgtype.Text               `json:"replaces_campaign_id"`
+}
+
+// Backs POST /api/promotions (User Story 3): the owner logging a new
+// promotion record directly in the app, per FR-005/FR-006. Deliberately a
+// plain INSERT, not the same ON CONFLICT upsert UpsertPromotionRoiRecord
+// uses for the ingestion pipeline — a second submission with the same
+// platform/campaign_id/period is a genuine new attempt from a human, not a
+// re-run of the same deterministic computation, so a unique-violation here
+// should surface as a real "that campaign already exists" error
+// (internal/httpapi), not silently overwrite what's there.
+//
+// attributed_incremental_orders/revenue and roi are never supplied here: an
+// owner-created record has not been through attribution at all (no
+// delivery-platform data has been tagged to it yet), which is a DIFFERENT
+// fact from FR-013's "unattributable after trying" — both render the same
+// way (roi: null) because both really are "no ROI is known", never a
+// computed-looking zero.
+func (q *Queries) CreateOwnerPromotion(ctx context.Context, arg CreateOwnerPromotionParams) (PromotionRoiRecord, error) {
+	row := q.db.QueryRow(ctx, createOwnerPromotion,
+		arg.Platform,
+		arg.CampaignID,
+		arg.Period,
+		arg.Spend,
+		arg.SourceRowRefs,
+		arg.ReplacesCampaignID,
+	)
+	var i PromotionRoiRecord
+	err := row.Scan(
+		&i.ID,
+		&i.Platform,
+		&i.CampaignID,
+		&i.Period,
+		&i.Spend,
+		&i.AttributedIncrementalOrders,
+		&i.AttributedIncrementalRevenue,
+		&i.Roi,
+		&i.FlaggedNegative,
+		&i.SourceRowRefs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Origin,
+		&i.ReplacesCampaignID,
+	)
+	return i, err
+}
+
 const getPromotionRoiByCampaign = `-- name: GetPromotionRoiByCampaign :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
 WHERE campaign_id = $1
 ORDER BY period
 `
@@ -41,6 +110,8 @@ func (q *Queries) GetPromotionRoiByCampaign(ctx context.Context, campaignID stri
 			&i.SourceRowRefs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ReplacesCampaignID,
 		); err != nil {
 			return nil, err
 		}
@@ -53,7 +124,7 @@ func (q *Queries) GetPromotionRoiByCampaign(ctx context.Context, campaignID stri
 }
 
 const getPromotionRoiByPlatformAndPeriod = `-- name: GetPromotionRoiByPlatformAndPeriod :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
 WHERE platform = $1 AND period && $2::daterange
 ORDER BY period
 `
@@ -86,6 +157,8 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 			&i.SourceRowRefs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ReplacesCampaignID,
 		); err != nil {
 			return nil, err
 		}
@@ -98,7 +171,7 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 }
 
 const listAllPromotionRoiRecords = `-- name: ListAllPromotionRoiRecords :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
 ORDER BY period, campaign_id
 `
 
@@ -129,6 +202,8 @@ func (q *Queries) ListAllPromotionRoiRecords(ctx context.Context) ([]PromotionRo
 			&i.SourceRowRefs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ReplacesCampaignID,
 		); err != nil {
 			return nil, err
 		}
@@ -174,7 +249,7 @@ func (q *Queries) ListDistinctCampaignIDs(ctx context.Context) ([]string, error)
 }
 
 const listNegativeRoiPromotions = `-- name: ListNegativeRoiPromotions :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
 WHERE flagged_negative = true AND period && $1::daterange
 ORDER BY period
 `
@@ -202,6 +277,8 @@ func (q *Queries) ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype
 			&i.SourceRowRefs,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Origin,
+			&i.ReplacesCampaignID,
 		); err != nil {
 			return nil, err
 		}
@@ -235,7 +312,7 @@ ON CONFLICT (platform, campaign_id, period) DO UPDATE SET
     flagged_negative               = EXCLUDED.flagged_negative,
     source_row_refs                = EXCLUDED.source_row_refs,
     updated_at                     = now()
-RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at
+RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id
 `
 
 type UpsertPromotionRoiRecordParams struct {
@@ -278,6 +355,8 @@ func (q *Queries) UpsertPromotionRoiRecord(ctx context.Context, arg UpsertPromot
 		&i.SourceRowRefs,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Origin,
+		&i.ReplacesCampaignID,
 	)
 	return i, err
 }

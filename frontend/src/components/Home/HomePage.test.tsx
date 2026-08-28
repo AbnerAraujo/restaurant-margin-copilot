@@ -106,4 +106,51 @@ describe('HomePage', () => {
       expect(link).toHaveFocus()
     }
   })
+
+  it('never shows "roadmap, not earning yet" — every tile earns for real as of spec 002', async () => {
+    renderHomePageWithRoutes()
+
+    await screen.findAllByText(/pts earned/i)
+    expect(screen.queryByText(/roadmap, not earning yet/i)).not.toBeInTheDocument()
+  })
+
+  it('shows each tile\'s OWN earned subtotal, not the grand total across all badge categories', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          badges: [],
+          points: {
+            total: 55,
+            breakdown: [
+              { code: 'clean_close', name: 'Clean Close', count: 1, points_each: 10, points: 10 },
+              { code: 'engagement', name: 'Week One', count: 1, points_each: 5, points: 5 },
+              { code: 'growth', name: 'Growth', count: 1, points_each: 15, points: 15 },
+              {
+                code: 'campaign_creation',
+                name: 'Campaign Launcher',
+                count: 1,
+                points_each: 30,
+                points: 30,
+              },
+            ],
+          },
+        }),
+      }),
+    )
+    renderHomePageWithRoutes()
+
+    const closeTile = (await screen.findByRole('link', { name: /Today's Close/ }))
+    const askTile = screen.getByRole('link', { name: /Ask about your margin/ })
+    const promoTile = screen.getByRole('link', { name: /Promotion ROI/ })
+
+    // Close earns only clean_close+discrepancy_catcher here (10), not the
+    // grand total (55).
+    expect(within(closeTile).getByText(/^10 pts earned$/)).toBeInTheDocument()
+    // Ask earns only engagement (5).
+    expect(within(askTile).getByText(/^5 pts earned$/)).toBeInTheDocument()
+    // Promotions earns growth + campaign_creation (15 + 30 = 45).
+    expect(within(promoTile).getByText(/^45 pts earned$/)).toBeInTheDocument()
+  })
 })

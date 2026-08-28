@@ -54,6 +54,36 @@ ORDER BY period;
 -- fuzzy computation).
 SELECT DISTINCT campaign_id FROM promotion_roi_record ORDER BY campaign_id;
 
+-- name: CreateOwnerPromotion :one
+-- Backs POST /api/promotions (User Story 3): the owner logging a new
+-- promotion record directly in the app, per FR-005/FR-006. Deliberately a
+-- plain INSERT, not the same ON CONFLICT upsert UpsertPromotionRoiRecord
+-- uses for the ingestion pipeline — a second submission with the same
+-- platform/campaign_id/period is a genuine new attempt from a human, not a
+-- re-run of the same deterministic computation, so a unique-violation here
+-- should surface as a real "that campaign already exists" error
+-- (internal/httpapi), not silently overwrite what's there.
+--
+-- attributed_incremental_orders/revenue and roi are never supplied here: an
+-- owner-created record has not been through attribution at all (no
+-- delivery-platform data has been tagged to it yet), which is a DIFFERENT
+-- fact from FR-013's "unattributable after trying" — both render the same
+-- way (roi: null) because both really are "no ROI is known", never a
+-- computed-looking zero.
+INSERT INTO promotion_roi_record (
+    platform,
+    campaign_id,
+    period,
+    spend,
+    flagged_negative,
+    source_row_refs,
+    origin,
+    replaces_campaign_id
+) VALUES (
+    $1, $2, $3, $4, false, $5, 'owner_created', $6
+)
+RETURNING *;
+
 -- name: ListAllPromotionRoiRecords :many
 -- Backs GET /api/promotions (internal/httpapi/data.go): the whole promotion
 -- set for the Promotions page, which is a deliberate full listing rather

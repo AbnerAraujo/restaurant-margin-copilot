@@ -56,6 +56,10 @@ type PromotionRoiRecord struct {
 	SourceRowRefs                json.RawMessage           `json:"source_row_refs"`
 	CreatedAt                    pgtype.Timestamptz        `json:"created_at"`
 	UpdatedAt                    pgtype.Timestamptz        `json:"updated_at"`
+	// ingested (file pipeline, the only origin before spec 002) or owner_created (POST /api/promotions, spec 002 User Story 3).
+	Origin string `json:"origin"`
+	// Set only on an owner_created row whose creation was framed as replacing a promotion already flagged negative-ROI (FR-006/FR-007). Backs the Campaign-Creation badge (internal/badges) — never itself re-validated after insert, since a re-ingestion cannot retroactively invalidate an action the owner already took (spec Edge Cases).
+	ReplacesCampaignID pgtype.Text `json:"replaces_campaign_id"`
 }
 
 // Per-interaction instrumentation (Constitution Principle VI): tokens, cost, latency, and whether refusal/clarification fired, from the first API call — refusal_has_no_answer_or_provenance enforces Principle II.
@@ -74,4 +78,11 @@ type QuestionInteraction struct {
 	EstimatedCostUsd    pgtype.Numeric            `json:"estimated_cost_usd"`
 	LatencyMs           int32                     `json:"latency_ms"`
 	CreatedAt           pgtype.Timestamptz        `json:"created_at"`
+}
+
+// One row per distinct UTC calendar day the app was opened (FR-003). No tenant/account column yet — single-owner prototype (spec 002 Assumptions); the shape to add tenant_id to if/when multi-tenant is ever built. Never pre-seeded: a fresh instance has zero rows, which is the correct, non-fabricated starting state (SC-002).
+type UsageEvent struct {
+	ID         pgtype.UUID        `json:"id"`
+	OccurredAt pgtype.Timestamptz `json:"occurred_at"`
+	OccurredOn pgtype.Date        `json:"occurred_on"`
 }
