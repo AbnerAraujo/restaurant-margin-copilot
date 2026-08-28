@@ -1186,7 +1186,7 @@
 
           <rect x="705" y="250" width="170" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="790" y="284" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">six typed Go tools,</text>
+          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">seven typed Go tools,</text>
           <text x="790" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">5s timeout, 8-call cap</text>
 
           <rect x="915" y="250" width="160" height="90" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
@@ -1266,7 +1266,7 @@
         <strong>A third, conditional call: Sonnet writes the words, never the verdict.</strong> When Haiku lands on <code>ambiguous</code> or <code>unanswerable</code>, a second model call &mdash; Claude Sonnet 5, in the same <code>internal/ambiguity</code> package &mdash; rewrites the clarifying question or refusal reason into clearer, more specific prose than the classification call is worth spending frontier-adjacent tokens on. It is structurally unable to overturn Haiku's decision: its fixed reply schema (<code>writerResponse</code>) has no <code>classification</code> field at all, so there is nothing for the caller to read back even if the model tried. On an <code>answerable</code> question this second call never fires &mdash; cost stays exactly what it was. Both passes are logged as separate <code>question_interaction</code> rows, so the running cost total always reflects real calls made, never a single row standing in for two.
       </div>
       <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $1/$5 per MTok for Haiku, $2/$10 for Sonnet &mdash; and an unrecognised model id is an error, not a silent zero.</p>
-      <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">This project's whole ambiguity/refusal discipline &mdash; classify cheaply first, refuse rather than fabricate, pair every non-answer with a concrete next step &mdash; is generalised into a reusable Claude Code skill, <code>.claude/skills/question-recovery-design</code>, so the same recovery-design pattern can be applied to a future chat or agent surface beyond this product.</p>
+      <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">This project's whole ambiguity/refusal discipline &mdash; classify cheaply first, refuse rather than fabricate, pair every non-answer with a concrete next step &mdash; is generalised into a reusable Claude Code skill, <code>.claude/skills/question-recovery-design</code>, so the same recovery-design pattern can be applied to a future chat or agent surface beyond this product. Its sibling, <code>.claude/skills/proactive-guidance-design</code>, covers the other half: what a chat surface should offer <em>before</em> the first question and <em>after</em> a successful one &mdash; the zero-state capability list and the follow-up suggestions above are its worked example in this exact codebase.</p>
     </section>
 
     <section>
@@ -1321,10 +1321,26 @@
             <tr><td class="mono">get_promotion_roi<br>list_negative_roi_promotions</td><td>Bar, or table for one</td><td>2+ campaigns is a magnitude comparison across named categories. A single campaign becomes a table: the content is its several columns of detail, and a one-bar bar chart is an anti-pattern.</td></tr>
             <tr><td class="mono">get_daily_summary</td><td>Nothing / bar / pie</td><td>Nothing for a single day &mdash; the sentence already carries the figure. 2+ days becomes a bar of margin per day. One day splitting across 3&ndash;6 sources becomes a pie of gross sales by source, the one genuine part-to-whole here. A two-slice pie is never produced.</td></tr>
             <tr><td class="mono">compare_platform_economics</td><td>Bar, four marks</td><td>Two platforms &times; two cost views (commission-only, commission&thinsp;+&thinsp;promo) is a magnitude comparison across named categories, the same job as <code>get_margin_delta</code>. A platform's <code>effective_rate</code> is <code>null</code>, never a fabricated 0%, when it has zero sales &mdash; that platform still draws as a real, visible zero-height bar for gross sales, just not a rate.</td></tr>
+            <tr><td class="mono">get_period_totals</td><td>Pie</td><td>The whole period's gross sales by source, gated 3&ndash;6 slices exactly like <code>get_daily_summary</code>'s single-day pie &mdash; the same part-to-whole shape, just summed instead of one day's figures. Shipped without a case at first; a period-totals question fell through to an empty default and rendered no chart until this was added.</td></tr>
           </tbody>
         </table>
       </div>
       <p class="prose" style="margin-top:16px;">When several recognised tools run in one interaction, a <strong>fixed priority</strong> applies rather than &ldquo;whichever ran last&rdquo;: priority is deterministic and testable, whereas call order depends on the model's own sequencing and would make the same question render differently on different runs. An unattributable promotion is carried through as an explicit <em>unavailable</em> mark &mdash; never a zero-height bar, which would read as &ldquo;broke even&rdquo; rather than &ldquo;unknown&rdquo;.</p>
+    </section>
+
+    <section>
+      <h2>Follow-up suggestions: the same discipline applied to &ldquo;what next&rdquo;</h2>
+      <p class="prose">Every answered question used to end in a blank composer &mdash; suggestion chips existed only in the empty state and inside a refusal, never after a success. <code>internal/httpapi/suggestions.go</code>'s <code>deriveFollowUpSuggestions</code> closes that gap the identical way chart-type selection already works: a pure Go function keyed on which typed tool actually ran, parsing that tool's real arguments and result &mdash; never a second model call. Asking the model &ldquo;what should the owner check next?&rdquo; would be the same category error as asking it &ldquo;bar or pie?&rdquo;, with an added risk: a model-generated suggestion could name a question the product can't actually answer, which is the same class of lie as inventing a number.</p>
+      <div class="cols" style="margin-top:20px;">
+        <div class="card soft">
+          <h3>Grounded, not generic</h3>
+          <p style="font-size:14.5px;">Every generated suggestion is built from the real date or period the answering tool was actually called with, clamped to the real min/max date range the product has data for &mdash; never a placeholder, never a date outside real coverage. All 7 tools have at least one template; a tool combination with nothing sensible to suggest returns an empty list, which is treated as a normal, honest outcome, not a bug to paper over.</p>
+        </div>
+        <div class="card soft">
+          <h3>One hop of conversation, not a transcript</h3>
+          <p style="font-size:14.5px;">A parallel mechanism, <code>ambiguity.ComposeAnswerFollowUp</code>, lets a bare reply like &ldquo;and the day before?&rdquo; resolve correctly &mdash; the same typed-pair discipline <code>PendingClarification</code> already applies to a clarification reply, extended to a real answer. Deliberately narrow: exactly the immediately preceding question and its answer text, never an accumulating history, per published research that longer, looser context is what causes a model to drift from what the user actually meant.</p>
+        </div>
+      </div>
     </section>
 
     <section>
@@ -1334,7 +1350,7 @@
           <h3>Hard limits</h3>
           <ul>
             <li>Refuses rather than estimates when data is missing or incomplete. A confidently wrong margin figure is worse than a refusal.</li>
-            <li>No open SQL, no free-form computation. Six defined, typed MCP tools, and nothing else.</li>
+            <li>No open SQL, no free-form computation. Seven defined, typed MCP tools, and nothing else.</li>
             <li>5-second timeout on every tool call and a hard 8-call cap per interaction, enforced in mcp-go's own dispatch middleware &mdash; not something an individual handler has to remember. Exceeding either returns a typed error the model can see and self-correct from, rather than crashing or truncating the interaction.</li>
             <li>30-second bound on every model call.</li>
             <li>Chart selection is deterministic Go &mdash; never a second model call deciding how a financial figure is drawn.</li>
