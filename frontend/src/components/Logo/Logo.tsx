@@ -11,13 +11,28 @@ export interface LogoProps {
   /** Icon only, or icon + wordmark. Defaults to lockup. */
   variant?: "icon" | "lockup";
   size?: number;
+  /**
+   * Plays the batwing-door swing once on mount — the same .coverMark
+   * animation docs/presentation.html opens on, so the app's own launch
+   * reads as the same brand gesture as the deck's title slide. Off by
+   * default: a mark re-rendered elsewhere in the app (a chat avatar, a
+   * repeated icon) should never swing on every render, only the one
+   * instance that represents "the app just opened."
+   */
+  animateOnMount?: boolean;
 }
 
 const MARK_INK = "#100D0C";
 const MARK_FRAME = "#5A6B5E";
 const MARK_DOOR = "#1F9D55";
 
-function StewardMark({ size = 40 }: { size?: number }) {
+function StewardMark({
+  size = 40,
+  animateOnMount = false,
+}: {
+  size?: number;
+  animateOnMount?: boolean;
+}) {
   return (
     <svg
       width={size}
@@ -30,20 +45,33 @@ function StewardMark({ size = 40 }: { size?: number }) {
       <line x1="20" y1="14" x2="20" y2="90" stroke={MARK_FRAME} strokeWidth="4" />
       <line x1="80" y1="14" x2="80" y2="90" stroke={MARK_FRAME} strokeWidth="4" />
       <line x1="20" y1="14" x2="80" y2="14" stroke={MARK_FRAME} strokeWidth="4" />
-      <polygon points="20,34 39,34 48,52 39,70 20,70" fill={MARK_DOOR} />
-      <polygon points="80,34 61,34 52,52 61,70 80,70" fill={MARK_DOOR} />
+      <polygon
+        className={animateOnMount ? "door-l" : undefined}
+        points="20,34 39,34 48,52 39,70 20,70"
+        fill={MARK_DOOR}
+      />
+      <polygon
+        className={animateOnMount ? "door-r" : undefined}
+        points="80,34 61,34 52,52 61,70 80,70"
+        fill={MARK_DOOR}
+      />
     </svg>
   );
 }
 
-export default function Logo({ className, variant = "lockup", size = 36 }: LogoProps) {
+export default function Logo({
+  className,
+  variant = "lockup",
+  size = 36,
+  animateOnMount = false,
+}: LogoProps) {
   if (variant === "icon") {
-    return <StewardMark size={size} />;
+    return <StewardMark size={size} animateOnMount={animateOnMount} />;
   }
 
   return (
     <div className={`flex items-center gap-2.5 ${className ?? ""}`}>
-      <StewardMark size={size} />
+      <StewardMark size={size} animateOnMount={animateOnMount} />
       <div className="leading-tight">
         <div className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
           My Business

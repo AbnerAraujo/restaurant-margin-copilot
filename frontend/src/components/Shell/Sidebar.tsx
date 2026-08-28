@@ -69,7 +69,7 @@ export default function Sidebar() {
         lg:flex-col lg:border-r lg:border-border lg:bg-card/50"
     >
       <div className="flex items-center border-b border-border px-5 py-5">
-        <Logo />
+        <Logo animateOnMount />
       </div>
 
       <nav
@@ -106,7 +106,7 @@ export function MobileNavBar() {
       aria-label="Primary navigation"
       className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 px-3 py-2 lg:hidden"
     >
-      <Logo variant="icon" size={28} />
+      <Logo variant="icon" size={28} animateOnMount />
       {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}
