@@ -10,6 +10,7 @@ NOTES.private.md
 # --- Secrets ---
 .env
 .env.*
+!.env.example
 *.pem
 *.key
 secrets/
