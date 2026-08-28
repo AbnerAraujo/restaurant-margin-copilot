@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints } from '@/components/Points/usePoints'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
@@ -237,6 +238,44 @@ export default function HomePage() {
         )}
       </Panel>
 
+      {/* Points summary. A dedicated section rather than folding this into
+          the "At a glance" stat above — that stat answers "how many", this
+          answers "from what". Same CompositionBar component as the full
+          `/points` page (shared, not duplicated) so the two surfaces can
+          never disagree about how a balance is drawn; the roadmap
+          disclosure stays off this page and lives only on `/points`. */}
+      <Panel aria-label="Points summary" className="overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border p-5 sm:px-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            Points
+          </h2>
+          <Link
+            to="/points"
+            className="text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
+            View full breakdown
+          </Link>
+        </div>
+        <div className="p-5 sm:p-6">
+          {pointsData ? (
+            pointsData.points.total > 0 ? (
+              <CompositionBar
+                breakdown={pointsData.points.breakdown}
+                total={pointsData.points.total}
+                showBlurb={false}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No closes on file yet. Run a day&apos;s reconciliation and the
+                first points land immediately.
+              </p>
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading points…</p>
+          )}
+        </div>
+      </Panel>
+
       {/* Recent closes. The same GET /api/reconciliation payload the strip
           above reads, listed newest first: date, the day's own margin exactly
           as the engine computed it, and whether anything was flagged. Nothing
@@ -329,7 +368,11 @@ export default function HomePage() {
         </Panel>
       ) : null}
 
-      <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr))]">
+      <div
+        role="region"
+        aria-label="Capabilities"
+        className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(min(17rem,100%),1fr))]"
+      >
         {CAPABILITY_TILES.map((tile) => {
           const { to, icon: Icon, title, description } = tile
           return (

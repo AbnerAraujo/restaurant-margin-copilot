@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -43,7 +43,11 @@ describe('HomePage', () => {
   it('renders exactly the three capability tiles as real links, not decorative divs', () => {
     renderHomePageWithRoutes()
 
-    const links = screen.getAllByRole('link')
+    // Scoped to the capability grid specifically — the page also carries a
+    // "View full breakdown" link to /points (the points-summary section)
+    // that is not one of the three capability tiles this test is about.
+    const capabilities = screen.getByRole('region', { name: 'Capabilities' })
+    const links = within(capabilities).getAllByRole('link')
     expect(links).toHaveLength(3)
   })
 
