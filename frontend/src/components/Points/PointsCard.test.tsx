@@ -51,10 +51,15 @@ describe('PointsCard', () => {
         name: '45 Steward Points from 3 days already reconciled',
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText('2 × Clean Close')).toBeInTheDocument()
-    expect(screen.getByText('1 × Discrepancy Catcher')).toBeInTheDocument()
-    // The balance must be auditable: per-line subtotals are shown, not just
-    // a total the reader has to take on faith.
+    // The breakdown moved from a run-on sentence per line ("2 × Clean Close —
+    // days closed with nothing out of place") to a labelled row with the rate
+    // as a chip. The guarantee under test is unchanged and still asserted
+    // here: every rule, its count, its rate, and its subtotal are all on
+    // screen, so the balance is auditable rather than taken on faith.
+    expect(screen.getByText('Clean Close')).toBeInTheDocument()
+    expect(screen.getByText('Discrepancy Catcher')).toBeInTheDocument()
+    expect(screen.getByText('2 × 10')).toBeInTheDocument()
+    expect(screen.getByText('1 × 25')).toBeInTheDocument()
     expect(screen.getByText(/\+20/)).toBeInTheDocument()
     expect(screen.getByText(/\+25/)).toBeInTheDocument()
   })
@@ -64,9 +69,10 @@ describe('PointsCard', () => {
     render(<PointsCard />)
 
     await screen.findByRole('status')
-    expect(
-      screen.getByText(/where this is going — not built yet/i),
-    ).toBeInTheDocument()
+    // The roadmap block now leads with a "Not built yet" chip rather than an
+    // uppercase sentence, but it must still say so before the reader reaches
+    // the prose.
+    expect(screen.getByText(/not built yet/i)).toBeInTheDocument()
     expect(
       screen.getByText(/no redemption flow in this prototype/i),
     ).toBeInTheDocument()
@@ -86,8 +92,11 @@ describe('PointsCard', () => {
       }),
     ).toBeInTheDocument()
     expect(screen.getByText(/no closes on file yet/i)).toBeInTheDocument()
+    // "Nothing is awarded for signing up" moved from the empty-state sentence
+    // to the balance's own caption, where it now qualifies every reading of
+    // the figure rather than only the zero case.
     expect(
-      screen.getByText(/nothing here is awarded for signing up/i),
+      screen.getByText(/not awarded for signing up/i),
     ).toBeInTheDocument()
   })
 

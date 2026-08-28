@@ -77,7 +77,11 @@ describe('ClosePage', () => {
     })
     // 2026-08-03 is the latest served day, and it carries a flag, so it earns
     // a Discrepancy Catcher rather than a Clean Close.
-    expect(within(summary).getByText(/2026-08-03/)).toBeInTheDocument()
+    //
+    // The date moved out of the summary card's caption sentence and into a
+    // page-header chip, so it is asserted at page scope rather than inside
+    // the region — it must still be on screen next to the figure it dates.
+    expect(screen.getAllByText(/2026-08-03/).length).toBeGreaterThan(0)
     expect(within(summary).getByText('-$120.26')).toBeInTheDocument()
     expect(
       within(summary).getByText(/discrepancy catcher/i),

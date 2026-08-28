@@ -4,7 +4,23 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --radius: 0.625rem;
+  /* Structural direction: linear-app (see docs/brand.md — its LAYOUT/DENSITY/
+     INTERACTION patterns only; every colour below is still this product's own).
+     Linear's radius ladder is four rungs, each with a job, rather than one
+     radius applied to everything: 4px inline/list, 6px controls, 8px cards,
+     12px section panels. Re-pointing the base from 0.625rem to 0.5rem is what
+     lines the derived scale up with those rungs. */
+  --radius: 0.5rem;
+
+  /* One content measure for every route. Was an ad-hoc `max-w-3xl` (768px)
+     repeated in five page components, which left ~55% of a 1512px content
+     area empty and is the single largest reason the app read as a demo page
+     rather than an application. 1200px is Linear's container width. */
+  --content-max: 1200px;
+  /* Prose measure, held to the 60–75ch readability band. Applied to narration
+     text (chat answers) so a model's paragraph never runs the full 1200px. */
+  --prose-max: 68ch;
+
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -29,7 +45,14 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* Re-stepped from oklch(0.556) after a measured axe failure: at 0.556 this
+     resolved to #737373, which lands at 4.46:1 on the brand-tinted panel
+     header (bg-primary/[0.04] = #f5f9f8) and 4.49:1 on the badge tints — both
+     under the 4.5:1 floor for the 12–14px sizes this token is actually used
+     at. 0.535 resolves to #6d6d6d: 4.88:1 on that tint, 5.17:1 on --card,
+     4.75:1 on --muted. Verified with design-review scripts/contrast.py, not
+     eyeballed. */
+  --muted-foreground: oklch(0.535 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -52,12 +75,21 @@
      Each has a `-text` variant tuned for legible text ON a pale tint of
      itself (see design-tokens.md "Quiet pill" recipe), separate from the
      base+foreground pair used for solid fills/dots/icons. */
+  /* The `-text` variants are the ON-TINT colors (text over bg-{token}/10),
+     and both were re-stepped after measuring rather than trusting the Tailwind
+     ramp: #15803d on the success tint (#e8f6ed) was 4.49:1 — a real axe
+     failure — and #b45309 on the warning tint (#fbf1e6) sat exactly on 4.50:1
+     with no margin. One step darker each clears it with room:
+       #166534 on #e8f6ed -> 6.40:1   (7.13:1 on plain --card)
+       #92400e on #fbf1e6 -> 6.36:1
+     The base fill colors are unchanged, so badges and chart bars keep the
+     exact hues the palette validation in docs/brand.md was run against. */
   --success: #16a34a;
   --success-foreground: #ffffff;
-  --success-text: #15803d;
+  --success-text: #166534;
   --warning: #d97706;
   --warning-foreground: #ffffff;
-  --warning-text: #b45309;
+  --warning-text: #92400e;
 
   /* Categorical chart palette — IDENTITY only (which platform, which
      campaign), never magnitude and never state. Kept separate from both the
@@ -138,6 +170,22 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  /* `--container-*` is the namespace Tailwind v4 builds `max-w-<name>` from
+     (the same one `max-w-3xl` comes out of), so these register as
+     `max-w-content` / `max-w-prose-measure` rather than needing an arbitrary
+     value at every call site. */
+  --container-content: var(--content-max);
+  --container-prose-measure: var(--prose-max);
+
+  /* The overline / metadata step, one below Tailwind's `text-xs` (12px).
+     It was being written as a raw `text-[11px]` in twenty-nine places across
+     ten components — the hardcode lint's largest single finding — which meant
+     the app's smallest type size existed only as a repeated literal and could
+     drift a pixel per component. Named here so it is one decision.
+     Line-height is set generously because 11px uppercase tracked labels are
+     what this step is for. */
+  --text-micro: 0.6875rem;
+  --text-micro--line-height: 1.45;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -178,5 +226,28 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* WCAG 2.3.3 Animation from Interactions. Motion in this app is limited to
+     hover/entrance micro-feedback, so honouring the OS setting means removing
+     the travel while keeping the feedback: transitions collapse to a near-zero
+     duration rather than being cancelled mid-flight, and the one looping
+     indicator (the pending spinner) keeps running because it communicates
+     "still working", which is status rather than decoration. Applied globally
+     here so a component added later cannot forget it. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      scroll-behavior: auto !important;
+    }
+
+    .animate-spin {
+      animation-duration: 1.2s !important;
+      animation-iteration-count: infinite !important;
+    }
   }
 }

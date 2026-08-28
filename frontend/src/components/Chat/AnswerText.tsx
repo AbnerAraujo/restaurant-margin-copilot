@@ -68,7 +68,12 @@ export default function AnswerText({ text }: { text: string }) {
   const bulletCount = blocks.filter((block) => /^[-*•]\s+/.test(block)).length
 
   return (
-    <div className="space-y-1.5 text-sm leading-relaxed text-foreground">
+    // max-w-prose-measure (68ch) is the readability band. Without it, an
+    // answer rendered in the full-width /ask panel ran to roughly 150
+    // characters per line, which is well past the point where the eye loses
+    // its place returning to the next line. The narration text itself is
+    // untouched — this constrains the column, never the words.
+    <div className="max-w-prose-measure space-y-2 text-sm leading-relaxed text-foreground">
       {blocks.map((block, index) => {
         const isBullet = /^[-*•]\s+/.test(block)
         // A single stray bullet is more likely a dash in prose than a list.

@@ -61,3 +61,10 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
  */
 export const CAPABILITY_SUMMARY =
   'I answer questions about one restaurant’s reconciled daily margin, its discrepancies, and its promotion ROI — for 2026-08-01 through 2026-08-14, the only period this data covers.'
+
+/**
+ * The same coverage window as a standalone label, for surfaces that show it as
+ * a metadata chip rather than inside the sentence. One constant, so the chip
+ * and the sentence can never drift apart and claim two different periods.
+ */
+export const COVERAGE_PERIOD = '2026-08-01 to 2026-08-14'

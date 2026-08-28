@@ -99,7 +99,7 @@ function ProvenanceTag({ refs, className }: ProvenanceTagProps) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((wasOpen) => !wasOpen)}
-        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
       >
         <FileText className="size-3" aria-hidden="true" />
         {triggerLabel}
@@ -120,7 +120,7 @@ function ProvenanceTag({ refs, className }: ProvenanceTagProps) {
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Dismiss citation detail"
-              className="text-muted-foreground hover:text-foreground focus-visible:outline-none"
+              className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
             >
               <X className="size-3" aria-hidden="true" />
             </button>

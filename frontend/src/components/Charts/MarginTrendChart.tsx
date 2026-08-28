@@ -247,12 +247,19 @@ function MarginTrendChart({
       <div className="relative w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          role="img"
+          // See CategoryBarChart: role="img" cannot contain the focusable
+          // per-day targets below (axe nested-interactive).
+          role="group"
           aria-label={`Bar chart of daily reconciled margin, ${rangeLabel}${
             missingDates.length > 0
               ? `, with ${missingDates.join(' and ')} flagged as missing data`
               : ''
           }`}
+          // Capped at its own design width. `w-full` alone let the viewBox
+          // scale up inside the widened 1200px content column, which enlarges
+          // the SVG's text with it — axis ticks rendered at roughly 20px and
+          // the whole chart read as a blown-up thumbnail.
+          style={{ maxWidth: CHART_WIDTH }}
           className="h-auto w-full min-w-[420px]"
         >
           <defs>
@@ -328,7 +335,7 @@ function MarginTrendChart({
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
-                className="cursor-pointer outline-none"
+                className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 {/* Larger, invisible hit target than the painted bar */}
                 <rect
@@ -389,7 +396,7 @@ function MarginTrendChart({
                     }
                     textAnchor="middle"
                     className={cn(
-                      'text-[11px] font-semibold tabular-nums',
+                      'text-micro font-semibold tabular-nums',
                       isPositive ? 'fill-success-text' : 'fill-destructive-text',
                     )}
                   >
@@ -498,7 +505,7 @@ function MarginTrendChart({
           type="button"
           onClick={() => setTableOpen((wasOpen) => !wasOpen)}
           aria-expanded={tableOpen}
-          className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+          className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
         >
           {tableOpen ? 'Hide table' : 'View as table'}
         </button>

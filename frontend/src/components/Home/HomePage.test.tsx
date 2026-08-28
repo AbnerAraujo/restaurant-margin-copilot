@@ -62,8 +62,11 @@ describe('HomePage', () => {
   it('renders each tile description as visible text (not link-name-only)', () => {
     renderHomePageWithRoutes()
 
+    // Descriptions were shortened from full sentences to one line each; the
+    // guarantee under test is that they are real visible text rather than
+    // only the link's accessible name, which is unchanged.
     expect(
-      screen.getByText(/reconciliation badges, and the provenance/i),
+      screen.getByText(/the rows behind every figure/i),
     ).toBeInTheDocument()
     expect(
       screen.getByText(/a grounded answer, or an honest refusal/i),

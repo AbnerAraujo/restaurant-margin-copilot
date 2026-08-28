@@ -135,7 +135,9 @@ export default function CompositionPieChart({
         <div className="relative shrink-0">
           <svg
             viewBox={`0 0 ${SIZE} ${SIZE}`}
-            role="img"
+            // See CategoryBarChart: role="img" cannot contain the focusable
+            // per-slice targets below (axe nested-interactive).
+            role="group"
             aria-label={`${title}. ${segments
               .map(
                 (segment) =>
@@ -161,7 +163,7 @@ export default function CompositionPieChart({
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(segment.index)}
                 onBlur={() => setHoveredIndex(null)}
-                className="cursor-pointer outline-none"
+                className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               />
             ))}
 
@@ -231,7 +233,7 @@ export default function CompositionPieChart({
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
         {sourceTool ? (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-micro text-muted-foreground">
             Computed by <code className="font-mono">{sourceTool}</code>
           </p>
         ) : (
@@ -241,8 +243,8 @@ export default function CompositionPieChart({
           type="button"
           onClick={() => setTableOpen((wasOpen) => !wasOpen)}
           aria-expanded={tableOpen}
-          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2
-            hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+          className="text-micro text-muted-foreground underline decoration-dotted underline-offset-2
+            hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
         >
           {tableOpen ? 'Hide table' : 'View as table'}
         </button>

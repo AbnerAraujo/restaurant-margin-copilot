@@ -1,3 +1,6 @@
+import { BadgeCheck, ShieldCheck, type LucideIcon } from 'lucide-react'
+
+import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
 import { usePoints } from './usePoints'
@@ -19,88 +22,140 @@ export default function PointsPage() {
   const earnedFor = (code: 'clean_close' | 'discrepancy_catcher') =>
     breakdown.find((line) => line.code === code)
 
-  const RULES = [
+  const RULES: {
+    code: 'clean_close' | 'discrepancy_catcher'
+    name: string
+    each: number
+    icon: LucideIcon
+    when: string
+  }[] = [
     {
-      code: 'clean_close' as const,
+      code: 'clean_close',
       name: 'Clean Close',
       each: POINTS_PER_BADGE.clean_close,
+      icon: BadgeCheck,
       when: 'A day reconciles with zero discrepancy flags.',
-      why: 'The habit of closing daily is what earns it — not the outcome.',
     },
     {
-      code: 'discrepancy_catcher' as const,
+      code: 'discrepancy_catcher',
       name: 'Discrepancy Catcher',
       each: POINTS_PER_BADGE.discrepancy_catcher,
+      icon: ShieldCheck,
       when: 'A day reconciles with at least one flag: a duplicate order, a missing source, a commission mismatch, or an anomaly.',
-      why: 'Worth more than a quiet day, because the money is found on the days something was wrong.',
     },
   ]
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-        Steward Points
-      </h1>
+    <PageContainer className="flex flex-col gap-5">
+      <PageHeader
+        eyebrow="Reconciliation rewards"
+        title="Steward Points"
+        meta={
+          <>
+            <Chip>Derived at read time</Chip>
+            <Chip>No streak bonuses</Chip>
+            <Chip>No points for logging in</Chip>
+          </>
+        }
+      />
 
       <PointsCard />
 
-      <section
-        aria-label="How points are earned"
-        className="rounded-lg border border-border bg-card p-4 sm:p-5"
-      >
-        <h2 className="text-sm font-semibold text-foreground">
-          How every point is earned
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          There are exactly two ways. Both are computed from your reconciled
-          days each time this page loads — nothing accrues in the background,
-          and re-running an ingestion recomputes the balance from scratch.
-        </p>
+      {/* The rules table, restructured from stacked prose into a real table:
+          rule, trigger, rate, earned. The "why" sentences that used to sit in
+          italics under each rule are gone as sentences and present as the
+          rate column, which is what they were arguing about. */}
+      <Panel aria-label="How points are earned" className="overflow-hidden">
+        <div className="border-b border-border p-5 sm:px-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            How every point is earned
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Exactly two ways, both recomputed from your reconciled days on every
+            page load.
+          </p>
+        </div>
 
-        <ul className="mt-4 space-y-4">
-          {RULES.map((rule) => {
-            const earned = earnedFor(rule.code)
-            return (
-              <li
-                key={rule.code}
-                className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 border-t border-border/60 pt-3 first:border-t-0 first:pt-0"
-              >
-                <div className="min-w-[16rem] flex-1">
-                  <p className="text-sm font-medium text-foreground">
-                    {rule.name}{' '}
-                    <span className="font-normal text-muted-foreground">
-                      — +{rule.each} each
-                    </span>
-                  </p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    {rule.when}
-                  </p>
-                  <p className="mt-0.5 text-xs italic text-muted-foreground">
-                    {rule.why}
-                  </p>
-                </div>
-                <p className="shrink-0 text-sm tabular-nums text-foreground">
-                  {earned ? (
-                    <>
-                      <span className="font-semibold">
-                        +{earned.points.toLocaleString('en-US')}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[34rem] border-collapse text-left">
+            <thead>
+              <tr className="border-b border-border">
+                <th
+                  scope="col"
+                  className="px-5 py-2.5 text-micro font-medium uppercase tracking-wider text-muted-foreground sm:px-6"
+                >
+                  Rule
+                </th>
+                <th
+                  scope="col"
+                  className="px-5 py-2.5 text-micro font-medium uppercase tracking-wider text-muted-foreground"
+                >
+                  Fires when
+                </th>
+                <th
+                  scope="col"
+                  className="px-5 py-2.5 text-right text-micro font-medium uppercase tracking-wider text-muted-foreground"
+                >
+                  Rate
+                </th>
+                <th
+                  scope="col"
+                  className="px-5 py-2.5 text-right text-micro font-medium uppercase tracking-wider text-muted-foreground sm:px-6"
+                >
+                  Earned
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {RULES.map((rule) => {
+                const earned = earnedFor(rule.code)
+                const Icon = rule.icon
+                return (
+                  <tr
+                    key={rule.code}
+                    className="border-b border-border last:border-b-0"
+                  >
+                    <th
+                      scope="row"
+                      className="px-5 py-4 align-top text-sm font-medium text-foreground sm:px-6"
+                    >
+                      <span className="flex items-center gap-2">
+                        <Icon
+                          className="size-4 shrink-0 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                        {rule.name}
                       </span>
-                      <span className="ml-1.5 text-xs text-muted-foreground">
-                        from {earned.count}{' '}
-                        {earned.count === 1 ? 'day' : 'days'}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">
-                      none yet
-                    </span>
-                  )}
-                </p>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
-    </div>
+                    </th>
+                    <td className="px-5 py-4 align-top text-xs leading-relaxed text-muted-foreground">
+                      {rule.when}
+                    </td>
+                    <td className="px-5 py-4 text-right align-top text-sm tabular-nums text-foreground">
+                      +{rule.each}
+                    </td>
+                    <td className="px-5 py-4 text-right align-top text-sm tabular-nums sm:px-6">
+                      {earned ? (
+                        <>
+                          <span className="font-semibold text-foreground">
+                            +{earned.points.toLocaleString('en-US')}
+                          </span>
+                          <span className="mt-0.5 block text-micro font-normal text-muted-foreground">
+                            {earned.count} {earned.count === 1 ? 'day' : 'days'}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          None yet
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+    </PageContainer>
   )
 }

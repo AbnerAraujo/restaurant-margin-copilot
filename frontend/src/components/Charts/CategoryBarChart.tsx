@@ -126,7 +126,12 @@ export default function CategoryBarChart({
       <div className="relative w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${CHART_WIDTH} ${chartHeight}`}
-          role="img"
+          // role="group", not role="img": each bar below is a focusable
+          // role="button" for keyboard readers, and role="img" forbids
+          // focusable descendants (a real axe nested-interactive violation
+          // that made those per-bar targets unreachable to assistive tech).
+          // The aria-label still gives the whole chart a text alternative.
+          role="group"
           aria-label={`${title}. ${points
             .map((point) =>
               point.unavailable
@@ -134,6 +139,9 @@ export default function CategoryBarChart({
                 : `${point.label}: ${point.display}`,
             )
             .join('. ')}`}
+          // See MarginTrendChart: capped at its design width so the viewBox
+          // never scales the SVG's own text up inside a wide column.
+          style={{ maxWidth: CHART_WIDTH }}
           className="h-auto w-full min-w-[340px]"
         >
           {/* Zero baseline — the primary above/below cue, colour-independent */}
@@ -171,7 +179,7 @@ export default function CategoryBarChart({
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
-                className="cursor-pointer outline-none"
+                className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 {/* Hit target spans the whole row, wider than the mark */}
                 <rect
@@ -187,7 +195,7 @@ export default function CategoryBarChart({
                   y={rowY + ROW_HEIGHT / 2}
                   textAnchor="end"
                   dominantBaseline="middle"
-                  className="fill-muted-foreground text-[11px]"
+                  className="fill-muted-foreground text-micro"
                 >
                   {truncateLabel(point.label)}
                 </text>
@@ -244,7 +252,7 @@ export default function CategoryBarChart({
                       textAnchor={isPositive ? 'start' : 'end'}
                       dominantBaseline="middle"
                       className={cn(
-                        'text-[11px] font-semibold tabular-nums',
+                        'text-micro font-semibold tabular-nums',
                         isPositive
                           ? 'fill-success-text'
                           : 'fill-destructive-text',
@@ -304,13 +312,13 @@ export default function CategoryBarChart({
         className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1"
       >
         {hasPositive ? (
-          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <li className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <span className="size-2.5 rounded-sm bg-success" aria-hidden="true" />
             Above zero
           </li>
         ) : null}
         {hasNegative ? (
-          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <li className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <span
               className="size-2.5 rounded-sm bg-destructive"
               aria-hidden="true"
@@ -319,7 +327,7 @@ export default function CategoryBarChart({
           </li>
         ) : null}
         {hasUnavailable ? (
-          <li className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+          <li className="flex items-center gap-1.5 text-micro text-muted-foreground">
             <ShieldAlert
               className="size-3 text-destructive-text"
               aria-hidden="true"
@@ -331,7 +339,7 @@ export default function CategoryBarChart({
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
         {sourceTool ? (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-micro text-muted-foreground">
             Computed by <code className="font-mono">{sourceTool}</code>
           </p>
         ) : (
@@ -341,8 +349,8 @@ export default function CategoryBarChart({
           type="button"
           onClick={() => setTableOpen((wasOpen) => !wasOpen)}
           aria-expanded={tableOpen}
-          className="text-[11px] text-muted-foreground underline decoration-dotted underline-offset-2
-            hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+          className="text-micro text-muted-foreground underline decoration-dotted underline-offset-2
+            hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
         >
           {tableOpen ? 'Hide table' : 'View as table'}
         </button>

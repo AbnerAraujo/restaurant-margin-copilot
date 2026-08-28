@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
+import { Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
 
 import PromoRoiChart, {
   type PromotionRoiDatum,
 } from '@/components/Charts/PromoRoiChart'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
+import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
+import { StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
@@ -104,33 +107,81 @@ export default function PromotionsPage() {
     }
   }, [])
 
+  // Counts, not sums. Counting how many records carry a flag is not
+  // arithmetic on money, so it stays on the honest side of the line the
+  // toChartDatum comment draws: net is never recomputed here from spend and
+  // revenue, because that would put a second implementation of the ROI
+  // calculation on the client.
+  const negativeCount =
+    promotions?.filter((promotion) => promotion.flagged_negative).length ?? 0
+  const unattributableCount =
+    promotions?.filter((promotion) => promotion.roi === null).length ?? 0
+
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-        Promotion ROI
-      </h1>
+    <PageContainer className="flex flex-col gap-5">
+      <PageHeader
+        eyebrow="Campaign performance"
+        title="Promotion ROI"
+        meta={
+          promotions && promotions.length > 0 ? (
+            <>
+              <Chip icon={Megaphone}>{promotions.length} campaigns</Chip>
+              {negativeCount > 0 ? (
+                <Chip icon={TrendingDown} tone="destructive">
+                  {negativeCount} lost money
+                </Chip>
+              ) : null}
+              {unattributableCount > 0 ? (
+                <Chip icon={ShieldAlert} tone="warning">
+                  {unattributableCount} unattributable
+                </Chip>
+              ) : null}
+            </>
+          ) : null
+        }
+      />
 
       {error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
-        >
+        <Panel role="alert" className="p-4 text-sm text-muted-foreground">
           Couldn&apos;t load campaigns from the backend, so there are no ROI
           figures to show: <span className="font-mono text-xs">{error}</span>
-        </p>
+        </Panel>
       ) : null}
 
       {!error && promotions?.length === 0 ? (
-        <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+        <Panel className="p-4 text-sm text-muted-foreground">
           No promotion records on file yet. Run{' '}
           <code className="font-mono text-xs">-ingest-promo</code> and this page
           fills in from the real ad-spend export.
-        </p>
+        </Panel>
+      ) : null}
+
+      {!error && !promotions ? (
+        <Panel className="p-5 sm:p-6">
+          <StatGroup>
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+          </StatGroup>
+        </Panel>
       ) : null}
 
       {promotions && promotions.length > 0 ? (
-        <PromoRoiChart data={promotions.map(toChartDatum)} />
+        <PromoRoiChart
+          data={promotions.map(toChartDatum)}
+          // Spend and attributed incremental revenue were already in the API
+          // response and in this chart's own table, but that table sat behind
+          // a "View as table" toggle. The reader could see that LUNCHFIX lost
+          // $165 and not that it lost it on $220 of spend. On the dedicated
+          // route there is room to show both without a click, so it opens
+          // expanded. No figure is re-rendered anywhere else on this page,
+          // which is what keeps one campaign from having two on-screen
+          // renderings that could drift.
+          defaultTableOpen
+        />
       ) : null}
-    </div>
+
+    </PageContainer>
   )
 }

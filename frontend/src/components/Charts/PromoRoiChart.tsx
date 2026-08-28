@@ -124,6 +124,17 @@ export const DEFAULT_PROMOTION_ROI: PromotionRoiDatum[] = [
 export interface PromoRoiChartProps {
   data?: PromotionRoiDatum[]
   className?: string
+  /**
+   * Start with the underlying table already expanded.
+   *
+   * The chart plots `net` alone, so spend and attributed revenue — both
+   * already in the API response and both needed to judge whether a $34 gain
+   * was worth chasing — were reachable only behind a click. On the dedicated
+   * `/promotions` route there is room to show them outright; inside a chat
+   * answer bubble there is not, so this stays opt-in rather than becoming the
+   * default everywhere.
+   */
+  defaultTableOpen?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -243,9 +254,13 @@ function buildBars(
  * refusal, because this is an active policy refusal to estimate, not a
  * missing-input gap (contrast `MarginTrendChart`'s hatched "No data" state).
  */
-function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChartProps) {
+function PromoRoiChart({
+  data = DEFAULT_PROMOTION_ROI,
+  className,
+  defaultTableOpen = false,
+}: PromoRoiChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
-  const [tableOpen, setTableOpen] = useState(false)
+  const [tableOpen, setTableOpen] = useState(defaultTableOpen)
 
   const { ticks, yToPixel, baselineY } = buildScale(data)
   const bars = buildBars(data, yToPixel)
@@ -268,8 +283,13 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
       <div className="relative w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          role="img"
+          // See CategoryBarChart: role="img" cannot contain the focusable
+          // per-campaign targets below (axe nested-interactive).
+          role="group"
           aria-label="Bar chart of net ROI across four promotion campaigns, with one campaign flagged as unattributable and refused"
+          // See MarginTrendChart: capped at its design width so the viewBox
+          // never scales the SVG's own text up inside a wide column.
+          style={{ maxWidth: CHART_WIDTH }}
           className="h-auto w-full min-w-[360px]"
         >
           {ticks.map((tick) => (
@@ -321,7 +341,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
-                className="cursor-pointer outline-none"
+                className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 <rect
                   x={barX - 14}
@@ -356,7 +376,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
                     }
                     textAnchor="middle"
                     className={cn(
-                      'text-[11px] font-semibold tabular-nums',
+                      'text-micro font-semibold tabular-nums',
                       isPositive ? 'fill-success-text' : 'fill-destructive-text',
                     )}
                   >
@@ -493,7 +513,7 @@ function PromoRoiChart({ data = DEFAULT_PROMOTION_ROI, className }: PromoRoiChar
           type="button"
           onClick={() => setTableOpen((wasOpen) => !wasOpen)}
           aria-expanded={tableOpen}
-          className="shrink-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+          className="shrink-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
         >
           {tableOpen ? 'Hide table' : 'View as table'}
         </button>

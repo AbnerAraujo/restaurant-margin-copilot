@@ -1,5 +1,4 @@
 import { render, screen, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PromotionsPage from './PromotionsPage'
@@ -53,7 +52,10 @@ describe('PromotionsPage', () => {
     stubFetch(PROMOTIONS_RESPONSE)
     render(<PromotionsPage />)
 
-    await screen.findByText('IFOOD-CAMP-BOOST01')
+    // The chart's x-axis label and its underlying table both name the
+    // campaign, and the table now opens by default on this route, so this
+    // scopes to the axis label rather than asserting a single match.
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/promotions'),
     )
@@ -63,23 +65,32 @@ describe('PromotionsPage', () => {
     stubFetch(PROMOTIONS_RESPONSE)
     render(<PromotionsPage />)
 
-    await screen.findByText('IFOOD-CAMP-BOOST01')
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
     expect(
       screen.getByRole('button', {
         name: /IFOOD-CAMP-WEEKEND: unattributable/i,
       }),
     ).toBeInTheDocument()
-    expect(screen.getByText('Unattributable')).toBeInTheDocument()
+    // Present in the chart's refusal marker and again in the table's Net
+    // cell. Both must say "unattributable"; neither may say a dollar figure.
+    expect(screen.getAllByText(/unattributable/i).length).toBeGreaterThan(0)
     expect(screen.queryByText('+$0.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('$0.00')).not.toBeInTheDocument()
   })
 
   it('shows the backend net figure without recomputing it on the client', async () => {
-    const user = userEvent.setup()
     stubFetch(PROMOTIONS_RESPONSE)
     render(<PromotionsPage />)
 
-    await screen.findByText('IFOOD-CAMP-BOOST01')
-    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    // The table opens by default on this route now, so there is nothing to
+    // click first. Assert that directly rather than quietly dropping it.
+    expect(
+      screen.queryByRole('button', { name: /view as table/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /hide table/i }),
+    ).toBeInTheDocument()
 
     const table = screen.getByRole('table')
     const boostRow = within(table)

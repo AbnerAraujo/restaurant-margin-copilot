@@ -67,8 +67,12 @@ describe('AnswerVisualizationView', () => {
 
     expect(screen.getByText('$34.00')).toBeInTheDocument()
     expect(screen.getByText('−$165.00')).toBeInTheDocument()
+    // role="group", not role="img": each bar is a focusable role="button" for
+    // keyboard readers, and role="img" is not allowed focusable descendants
+    // (axe nested-interactive). The chart still carries the same full text
+    // alternative as its accessible name, which is what this asserts.
     expect(
-      screen.getByRole('img', { name: /promotion roi by campaign/i }),
+      screen.getByRole('group', { name: /promotion roi by campaign/i }),
     ).toBeInTheDocument()
   })
 

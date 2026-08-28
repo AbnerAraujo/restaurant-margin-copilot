@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { CalendarDays } from 'lucide-react'
 
 import BadgeDisplay, {
   type ReconciliationBadge,
@@ -9,6 +10,8 @@ import MarginTrendChart, {
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
+import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
 
 // ---------------------------------------------------------------------------
@@ -155,72 +158,152 @@ export default function ClosePage() {
   }, [])
 
   const latest = data?.days[data.days.length - 1]
+  const margin = latest ? parseMoney(latest.margin) : 0
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-4">
-      <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-        Today&apos;s Close
-      </h1>
+    <PageContainer className="flex flex-col gap-5">
+      <PageHeader
+        eyebrow="Daily reconciliation"
+        title="Today's Close"
+        meta={
+          latest ? (
+            <>
+              <Chip icon={CalendarDays}>{latest.date}</Chip>
+              <Chip>
+                {data.days.length} {data.days.length === 1 ? 'day' : 'days'}{' '}
+                reconciled
+              </Chip>
+              <Chip>
+                {data.start} to {data.end}
+              </Chip>
+            </>
+          ) : null
+        }
+      />
 
       {error ? (
-        <p
-          role="alert"
-          className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground"
-        >
+        <Panel role="alert" className="p-4 text-sm text-muted-foreground">
           Couldn&apos;t load reconciled days from the backend, so there are no
-          figures to show:{' '}
-          <span className="font-mono text-xs">{error}</span>
-        </p>
+          figures to show: <span className="font-mono text-xs">{error}</span>
+        </Panel>
       ) : null}
 
       {!error && data && !latest ? (
-        <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-          No reconciled days on file yet. Run the ingestion pipeline
-          (<code className="font-mono text-xs">-ingest</code>) and this page
+        <Panel className="p-4 text-sm text-muted-foreground">
+          No reconciled days on file yet. Run the ingestion pipeline (
+          <code className="font-mono text-xs">-ingest</code>) and this page
           fills in from the real rows.
-        </p>
+        </Panel>
+      ) : null}
+
+      {/* Loading is a real state, not a blank page. Skeletons hold the exact
+          geometry the resolved stats will occupy, so nothing jumps. */}
+      {!error && !data ? (
+        <Panel className="p-5 sm:p-6">
+          <StatGroup>
+            <StatSkeleton size="lg" />
+            <StatSkeleton />
+            <StatSkeleton />
+            <StatSkeleton />
+          </StatGroup>
+        </Panel>
       ) : null}
 
       {latest ? (
         <>
-          <section
-            aria-label="Latest reconciled day"
-            className="rounded-lg border border-border bg-card p-4 sm:p-5"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {latest.date} · margin on{' '}
-                  {formatUsd(grossSalesTotal(latest))} in gross sales,{' '}
-                  {formatUsd(parseMoney(latest.commissions))} commissions and{' '}
-                  {formatUsd(parseMoney(latest.refunds))} refunds already netted
-                  out
-                </p>
-                <p className="text-3xl font-semibold tabular-nums tracking-tight text-foreground">
-                  {formatUsd(parseMoney(latest.margin))}
-                </p>
-              </div>
-              <BadgeDisplay badges={toBadges(latest)} className="pt-0.5" />
+          <Panel aria-label="Latest reconciled day" className="p-5 sm:p-6">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Where the day landed
+              </h2>
+              <BadgeDisplay badges={toBadges(latest)} />
             </div>
-            <div className="mt-2 border-t border-border/60 pt-2">
-              <ProvenanceTag refs={toProvenanceRefs(latest)} />
-            </div>
-          </section>
 
-          <MarginTrendChart
-            data={toChartData(data.days, data.start, data.end)}
-            sourceRefs={[
-              {
-                source_file: 'daily_reconciliation (Postgres)',
-                row_start: 1,
-                row_end: data.days.length,
-                period_start: data.start,
-                period_end: data.end,
-              },
-            ]}
-          />
+            {/* The four figures that used to live inside one 12px sentence.
+                Every value is either a decimal string the API sent or the
+                pre-existing grossSalesTotal of the per-source values it sent
+                — no new arithmetic was introduced to build this row. */}
+            <StatGroup>
+              <Stat
+                label="Margin"
+                value={formatUsd(margin)}
+                size="lg"
+                tone={margin < 0 ? 'negative' : 'positive'}
+                caption={margin < 0 ? 'Closed in the red' : 'Closed in the green'}
+                footer={<ProvenanceTag refs={toProvenanceRefs(latest)} />}
+              />
+              <Stat
+                label="Gross sales"
+                value={formatUsd(grossSalesTotal(latest))}
+                caption={`${Object.keys(latest.gross_sales_by_source).length} sources`}
+              />
+              <Stat
+                label="Commissions"
+                value={formatUsd(parseMoney(latest.commissions))}
+                caption="Netted out"
+              />
+              <Stat
+                label="Refunds"
+                value={formatUsd(parseMoney(latest.refunds))}
+                caption="Netted out"
+              />
+              <Stat
+                label="Input costs"
+                value={formatUsd(parseMoney(latest.input_costs))}
+                caption="Netted out"
+              />
+            </StatGroup>
+          </Panel>
+
+          {/* Two columns rather than a stack: the chart renders at its own
+              700px design width, so a full-width row would leave a third of
+              the line empty beside it. The by-source breakdown fills that
+              column with content the chart does not carry. */}
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <MarginTrendChart
+              data={toChartData(data.days, data.start, data.end)}
+              sourceRefs={[
+                {
+                  source_file: 'daily_reconciliation (Postgres)',
+                  row_start: 1,
+                  row_end: data.days.length,
+                  period_start: data.start,
+                  period_end: data.end,
+                },
+              ]}
+            />
+
+            {/* Gross sales by source: values printed exactly as the API sent
+                them, one stat per source, so "3 sources" above is checkable
+                rather than an assertion. */}
+            <Panel className="p-5">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Gross sales by source
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {latest.date}
+              </p>
+              <dl className="mt-4 flex flex-col">
+                {Object.entries(latest.gross_sales_by_source).map(
+                  ([source, amount]) => (
+                    <div
+                      key={source}
+                      className="flex items-baseline justify-between gap-3 border-b border-border py-2.5 last:border-b-0"
+                    >
+                      <dt className="min-w-0 truncate text-xs text-muted-foreground">
+                        {source}
+                      </dt>
+                      <dd className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
+                        {formatUsd(parseMoney(amount))}
+                      </dd>
+                    </div>
+                  ),
+                )}
+              </dl>
+            </Panel>
+          </div>
         </>
       ) : null}
-    </div>
+    </PageContainer>
   )
 }

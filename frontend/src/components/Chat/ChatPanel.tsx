@@ -3,6 +3,8 @@ import {
   ArrowDown,
   Bookmark,
   Bot,
+  CalendarRange,
+  FileText,
   History,
   CircleHelp,
   Loader2,
@@ -13,11 +15,13 @@ import {
   ShieldAlert,
   SquarePen,
   User,
+  Wrench,
   X,
   Zap,
 } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Chip } from '@/components/ui/page'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
@@ -41,6 +45,7 @@ import AnswerText from '@/components/Chat/AnswerText'
 import SuggestionChips from '@/components/Chat/SuggestionChips'
 import {
   CAPABILITY_SUMMARY,
+  COVERAGE_PERIOD,
   EXAMPLE_QUESTIONS,
   type ExampleQuestion,
 } from '@/components/Chat/exampleQuestions'
@@ -436,7 +441,7 @@ function ChatAvatar({
 function CacheBadge({ cache }: { cache: AnswerCacheInfo }) {
   return (
     <p
-      className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground"
+      className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro text-muted-foreground"
       title={cache.note}
     >
       <Zap className="size-3 shrink-0" aria-hidden="true" />
@@ -464,17 +469,59 @@ function UserBubble({ message }: { message: UserChatMessage }) {
   )
 }
 
+/**
+ * An answered question.
+ *
+ * Reading order is deliberate and matches the architecture in CLAUDE.md: the
+ * chips say which typed MCP tool produced this and what it cost, the
+ * deterministic result is drawn next, and the model's narration comes last as
+ * the thing that explains an already-visible figure. Previously the prose came
+ * first at roughly 150 characters per line and the chart was buried under it,
+ * so an answer read as an essay with a picture at the end.
+ *
+ * The narration text is passed through untouched. Nothing here summarises,
+ * shortens, or re-states it, and no figure on screen is computed in this file.
+ */
 function AnswerBubble({ message }: { message: AnswerChatMessage }) {
+  const tool = message.visualization?.source_tool
+  const sourceCount = message.provenance.length
+
   return (
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" />
-      <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3">
-        <AnswerText text={message.text} />
+      <div className="w-full max-w-[52rem] space-y-3 rounded-xl rounded-tl-sm border border-border bg-card px-4 py-3.5">
+        {tool || sourceCount > 0 || message.cache ? (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {tool ? (
+              <Chip
+                icon={Wrench}
+                tone="brand"
+                title="The typed MCP tool that computed this answer's figures"
+              >
+                <span className="font-mono">{tool}</span>
+              </Chip>
+            ) : null}
+            {sourceCount > 0 ? (
+              <Chip icon={FileText}>
+                {sourceCount} source {sourceCount === 1 ? 'row' : 'rows'}
+              </Chip>
+            ) : null}
+            {message.cache ? (
+              <Chip icon={Zap} title={message.cache.note}>
+                Cached, $0.000
+              </Chip>
+            ) : null}
+          </div>
+        ) : null}
+
         {message.visualization ? (
           <AnswerVisualizationView visualization={message.visualization} />
         ) : null}
+
+        <AnswerText text={message.text} />
+
         {message.provenance.length > 0 || message.cache ? (
-          <div className="space-y-1.5 border-t border-border/60 pt-2">
+          <div className="space-y-1.5 border-t border-border pt-2.5">
             {message.provenance.length > 0 ? (
               <ProvenanceTag refs={message.provenance} />
             ) : null}
@@ -620,15 +667,23 @@ function EmptyState({
   onSelect: (text: string) => void
 }) {
   return (
-    <li className="flex flex-col items-start gap-4 px-1 py-6">
-      <div className="space-y-1.5">
+    <li className="flex flex-col items-start gap-5 px-1 py-6">
+      <div className="space-y-3">
         <p className="text-sm font-medium text-foreground">
           Ask anything about your reconciled numbers.
         </p>
-        <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-          {CAPABILITY_SUMMARY} Every figure arrives with its source rows
-          attached, and if the data can&apos;t support an answer you&apos;ll
-          get a refusal — never a plausible guess.
+        {/* The three contract facts that used to run as one 45-word paragraph.
+            As chips they are scannable, and each is a claim the reader can
+            check against what the app then does. */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Chip icon={CalendarRange}>{COVERAGE_PERIOD}</Chip>
+          <Chip icon={FileText}>Source rows on every figure</Chip>
+          <Chip icon={ShieldAlert} tone="warning">
+            Refuses rather than guesses
+          </Chip>
+        </div>
+        <p className="max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
+          {CAPABILITY_SUMMARY}
         </p>
       </div>
       <SuggestionChips
@@ -868,18 +923,21 @@ export default function ChatPanel({
         // min-h-0 lets it shrink on a short viewport; the min-h-[20rem] floor
         // keeps the composer and at least one message visible if it ever
         // lands somewhere genuinely tiny.
-        'mx-auto flex h-full min-h-[20rem] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-background',
+        'mx-auto flex h-full min-h-[20rem] w-full max-w-content flex-col overflow-hidden rounded-xl border border-border bg-background',
         className,
       )}
     >
       <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <p className="text-micro font-medium uppercase tracking-wider text-muted-foreground">
             Reconciliation Q&amp;A
           </p>
-          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+          {/* h1, not h2: this panel is the whole content of the /ask route, and
+              axe's page-has-heading-one fired on that route because the only
+              heading here was a level 2 under no level 1. */}
+          <h1 className="text-2xl font-semibold tracking-tight text-foreground">
             Ask about your margin
-          </h2>
+          </h1>
         </div>
 
         {threadStore ? (
@@ -961,10 +1019,14 @@ export default function ChatPanel({
           size is its content height and the viewport below never overflows. */}
       <div className="relative min-h-0 flex-1">
         <ScrollArea className="h-full" viewportRef={viewportRef}>
+          {/* role="log" lives on a wrapper, not on the <ol> itself. Putting it
+              on the list replaced the list role, which stranded every <li>
+              inside a non-list parent — two real axe violations on this route
+              (listitem + aria-allowed-role). The live region still announces
+              new messages; the list still exposes its items. */}
+          <div role="log" aria-live="polite" aria-label="Conversation">
           <ol
             ref={listRef}
-            role="log"
-            aria-live="polite"
             /* Bottom padding clears the floating composer so the newest
                message is never parked underneath it. */
             className="space-y-4 px-4 pb-28 pt-4 sm:px-6"
@@ -1002,6 +1064,7 @@ export default function ChatPanel({
             )}
             {isPending ? <PendingBubble /> : null}
           </ol>
+          </div>
         </ScrollArea>
 
         {/* Jump-to-latest — only offered while the reader has scrolled away,
@@ -1171,7 +1234,7 @@ export default function ChatPanel({
               implemented but was undiscoverable. */}
           <p
             id={composerHintId}
-            className="pointer-events-none mt-1.5 px-1 text-center text-[11px] text-muted-foreground"
+            className="pointer-events-none mt-1.5 px-1 text-center text-micro text-muted-foreground"
           >
             <kbd className="font-sans font-medium">Enter</kbd> to send ·{' '}
             <kbd className="font-sans font-medium">Shift</kbd>+

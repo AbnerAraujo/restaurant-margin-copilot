@@ -1,12 +1,13 @@
 import {
-  ArrowRight,
   BadgeCheck,
   Coins,
+  Lock,
   ShieldCheck,
-  Sparkles,
   type LucideIcon,
 } from 'lucide-react'
 
+import { Chip, Panel } from '@/components/ui/page'
+import { Stat, StatGroup } from '@/components/ui/stat'
 import { cn } from '@/lib/utils'
 import { usePoints, type PointsLine } from './usePoints'
 
@@ -15,28 +16,103 @@ const LINE_ICON: Record<PointsLine['code'], LucideIcon> = {
   discrepancy_catcher: ShieldCheck,
 }
 
-const LINE_TONE: Record<PointsLine['code'], string> = {
+/** Fill used for that line's share of the composition bar. */
+const LINE_FILL: Record<PointsLine['code'], string> = {
+  clean_close: 'bg-success',
+  discrepancy_catcher: 'bg-warning',
+}
+
+const LINE_SWATCH_TEXT: Record<PointsLine['code'], string> = {
   clean_close: 'text-success-text',
   discrepancy_catcher: 'text-warning-text',
 }
 
 const LINE_BLURB: Record<PointsLine['code'], string> = {
-  clean_close: 'days closed with nothing out of place',
-  discrepancy_catcher: 'days where it caught something before you paid for it',
+  clean_close: 'Days closed clean',
+  discrepancy_catcher: 'Days something was caught',
 }
 
 /**
- * Steward Points on the home screen: the real, derived balance plus the case
- * for why running the close is worth doing again tomorrow.
+ * Steward Points: the real, derived balance and how it was made.
  *
- * The honesty line this card is built around: the balance is real — it is a
- * deterministic function of closes already run — and redemption is not built.
- * Those two facts are stated in the same card, in the same voice, because the
- * pitch only works if the reader can tell which half is shipping today. The
- * roadmap block is written as a destination, not as a disabled button: there
- * is nothing to click, and pretending otherwise would be exactly the
- * fabricated capability this whole product refuses to ship.
+ * The honesty discipline this card was built around is unchanged — the
+ * balance is a deterministic function of closes already run, redemption is
+ * not built, and the roadmap block is a destination rather than a disabled
+ * button, because a button that does nothing is a fabricated capability.
+ *
+ * What changed is the form, not the claims. Three paragraphs of explanation
+ * (roughly 130 words) became a composition bar showing how the balance splits
+ * between the two earning rules, a two-cell stat rail, and a labelled
+ * "Not built" panel. The weights are still auditable on screen: they are
+ * printed on each legend row rather than argued for in a sentence.
  */
+
+/**
+ * How the balance divides between the two rules, drawn from the same
+ * `breakdown` figures printed beside it. The widths are percentages of the
+ * total for geometry only — no money is computed here, and each segment's
+ * real point value is printed as text next to it, so the bar is a second
+ * reading of the numbers rather than the only one.
+ */
+function CompositionBar({
+  breakdown,
+  total,
+}: {
+  breakdown: PointsLine[]
+  total: number
+}) {
+  if (total <= 0 || breakdown.length === 0) return null
+
+  return (
+    <div className="mt-5">
+      <div
+        className="flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-muted"
+        role="img"
+        aria-label={breakdown
+          .map((line) => `${line.name}: ${line.points} of ${total} points`)
+          .join('; ')}
+      >
+        {breakdown.map((line) => (
+          <span
+            key={line.code}
+            className={cn('h-full', LINE_FILL[line.code])}
+            style={{ width: `${(line.points / total) * 100}%` }}
+          />
+        ))}
+      </div>
+
+      <ul className="mt-4 space-y-0">
+        {breakdown.map((line) => {
+          const Icon = LINE_ICON[line.code]
+          return (
+            <li
+              key={line.code}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-2.5 last:border-b-0 text-sm"
+            >
+              <Icon
+                className={cn('size-4 shrink-0', LINE_SWATCH_TEXT[line.code])}
+                aria-hidden="true"
+              />
+              <span className="font-medium text-foreground">{line.name}</span>
+              <span className="text-xs text-muted-foreground">
+                {LINE_BLURB[line.code]}
+              </span>
+              <span className="ml-auto flex shrink-0 items-center gap-2">
+                <Chip>
+                  {line.count} × {line.points_each}
+                </Chip>
+                <span className="w-14 text-right font-semibold tabular-nums text-foreground">
+                  +{line.points.toLocaleString('en-US')}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 export default function PointsCard({ className }: { className?: string }) {
   const { data, error } = usePoints()
 
@@ -45,28 +121,11 @@ export default function PointsCard({ className }: { className?: string }) {
   const daysClosed = data?.badges.length ?? 0
 
   return (
-    <section
+    <Panel
       aria-label="Steward Points"
-      className={cn(
-        'overflow-hidden rounded-lg border border-border bg-card shadow-sm',
-        className,
-      )}
+      className={cn('overflow-hidden', className)}
     >
-      <div className="border-b border-border/60 bg-primary/[0.04] p-5">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary">
-          <Coins className="size-3.5" aria-hidden="true" />
-          Steward Points
-        </p>
-        <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
-          Every close you run pays you twice.
-        </h2>
-        <p className="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">
-          Once in the margin this finds before it walks out the door. Again in
-          points you bank toward winning it back.
-        </p>
-      </div>
-
-      <div className="p-5">
+      <div className="p-5 sm:p-6">
         {error ? (
           <p className="text-sm text-muted-foreground">
             Couldn&apos;t reach the reconciliation engine, so there is no
@@ -75,111 +134,65 @@ export default function PointsCard({ className }: { className?: string }) {
           </p>
         ) : (
           <>
-            {/* The visible figure is split across two type sizes; the group
-                carries one label so a screen reader hears the whole sentence
-                instead of a bare number followed by a fragment. */}
+            {/* The balance and the day count are one fact split across two
+                stats. The group keeps a single role="status" with the whole
+                sentence as its name so a screen reader hears "170 Steward
+                Points from 14 days already reconciled" rather than a bare
+                number followed by a fragment. This affordance predates the
+                redesign and is deliberately carried through it. */}
             <div
-              className="flex flex-wrap items-baseline gap-x-3 gap-y-1"
               role="status"
               aria-label={`${total} Steward Points from ${daysClosed} ${daysClosed === 1 ? 'day' : 'days'} already reconciled`}
             >
-              <span
-                aria-hidden="true"
-                className="text-4xl font-semibold tabular-nums tracking-tight text-foreground"
-              >
-                {total.toLocaleString('en-US')}
-              </span>
-              <span aria-hidden="true" className="text-sm text-muted-foreground">
-                points from{' '}
-                <span className="font-medium text-foreground">
-                  {daysClosed}
-                </span>{' '}
-                {daysClosed === 1 ? 'day' : 'days'} already reconciled
-              </span>
+              <StatGroup aria-hidden="true">
+                <Stat
+                  label="Steward points"
+                  value={total.toLocaleString('en-US')}
+                  size="lg"
+                  icon={Coins}
+                  caption="Earned, not awarded for signing up"
+                />
+                <Stat
+                  label="Days reconciled"
+                  value={String(daysClosed)}
+                  caption="Every point traces to one of these"
+                />
+              </StatGroup>
             </div>
 
-            {breakdown.length > 0 ? (
-              <ul className="mt-4 space-y-2.5">
-                {breakdown.map((line) => {
-                  const Icon = LINE_ICON[line.code]
-                  return (
-                    <li
-                      key={line.code}
-                      className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm"
-                    >
-                      <Icon
-                        className={cn('size-4 shrink-0 translate-y-0.5', LINE_TONE[line.code])}
-                        aria-hidden="true"
-                      />
-                      <span className="font-medium text-foreground">
-                        {line.count} × {line.name}
-                      </span>
-                      <span className="text-muted-foreground">
-                        — {LINE_BLURB[line.code]}
-                      </span>
-                      <span className="ml-auto shrink-0 tabular-nums font-medium text-foreground">
-                        +{line.points.toLocaleString('en-US')}
-                        <span className="ml-1 text-xs font-normal text-muted-foreground">
-                          ({line.points_each} each)
-                        </span>
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            ) : (
-              <p className="mt-3 text-sm text-muted-foreground">
-                No closes on file yet. Run a day&apos;s reconciliation and the
-                first points land immediately — nothing here is awarded for
-                signing up.
-              </p>
-            )}
+            <CompositionBar breakdown={breakdown} total={total} />
 
-            <p className="mt-4 border-t border-border/60 pt-3 text-xs leading-relaxed text-muted-foreground">
-              A caught discrepancy is worth more than a quiet day
-              ({/* keep the weights auditable inline, not buried in a tooltip */}
-              {LINE_POINTS_HINT}) because that&apos;s where the money is. Both
-              are computed from the closes themselves — no streak bonuses, no
-              points for logging in.
-            </p>
+            {breakdown.length === 0 ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No closes on file yet. Run a day&apos;s reconciliation and the
+                first points land immediately.
+              </p>
+            ) : null}
           </>
         )}
       </div>
 
-      {/* Roadmap — visually and verbally separate from the earned balance
-          above, so nothing here can be mistaken for a live feature. */}
-      <div className="border-t border-border bg-muted/40 p-5">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <Sparkles className="size-3.5" aria-hidden="true" />
-          Where this is going — not built yet
-        </p>
-        <p className="mt-1.5 max-w-prose text-sm leading-relaxed text-foreground">
-          Points are designed to become campaign credit. This system already
-          tells you which promotion lost money; the next step is funding its
-          replacement with the closes you&apos;ve already done — insight paid
-          for in the currency it earned.
-        </p>
-        <p className="mt-2 flex max-w-prose items-start gap-1.5 text-xs leading-relaxed text-muted-foreground">
-          <ArrowRight
-            className="mt-0.5 size-3.5 shrink-0"
-            aria-hidden="true"
-          />
-          <span>
-            There is no redemption flow in this prototype and nothing to click
-            here. Spending points needs an integration with real promotional
-            tooling that this build has no API access to — so it&apos;s stated
-            as the direction, not shipped as a button that does nothing. The
-            balance above is the part that&apos;s real today.
-          </span>
+      {/* Roadmap. A recessed surface and a Lock chip carry "not live" before
+          the sentence does, so nothing here can be mistaken for a feature. */}
+      <div className="border-t border-border bg-muted/40 p-5 sm:p-6">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <Chip icon={Lock}>Not built yet</Chip>
+          {/* h2, not h3: this card sits directly under the route's h1 and
+              carries no intermediate heading, so h3 skipped a level (axe
+              heading-order on /points). */}
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            Points become campaign credit
+          </h2>
+        </div>
+        <p className="mt-2 max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
+          This system already tells you which promotion lost money. The next
+          step funds its replacement with the closes you have already run.
+          There is no redemption flow in this prototype and nothing to click
+          here, because spending points needs an integration with promotional
+          tooling this build has no API access to. The balance above is the
+          part that is real today.
         </p>
       </div>
-    </section>
+    </Panel>
   )
 }
-
-/**
- * The weights, spelled out in the copy rather than hidden. Kept as a constant
- * so the sentence can't drift away from the backend's own values without
- * someone editing this line deliberately.
- */
-const LINE_POINTS_HINT = '25 vs 10'

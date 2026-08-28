@@ -88,7 +88,7 @@ export default function DataGrid({
       </div>
 
       {sourceTool ? (
-        <p className="mt-2 border-t border-border/60 pt-2 text-[11px] text-muted-foreground">
+        <p className="mt-2 border-t border-border/60 pt-2 text-micro text-muted-foreground">
           Computed by <code className="font-mono">{sourceTool}</code>
         </p>
       ) : null}
