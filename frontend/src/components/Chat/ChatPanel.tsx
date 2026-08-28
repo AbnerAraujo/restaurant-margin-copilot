@@ -114,6 +114,17 @@ export interface AnswerChatMessage {
    */
   visualization?: AnswerVisualization
   cache?: AnswerCacheInfo
+  /**
+   * 0-3 natural-language next questions, generated deterministically by the
+   * backend (`internal/httpapi/suggestions.go`) from the real tool call that
+   * grounded THIS answer — never a second model call, never the model
+   * describing its own capabilities. Rendered as one-tap chips so a
+   * successful answer hands the reader somewhere to go next instead of
+   * ending in a blank composer, the same follow-up-chip pattern
+   * Perplexity/ChatGPT use. Omitted (or empty) is a normal, honest outcome
+   * for a tool result with nothing sensible to suggest from.
+   */
+  followUps?: string[]
   askedAt: string
 }
 
@@ -497,9 +508,16 @@ function UserBubble({ message }: { message: UserChatMessage }) {
  * The narration text is passed through untouched. Nothing here summarises,
  * shortens, or re-states it, and no figure on screen is computed in this file.
  */
-function AnswerBubble({ message }: { message: AnswerChatMessage }) {
+function AnswerBubble({
+  message,
+  onSuggestionSelect,
+}: {
+  message: AnswerChatMessage
+  onSuggestionSelect: (text: string) => void
+}) {
   const tool = message.visualization?.source_tool
   const sourceCount = message.provenance.length
+  const followUps = message.followUps ?? []
 
   return (
     <li className="flex items-start gap-2">
@@ -541,6 +559,25 @@ function AnswerBubble({ message }: { message: AnswerChatMessage }) {
               <ProvenanceTag refs={message.provenance} />
             ) : null}
             {message.cache ? <CacheBadge cache={message.cache} /> : null}
+          </div>
+        ) : null}
+
+        {/* The fix for the product's own "dead composer" defect: a
+            successful answer used to end the turn with nothing to do next.
+            These chips are deterministic Go, generated from the exact tool
+            call and result this answer was narrated from
+            (suggestions.go) — never the model guessing at its own
+            capabilities. */}
+        {followUps.length > 0 ? (
+          <div className="space-y-1.5 border-t border-border pt-2.5">
+            <p className="text-xs font-medium text-muted-foreground">
+              Worth checking next
+            </p>
+            <SuggestionChips
+              label="Worth checking next"
+              questions={followUps.map((text) => ({ text }))}
+              onSelect={onSuggestionSelect}
+            />
           </div>
         ) : null}
       </div>
@@ -1109,7 +1146,11 @@ export default function ChatPanel({
               message.role === 'user' ? (
                 <UserBubble key={message.id} message={message} />
               ) : message.kind === 'answer' ? (
-                <AnswerBubble key={message.id} message={message} />
+                <AnswerBubble
+                  key={message.id}
+                  message={message}
+                  onSuggestionSelect={submitQuestion}
+                />
               ) : message.kind === 'clarification' ? (
                 <ClarificationBubble
                   key={message.id}

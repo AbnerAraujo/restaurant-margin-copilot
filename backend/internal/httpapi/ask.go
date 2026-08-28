@@ -116,6 +116,13 @@ type AskResponse struct {
 	// entirely when no tool result has a shape worth drawing, so the client
 	// never has to distinguish "no chart" from "an empty chart".
 	Visualization *Visualization `json:"visualization,omitempty"`
+	// SuggestedFollowUps are 0-3 natural-language next questions, generated
+	// deterministically in Go (suggestions.go's deriveFollowUpSuggestions)
+	// from the real tool that grounded this answer and its real result —
+	// never a second model call. Populated ONLY when Status is "answered";
+	// a refusal or clarification gets none in this pass (a separate, later
+	// enhancement covers those).
+	SuggestedFollowUps []string `json:"suggested_followups,omitempty"`
 	// Cache is set only when this response was served from the answer cache
 	// without any model call. Its presence is the client's signal that
 	// Interactions is empty because NOTHING RAN, not because measurement
@@ -219,6 +226,16 @@ type Deps struct {
 	// feature existed (spec FR-006 — this must never weaken the existing
 	// exact-match cache's own behavior).
 	ParaphraseMatcher ParaphraseClassifier
+	// DataStart/DataEnd are the real, actual [start, end] this product has
+	// reconciled data for (internal/storage.LoadDataDateRange, resolved once
+	// at process start — cmd/server/main.go's buildAskDeps), in YYYY-MM-DD.
+	// Threaded through so deriveFollowUpSuggestions can clamp every
+	// generated follow-up's date/period to real, answerable bounds. Left
+	// empty in a Deps built without them (most existing tests): follow-up
+	// suggestions then come back empty rather than guessing at a range,
+	// which never breaks the answer path itself.
+	DataStart string
+	DataEnd   string
 }
 
 // HandleAsk implements POST /api/ask. It is exported and takes its
@@ -421,11 +438,12 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		})
 
 		resp := AskResponse{
-			Status:         "answered",
-			AnswerText:     result.AnswerText,
-			ProvenanceRefs: result.ProvenanceRefs,
-			Visualization:  deriveVisualization(result.ToolInvocations),
-			Interactions:   []CostInteraction{gateInteraction, explainInteraction},
+			Status:             "answered",
+			AnswerText:         result.AnswerText,
+			ProvenanceRefs:     result.ProvenanceRefs,
+			Visualization:      deriveVisualization(result.ToolInvocations),
+			SuggestedFollowUps: deriveFollowUpSuggestions(result.ToolInvocations, req.Question, deps.DataStart, deps.DataEnd),
+			Interactions:       []CostInteraction{gateInteraction, explainInteraction},
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated

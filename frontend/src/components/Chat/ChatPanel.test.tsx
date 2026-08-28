@@ -465,6 +465,98 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders deterministic follow-up chips under a successful answer, and submits one as a new question', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-followups',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        followUps: [
+          'Were there any discrepancies on 2026-08-07?',
+          'How did 2026-08-01 to 2026-08-07 compare to 2026-08-08 to 2026-08-14?',
+        ],
+        askedAt: '2026-08-27T11:00:00Z',
+      })
+      .mockResolvedValueOnce({
+        id: 'test-answer-followup-reply',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'No discrepancies were flagged on 2026-08-07.',
+        provenance: [],
+        askedAt: '2026-08-27T11:01:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-07?{Enter}')
+
+    const answer = await screen.findByText(
+      'Margin on 2026-08-07 was $375.82.',
+    )
+    const bubble = answer.closest('li') as HTMLElement
+    expect(
+      within(bubble).getByText('Worth checking next'),
+    ).toBeInTheDocument()
+    const followUpChip = within(bubble).getByRole('button', {
+      name: /were there any discrepancies on 2026-08-07\?/i,
+    })
+    expect(followUpChip).toBeInTheDocument()
+
+    await user.click(followUpChip)
+
+    expect(resolveAnswer).toHaveBeenNthCalledWith(
+      2,
+      'Were there any discrepancies on 2026-08-07?',
+      expect.any(Array),
+      undefined,
+    )
+    expect(
+      await screen.findByText('No discrepancies were flagged on 2026-08-07.'),
+    ).toBeInTheDocument()
+  })
+
+  it('renders no follow-up section when an answer carries no follow-ups', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-followups',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-08 was $152.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:05:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-08 was $152.50.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(within(bubble).queryByText('Worth checking next')).not.toBeInTheDocument()
+  })
+
   it('marks a cached answer as costing nothing, and states the saving separately', async () => {
     const user = userEvent.setup()
     const resolveAnswer = vi

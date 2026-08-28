@@ -240,6 +240,12 @@ func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercach
 		// llmclient.Client the ambiguity gate uses, one more vendor-internal
 		// use of a call this project already pays for and rate-limits.
 		ParaphraseMatcher: paraphrase.New(llm),
+		// Same real data date range the gate/explainer above were just
+		// grounded against, threaded through so a successful answer's
+		// follow-up suggestions (httpapi/suggestions.go) never point at a
+		// date this product has no reconciled data for.
+		DataStart: dataStartStr,
+		DataEnd:   dataEndStr,
 	}, nil
 }
 

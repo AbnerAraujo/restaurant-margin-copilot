@@ -1,8 +1,23 @@
 import { cn } from '@/lib/utils'
-import type { ExampleQuestion } from './exampleQuestions'
+
+/**
+ * What one chip needs, and no more. `ExampleQuestion` (a `text`/`tool`/`topic`
+ * triple naming one of the fixed, tool-backed example questions) satisfies
+ * this structurally, so every existing call site — the empty state, the
+ * refusal banner — keeps passing `ExampleQuestion[]` unchanged. A
+ * deterministically generated follow-up (`AnswerBubble`, after a successful
+ * answer) has no `topic` and often no single named tool, so it only ever
+ * supplies `text`, which this narrower shape allows without inventing a fake
+ * `tool`/`topic` pair just to satisfy the type.
+ */
+export interface SuggestionChipItem {
+  text: string
+  /** The MCP tool that answers it, when there is exactly one to name. */
+  tool?: string
+}
 
 export interface SuggestionChipsProps {
-  questions: ExampleQuestion[]
+  questions: SuggestionChipItem[]
   onSelect: (question: string) => void
   /** Accessible name for the group — each placement says why it's here. */
   label: string

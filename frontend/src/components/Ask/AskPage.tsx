@@ -40,6 +40,13 @@ interface AskApiResponse {
    */
   visualization?: AnswerVisualization
   /**
+   * 0-3 deterministically generated next questions
+   * (`internal/httpapi/suggestions.go`), present only when `status` is
+   * "answered". Passed straight through to `AnswerChatMessage.followUps` —
+   * this page never invents, reorders, or filters them further.
+   */
+  suggested_followups?: string[]
+  /**
    * Present only when the backend served this answer from its cache without
    * any model call. When it is set, `interactions` is empty because NOTHING
    * RAN — not because measurement failed — so the running cost total is
@@ -157,6 +164,7 @@ export default function AskPage() {
         text: data.answer_text ?? '',
         provenance: (data.provenance_refs ?? []).map(parseProvenanceRef),
         visualization: data.visualization,
+        followUps: data.suggested_followups,
         cache: data.cache,
         askedAt,
       }
