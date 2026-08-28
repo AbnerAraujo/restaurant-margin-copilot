@@ -59,6 +59,14 @@ type Decision struct {
 	// ClarifyingQuestion is non-empty when Result is Ambiguous and the gate
 	// chose to ask, rather than assume.
 	ClarifyingQuestion string
+	// ClarifyingOptions are one-tap answers to ClarifyingQuestion.
+	//
+	// These are phrasings of a REPLY, never facts: whichever one the user
+	// picks is posted back and re-classified by this same gate from scratch,
+	// exactly as if they had typed it. So the model authoring them adds no
+	// new trust surface — it already authors the clarifying question itself —
+	// and nothing downstream treats an option as established.
+	ClarifyingOptions []string
 	// AssumptionStated is non-empty when Result is Ambiguous and the gate
 	// chose to proceed with an explicitly stated assumption instead of
 	// asking (spec FR-006: "or proceed while explicitly stating the
@@ -72,6 +80,29 @@ type Decision struct {
 	OutputTokens     int64
 	EstimatedCostUSD float64
 	LatencyMs        int64
+}
+
+// PendingClarification is the conversational context a follow-up reply needs
+// in order to be classifiable at all.
+//
+// Without it this gate sees only the bare reply. A user answering the
+// clarifying question "Do you mean August 2026, or a different month?" with
+// "yes" was classified UNANSWERABLE with the reason "No question was asked"
+// — correct in isolation, and completely wrong as product behaviour. Every
+// clarification round trip in this product failed that way, which made the
+// clarification path (the one Constitution Principle II exists to enable)
+// a dead end rather than a conversation.
+//
+// This is deliberately a typed pair, not a free-form message history: the
+// gate needs exactly the question that was ambiguous and the question it
+// asked about it. Passing a whole transcript would hand the model far more
+// latitude than the classification job needs, and this package's whole
+// design is to keep the model's input narrow and its output a fixed shape.
+type PendingClarification struct {
+	// OriginalQuestion is the question that was classified ambiguous.
+	OriginalQuestion string
+	// ClarifyingQuestion is what this gate asked about it.
+	ClarifyingQuestion string
 }
 
 // Gate wraps an llmclient.Client to run this project's answerable /
@@ -97,16 +128,21 @@ func New(client *llmclient.Client, dataStart, dataEnd string) *Gate {
 // the same "refuse rather than guess" discipline applied to the gate's own
 // output, not just the product's numbers.
 type gateResponse struct {
-	Classification     string `json:"classification"`
-	ClarifyingQuestion string `json:"clarifying_question"`
-	AssumptionStated   string `json:"assumption_stated"`
-	Reason             string `json:"reason"`
+	Classification     string   `json:"classification"`
+	ClarifyingQuestion string   `json:"clarifying_question"`
+	ClarifyingOptions  []string `json:"clarifying_options"`
+	AssumptionStated   string   `json:"assumption_stated"`
+	Reason             string   `json:"reason"`
 }
 
 // Classify asks Claude Haiku 4.5 to classify question against the data
 // this product actually has (see systemPrompt), returning a Decision the
 // caller can act on directly.
-func (g *Gate) Classify(ctx context.Context, question string) (*Decision, error) {
+//
+// pending, when non-nil, says that question is a REPLY to a clarifying
+// question this gate asked earlier. The pair is classified together as one
+// resolved question — see PendingClarification for the defect this fixes.
+func (g *Gate) Classify(ctx context.Context, question string, pending *PendingClarification) (*Decision, error) {
 	if strings.TrimSpace(question) == "" {
 		return nil, ErrEmptyQuestion
 	}
@@ -116,7 +152,7 @@ func (g *Gate) Classify(ctx context.Context, question string) (*Decision, error)
 		System:    g.systemPrompt,
 		MaxTokens: MaxOutputTokens,
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(question)),
+			anthropic.NewUserMessage(anthropic.NewTextBlock(ComposeFollowUp(question, pending))),
 		},
 	})
 	if err != nil {
@@ -148,9 +184,36 @@ func (g *Gate) Classify(ctx context.Context, question string) (*Decision, error)
 
 	decision.Result = parsed.Result
 	decision.ClarifyingQuestion = parsed.ClarifyingQuestion
+	decision.ClarifyingOptions = parsed.ClarifyingOptions
 	decision.AssumptionStated = parsed.AssumptionStated
 	decision.RefusalReason = parsed.RefusalReason
 	return decision, nil
+}
+
+// ComposeFollowUp renders a question plus its pending-clarification context
+// into the single self-contained prompt the gate classifies.
+//
+// This is plain deterministic string assembly in Go, never a model call: the
+// composition is a mechanical restatement of three strings the system already
+// has, and asking a model to "merge" them would put a probabilistic step in
+// front of the very gate that exists to decide whether a question is
+// well-formed.
+//
+// Exported because internal/httpapi needs the identical composition for two
+// other purposes — the text handed to the explanation step, and the answer
+// cache's key. A bare reply like "yes" MUST NOT be the cache key: two
+// different clarifications answered "yes" would otherwise collide and the
+// second would be served the first one's answer.
+func ComposeFollowUp(question string, pending *PendingClarification) string {
+	if pending == nil || strings.TrimSpace(pending.ClarifyingQuestion) == "" {
+		return question
+	}
+	return fmt.Sprintf(
+		"%s\n\n[Follow-up context] The user originally asked: %q\nA clarifying question was put to them: %q\nThe text above this block is their reply to that clarifying question. Treat the original question, as resolved by that reply, as the question to classify.",
+		question,
+		strings.TrimSpace(pending.OriginalQuestion),
+		strings.TrimSpace(pending.ClarifyingQuestion),
+	)
 }
 
 // parseGateResponse is the pure, model-independent half of this package's
@@ -180,6 +243,7 @@ func parseGateResponse(text string) (*Decision, error) {
 	d := &Decision{
 		Result:             result,
 		ClarifyingQuestion: strings.TrimSpace(gr.ClarifyingQuestion),
+		ClarifyingOptions:  cleanOptions(gr.ClarifyingOptions),
 		AssumptionStated:   strings.TrimSpace(gr.AssumptionStated),
 		RefusalReason:      strings.TrimSpace(gr.Reason),
 	}
@@ -199,6 +263,28 @@ func parseGateResponse(text string) (*Decision, error) {
 	}
 
 	return d, nil
+}
+
+// cleanOptions trims and drops blank options, and caps the list. A cap
+// matters because these render as tappable chips: a model returning eight
+// options would produce a wall of buttons where the point is a fast choice.
+func cleanOptions(options []string) []string {
+	const maxOptions = 4
+	out := make([]string, 0, len(options))
+	for _, option := range options {
+		trimmed := strings.TrimSpace(option)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+		if len(out) == maxOptions {
+			break
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // extractJSONObject returns the first top-level {...} substring of text, or
@@ -248,17 +334,24 @@ Campaign/promotion references — read this before classifying any question that
 - You do not have the list of real campaign ids in front of you, and you must NOT classify a question as "unanswerable" just because a named campaign doesn't look familiar or doesn't exactly match an id you can recall. Resolving a shortened or human-readable campaign reference against the real, bounded set of campaigns is a downstream typed lookup's job, not yours — classify a question that names what is plausibly a campaign/promotion (any short code, abbreviation, or descriptive campaign-sounding name) as "answerable", and let the downstream tool return its own no_data result if that specific campaign genuinely doesn't exist.
 - This does not apply to platforms, suppliers, or restaurants — those ARE fully enumerated above, so a question naming one not listed there ("Instagram ads", a named supplier not in this data) is still correctly "unanswerable".
 
+Follow-up replies — read this before classifying any input containing a "[Follow-up context]" block:
+- That block means the user is REPLYING to a clarifying question this gate asked a moment ago. Their reply may be a bare fragment ("yes", "Saturday-Sunday only", "the second one", "August"), which is meaningless on its own and must NEVER be classified on its own.
+- Classify the ORIGINAL question as resolved by that reply. A short reply is not an empty question, and "no question was asked" is never a correct classification for one.
+- If the reply resolves the ambiguity, classify "answerable" and set "assumption_stated" to a one-line statement of the now-resolved reading (e.g. "Interpreting 'this month' as %[1]s through %[2]s, per your reply."), so the downstream step answers the resolved question rather than the fragment.
+- If the reply genuinely does not resolve it — for example a bare "yes" to an either/or question where either branch remains possible — classify "ambiguous" and ask ONE more specific clarifying question that names the remaining options explicitly. Do not refuse.
+- Only classify "unanswerable" here if the RESOLVED question is itself outside the data described above (e.g. the reply pins the question to a date outside %[1]s..%[2]s).
+
 Classify the question into exactly one of:
 - "answerable": it can be answered from the data above with no ambiguity about what's being asked.
 - "ambiguous": the question is answerable in principle, but has more than one reasonable interpretation (e.g. a vague date range like "the weekend" without a clear anchor once resolved per the date-grounding rule above, or a pronoun/reference with no clear antecedent). For an ambiguous question, either:
-  - ask ONE specific clarifying question that would resolve it (set "clarifying_question"), OR
+  - ask ONE specific clarifying question that would resolve it (set "clarifying_question", and set "clarifying_options" to 2-3 short phrasings of the possible answers, each one a complete reply the user could send as-is, e.g. ["Friday to Sunday", "Saturday and Sunday only"]), OR
   - if a reasonable default assumption is obvious and stating it plainly would let you proceed safely (e.g. "week" defaults to a trailing 7-day window ending %[2]s), state that assumption instead (set "assumption_stated") — never both, never neither.
 - "unanswerable": the question references data this product does not have at all (a date outside %[1]s..%[2]s once resolved per the date-grounding rule above, a supplier/platform/restaurant not listed above, or a question that isn't about this restaurant's margin/reconciliation/promotions at all). Give a specific "reason" naming what's missing.
 
 Reply with ONLY a single JSON object, no other text, no markdown fence, in exactly this shape:
-{"classification": "answerable" | "ambiguous" | "unanswerable", "clarifying_question": "...", "assumption_stated": "...", "reason": "..."}
+{"classification": "answerable" | "ambiguous" | "unanswerable", "clarifying_question": "...", "clarifying_options": ["...", "..."], "assumption_stated": "...", "reason": "..."}
 
-Leave clarifying_question/assumption_stated/reason as empty strings ("") whenever they don't apply to the classification you chose.`
+Leave clarifying_question/assumption_stated/reason as empty strings ("") and clarifying_options as [] whenever they don't apply to the classification you chose.`
 
 // buildSystemPrompt substitutes the real data date range into
 // systemPromptTemplate. dataStart/dataEnd are expected in YYYY-MM-DD form

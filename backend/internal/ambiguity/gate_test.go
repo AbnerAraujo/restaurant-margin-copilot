@@ -110,7 +110,7 @@ const (
 
 func TestClassify_RejectsEmptyQuestion(t *testing.T) {
 	g := New(llmclient.New(), testDataStart, testDataEnd)
-	_, err := g.Classify(context.Background(), "   ")
+	_, err := g.Classify(context.Background(), "   ", nil)
 	require.ErrorIs(t, err, ErrEmptyQuestion)
 }
 
@@ -130,7 +130,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("answerable", func(t *testing.T) {
-		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-03?")
+		d, err := g.Classify(ctx, "What was our reconciled margin on 2026-08-03?", nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAnswerable, d.Result)
 		require.Greater(t, d.InputTokens, int64(0))
@@ -139,7 +139,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("unanswerable", func(t *testing.T) {
-		d, err := g.Classify(ctx, "How much did we spend with our cheese supplier in September 2026?")
+		d, err := g.Classify(ctx, "How much did we spend with our cheese supplier in September 2026?", nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateUnanswerable, d.Result)
 		require.NotEmpty(t, d.RefusalReason)
@@ -147,7 +147,7 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("ambiguous", func(t *testing.T) {
-		d, err := g.Classify(ctx, "How did we do over the weekend?")
+		d, err := g.Classify(ctx, "How did we do over the weekend?", nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAmbiguous, d.Result)
 		require.True(t, d.ClarifyingQuestion != "" || d.AssumptionStated != "")
@@ -182,7 +182,7 @@ func TestGate_Classify_DateGroundingRegression(t *testing.T) {
 
 	for i := 1; i <= 3; i++ {
 		t.Run(fmt.Sprintf("run_%d", i), func(t *testing.T) {
-			d, err := g.Classify(ctx, "How did we do this week?")
+			d, err := g.Classify(ctx, "How did we do this week?", nil)
 			require.NoError(t, err)
 
 			// The specific worst-case failure: inventing a year the data

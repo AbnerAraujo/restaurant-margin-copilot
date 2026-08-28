@@ -16,3 +16,39 @@ if (typeof Element.prototype.scrollTo !== 'function') {
     if (typeof top === 'number') this.scrollTop = top
   }
 }
+
+// This environment provides `window` but no `localStorage`: Node 26 ships its
+// own experimental implementation that is inert without `--localstorage-file`,
+// and it shadows the one jsdom would otherwise install. Anything exercising
+// client-side persistence would therefore see storage as permanently
+// unavailable — which the product code survives by design, but which makes it
+// impossible to TEST that persistence actually works. An in-memory Storage
+// stands in, with the real API surface so `Storage.prototype` can still be
+// spied on for the quota-exceeded case.
+if (typeof globalThis.localStorage === 'undefined') {
+  const store = new Map<string, string>()
+  class MemoryStorage implements Storage {
+    get length() {
+      return store.size
+    }
+    clear() {
+      store.clear()
+    }
+    getItem(key: string) {
+      return store.has(key) ? (store.get(key) as string) : null
+    }
+    key(index: number) {
+      return [...store.keys()][index] ?? null
+    }
+    removeItem(key: string) {
+      store.delete(key)
+    }
+    setItem(key: string, value: string) {
+      store.set(key, String(value))
+    }
+  }
+  const storage = new MemoryStorage()
+  globalThis.Storage = MemoryStorage as unknown as typeof Storage
+  Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true })
+  Object.defineProperty(window, 'localStorage', { value: storage, configurable: true })
+}

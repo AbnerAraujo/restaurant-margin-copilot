@@ -43,6 +43,38 @@ import (
 // AskRequest is POST /api/ask's request body.
 type AskRequest struct {
 	Question string `json:"question"`
+	// PendingClarification is set when Question is a REPLY to a clarifying
+	// question this endpoint returned a moment ago. It is what makes the
+	// clarification path a conversation instead of a dead end.
+	//
+	// Design note — why the CONTEXT travels rather than a pre-merged string:
+	// the obvious alternative was to have the frontend concatenate the
+	// original question, the clarifying question and the reply into one
+	// sentence before posting. That was rejected because the composed text
+	// would then be what lands in question_interaction.question_text — the
+	// instrumentation log would record a question the user never typed, as
+	// if they had. Sending the pieces keeps question_text exactly what was
+	// typed ("yes") while still giving the gate everything it needs, and it
+	// fixes the defect for any client rather than for this one frontend.
+	// It also mirrors how AssumptionStated already flows from the gate into
+	// the explanation step: resolved context travels as its own typed field.
+	PendingClarification *PendingClarification `json:"pending_clarification,omitempty"`
+}
+
+// PendingClarification is the wire form of ambiguity.PendingClarification.
+type PendingClarification struct {
+	OriginalQuestion   string `json:"original_question"`
+	ClarifyingQuestion string `json:"clarifying_question"`
+}
+
+func (p *PendingClarification) toGateContext() *ambiguity.PendingClarification {
+	if p == nil || strings.TrimSpace(p.ClarifyingQuestion) == "" {
+		return nil
+	}
+	return &ambiguity.PendingClarification{
+		OriginalQuestion:   strings.TrimSpace(p.OriginalQuestion),
+		ClarifyingQuestion: strings.TrimSpace(p.ClarifyingQuestion),
+	}
 }
 
 // AskResponse is POST /api/ask's response body. Status is exactly one of
@@ -54,8 +86,12 @@ type AskResponse struct {
 	AnswerText         string   `json:"answer_text,omitempty"`
 	ProvenanceRefs     []string `json:"provenance_refs,omitempty"`
 	ClarifyingQuestion string   `json:"clarifying_question,omitempty"`
-	AssumptionStated   string   `json:"assumption_stated,omitempty"`
-	RefusalReason      string   `json:"refusal_reason,omitempty"`
+	// ClarifyingOptions are one-tap phrasings of a reply to
+	// ClarifyingQuestion. Each is posted back like any typed question and
+	// re-classified from scratch — never treated as an established fact.
+	ClarifyingOptions []string `json:"clarifying_options,omitempty"`
+	AssumptionStated  string   `json:"assumption_stated,omitempty"`
+	RefusalReason     string   `json:"refusal_reason,omitempty"`
 	// Visualization is an optional structured rendering of the SAME
 	// deterministic tool results the answer was narrated from — a table, bar
 	// chart, or pie chart. Chosen in plain Go from the tool name and result
@@ -114,7 +150,7 @@ const CacheMatchNote = "Exact question match (whitespace and case ignored). A re
 // once between the two requests, which is impossible against a struct that
 // only talks to the live Anthropic API.
 type Classifier interface {
-	Classify(ctx context.Context, question string) (*ambiguity.Decision, error)
+	Classify(ctx context.Context, question string, pending *ambiguity.PendingClarification) (*ambiguity.Decision, error)
 }
 
 // Narrator is the explanation step as this handler needs it.
@@ -160,6 +196,16 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 
 		ctx := r.Context()
 
+		pending := req.PendingClarification.toGateContext()
+		// resolved is the self-contained question this request really asks:
+		// identical to req.Question for a normal question, and the original
+		// question plus its clarification context for a follow-up reply.
+		// It is what the gate classifies, what the explanation step narrates,
+		// and — critically — what the answer cache keys on. Keying a
+		// follow-up on the bare reply would let "yes" answering one
+		// clarification serve the cached answer to a different one.
+		resolved := ambiguity.ComposeFollowUp(req.Question, pending)
+
 		// Cache probe BEFORE the ambiguity gate — the gate is itself a real
 		// billed Haiku call, so checking after it would still spend money on
 		// every repeat. A hit returns the previously-served response verbatim,
@@ -168,12 +214,12 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		// data, and re-deciding it would cost two model calls to reach the
 		// same conclusion.
 		if deps.Cache != nil {
-			if served := deps.serveFromCache(ctx, w, req.Question); served {
+			if served := deps.serveFromCache(ctx, w, resolved, req.Question); served {
 				return
 			}
 		}
 
-		decision, err := deps.Gate.Classify(ctx, req.Question)
+		decision, err := deps.Gate.Classify(ctx, req.Question, pending)
 		if err != nil {
 			http.Error(w, "ambiguity gate failed: "+err.Error(), http.StatusBadGateway)
 			return
@@ -190,7 +236,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
-			deps.writeAndCache(ctx, w, req.Question, AskResponse{
+			deps.writeAndCache(ctx, w, resolved, AskResponse{
 				Status:        "refused",
 				RefusalReason: decision.RefusalReason,
 				Interactions: []CostInteraction{
@@ -211,9 +257,10 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
-			deps.writeAndCache(ctx, w, req.Question, AskResponse{
+			deps.writeAndCache(ctx, w, resolved, AskResponse{
 				Status:             "clarification_needed",
 				ClarifyingQuestion: decision.ClarifyingQuestion,
+				ClarifyingOptions:  decision.ClarifyingOptions,
 				Interactions: []CostInteraction{
 					{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
 				},
@@ -236,7 +283,10 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		})
 		gateInteraction := CostInteraction{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs}
 
-		result, err := deps.Explainer.Explain(ctx, req.Question, decision.AssumptionStated)
+		// The explanation step gets the RESOLVED question. Handing it the bare
+		// reply ("yes") would leave it narrating a fragment even though the
+		// gate had already worked out what was being asked.
+		result, err := deps.Explainer.Explain(ctx, resolved, decision.AssumptionStated)
 		if err != nil {
 			http.Error(w, "explanation step failed: "+err.Error(), http.StatusBadGateway)
 			return
@@ -256,7 +306,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 				EstimatedCostUSD:    result.EstimatedCostUSD,
 				LatencyMs:           result.LatencyMs,
 			})
-			deps.writeAndCache(ctx, w, req.Question, AskResponse{
+			deps.writeAndCache(ctx, w, resolved, AskResponse{
 				Status:        "refused",
 				RefusalReason: result.IncompleteReason,
 				Interactions:  []CostInteraction{gateInteraction, explainInteraction},
@@ -286,7 +336,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated
 		}
-		deps.writeAndCache(ctx, w, req.Question, resp)
+		deps.writeAndCache(ctx, w, resolved, resp)
 	}
 }
 
@@ -318,10 +368,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // original call's cost would charge the user twice for one API call; and
 // Cache is set, so the client can tell "zero cost because nothing ran" from
 // "zero cost because measurement failed".
-func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, question string) bool {
-	entry, err := deps.Cache.Lookup(ctx, question)
+func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, cacheSubject, askedText string) bool {
+	entry, err := deps.Cache.Lookup(ctx, cacheSubject)
 	if err != nil {
-		log.Printf("httpapi: answer-cache lookup failed (question=%q): %v — falling through to the model", question, err)
+		log.Printf("httpapi: answer-cache lookup failed (question=%q): %v — falling through to the model", askedText, err)
 		return false
 	}
 	if entry == nil {
@@ -330,7 +380,7 @@ func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, ques
 
 	var cached AskResponse
 	if err := json.Unmarshal(entry.ResponseJSON, &cached); err != nil {
-		log.Printf("httpapi: answer-cache entry for %q is unreadable: %v — falling through to the model", question, err)
+		log.Printf("httpapi: answer-cache entry for %q is unreadable: %v — falling through to the model", askedText, err)
 		return false
 	}
 
@@ -346,8 +396,8 @@ func (deps Deps) serveFromCache(ctx context.Context, w http.ResponseWriter, ques
 	// (see internal/answercache's package doc). A failure to record it is
 	// logged loudly rather than swallowed — the same treatment logOrWarn gives
 	// a failed interaction write — but does not deny the user their answer.
-	if err := deps.Cache.RecordHit(ctx, question, entry.OriginCostUSD); err != nil {
-		log.Printf("httpapi: FAILED to record answer-cache hit (question=%q): %v", question, err)
+	if err := deps.Cache.RecordHit(ctx, cacheSubject, entry.OriginCostUSD); err != nil {
+		log.Printf("httpapi: FAILED to record answer-cache hit (question=%q): %v", askedText, err)
 	}
 
 	writeJSON(w, http.StatusOK, cached)

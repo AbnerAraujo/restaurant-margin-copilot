@@ -1,8 +1,10 @@
 import { useCallback } from 'react'
 
+import type { ChatMessage } from '@/components/Chat/ChatPanel'
 import ChatPanel, {
   type AnswerCacheInfo,
   type AssistantChatMessage,
+  type PendingClarification,
 } from '@/components/Chat/ChatPanel'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
@@ -24,6 +26,7 @@ interface AskApiResponse {
   answer_text?: string
   provenance_refs?: string[]
   clarifying_question?: string
+  clarifying_options?: string[]
   assumption_stated?: string
   refusal_reason?: string
   /**
@@ -91,11 +94,27 @@ export default function AskPage() {
   const { logInteractions } = useShellOutletContext()
 
   const resolveAnswer = useCallback(
-    async (question: string): Promise<AssistantChatMessage> => {
+    async (
+      question: string,
+      _history: ChatMessage[],
+      pendingClarification?: PendingClarification,
+    ): Promise<AssistantChatMessage> => {
       const response = await fetch(`${API_BASE}/api/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        // The clarification context travels as structured fields, not merged
+        // into `question`: the backend composes the resolved question itself
+        // (ambiguity.ComposeFollowUp) so question_interaction.question_text
+        // stays exactly what the owner typed.
+        body: JSON.stringify({
+          question,
+          pending_clarification: pendingClarification
+            ? {
+                original_question: pendingClarification.originalQuestion,
+                clarifying_question: pendingClarification.clarifyingQuestion,
+              }
+            : undefined,
+        }),
       })
 
       if (!response.ok) {
@@ -116,6 +135,10 @@ export default function AskPage() {
           role: 'assistant',
           kind: 'clarification',
           text: data.clarifying_question ?? 'Could you clarify that question?',
+          // Rendered as one-tap chips. Picking one posts it back through the
+          // gate with the clarification context attached, exactly as typing
+          // it would — an option is a shortcut, never an accepted answer.
+          options: data.clarifying_options,
           cache: data.cache,
           askedAt,
         }
@@ -157,6 +180,9 @@ export default function AskPage() {
       // provenance-backed answers. Same class of defect as this page calling a
       // mock instead of /api/ask, and ruled out by the same principle.
       initialMessages={[]}
+      // The live surface remembers the thread across reloads and keeps a
+      // short history of previous ones (localStorage — see lib/chatStorage).
+      persistConversation
       className="max-w-none"
     />
   )

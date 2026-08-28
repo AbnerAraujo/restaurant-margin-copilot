@@ -1,14 +1,19 @@
 import * as React from 'react'
 import {
   ArrowDown,
+  Bookmark,
   Bot,
+  History,
   CircleHelp,
   Loader2,
   PlugZap,
   RotateCw,
+  Lightbulb,
   Send,
   ShieldAlert,
+  SquarePen,
   User,
+  X,
   Zap,
 } from 'lucide-react'
 
@@ -20,6 +25,25 @@ import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import {
+  activeThread,
+  addSavedPrompt,
+  loadSavedPrompts,
+  loadThreadStore,
+  openThread,
+  persistActiveThread,
+  removeSavedPrompt,
+  startNewThread,
+  type SavedPrompt,
+  type ThreadStore,
+} from '@/lib/chatStorage'
+import AnswerText from '@/components/Chat/AnswerText'
+import SuggestionChips from '@/components/Chat/SuggestionChips'
+import {
+  CAPABILITY_SUMMARY,
+  EXAMPLE_QUESTIONS,
+  type ExampleQuestion,
+} from '@/components/Chat/exampleQuestions'
 import AnswerVisualizationView from '@/components/Charts/AnswerVisualizationView'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 
@@ -42,6 +66,18 @@ export interface AnswerCacheInfo {
   cost_avoided_usd: number
   /** The backend's own statement of what this cache does and does not match. */
   note?: string
+}
+
+/**
+ * Identifies the clarifying question a reply is answering. Derived
+ * deterministically from the visible conversation — the last assistant
+ * message and the user question immediately before it — never guessed and
+ * never composed into prose here: the backend owns that composition so the
+ * instrumentation log records what was actually typed.
+ */
+export interface PendingClarification {
+  originalQuestion: string
+  clarifyingQuestion: string
 }
 
 export interface UserChatMessage {
@@ -138,6 +174,7 @@ export interface ChatPanelProps {
   resolveAnswer?: (
     question: string,
     history: ChatMessage[],
+    pendingClarification?: PendingClarification,
   ) => Promise<AssistantChatMessage>
   /**
    * Starter questions offered when the conversation is empty (Nielsen #6,
@@ -145,7 +182,13 @@ export interface ChatPanelProps {
    * clue what this thing can actually answer). Only rendered when there are
    * no messages at all, so it never competes with a live conversation.
    */
-  suggestions?: string[]
+  suggestions?: ExampleQuestion[]
+  /**
+   * Opt into localStorage-backed thread history and saved prompts. Left off
+   * by default so the component stays a pure, self-contained view for tests
+   * and for any embedding that shouldn't touch a shared browser key.
+   */
+  persistConversation?: boolean
   className?: string
 }
 
@@ -169,17 +212,35 @@ function nextMessageId(prefix: string): string {
 const BOTTOM_STICK_THRESHOLD_PX = 48
 
 /**
- * Starter questions for an empty conversation. Every one of these is
- * answerable by a real MCP tool against the ingested fixture range — none
- * is aspirational, so a first click can never land on a refusal caused by
- * this list rather than by the data.
+ * Reads the pending clarification off the tail of the conversation: the last
+ * message is a clarification, and the question it was asked about is the most
+ * recent user message before it.
+ *
+ * Returns undefined when the last message is anything else, so a normal
+ * question is never accidentally tagged as a reply to a clarification the
+ * user has already moved past.
  */
-const DEFAULT_SUGGESTIONS = [
-  'How did we do on 2026-08-07?',
-  'Which days had discrepancies this month?',
-  'Compare margin for 2026-08-01 to 2026-08-07 against 2026-08-08 to 2026-08-14',
-  'Which promotions lost money?',
-]
+export function derivePendingClarification(
+  history: ChatMessage[],
+): PendingClarification | undefined {
+  const last = history[history.length - 1]
+  if (!last || last.role !== 'assistant' || last.kind !== 'clarification') {
+    return undefined
+  }
+  for (let i = history.length - 2; i >= 0; i--) {
+    const candidate = history[i]
+    if (candidate.role === 'user') {
+      return {
+        originalQuestion: candidate.text,
+        clarifyingQuestion: last.text,
+      }
+    }
+  }
+  return undefined
+}
+
+/** Starter questions for an empty conversation. See exampleQuestions.ts. */
+const DEFAULT_SUGGESTIONS = EXAMPLE_QUESTIONS
 
 const SEED_MESSAGES: ChatMessage[] = [
   {
@@ -408,9 +469,7 @@ function AnswerBubble({ message }: { message: AnswerChatMessage }) {
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" />
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3">
-        <p className="text-sm leading-relaxed text-foreground">
-          {message.text}
-        </p>
+        <AnswerText text={message.text} />
         {message.visualization ? (
           <AnswerVisualizationView visualization={message.visualization} />
         ) : null}
@@ -464,7 +523,13 @@ function ClarificationBubble({
   )
 }
 
-function RefusalBubble({ message }: { message: RefusalChatMessage }) {
+function RefusalBubble({
+  message,
+  onSuggestionSelect,
+}: {
+  message: RefusalChatMessage
+  onSuggestionSelect: (text: string) => void
+}) {
   return (
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" tone="destructive" />
@@ -483,6 +548,20 @@ function RefusalBubble({ message }: { message: RefusalChatMessage }) {
             ))}
           </ul>
         ) : null}
+
+        {/* A correct refusal is still a dead end unless it hands the reader a
+            way back in. These are the same tool-grounded examples the empty
+            state offers — deterministic, never the model describing itself. */}
+        <div className="space-y-1.5 border-t border-destructive/20 pt-2">
+          <p className="text-xs font-medium text-foreground">
+            Here&apos;s what I can answer:
+          </p>
+          <SuggestionChips
+            label="Questions this product can answer"
+            questions={EXAMPLE_QUESTIONS.slice(0, 3)}
+            onSelect={onSuggestionSelect}
+          />
+        </div>
         {message.cache ? <CacheBadge cache={message.cache} /> : null}
       </div>
     </li>
@@ -537,7 +616,7 @@ function EmptyState({
   suggestions,
   onSelect,
 }: {
-  suggestions: string[]
+  suggestions: ExampleQuestion[]
   onSelect: (text: string) => void
 }) {
   return (
@@ -547,27 +626,17 @@ function EmptyState({
           Ask anything about your reconciled numbers.
         </p>
         <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
-          Every figure comes from the deterministic reconciliation engine and
-          arrives with its source rows attached. If the data can&apos;t support
-          an answer, you&apos;ll get a refusal — never a plausible guess.
+          {CAPABILITY_SUMMARY} Every figure arrives with its source rows
+          attached, and if the data can&apos;t support an answer you&apos;ll
+          get a refusal — never a plausible guess.
         </p>
       </div>
-      {suggestions.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              onClick={() => onSelect(suggestion)}
-              className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium
-                text-foreground shadow-sm transition-colors hover:border-primary/40 hover:bg-primary/5
-                focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <SuggestionChips
+        label="Example questions"
+        questions={suggestions}
+        onSelect={onSelect}
+        showTool
+      />
     </li>
   )
 }
@@ -598,16 +667,39 @@ export default function ChatPanel({
   initialMessages,
   resolveAnswer,
   suggestions = DEFAULT_SUGGESTIONS,
+  persistConversation = false,
   className,
 }: ChatPanelProps) {
-  const [messages, setMessages] = React.useState<ChatMessage[]>(
-    () => initialMessages ?? SEED_MESSAGES,
+  // Restored synchronously in the initializer, not in an effect: mounting
+  // empty and then swapping in the saved thread a frame later would flash
+  // the empty state on every reload.
+  const [threadStore, setThreadStore] = React.useState<ThreadStore | null>(() =>
+    persistConversation ? loadThreadStore() : null,
   )
+  const [savedPrompts, setSavedPrompts] = React.useState<SavedPrompt[]>(() =>
+    persistConversation ? loadSavedPrompts() : [],
+  )
+  const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
+    if (threadStore) return activeThread(threadStore)?.messages ?? []
+    return initialMessages ?? SEED_MESSAGES
+  })
   const [draft, setDraft] = React.useState('')
   const [isPending, setIsPending] = React.useState(false)
   const viewportRef = React.useRef<HTMLDivElement>(null)
   const [isPinnedToBottom, setIsPinnedToBottom] = React.useState(true)
+  const pinnedRef = React.useRef(true)
+  const [ideasOpen, setIdeasOpen] = React.useState(false)
+  const listRef = React.useRef<HTMLOListElement>(null)
   const composerHintId = React.useId()
+  const [historyOpen, setHistoryOpen] = React.useState(false)
+
+  // Persist after every change to the thread. Cheap (a JSON write of a few
+  // KB) and, unlike a debounce, cannot lose the last message if the tab is
+  // closed immediately after an answer arrives.
+  React.useEffect(() => {
+    if (!persistConversation) return
+    setThreadStore((store) => (store ? persistActiveThread(store, messages) : store))
+  }, [messages, persistConversation])
 
   // Auto-scroll, fixed. Three defects were live here before this pass, all
   // confirmed by measuring the real page rather than reading the code:
@@ -630,10 +722,15 @@ export default function ChatPanel({
   // scroll EVERY scrollable ancestor, so even once the viewport works it can
   // still move the page underneath the panel. Setting `scrollTop` moves
   // exactly one element and nothing else.
-  const scrollToBottom = React.useCallback((behavior: ScrollBehavior) => {
+  // Instant, never smooth. A smooth scroll is an animation that takes many
+  // frames, during which the scroll handler below sees intermediate
+  // positions far from the bottom and un-pins the view — so the pin fought
+  // its own animation. Snapping in one frame keeps "pinned" true throughout
+  // and is what makes the ResizeObserver below safe to re-fire.
+  const scrollToBottom = React.useCallback(() => {
     const viewport = viewportRef.current
     if (!viewport) return
-    viewport.scrollTo({ top: viewport.scrollHeight, behavior })
+    viewport.scrollTop = viewport.scrollHeight
   }, [])
 
   // `useLayoutEffect` rather than `useEffect`: the new message is measured
@@ -641,8 +738,27 @@ export default function ChatPanel({
   // scroll never starts from a stale scrollHeight.
   React.useLayoutEffect(() => {
     if (!isPinnedToBottom) return
-    scrollToBottom(messages.length <= 1 ? 'auto' : 'smooth')
+    scrollToBottom()
   }, [messages.length, isPending, isPinnedToBottom, scrollToBottom])
+
+  // Re-pin whenever the CONTENT grows, not just when a message is appended.
+  // An answer carrying a chart is measurably taller after its SVG lays out
+  // than at the moment the message was added, so the one-shot scroll above
+  // ran against a stale scrollHeight and left the newest answer 435px below
+  // the fold — verified at 1512x982, on the get_margin_delta bar-chart turn.
+  // A late-loading font or an expanded table view has the same effect.
+  React.useEffect(() => {
+    const viewport = viewportRef.current
+    const list = listRef.current
+    if (!viewport || !list || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver(() => {
+      if (!pinnedRef.current) return
+      viewport.scrollTop = viewport.scrollHeight
+    })
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
 
   // Nielsen #3, user control and freedom: a chat that yanks you back down
   // while you are reading an earlier answer is the single most common chat
@@ -663,7 +779,12 @@ export default function ChatPanel({
       if (!viewport) return
       const { scrollTop, scrollHeight, clientHeight } = viewport
       const distanceFromBottom = scrollHeight - scrollTop - clientHeight
-      setIsPinnedToBottom(distanceFromBottom <= BOTTOM_STICK_THRESHOLD_PX)
+      const pinned = distanceFromBottom <= BOTTOM_STICK_THRESHOLD_PX
+      // Mirrored into a ref as well as state: the ResizeObserver callback
+      // above is created once and would otherwise close over the initial
+      // value forever.
+      pinnedRef.current = pinned
+      setIsPinnedToBottom(pinned)
     }
 
     viewport.addEventListener('scroll', handleScroll, { passive: true })
@@ -674,6 +795,10 @@ export default function ChatPanel({
     async (rawText: string) => {
       const text = rawText.trim()
       if (!text || isPending) return
+
+      // Derived from the history BEFORE this message is appended — the
+      // clarification being answered is the one currently on screen.
+      const pendingClarification = derivePendingClarification(messages)
 
       const userMessage: UserChatMessage = {
         id: nextMessageId('user'),
@@ -686,13 +811,15 @@ export default function ChatPanel({
       setIsPending(true)
       // Asking always re-pins: the reader just acted, so the newest message
       // is unambiguously what they want to see.
+      pinnedRef.current = true
       setIsPinnedToBottom(true)
 
       try {
-        const answer = await (resolveAnswer ?? mockResolveAnswer)(text, [
-          ...messages,
-          userMessage,
-        ])
+        const answer = await (resolveAnswer ?? mockResolveAnswer)(
+          text,
+          [...messages, userMessage],
+          pendingClarification,
+        )
         setMessages((previous) => [...previous, answer])
       } catch (error) {
         // Nielsen #9, help users recognize and recover from errors. Before
@@ -737,17 +864,96 @@ export default function ChatPanel({
     <section
       aria-label="Ask about your margin"
       className={cn(
-        'mx-auto flex h-[36rem] max-h-[80vh] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-background',
+        // Fills whatever height the shell gives it instead of a fixed 36rem.
+        // min-h-0 lets it shrink on a short viewport; the min-h-[20rem] floor
+        // keeps the composer and at least one message visible if it ever
+        // lands somewhere genuinely tiny.
+        'mx-auto flex h-full min-h-[20rem] w-full max-w-3xl flex-col overflow-hidden rounded-lg border border-border bg-background',
         className,
       )}
     >
-      <header className="border-b border-border px-4 py-3 sm:px-6">
-        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Reconciliation Q&amp;A
-        </p>
-        <h2 className="text-2xl font-semibold tracking-tight text-foreground">
-          Ask about your margin
-        </h2>
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Reconciliation Q&amp;A
+          </p>
+          <h2 className="text-2xl font-semibold tracking-tight text-foreground">
+            Ask about your margin
+          </h2>
+        </div>
+
+        {threadStore ? (
+          <div className="relative flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setHistoryOpen((open) => !open)
+              }}
+              aria-expanded={historyOpen}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5
+                text-xs font-medium text-muted-foreground transition-colors hover:text-foreground
+                focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <History className="size-3.5" aria-hidden="true" />
+              Recent
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const next = startNewThread(threadStore)
+                setThreadStore(next)
+                setMessages(activeThread(next)?.messages ?? [])
+                setHistoryOpen(false)
+                pinnedRef.current = true
+                setIsPinnedToBottom(true)
+              }}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1.5
+                text-xs font-medium text-foreground transition-colors hover:bg-muted
+                focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <SquarePen className="size-3.5" aria-hidden="true" />
+              New chat
+            </button>
+
+            {historyOpen ? (
+              <ul
+                aria-label="Recent conversations"
+                className="absolute right-0 top-full z-30 mt-1.5 w-72 overflow-hidden rounded-lg
+                  border border-border bg-popover shadow-lg"
+              >
+                {threadStore.threads.map((thread) => (
+                  <li key={thread.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = openThread(threadStore, thread.id)
+                        setThreadStore(next)
+                        setMessages(activeThread(next)?.messages ?? [])
+                        setHistoryOpen(false)
+                        pinnedRef.current = true
+                        setIsPinnedToBottom(true)
+                      }}
+                      className={cn(
+                        'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left transition-colors hover:bg-muted',
+                        thread.id === threadStore.activeId && 'bg-primary/5',
+                      )}
+                    >
+                      <span className="line-clamp-1 text-xs font-medium text-foreground">
+                        {thread.title}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {thread.messages.length === 0
+                          ? 'Empty'
+                          : `${thread.messages.length} messages`}
+                        {thread.id === threadStore.activeId ? ' · current' : ''}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        ) : null}
       </header>
 
       {/* `relative` anchors the floating composer; `min-h-0` is the actual
@@ -756,6 +962,7 @@ export default function ChatPanel({
       <div className="relative min-h-0 flex-1">
         <ScrollArea className="h-full" viewportRef={viewportRef}>
           <ol
+            ref={listRef}
             role="log"
             aria-live="polite"
             /* Bottom padding clears the floating composer so the newest
@@ -786,7 +993,11 @@ export default function ChatPanel({
                   onRetry={submitQuestion}
                 />
               ) : (
-                <RefusalBubble key={message.id} message={message} />
+                <RefusalBubble
+                  key={message.id}
+                  message={message}
+                  onSuggestionSelect={submitQuestion}
+                />
               ),
             )}
             {isPending ? <PendingBubble /> : null}
@@ -799,8 +1010,9 @@ export default function ChatPanel({
           <button
             type="button"
             onClick={() => {
+              pinnedRef.current = true
               setIsPinnedToBottom(true)
-              scrollToBottom('smooth')
+              scrollToBottom()
             }}
             className="absolute bottom-24 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5
               rounded-full border border-border bg-popover px-3 py-1.5 text-xs font-medium
@@ -827,6 +1039,73 @@ export default function ChatPanel({
             className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-40
               bg-[linear-gradient(to_top,var(--background)_0%,var(--background)_72%,transparent_100%)]"
           />
+          {/* Persistent capability shortcut. The empty state disappears after
+              the first question and a refusal only appears when one fires —
+              a returning user needs a way to be reminded what's worth asking
+              at any point, not only on those two occasions. */}
+          {ideasOpen ? (
+            <div className="pointer-events-auto mb-2 max-h-[45vh] overflow-y-auto rounded-xl border border-border bg-card p-2.5 shadow-lg">
+              {savedPrompts.length > 0 ? (
+                <div className="mb-3">
+                  <p className="mb-1.5 text-xs font-medium text-foreground">
+                    Your saved questions
+                  </p>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {savedPrompts.map((prompt) => (
+                      <li
+                        key={prompt.id}
+                        className="flex items-stretch overflow-hidden rounded-lg border border-border bg-background shadow-sm"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            // Refills the composer rather than sending: a
+                            // saved question is usually a starting point the
+                            // owner tweaks (a different date), not a command.
+                            setDraft(prompt.text)
+                            setIdeasOpen(false)
+                          }}
+                          className="max-w-[18rem] px-2.5 py-1.5 text-left text-xs font-medium text-foreground
+                            transition-colors hover:bg-primary/5 focus-visible:outline-none
+                            focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                          <span className="line-clamp-2">{prompt.text}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSavedPrompts((prompts) =>
+                              removeSavedPrompt(prompts, prompt.id),
+                            )
+                          }
+                          aria-label={`Delete saved question: ${prompt.text}`}
+                          className="border-l border-border px-1.5 text-muted-foreground transition-colors
+                            hover:bg-destructive/10 hover:text-destructive-text focus-visible:outline-none
+                            focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        >
+                          <X className="size-3" aria-hidden="true" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <p className="mb-1.5 text-xs text-muted-foreground">
+                {CAPABILITY_SUMMARY}
+              </p>
+              <SuggestionChips
+                label="Example questions"
+                questions={suggestions}
+                onSelect={(text) => {
+                  setIdeasOpen(false)
+                  void submitQuestion(text)
+                }}
+                showTool
+              />
+            </div>
+          ) : null}
+
           <form
             onSubmit={handleSubmit}
             className="pointer-events-auto flex items-end gap-2 rounded-2xl border border-border
@@ -845,6 +1124,35 @@ export default function ChatPanel({
               className="min-h-10 resize-none border-0 bg-transparent shadow-none
                 focus-visible:ring-0 dark:bg-transparent"
             />
+            {persistConversation ? (
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                disabled={draft.trim().length === 0}
+                onClick={() => {
+                  setSavedPrompts((prompts) => addSavedPrompt(prompts, draft))
+                  setIdeasOpen(true)
+                }}
+                aria-label="Save this question for reuse"
+                title="Save this question for reuse"
+                className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <Bookmark className="size-4" aria-hidden="true" />
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              onClick={() => setIdeasOpen((open) => !open)}
+              aria-expanded={ideasOpen}
+              aria-label={ideasOpen ? 'Hide example questions' : 'Show example questions'}
+              title="What can I ask?"
+              className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+            >
+              <Lightbulb className="size-4" aria-hidden="true" />
+            </Button>
             <Button
               type="submit"
               size="icon"

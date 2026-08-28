@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
 import ChatPanel, {
+  derivePendingClarification,
   type AssistantChatMessage,
   type ChatMessage,
 } from './ChatPanel'
@@ -29,6 +30,60 @@ function deferred<T>() {
   })
   return { promise, resolve }
 }
+
+describe('derivePendingClarification', () => {
+  const question: ChatMessage = {
+    id: 'u1',
+    role: 'user',
+    text: 'Which days had discrepancies this month?',
+    askedAt: '2026-08-27T10:00:00Z',
+  }
+  const clarification: ChatMessage = {
+    id: 'a1',
+    role: 'assistant',
+    kind: 'clarification',
+    text: 'Do you mean August 2026?',
+    askedAt: '2026-08-27T10:00:02Z',
+  }
+
+  it('pairs a pending clarification with the question it was asked about', () => {
+    expect(derivePendingClarification([question, clarification])).toEqual({
+      originalQuestion: 'Which days had discrepancies this month?',
+      clarifyingQuestion: 'Do you mean August 2026?',
+    })
+  })
+
+  it('returns nothing when the last message is not a clarification', () => {
+    const answer: ChatMessage = {
+      id: 'a2',
+      role: 'assistant',
+      kind: 'answer',
+      text: 'Two days had flags.',
+      provenance: [],
+      askedAt: '2026-08-27T10:00:05Z',
+    }
+    expect(derivePendingClarification([question, clarification, answer])).toBeUndefined()
+    expect(derivePendingClarification([])).toBeUndefined()
+    expect(derivePendingClarification([question])).toBeUndefined()
+  })
+
+  it('skips back past intervening assistant turns to find the real question', () => {
+    const refusal: ChatMessage = {
+      id: 'a0',
+      role: 'assistant',
+      kind: 'refusal',
+      text: 'no',
+      missing: [],
+      askedAt: '2026-08-27T09:59:00Z',
+    }
+    expect(
+      derivePendingClarification([refusal, question, clarification]),
+    ).toEqual({
+      originalQuestion: 'Which days had discrepancies this month?',
+      clarifyingQuestion: 'Do you mean August 2026?',
+    })
+  })
+})
 
 describe('ChatPanel', () => {
   it('renders the seeded conversation with a grounded answer and its provenance citation', () => {
@@ -77,9 +132,23 @@ describe('ChatPanel', () => {
     expect(
       withinRefusal.getByText(/uber eats ad-spend export for aug 18–24/i),
     ).toBeInTheDocument()
-    // a refusal never carries a provenance citation (data-model.md: refusal
-    // implies provenance_refs = [])
-    expect(withinRefusal.queryAllByRole('button')).toHaveLength(0)
+    // A refusal never carries a provenance citation (data-model.md: refusal
+    // implies provenance_refs = []). Asserted precisely rather than as "no
+    // buttons at all" — a refusal now also offers capability-guidance chips,
+    // which are navigation, not a citation of a number it declined to give.
+    expect(
+      withinRefusal.queryByRole('button', { name: /source/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      withinRefusal.queryByRole('group', { name: /source citations/i }),
+    ).not.toBeInTheDocument()
+
+    // ...and it must hand the reader a way forward rather than dead-ending.
+    expect(
+      withinRefusal.getByRole('list', {
+        name: /questions this product can answer/i,
+      }),
+    ).toBeInTheDocument()
   })
 
   it('renders the refusal and clarification banners with different visual treatments', () => {
@@ -169,6 +238,8 @@ describe('ChatPanel', () => {
       expect.arrayContaining([
         expect.objectContaining({ text: 'How did we do yesterday?' }),
       ]),
+      // No clarification was pending, so no context is attached.
+      undefined,
     )
     expect(input).not.toBeDisabled()
   })
@@ -193,6 +264,12 @@ describe('ChatPanel', () => {
 
     const clarificationOnly: ChatMessage[] = [
       {
+        id: 'u1',
+        role: 'user',
+        text: 'Which period did you mean?',
+        askedAt: '2026-08-27T10:03:00Z',
+      },
+      {
         id: 'c1',
         role: 'assistant',
         kind: 'clarification',
@@ -215,7 +292,14 @@ describe('ChatPanel', () => {
     expect(
       await screen.findByText('Resolved after clarification.'),
     ).toBeInTheDocument()
-    expect(resolveAnswer).toHaveBeenCalledWith('Option A', expect.any(Array))
+    // The quick-reply chip is a reply to the clarification above it, so it
+    // must carry that clarification's context — without it the backend sees
+    // an orphaned fragment and refuses.
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'Option A',
+      expect.any(Array),
+      { originalQuestion: 'Which period did you mean?', clarifyingQuestion: 'Which range did you mean?' },
+    )
   })
 
   it('does not submit an empty or whitespace-only question', async () => {
@@ -263,18 +347,25 @@ describe('ChatPanel', () => {
       <ChatPanel
         initialMessages={[]}
         resolveAnswer={resolveAnswer}
-        suggestions={['Which promotions lost money?']}
+        suggestions={[
+          {
+            text: 'Which promotions lost money?',
+            tool: 'list_negative_roi_promotions',
+            topic: 'Promotions',
+          },
+        ]}
       />,
     )
 
     const suggestion = screen.getByRole('button', {
-      name: 'Which promotions lost money?',
+      name: /Which promotions lost money\?/,
     })
     await user.click(suggestion)
 
     expect(resolveAnswer).toHaveBeenCalledWith(
       'Which promotions lost money?',
       expect.any(Array),
+      undefined,
     )
     expect(
       await screen.findByText('Answer from a suggestion.'),
@@ -328,6 +419,7 @@ describe('ChatPanel', () => {
       2,
       'How did we do on 2026-08-07?',
       expect.any(Array),
+      undefined,
     )
   })
 

@@ -6,6 +6,7 @@ import ClosePage from '@/components/Close/ClosePage'
 // Real, already-built capability-tile grid (a parallel agent's work) — not a
 // stub, reused as-is per redesign-spec.md §3.
 import HomePage from '@/components/Home/HomePage'
+import PointsPage from '@/components/Points/PointsPage'
 import PromotionsPage from '@/components/Promotions/PromotionsPage'
 
 /**
@@ -22,6 +23,7 @@ export const routes: RouteObject[] = [
       { path: 'close', element: <ClosePage /> },
       { path: 'ask', element: <AskPage /> },
       { path: 'promotions', element: <PromotionsPage /> },
+      { path: 'points', element: <PointsPage /> },
     ],
   },
 ]

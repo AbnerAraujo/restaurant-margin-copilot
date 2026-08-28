@@ -37,11 +37,19 @@ export default function AppShell() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background lg:flex-row">
+    // h-screen + overflow-hidden, not min-h-screen: the shell owns exactly
+    // the viewport and never grows a second, page-level scrollbar. <main> is
+    // the one scroll container for tall pages (Home, Close, Promotions),
+    // while a page that wants to fill the viewport instead — the chat — asks
+    // for h-full and gets a definite height to resolve against. Before this,
+    // the chat was a fixed 36rem letterbox floating in a 982px viewport with
+    // ~382px of dead space beneath it, so only about one and a half messages
+    // were ever visible at once.
+    <div className="flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
       <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <MobileNavBar />
-        <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
           <Outlet context={{ interactions, logInteractions } satisfies ShellOutletContext} />
         </main>
       </div>

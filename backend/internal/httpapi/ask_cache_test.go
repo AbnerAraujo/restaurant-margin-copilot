@@ -24,23 +24,29 @@ import (
 // invoked, never by the response looking similar.
 
 type countingGate struct {
-	calls    int
-	decision ambiguity.Decision
+	calls        int
+	decision     ambiguity.Decision
+	lastQuestion string
+	lastPending  *ambiguity.PendingClarification
 }
 
-func (g *countingGate) Classify(_ context.Context, _ string) (*ambiguity.Decision, error) {
+func (g *countingGate) Classify(_ context.Context, question string, pending *ambiguity.PendingClarification) (*ambiguity.Decision, error) {
 	g.calls++
+	g.lastQuestion = question
+	g.lastPending = pending
 	decision := g.decision
 	return &decision, nil
 }
 
 type countingExplainer struct {
-	calls  int
-	result explain.Result
+	calls        int
+	result       explain.Result
+	lastQuestion string
 }
 
-func (e *countingExplainer) Explain(_ context.Context, _, _ string) (*explain.Result, error) {
+func (e *countingExplainer) Explain(_ context.Context, question, _ string) (*explain.Result, error) {
 	e.calls++
+	e.lastQuestion = question
 	result := e.result
 	return &result, nil
 }

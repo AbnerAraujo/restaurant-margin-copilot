@@ -1,4 +1,3 @@
-import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   BadgeCheck,
@@ -8,29 +7,8 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { getJson } from '@/lib/api'
 import { cn } from '@/lib/utils'
-
-// ---------------------------------------------------------------------------
-// Wire shape of GET /api/badges (backend `internal/badges`). Points are
-// DERIVED at read time from the badges in the same payload — there is no
-// points table and nothing accrues a balance in the background. Every number
-// this card shows is recomputed from `daily_reconciliation.discrepancy_flags`
-// on each request, which is why a re-ingestion silently corrects it.
-// ---------------------------------------------------------------------------
-
-interface PointsLine {
-  code: 'clean_close' | 'discrepancy_catcher'
-  name: string
-  count: number
-  points_each: number
-  points: number
-}
-
-interface BadgesResponse {
-  badges: { date: string; code: string }[]
-  points: { total: number; breakdown: PointsLine[] }
-}
+import { usePoints, type PointsLine } from './usePoints'
 
 const LINE_ICON: Record<PointsLine['code'], LucideIcon> = {
   clean_close: BadgeCheck,
@@ -60,24 +38,7 @@ const LINE_BLURB: Record<PointsLine['code'], string> = {
  * fabricated capability this whole product refuses to ship.
  */
 export default function PointsCard({ className }: { className?: string }) {
-  const [data, setData] = useState<BadgesResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    getJson<BadgesResponse>('/api/badges')
-      .then((response) => {
-        if (!cancelled) setData(response)
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data, error } = usePoints()
 
   const total = data?.points.total ?? 0
   const breakdown = data?.points.breakdown ?? []
