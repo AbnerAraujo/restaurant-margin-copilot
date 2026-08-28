@@ -143,7 +143,7 @@ describe('PointsCard', () => {
     render(<PointsCard />)
 
     expect(
-      await screen.findByText(/couldn't reach the reconciliation engine/i),
+      await screen.findByText(/couldn't reach your data/i),
     ).toBeInTheDocument()
     expect(screen.getByText(/query_failed/)).toBeInTheDocument()
     // A failed fetch must never fall back to a zero balance — that reads as

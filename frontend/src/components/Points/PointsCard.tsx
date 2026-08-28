@@ -42,7 +42,7 @@ export default function PointsCard({ className }: { className?: string }) {
       <div className="p-5 sm:p-6">
         {error ? (
           <p className="text-sm text-muted-foreground">
-            Couldn&apos;t reach the reconciliation engine, so there is no
+            I couldn&apos;t reach your data just now, so there is no
             balance to show. Rather than a placeholder number:{' '}
             <span className="font-mono text-xs">{error}</span>
           </p>

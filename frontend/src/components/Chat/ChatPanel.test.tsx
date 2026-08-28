@@ -103,7 +103,7 @@ describe('ChatPanel', () => {
   it('renders a clarification response with a visibly distinct banner and quick-reply options', () => {
     render(<ChatPanel />)
 
-    const clarificationLabel = screen.getByText(/needs a quick clarification/i)
+    const clarificationLabel = screen.getByText(/let me make sure/i)
     expect(clarificationLabel).toBeInTheDocument()
 
     // distinct from a normal answer bubble: it carries its own eyebrow label
@@ -119,7 +119,7 @@ describe('ChatPanel', () => {
   it('renders a refusal with a distinct banner and its missing-data list, never a citation', () => {
     render(<ChatPanel />)
 
-    const refusalLabel = screen.getByText(/can't answer this one/i)
+    const refusalLabel = screen.getByText(/find what you need/i)
     expect(refusalLabel).toBeInTheDocument()
 
     const refusalItem = screen.getByText(
@@ -155,10 +155,10 @@ describe('ChatPanel', () => {
     render(<ChatPanel />)
 
     const refusalBanner = screen
-      .getByText(/can't answer this one/i)
+      .getByText(/find what you need/i)
       .closest('div')
     const clarificationBanner = screen
-      .getByText(/needs a quick clarification/i)
+      .getByText(/let me make sure/i)
       .closest('div')
 
     expect(refusalBanner?.className).toContain('border-destructive/25')
@@ -402,7 +402,7 @@ describe('ChatPanel', () => {
     await user.type(input, 'How did we do on 2026-08-07?{Enter}')
 
     expect(
-      await screen.findByText(/couldn't reach the reconciliation engine/i),
+      await screen.findByText(/couldn't reach your data/i),
     ).toBeInTheDocument()
     expect(
       screen.getByText('/api/ask returned 502: upstream down'),
@@ -410,7 +410,7 @@ describe('ChatPanel', () => {
     // A transport failure must never be dressed up as the product's own
     // principled refusal.
     expect(
-      screen.queryByText(/can't answer this one/i),
+      screen.queryByText(/find what you need/i),
     ).not.toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /try again/i }))

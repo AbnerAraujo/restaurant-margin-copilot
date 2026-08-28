@@ -546,7 +546,7 @@ function ClarificationBubble({
       <div className="max-w-[85%] space-y-2.5 rounded-2xl rounded-tl-sm border border-warning/25 bg-warning/10 px-4 py-3">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-warning-text">
           <CircleHelp className="size-3.5" aria-hidden="true" />
-          Needs a quick clarification
+          Let me make sure I've got this right
         </p>
         <p className="text-sm leading-relaxed text-foreground">
           {message.text}
@@ -583,7 +583,7 @@ function RefusalBubble({
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-destructive/25 bg-destructive/10 px-4 py-3">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-destructive-text">
           <ShieldAlert className="size-3.5" aria-hidden="true" />
-          Can&apos;t answer this one
+          I&apos;ll help you find what you need
         </p>
         <p className="text-sm leading-relaxed text-foreground">
           {message.text}
@@ -628,7 +628,7 @@ function ErrorBubble({
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-border bg-muted/50 px-4 py-3">
         <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           <PlugZap className="size-3.5" aria-hidden="true" />
-          Couldn&apos;t reach the reconciliation engine
+          I couldn&apos;t reach your data just now
         </p>
         <p className="text-sm leading-relaxed text-foreground">
           {message.text}
@@ -747,6 +747,11 @@ export default function ChatPanel({
   const listRef = React.useRef<HTMLOListElement>(null)
   const composerHintId = React.useId()
   const [historyOpen, setHistoryOpen] = React.useState(false)
+  const composerRef = React.useRef<HTMLDivElement>(null)
+  // Matches the old static pb-28 (112px) as the pre-measurement default, so
+  // there's no visible jump on first paint before the ResizeObserver below
+  // fires once.
+  const [composerHeight, setComposerHeight] = React.useState(112)
 
   // Persist after every change to the thread. Cheap (a JSON write of a few
   // KB) and, unlike a debounce, cannot lose the last message if the tab is
@@ -812,6 +817,33 @@ export default function ChatPanel({
       viewport.scrollTop = viewport.scrollHeight
     })
     observer.observe(list)
+    return () => observer.disconnect()
+  }, [])
+
+  // The floating composer's real height, not a guess. It is an
+  // absolutely-positioned overlay sitting ON TOP of the scrollable list, so
+  // the list's bottom padding has to clear whatever the composer's ACTUAL
+  // rendered height is — and that height is not fixed: the textarea below
+  // uses `field-sizing: content` and genuinely grows with a multi-line
+  // (Shift+Enter) question, and the "ideasOpen" suggestions panel adds a
+  // whole extra block above the input row when open. A hardcoded pb-28
+  // (112px) only happened to be enough for a single-line draft with the
+  // panel closed — any taller composer state overlapped and hid the bottom
+  // of the newest message, which is exactly the "message gets cut off"
+  // report this fixes. Measuring the real node instead of estimating its
+  // height is the same discipline as every other "trust but verify" fix in
+  // this codebase, just applied to layout instead of data.
+  React.useEffect(() => {
+    const composer = composerRef.current
+    if (!composer || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.borderBoxSize?.[0]?.blockSize ?? composer.offsetHeight
+      // A little breathing room beyond the composer's exact edge, matching
+      // the visual gap the old pb-28 left above the gradient fade.
+      setComposerHeight(Math.ceil(height) + 24)
+    })
+    observer.observe(composer)
     return () => observer.disconnect()
   }, [])
 
@@ -1028,8 +1060,12 @@ export default function ChatPanel({
           <ol
             ref={listRef}
             /* Bottom padding clears the floating composer so the newest
-               message is never parked underneath it. */
-            className="space-y-4 px-4 pb-28 pt-4 sm:px-6"
+               message is never parked underneath it — measured from the
+               composer's real height (see the ResizeObserver above), not a
+               fixed guess that a multi-line question or the suggestions
+               panel would outgrow. */
+            className="space-y-4 px-4 pt-4 sm:px-6"
+            style={{ paddingBottom: composerHeight }}
           >
             {messages.length === 0 && !isPending ? (
               <EmptyState
@@ -1092,7 +1128,10 @@ export default function ChatPanel({
             strip behind it fades the list out rather than cutting it with a
             hard rule, which is what makes the bar read as sitting ABOVE the
             conversation instead of being a footer bolted below it. */}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 sm:px-5 sm:pb-4">
+        <div
+          ref={composerRef}
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-10 px-3 pb-3 sm:px-5 sm:pb-4"
+        >
           {/* Solid to ~70% of its height, then a short fade — a pure
               from/to gradient leaves the bar's own height half-transparent
               and message text shows through it, which reads as a rendering
