@@ -27,14 +27,25 @@ import (
 // DailySummaryResult backs get_daily_summary's success response — the
 // DailyReconciliation row for one date, in full, including its provenance.
 type DailySummaryResult struct {
-	Date               string                      `json:"date"`
-	GrossSalesBySource map[string]string           `json:"gross_sales_by_source"`
-	Commissions        string                      `json:"commissions"`
-	Refunds            string                      `json:"refunds"`
-	InputCosts         string                      `json:"input_costs"`
-	Margin             string                      `json:"margin"`
-	DiscrepancyFlags   []reconcile.DiscrepancyFlag `json:"discrepancy_flags"`
-	SourceRowRefs      []reconcile.SourceRowRef    `json:"source_row_refs"`
+	Date               string            `json:"date"`
+	GrossSalesBySource map[string]string `json:"gross_sales_by_source"`
+	// TotalDeliveryGrossSales is the deterministic sum of every
+	// GrossSalesBySource entry EXCEPT "pos" — i.e. iFood + Just Eat
+	// Takeaway + any other delivery platform, but not in-house dine-in/
+	// takeaway sales. Computed here in Go, not left for the narration model
+	// to add up itself, per the constitution's deterministic/probabilistic
+	// split (Principle I). Without this field, a "what was delivery revenue"
+	// question forced the model to either sum the per-source map itself (a
+	// real violation of that split) or omit the combined figure entirely.
+	// Naming it "TotalGrossSales" instead would be wrong: that would silently
+	// fold in POS (non-delivery) revenue and inflate the delivery figure.
+	TotalDeliveryGrossSales string                      `json:"total_delivery_gross_sales"`
+	Commissions             string                      `json:"commissions"`
+	Refunds                 string                      `json:"refunds"`
+	InputCosts              string                      `json:"input_costs"`
+	Margin                  string                      `json:"margin"`
+	DiscrepancyFlags        []reconcile.DiscrepancyFlag `json:"discrepancy_flags"`
+	SourceRowRefs           []reconcile.SourceRowRef    `json:"source_row_refs"`
 }
 
 // PeriodMarginResult is one side of a get_margin_delta response — a
@@ -243,18 +254,23 @@ func discrepanciesFromDays(days []reconcile.DailyReconciliation) *DiscrepanciesR
 
 func dailyToResult(d reconcile.DailyReconciliation) *DailySummaryResult {
 	gross := make(map[string]string, len(d.GrossSalesBySource))
+	var deliveryTotalCents int64
 	for source, cents := range d.GrossSalesBySource {
 		gross[source] = money.FormatCents(cents)
+		if source != "pos" {
+			deliveryTotalCents += cents
+		}
 	}
 	return &DailySummaryResult{
-		Date:               d.Date.Format(dateLayout),
-		GrossSalesBySource: gross,
-		Commissions:        money.FormatCents(d.CommissionsCents),
-		Refunds:            money.FormatCents(d.RefundsCents),
-		InputCosts:         money.FormatCents(d.InputCostsCents),
-		Margin:             money.FormatCents(d.MarginCents),
-		DiscrepancyFlags:   d.DiscrepancyFlags,
-		SourceRowRefs:      d.SourceRowRefs,
+		Date:                    d.Date.Format(dateLayout),
+		GrossSalesBySource:      gross,
+		TotalDeliveryGrossSales: money.FormatCents(deliveryTotalCents),
+		Commissions:             money.FormatCents(d.CommissionsCents),
+		Refunds:                 money.FormatCents(d.RefundsCents),
+		InputCosts:              money.FormatCents(d.InputCostsCents),
+		Margin:                  money.FormatCents(d.MarginCents),
+		DiscrepancyFlags:        d.DiscrepancyFlags,
+		SourceRowRefs:           d.SourceRowRefs,
 	}
 }
 

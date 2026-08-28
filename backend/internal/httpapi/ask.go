@@ -49,12 +49,30 @@ type AskRequest struct {
 // spec FR-006/FR-007 define. Fields not relevant to the given Status are
 // left empty, never populated with a placeholder.
 type AskResponse struct {
-	Status             string   `json:"status"`
-	AnswerText         string   `json:"answer_text,omitempty"`
-	ProvenanceRefs     []string `json:"provenance_refs,omitempty"`
-	ClarifyingQuestion string   `json:"clarifying_question,omitempty"`
-	AssumptionStated   string   `json:"assumption_stated,omitempty"`
-	RefusalReason      string   `json:"refusal_reason,omitempty"`
+	Status             string             `json:"status"`
+	AnswerText         string             `json:"answer_text,omitempty"`
+	ProvenanceRefs     []string           `json:"provenance_refs,omitempty"`
+	ClarifyingQuestion string             `json:"clarifying_question,omitempty"`
+	AssumptionStated   string             `json:"assumption_stated,omitempty"`
+	RefusalReason      string             `json:"refusal_reason,omitempty"`
+	// Interactions carries this request's real, just-measured cost — one
+	// entry per model call that actually ran (the gate always; explain only
+	// if the gate let the question through) — so the frontend's running
+	// cost panel (PRD "a visible provenance citation and running cost panel
+	// on every answer") reflects this session's real spend rather than a
+	// hard-coded placeholder figure.
+	Interactions []CostInteraction `json:"interactions,omitempty"`
+}
+
+// CostInteraction is one model call's real, measured cost — mirrors the
+// same fields internal/instrumentation.Record logs to Postgres, exposed
+// here so the client doesn't need its own copy of the pricing table.
+type CostInteraction struct {
+	ModelUsed        string  `json:"model_used"`
+	InputTokens      int64   `json:"input_tokens"`
+	OutputTokens     int64   `json:"output_tokens"`
+	EstimatedCostUSD float64 `json:"estimated_cost_usd"`
+	LatencyMs        int64   `json:"latency_ms"`
 }
 
 // Deps are HandleAsk's dependencies, constructed once at process start (by
@@ -109,6 +127,9 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusOK, AskResponse{
 				Status:        "refused",
 				RefusalReason: decision.RefusalReason,
+				Interactions: []CostInteraction{
+					{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+				},
 			})
 			return
 		}
@@ -127,6 +148,9 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusOK, AskResponse{
 				Status:             "clarification_needed",
 				ClarifyingQuestion: decision.ClarifyingQuestion,
+				Interactions: []CostInteraction{
+					{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+				},
 			})
 			return
 		}
@@ -144,12 +168,14 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			EstimatedCostUSD:    decision.EstimatedCostUSD,
 			LatencyMs:           decision.LatencyMs,
 		})
+		gateInteraction := CostInteraction{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs}
 
 		result, err := deps.Explainer.Explain(ctx, req.Question, decision.AssumptionStated)
 		if err != nil {
 			http.Error(w, "explanation step failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
+		explainInteraction := CostInteraction{ModelUsed: llmclient.ModelExplanation, InputTokens: result.InputTokens, OutputTokens: result.OutputTokens, EstimatedCostUSD: result.EstimatedCostUSD, LatencyMs: result.LatencyMs}
 
 		if result.IncompleteReason != "" {
 			// Spec Acceptance Scenario US3.3: stop and report inability
@@ -167,6 +193,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			writeJSON(w, http.StatusOK, AskResponse{
 				Status:        "refused",
 				RefusalReason: result.IncompleteReason,
+				Interactions:  []CostInteraction{gateInteraction, explainInteraction},
 			})
 			return
 		}
@@ -187,6 +214,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			Status:         "answered",
 			AnswerText:     result.AnswerText,
 			ProvenanceRefs: result.ProvenanceRefs,
+			Interactions:   []CostInteraction{gateInteraction, explainInteraction},
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated

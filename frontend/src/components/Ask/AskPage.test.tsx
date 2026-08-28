@@ -3,7 +3,7 @@ import { useCallback, useState } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
-import { beforeAll, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 
 import type { ShellOutletContext } from '@/components/Shell/AppShell'
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
@@ -64,7 +64,21 @@ function renderAskPage() {
   )
 }
 
+function mockAskResponse(body: Record<string, unknown>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => body,
+    }),
+  )
+}
+
 describe('AskPage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders the chat panel with its seeded conversation', () => {
     renderAskPage()
 
@@ -83,6 +97,15 @@ describe('AskPage', () => {
   })
 
   it('reports a full gate+explain pair to the shell cost total after a new grounded answer', async () => {
+    mockAskResponse({
+      status: 'answered',
+      answer_text: 'Margin for that period was $1,842.60.',
+      provenance_refs: ['fixtures/daily_reconciliation.csv:18'],
+      interactions: [
+        { model_used: 'claude-haiku-4-5', input_tokens: 420, output_tokens: 18, estimated_cost_usd: HAIKU_GATE_USD, latency_ms: 310 },
+        { model_used: 'claude-sonnet-5', input_tokens: 1180, output_tokens: 240, estimated_cost_usd: SONNET_EXPLAIN_USD, latency_ms: 1420 },
+      ],
+    })
     const user = userEvent.setup()
     renderAskPage()
 
@@ -102,6 +125,13 @@ describe('AskPage', () => {
   })
 
   it('reports a gate-only cost to the shell total after a clarification fires', async () => {
+    mockAskResponse({
+      status: 'clarification_needed',
+      clarifying_question: '"Weekend" could mean Friday–Sunday or just Saturday–Sunday — which did you mean?',
+      interactions: [
+        { model_used: 'claude-haiku-4-5', input_tokens: 420, output_tokens: 18, estimated_cost_usd: HAIKU_GATE_USD, latency_ms: 310 },
+      ],
+    })
     const user = userEvent.setup()
     renderAskPage()
 

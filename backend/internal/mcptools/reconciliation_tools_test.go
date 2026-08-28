@@ -103,6 +103,7 @@ func TestGetDailySummary_ReturnsPersistedDay(t *testing.T) {
 	require.Equal(t, "1999-03-01", result.Date)
 	require.Equal(t, "50.00", result.GrossSalesBySource["ifood"])
 	require.Equal(t, "30.00", result.GrossSalesBySource["pos"])
+	require.Equal(t, "50.00", result.TotalDeliveryGrossSales, "must be ifood only (50.00) — pos (30.00) is dine-in, not delivery revenue")
 	require.Equal(t, "11.50", result.Commissions)
 	require.Equal(t, "2.00", result.Refunds)
 	require.Equal(t, "10.00", result.InputCosts)

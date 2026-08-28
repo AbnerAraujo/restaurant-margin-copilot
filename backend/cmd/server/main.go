@@ -89,10 +89,28 @@ func main() {
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
 		log.Printf("serving GET /api/badges (T032) and POST /api/ask (T020/T023) on %s — Ctrl+C to stop", *serveAddr)
-		if err := http.ListenAndServe(*serveAddr, mux); err != nil {
+		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
 	}
+}
+
+// withDevCORS allows the Vite dev server (a different origin/port from this
+// API) to call it directly from the browser. This is a local-prototype
+// convenience, not a production CORS policy — it allows exactly the one
+// known frontend dev origin rather than "*", but a real deployment would
+// derive this from configuration instead of a hard-coded localhost port.
+func withDevCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:5173")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // buildAskDeps wires httpapi.HandleAsk's dependencies: internal/llmclient's

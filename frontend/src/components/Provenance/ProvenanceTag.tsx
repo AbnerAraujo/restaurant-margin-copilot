@@ -13,9 +13,14 @@ export interface SourceRowRef {
   source_file: string
   row_start: number
   row_end: number
-  /** ISO 8601 date (YYYY-MM-DD). Equal to period_end for a single-day ref. */
-  period_start: string
-  period_end: string
+  /**
+   * ISO 8601 date (YYYY-MM-DD), or omitted. Equal to period_end for a
+   * single-day ref. The live `/api/ask` endpoint's `provenance_refs` are
+   * flat "file:row" strings with no period info (httpapi.AskResponse), so a
+   * ref built from a live answer has no period — omit rather than fake one.
+   */
+  period_start?: string
+  period_end?: string
 }
 
 export interface ProvenanceTagProps {
@@ -43,7 +48,10 @@ function formatMonthDay(isoDate: string): string {
   })
 }
 
-function formatPeriod(ref: SourceRowRef): string {
+function formatPeriod(ref: SourceRowRef): string | null {
+  if (!ref.period_start || !ref.period_end) {
+    return null
+  }
   if (ref.period_start === ref.period_end) {
     return formatMonthDay(ref.period_start)
   }
@@ -60,7 +68,10 @@ function formatPeriod(ref: SourceRowRef): string {
 }
 
 function citationLabel(ref: SourceRowRef): string {
-  return `${ref.source_file} · ${formatRowRange(ref)} · ${formatPeriod(ref)}`
+  const period = formatPeriod(ref)
+  return period
+    ? `${ref.source_file} · ${formatRowRange(ref)} · ${period}`
+    : `${ref.source_file} · ${formatRowRange(ref)}`
 }
 
 /**
@@ -115,18 +126,22 @@ function ProvenanceTag({ refs, className }: ProvenanceTagProps) {
             </button>
           </div>
           <ul className="space-y-1">
-            {refs.map((ref) => (
-              <li
-                key={`${ref.source_file}-${ref.row_start}-${ref.row_end}-${ref.period_start}`}
-                className="text-xs leading-relaxed text-popover-foreground"
-              >
-                <span className="font-medium">{ref.source_file}</span>
-                <span className="text-muted-foreground">
-                  {' '}
-                  · {formatRowRange(ref)} · {formatPeriod(ref)}
-                </span>
-              </li>
-            ))}
+            {refs.map((ref, index) => {
+              const period = formatPeriod(ref)
+              return (
+                <li
+                  key={`${ref.source_file}-${ref.row_start}-${ref.row_end}-${index}`}
+                  className="text-xs leading-relaxed text-popover-foreground"
+                >
+                  <span className="font-medium">{ref.source_file}</span>
+                  <span className="text-muted-foreground">
+                    {' '}
+                    · {formatRowRange(ref)}
+                    {period ? ` · ${period}` : ''}
+                  </span>
+                </li>
+              )
+            })}
           </ul>
         </div>
       )}
