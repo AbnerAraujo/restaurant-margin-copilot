@@ -7,8 +7,10 @@ This is the grep-able, in-editor companion to `docs/architecture.html`'s
 existing MCP coverage — the ask-pipeline diagram's "MCP tool layer" node, the
 "boundary enforced by the import graph" table (`internal/mcptools` row: "no
 import path to a model, read-only Postgres"), and the "Hard limits" card's
-"Six defined, typed MCP tools, and nothing else" line. That HTML is the
-diagram; this document is for someone with the code open, the same relationship
+"Six defined, typed MCP tools, and nothing else" line — that card is now
+stale (a seventh tool, `get_period_totals`, shipped after it was last
+edited; see Section 1 below for the disclosed inconsistency). That HTML is
+the diagram; this document is for someone with the code open, the same relationship
 `docs/frontend.md` has to `docs/architecture.html`'s design-system tab. Where
 the two overlap, this doc cross-references the HTML section by name rather
 than re-describing the same diagram in prose.
@@ -60,14 +62,18 @@ Anthropic tool definitions (`anthropicTools(listed.Tools)`) — so the tool
 schemas the model actually sees are generated from the live MCP server's own
 registrations, not a hand-maintained second copy.
 
-### The exact 6 typed tools
+### The exact 7 typed tools
 
-`server.go`'s `RegisterMCPServer` calls exactly three registrars —
+`server.go`'s `RegisterMCPServer` calls exactly four registrars —
 `registerReconciliationTools`, `registerPromoTools`,
-`registerPlatformComparisonTool` — which together call `s.AddTool` six
-times. Confirmed by reading each `register*` function directly, not the
-architecture doc's prose (which independently says the same: "Six defined,
-typed MCP tools, and nothing else"):
+`registerPlatformComparisonTool`, `registerPeriodTools` — which together
+call `s.AddTool` seven times. Confirmed by reading each `register*`
+function directly, not `docs/architecture.html`'s prose, which still reads
+"Six defined, typed MCP tools, and nothing else" as of this writing — that
+HTML card has not been updated for `get_period_totals` yet, a disclosed
+inconsistency between the two documents rather than a silently-fixed one,
+since this document's own scope is `docs/mcp-and-skills.md` and
+`docs/technical-rfc.md`, not the HTML artifact:
 
 | # | Tool | File | Purpose | Refuses to do |
 |---|---|---|---|---|
@@ -77,20 +83,28 @@ typed MCP tools, and nothing else"):
 | 4 | `get_promotion_roi` | `promo_tools.go` | ROI lookup by exact/fuzzy `campaign_id`, or by `platform`+`period`. Accepts a shortened form or a full display name via `campaign_match.go`'s bounded matcher. | `roi` is `null` with `reason: "attribution_unavailable"` (FR-013) when incremental revenue can't be attributed — never a computed-looking number. `matchCampaignID` returns `""` (no match) rather than guess when a fragment is ambiguous across more than one known campaign. |
 | 5 | `list_negative_roi_promotions` | `promo_tools.go` | Every campaign with negative ROI in a period. | A promotion with unattributable ROI is never included — "not known to be negative" is a different fact from "negative," and the tool doesn't conflate them. |
 | 6 | `compare_platform_economics` | `platform_comparison_tools.go` | iFood vs. Just Eat Takeaway side by side for one period: gross sales, commission paid, effective rate, promo spend, combined cost/rate. The one tool a comparison question must resolve to — its own description tells the model never to reconstruct a comparison from two single-platform calls. | `effective_rate`/`combined_effective_rate` are `null`, never a fabricated `"0.00%"`, when `gross_sales` is zero (divide-by-zero guarded in `effectiveRatePercent`). `insufficient_data` if any calendar day in the period has no persisted reconciliation. |
+| 7 | `get_period_totals` | `period_tools.go` | Sums and ranks an ENTIRE period's `DailyReconciliation` rows in one call: per-source gross sales, `total_delivery_gross_sales`, commissions, refunds (with a new `refunds_by_source` per-platform breakdown), input costs, margin total, `avg_daily_margin` (via `money.DivRoundHalfUp`), and which single day was `best_day`/`worst_day` by margin — all carrying one combined `source_row_refs` list. Its own file doc comment names the real gap it closes: a failing period-total eval question, and an observed case where "which day had the most profit and why" burned through the per-interaction tool-call budget calling `get_daily_summary` once per day, since `get_margin_delta` only sums margin as one side of a two-period delta — no per-source breakdown, no best/worst-day ranking. | `{"error":"insufficient_data","missing":[...dates...]}` and totals nothing if any calendar day in `[start,end]` has no persisted reconciliation — the same policy `periodMargin` already enforces for `get_margin_delta`. On an exact best/worst-day margin tie, the chronologically earliest date wins both slots — this tool's own documented tie-break, since `contracts/mcp-tools.md` doesn't prescribe one. |
 
 Every result struct renders money as a `FormatCents`-style decimal string
 (`"-12.34"`), the same convention `internal/storage`'s JSON surfaces
 already use — the model receives numbers pre-formatted the way a human
 reads them, never a raw integer-cents value it might misread as dollars.
 
-Three of the six (`get_promotion_roi`, `list_negative_roi_promotions`,
-`compare_platform_economics`) use `mcp.NewTypedToolHandler` /
-`mcp.NewToolResultStructuredOnly`, a newer, typed adapter pattern than the
-first three's hand-written `req.BindArguments` + `jsonResult`/`errorResult`
-helpers (`reconciliation_tools.go`'s bottom section) — both are the same
+Four of the seven (`get_promotion_roi`, `list_negative_roi_promotions`,
+`compare_platform_economics`, `get_period_totals`) use
+`mcp.NewTypedToolHandler` / `mcp.NewToolResultStructuredOnly`, a newer,
+typed adapter pattern than the first three's hand-written
+`req.BindArguments` + `jsonResult`/`errorResult` helpers
+(`reconciliation_tools.go`'s bottom section) — both are the same
 package convention (a `(*Result, *ToolError, error)` three-way return from a
 "core" function, per `types.go`'s doc comment), just two tool-file
-generations of the same design.
+generations of the same design. `period_tools.go`'s own doc comment
+confirms it deliberately joined the newer generation: "Follows
+platform_comparison_tools.go's/promo_tools.go's current convention (this
+package's most recently added tools) ... rather than
+reconciliation_tools.go's older hand-rolled BindArguments/jsonResult pair,
+which predates that typed-handler helper's introduction into this
+package."
 
 ### The middleware-enforced timeout and call cap
 
@@ -98,7 +112,7 @@ generations of the same design.
 
 - `DefaultToolTimeout = 5 * time.Second` — bounds every tool call.
   `contracts/mcp-tools.md` states 5s explicitly for `get_daily_summary`
-  only; this package applies the same bound to all six uniformly, per the
+  only; this package applies the same bound to all seven uniformly, per the
   constant's own comment, "since none of them do anything `get_daily_summary`
   doesn't already do (a handful of indexed Postgres reads)."
 - `DefaultMaxToolCallsPerInteraction = 8` — the hard per-interaction
@@ -164,8 +178,11 @@ reconciliation_tools_test.go:50:  _, err := conn.Exec(context.Background(), "DEL
 
 One hit, in `reconciliation_tools_test.go` — a `DATABASE_URL`-gated
 integration test's own cleanup step (deleting a sentinel row it wrote),
-not the tool logic itself. Zero raw SQL anywhere in the six tools, their
-handlers, `campaign_match.go`, or `limits.go`.
+not the tool logic itself. Zero raw SQL anywhere in the seven tools, their
+handlers, `campaign_match.go`, or `limits.go` — `period_tools.go` included,
+confirmed by the same grep (it reaches Postgres only through
+`storage.LoadDailyReconciliationsInPeriod`, the same adapter
+`get_margin_delta` already uses).
 
 ### The recent testability fix: `fake_querier_test.go`
 
@@ -222,14 +239,19 @@ skills inventory (commit `8668758`, written the evening before
 `9b5907a`'s "Add reconciliation MCP tools" — i.e. drafted with the MCP
 layer's skill needs already in view, not backfilled after the fact)
 doesn't list it either, in either its installed table or its explicit
-"explicitly not installed" section. The commit history for the six tools
+"explicitly not installed" section. The commit history for the original six tools
 (`9b5907a`, `d3d67e4`, `35fafdd`, `a51e968`, `abea19a`) reads as a
 hand-built implementation
 following `specs/001-margin-reconciliation-qa/contracts/mcp-tools.md`'s own
 written contract through the SDD `plan → tasks → implement` flow (task IDs
 T018–T020, T027, T028–T032 appear directly in those commit messages), not
-scaffolding generated by a plugin. Reported honestly: no evidence
-`mcp-server-dev` was used for this layer.
+scaffolding generated by a plugin. The seventh, `get_period_totals`
+(`c7e4060`), shipped later and outside that original task list — no task ID
+appears in its commit message — but its own file doc comment still opens
+by naming itself "`contracts/mcp-tools.md`'s seventh entry," so the
+contract-first discipline continued even without a numbered SDD task behind
+it. Reported honestly either way: no evidence `mcp-server-dev` was used for
+any of the seven.
 
 ## 2. Claude Code skills actually used to build this
 
@@ -262,7 +284,8 @@ retrofitted with specs after the fact:
   deliberately not built), and `specs/007-cost-sheet-upload` (shipped,
   `3e0ccfa`).
 - Every project-local skill under `.claude/skills/` except
-  `question-recovery-design` is one of the ten `speckit-*` commands
+  `question-recovery-design` and `proactive-guidance-design` (both covered
+  in their own subsections below) is one of the ten `speckit-*` commands
   (`speckit-constitution`, `-specify`, `-plan`, `-tasks`, `-implement`,
   `-clarify`, `-analyze`, `-checklist`, `-converge`, `-taskstoissues`),
   installed via `specify init --integration claude` per `docs/tooling.md`.
@@ -394,6 +417,94 @@ skill in architecture.html") is where this project's own architecture
 diagram was updated to point at the skill by name, closing the loop between
 the code and the methodology it was generalized from.
 
+### `skill-creator` and `proactive-guidance-design` — the success-half companion skill
+
+Like `question-recovery-design`, this skill wasn't consumed — it was
+**built**, the same day, as this project's second self-authored
+deliverable. Commit `8b87a39` ("Add proactive-guidance-design skill: the
+success half of chat UX") states the relationship directly: "Companion to
+question-recovery-design (the failure-recovery half): covers zero-state
+capability transparency and deriving post-answer follow-up suggestions
+deterministically from the real tool call that just ran, never a second
+model call. Cross-referenced in both directions. Validated via
+skill-creator's quick_validate.py." The cross-reference is real, not just
+claimed: `.claude/skills/question-recovery-design/SKILL.md` line 255 names
+`proactive-guidance-design` as "the mirror-image skill," and
+`proactive-guidance-design/SKILL.md`'s own "Related skills" section names
+`question-recovery-design` back.
+
+`.claude/skills/proactive-guidance-design/SKILL.md` generalizes the
+mirror-image half of the same underlying insight — `question-recovery-design`
+covers what a chat surface shows when a question goes *wrong*; this one
+covers what it shows *before* the first question and right *after* a
+successful one — grounded in this same codebase, not abstract advice:
+
+1. **Zero-state capability transparency** —
+   `frontend/src/components/Chat/exampleQuestions.ts`'s `EXAMPLE_QUESTIONS`,
+   each entry paired with the exact MCP tool name that answers it, and its
+   own doc comment's rule that "suggesting a question the product cannot
+   answer is the same class of lie as inventing a number."
+2. **Grounded, deterministic follow-up suggestions** —
+   `backend/internal/httpapi/suggestions.go`'s `deriveFollowUpSuggestions`,
+   which takes the real `[]explain.ToolInvocation`, the asked question, and
+   the real `dataStart`/`dataEnd` range, and picks a template by a fixed,
+   narrowest-subject-wins tool priority mirroring `deriveVisualization`'s own
+   convention — never a second model call asking "what should the owner ask
+   next?", which the skill's own text calls "exactly the hallucination
+   surface `exampleQuestions.ts` already forbids." The function's own doc
+   comment confirms `get_period_totals` was folded into that same priority
+   order the day it shipped: "inserted just above `get_daily_summary` — a
+   period-level summary, but still the least specific 'just tell me what
+   happened' shape among the seven tools."
+3. **A capped, zoom-in/zoom-out shape** — `MaxFollowUpSuggestions = 3`
+   (`suggestions.go`, citing Perplexity's and ChatGPT's follow-up row as
+   precedent), with each tool's template pairing one narrower "zoom in"
+   suggestion (e.g., after `get_daily_summary`, "Were there any
+   discrepancies on {date}?") with one broader "zoom out" suggestion (a
+   week-over-week comparison, only offered when the prior week actually
+   exists within `[dataStart, dataEnd]` — `weekOverWeekAround` omits it
+   entirely otherwise, never clamping it into a misleadingly short span).
+4. **One shared presentation component, no bespoke styling** —
+   `frontend/src/components/Chat/SuggestionChips.tsx`, already reused across
+   `EmptyState`, `RefusalBubble`, and the composer's "Ideas" panel, every
+   placement routing `onSelect` through the same `submitQuestion` function
+   the composer itself calls. A follow-up chip, once it renders in the
+   frontend, is documented as a fourth placement of the same component, not
+   a new one.
+
+The skill is explicit about its own current-state honesty, which is worth
+quoting because it's a real, checkable gap rather than a hypothetical: its
+own text states that "`AnswerBubble` in `ChatPanel.tsx` still ends after its
+provenance tag and cache badge with no chip rendered from that field, so a
+real, computed follow-up already exists on the wire and simply isn't
+shown" — `AskResponse.SuggestedFollowUps` is populated by
+`deriveFollowUpSuggestions` for every successfully answered interaction,
+but as of this writing the frontend has not caught up to render it. The
+skill names this precisely as "the gap that motivated this skill," not a
+defect it claims to have already closed.
+
+One disambiguation worth stating plainly, since this codebase now uses
+"follow-up" for two unrelated mechanisms shipped the same day:
+`deriveFollowUpSuggestions`' chips (documented above) are deterministic,
+Go-computed *suggestions for the next question to ask*, rendered after an
+answer lands. `ambiguity.ComposeAnswerFollowUp` (see
+`backend/internal/ambiguity/gate.go`) is a different thing entirely — it
+resolves what the user just typed (e.g. a bare "and the day before?")
+against the immediately preceding real answer, so the gate can classify it
+correctly instead of misfiring on an unclassifiable fragment. One is a
+suggestion the user might click; the other is how the gate makes sense of
+what the user already typed. Neither skill in this document owns that
+second mechanism — it belongs to `internal/ambiguity`, not to a chat-surface
+skill.
+
+The skill's own worked-example section names two related skills
+(`ux-writing`, for a follow-up suggestion's copy tone; `api-design`, for the
+equivalent discipline at a pure API boundary with no chat surface to render
+a chip into) and one boundary condition (skip it for a single-purpose form
+with no "next question" concept), matching `question-recovery-design`'s own
+pattern of naming adjacent skills and an explicit non-applicability case
+rather than presenting itself as universally applicable.
+
 ### One pivotal decision: model tier per activity, not by default
 
 Per this project's own standing discipline about matching model cost to
@@ -447,3 +558,9 @@ two meet directly: a real refusal/clarification mechanism built to satisfy
 the constitution's Principle II, then deliberately generalized back out into
 a reusable skill via `skill-creator` — code discipline becoming process
 discipline becoming a shareable artifact in its own right.
+`proactive-guidance-design` is the same pattern's second instance, built
+the same way and the same day: a real, already-landed mechanism
+(`deriveFollowUpSuggestions`) generalized via `skill-creator` into a
+reusable methodology, explicitly cross-referenced back to
+`question-recovery-design` as its mirror-image half rather than treated as
+an unrelated addition.

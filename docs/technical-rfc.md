@@ -57,6 +57,8 @@ Seven fixed tools (`get_daily_summary`, `get_margin_delta`, `list_discrepancies`
 1. Daily (batch): `ingest` → `reconcile` → `storage` — no LLM involved.
 2. Per question: `ambiguity` gate classifies (answerable/ambiguous/unanswerable) → if answerable, `explain` calls `mcptools` → `storage` → narrates the typed result. If not, refusal/clarification returns directly, bypassing `explain` entirely.
 
+**Gate/explain prompt discipline, added post-launch against a real measured eval failure (full before/after numbers in `docs/product-strategy.md`):** the two-step summary above elides three refinements worth naming. The gate classifies a subjective-sounding word ("underperforming", "losing money") as answerable, not ambiguous, whenever a typed tool already defines it deterministically (`list_negative_roi_promotions`, `get_period_totals`), rather than asking the user to define a threshold the product can already compute. `explain`'s prompt separately bans reconstructing a missing period aggregate by calling `get_daily_summary` once per day — the real cause of an earlier turn/token-budget blowup — now that `get_period_totals` answers that shape in one call. And a bare follow-up to the previous *answer* (not a reply to a clarifying question) — "and the day before?", "why?" — is resolved via `ambiguity.ComposeAnswerFollowUp` against exactly one prior exchange (`PreviousExchange{Question, AnswerText}`), deliberately never an accumulating transcript, before either prompt classifies or narrates it.
+
 ## Alternatives considered
 
 Full per-decision alternatives (LLM vendor, MCP transport, DB access layer, eval harness, frontend UI library): `research.md`. Two worth restating here since they were genuinely close calls:
