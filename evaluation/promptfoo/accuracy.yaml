@@ -1,0 +1,153 @@
+# Accuracy evaluation (spec.md SC-001, User Story 2).
+#
+# 15 questions with golden answers quoted VERBATIM from
+# docs/live-integration-test-scenarios.md, which in turn quotes them
+# directly from backend/fixtures/README.md's independently-computed
+# reference tables (no hand-derived sums, per that doc's own note).
+# See evaluation/golden/accuracy.yaml for the golden-answer record.
+#
+# Target: the live backend's POST /api/ask (real Anthropic API calls
+# through the Haiku 4.5 ambiguity gate + Sonnet 5 explain step — no
+# mocking). Start the server first:
+#   go run ./cmd/server -serve :8092   (from backend/)
+#
+# Grading note: a "correct" answer here means status == "answered" AND
+# the answer text contains the golden figure. A clarification_needed or
+# refused result is graded FAIL for accuracy purposes even though it may
+# be the constitutionally-preferred behavior under Principle II — this
+# file measures "did it produce the right number", not "did it behave
+# safely". Both are worth reporting, which is why gate/refusal behavior
+# is captured separately by refusal.yaml and manually noted here too.
+
+description: "Accuracy: 15 questions with known-correct fixture-derived answers"
+
+prompts:
+  - "{{question}}"
+
+providers:
+  - id: http
+    config:
+      url: http://localhost:8092/api/ask
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        question: "{{question}}"
+      transformResponse: "json"
+
+defaultTest:
+  options:
+    provider:
+      id: http
+
+tests:
+  - description: "A1"
+    vars:
+      question: "Delivery revenue on 2026-08-01?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+
+  - description: "A2"
+    vars:
+      question: "Delivery revenue on 2026-08-03? (tests duplicate-order dedup)"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A3"
+    vars:
+      question: "POS revenue on 2026-08-08?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /487\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A4"
+    vars:
+      question: "Supplier cost total for the two-week period?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /4[,]?335\\.75/.test(output?.answer_text ?? '')"
+
+  - description: "A5"
+    vars:
+      question: "iFood's share of delivery revenue on 2026-08-01?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /69\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A6"
+    vars:
+      question: "Just Eat Takeaway's share on 2026-08-01?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /76\\.25/.test(output?.answer_text ?? '')"
+
+  - description: "A7"
+    vars:
+      question: "ROI on campaign IFOOD-CAMP-BOOST01?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /34\\.00/.test(output?.answer_text ?? '')"
+      - type: javascript
+        value: "!/-\\$?34\\.00/.test(output?.answer_text ?? '') && !/flagged/i.test(output?.answer_text ?? '')"
+
+  - description: "A8"
+    vars:
+      question: "ROI on campaign JET-CAMP-LUNCHFIX?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+      - type: javascript
+        value: "/-\\$?165\\.00|negative|loss|underperform/i.test(output?.answer_text ?? '')"
+
+  - description: "A9"
+    vars:
+      question: "ROI on campaign JET-CAMP-NEWMENU?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /19\\.50/.test(output?.answer_text ?? '')"
+      - type: javascript
+        value: "!/-\\$?19\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A10"
+    vars:
+      question: "Which campaigns should be flagged as underperforming?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /LUNCHFIX/i.test(output?.answer_text ?? '')"
+
+  - description: "A11"
+    vars:
+      question: "Delivery revenue on 2026-08-04?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /125\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A12"
+    vars:
+      question: "Delivery revenue on 2026-08-14?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /140\\.50/.test(output?.answer_text ?? '')"
+
+  - description: "A13"
+    vars:
+      question: "iFood's share on 2026-08-14?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /66\\.75/.test(output?.answer_text ?? '')"
+
+  - description: "A14"
+    vars:
+      question: "Just Eat Takeaway's share on 2026-08-05?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /71\\.25/.test(output?.answer_text ?? '')"
+
+  - description: "A15"
+    vars:
+      question: "Delivery revenue on 2026-08-02, net of the refund?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /119\\.75/.test(output?.answer_text ?? '')"

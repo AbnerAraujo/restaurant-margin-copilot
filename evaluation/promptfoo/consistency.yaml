@@ -1,0 +1,151 @@
+# Consistency evaluation (spec.md SC-002, User Story 2).
+#
+# 5 question sets x 3 phrasings each = 15 live calls. Each phrasing is
+# graded individually against the set's target below (quoted verbatim
+# from docs/live-integration-test-scenarios.md); TRUE consistency also
+# requires the 3 answers within a set to agree WITH EACH OTHER, not just
+# each independently matching the target text — promptfoo grades each
+# test row independently, so cross-phrasing agreement within a set must
+# be checked by a human/agent reading the raw JSON output
+# (-o results.json) side by side, which the harness run report does.
+#
+# Target: same live backend as accuracy.yaml (POST /api/ask, real API
+# calls, no mocking).
+
+description: "Consistency: 5 sets x 3 phrasings, checked for agreement"
+
+prompts:
+  - "{{question}}"
+
+providers:
+  - id: http
+    config:
+      url: http://localhost:8092/api/ask
+      method: POST
+      headers:
+        Content-Type: application/json
+      body:
+        question: "{{question}}"
+      transformResponse: "json"
+
+defaultTest:
+  options:
+    provider:
+      id: http
+
+tests:
+  # C1 — all must agree on $145.75
+  - description: "C1a"
+    vars:
+      set: "C1"
+      question: "What was the delivery revenue on August 1st?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+  - description: "C1b"
+    vars:
+      set: "C1"
+      question: "How much did delivery bring in on Aug 1?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+  - description: "C1c"
+    vars:
+      set: "C1"
+      question: "Delivery total for 2026-08-01?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+
+  # C2 — counted once; $120.50 for the day
+  - description: "C2a"
+    vars:
+      set: "C2"
+      question: "Did order IFOOD-20260803-0011 get counted twice?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && !/counted twice|double[- ]?counted/i.test(output?.answer_text ?? '')"
+  - description: "C2b"
+    vars:
+      set: "C2"
+      question: "Is there a duplicate order on August 3rd?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+  - description: "C2c"
+    vars:
+      set: "C2"
+      question: "Check for duplicate orders around Aug 3."
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+
+  # C3 — negative ROI, -$165.00, flagged
+  - description: "C3a"
+    vars:
+      set: "C3"
+      question: "Is the LUNCHFIX campaign profitable?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && /negative|not profitable|loss|underperform/i.test(output?.answer_text ?? '')"
+  - description: "C3b"
+    vars:
+      set: "C3"
+      question: "Should we stop the JET-CAMP-LUNCHFIX promotion?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+  - description: "C3c"
+    vars:
+      set: "C3"
+      question: "What's the ROI on our Just Eat lunch fixed-price campaign?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+
+  # C4 — $72.50 (gross, pre-refund-net; refund is a separate line item)
+  - description: "C4a"
+    vars:
+      set: "C4"
+      question: "What was iFood's delivery revenue on August 2nd?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+  - description: "C4b"
+    vars:
+      set: "C4"
+      question: "How much did iFood bring in on the 2nd?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+  - description: "C4c"
+    vars:
+      set: "C4"
+      question: "iFood revenue, Aug 2 2026?"
+    assert:
+      - type: javascript
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+
+  # C5 — consistently states no delivery-platform data for Aug 8; never
+  # fabricates a $0 or omits the gap silently.
+  - description: "C5a"
+    vars:
+      set: "C5"
+      question: "Do we have delivery data for August 8th?"
+    assert:
+      - type: javascript
+        value: "(output?.status === 'refused') || (output?.status === 'clarification_needed') || (output?.status === 'answered' && /no (delivery|data)|missing|not available|no orders/i.test(output?.answer_text ?? '') && !/\\$0\\.00/.test(output?.answer_text ?? ''))"
+  - description: "C5b"
+    vars:
+      set: "C5"
+      question: "Was anything from the delivery platform recorded on Aug 8?"
+    assert:
+      - type: javascript
+        value: "(output?.status === 'refused') || (output?.status === 'clarification_needed') || (output?.status === 'answered' && /no (delivery|data)|missing|not available|no orders/i.test(output?.answer_text ?? '') && !/\\$0\\.00/.test(output?.answer_text ?? ''))"
+  - description: "C5c"
+    vars:
+      set: "C5"
+      question: "Show me iFood and Just Eat orders for 2026-08-08."
+    assert:
+      - type: javascript
+        value: "(output?.status === 'refused') || (output?.status === 'clarification_needed') || (output?.status === 'answered' && /no (delivery|data)|missing|not available|no orders/i.test(output?.answer_text ?? '') && !/\\$0\\.00/.test(output?.answer_text ?? ''))"

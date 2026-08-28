@@ -265,6 +265,103 @@ Give every independent restaurant or bar owner a same-day, trustworthy answer to
 | Cost per interaction (USD) | Token discipline | Per-interaction instrumentation log |
 | Time-to-reconciled-close | The North Star itself | Measured against fixture data end-to-end |
 
+## Real evaluation results (T033/T034, run 2026-08-28)
+
+**[Measured]** — the numbers below come from an actual `promptfoo eval` run
+of `evaluation/promptfoo/{accuracy,consistency,refusal}.yaml` against the
+live backend (`POST /api/ask`, real Anthropic API calls through the Haiku
+4.5 ambiguity gate and Sonnet 5 explain step — no mocking, no cache reuse).
+Raw request/response JSON for every call is in the harness output; every
+number here was checked against the actual `answer_text`/`status` returned,
+not against promptfoo's own pass/fail grading alone (that grading has at
+least one known false-negative, noted below). No target was asserted in
+advance, per Constitution Principle V — this is what actually happened,
+including the failures.
+
+| Metric | Result | Notes |
+|---|---|---|
+| Accuracy | **10 / 15** (67%) | See failure breakdown below |
+| Consistency | **0 / 5 sets** fully agreed | See "year-omission" defect below — this is the headline finding |
+| Refusal correctness | **4 / 5** | See R1 below |
+| Real API cost, full 35-question run | **$0.286** (cumulative session total $0.325, including earlier smoke tests) | Well inside the $4.50 checkpoint / $5 ceiling |
+
+**Accuracy failures (5 of 15)**:
+- **A4** ("Supplier cost total for the two-week period?") — asked for an
+  exact date range instead of recognizing "the two-week period" as the
+  entire single fixture window (2026-08-01–14), the only period the
+  system has data for at all.
+- **A9** (ROI on `JET-CAMP-NEWMENU`) — **hallucinated a refusal**: claimed
+  the campaign "is not listed in the available data," when it is a real,
+  documented campaign with a real, computable +$19.50 ROI. A false
+  refusal on answerable data is arguably worse than the model just being
+  wrong about a number, because it's the exact failure mode (Principle
+  II) the whole architecture is supposed to prevent, showing up in the
+  opposite direction.
+- **A10** ("Which campaigns should be flagged as underperforming?") —
+  asked the user to define an "underperforming" threshold instead of
+  calling `list_negative_roi_promotions`, the tool that exists
+  specifically to answer this deterministically.
+- **A11** ("Delivery revenue on 2026-08-04?") — asked whether "delivery
+  revenue" meant all platforms or one specific platform. The near-identical
+  A1 phrasing ("Delivery revenue on 2026-08-01?") answered directly with
+  the combined total. Same question shape, two different gate outcomes.
+- **A15** (delivery revenue on 2026-08-02, net of the refund) — reported
+  the gross $154.25 and stated it "can't confirm" the net figure because
+  refunds aren't broken out by platform in the tool output, rather than
+  the accrual-netted $119.75 `technical-rfc.md`'s design decision calls
+  for. Worth a follow-up look at whether `get_daily_summary`'s per-source
+  breakdown should expose the netted figure directly.
+
+Two "passing" answers had minor real defects worth recording even though
+they matched the golden number: **A6** returned the correct $76.25 but
+formatted it with a **€** symbol instead of **$**; **A5**/**A13** answered
+the raw dollar "share" correctly but added unprompted, unnecessary
+hedging about being unable to compute a *percentage* share (which was
+never asked for) — a sign the model reads "share" as "percentage" by
+default, worth tightening in the explain prompt.
+
+**Consistency — 0 of 5 sets fully agreed** (the harness's most important
+result). The cause is the same across every failing set, not five
+unrelated bugs: **when a question omits the year (e.g. "Aug 1st," "the
+2nd," "August 3rd"), the model does not reliably infer 2026 — the only
+year the system has any data for.** Observed behavior for the same
+underlying question varied, unprompted, across all three of: (a)
+correctly answering using 2026, (b) asking a clarifying question about
+the year, and (c) confidently stating **"no reconciliation data for
+[date], 2024"** — inventing a plausible-sounding but wrong year and then
+truthfully-but-irrelevantly reporting no data for it. Case (c) is the
+concerning one: it isn't a fabricated number, but it *is* a fabricated
+premise (the year) stated with full confidence, and it happened on 4 of
+the 5 consistency sets (C1, C2, C4, C5) in at least one of the three
+phrasings. C3 (LUNCHFIX) failed differently: the shortened name
+"LUNCHFIX" alone triggered a refusal ("no campaign named 'LUNCHFIX'")
+instead of being matched against `JET-CAMP-LUNCHFIX`. This is a real,
+reportable gap in the ambiguity gate / explain step's date-grounding
+behavior — the deterministic core was never in question here, only the
+model layer's handling of underspecified dates.
+
+**Refusal correctness — 4 of 5.** R2 (attribution-unavailable campaign),
+R3 (no such data source), and R4 (outside the fixture window) all refused
+cleanly, R4 with an especially precise, accurate stated reason. R5
+("How was the weekend?") correctly asked which weekend rather than
+guessing, though it didn't proactively surface the Aug 8 gap the golden
+answer flags. **R1** ("What was our delivery revenue on August 8th?")
+failed: instead of refusing or stating the source is missing, it asked
+the user to confirm the year — and suggested **"e.g., 2024"** as the
+example, the same wrong-year pattern seen in the consistency failures,
+suggesting one shared root cause rather than five independent ones.
+
+**Net read**: the deterministic core (reconciliation, ingestion, the MCP
+tool layer) shows no defects in this harness — every failure traced back
+to the model layer's date-grounding and tool-selection behavior, exactly
+the boundary Principle I says should carry the risk. Hypothesis 1
+(refusal trust) is **partially supported**: refusals that did fire were
+accurate and well-reasoned (R2–R4), but the harness surfaced a more
+basic problem upstream of refusal — inconsistent date-grounding —
+that undermines trust before the refusal-vs-guess question is even
+reached. That's a more useful, more honest finding than a clean pass
+would have been.
+
 ## The user problem, grounded
 
 **[Sourced]** Independent restaurants run thin: net margins average 3–5% industry-wide, with 3–9% considered a healthy range, and only 42% of U.S. restaurants were profitable in 2024 (Toast, VantaInsights 2026 benchmarks). **[Sourced]** Delivery-platform commissions run 15–30% (DoorDash, Uber Eats) or 10–20% (Grubhub), plus 2–3% payment processing on top — so the advertised rate and the effective cost per order routinely diverge. **[Sourced]** Restaurants lose an estimated 2–5% of delivery revenue to reconciliation discrepancies they never catch, and manual reconciliation across POS, delivery payouts, and cost sheets can run ~12 hours/week for a mid-size operation (MAS Partner, DeliverGuard 2026 data).

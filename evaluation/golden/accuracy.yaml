@@ -1,0 +1,84 @@
+# Golden answers for evaluation/promptfoo/accuracy.yaml.
+#
+# Provenance: quoted verbatim from docs/live-integration-test-scenarios.md,
+# which itself quotes directly from backend/fixtures/README.md's
+# independently-computed reference tables — those values were computed
+# by hand and cross-checked with a throwaway script BEFORE any Go
+# reconciliation code existed (see fixtures/README.md's header note and
+# docs/plan.md's mistakes log entry on double independent verification).
+# No value here was back-computed from this system's own output.
+
+- id: A1
+  question: "Delivery revenue on 2026-08-01?"
+  golden_answer: "$145.75"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-01"
+
+- id: A2
+  question: "Delivery revenue on 2026-08-03? (tests duplicate-order dedup)"
+  golden_answer: "$120.50"
+  source: "backend/fixtures/README.md, 2026-08-03 (duplicate IFOOD-20260803-0011 counted once)"
+
+- id: A3
+  question: "POS revenue on 2026-08-08?"
+  golden_answer: "$487.50"
+  source: "backend/fixtures/README.md POS gross by day, 2026-08-08 (145.00+132.50+168.00+42.00)"
+
+- id: A4
+  question: "Supplier cost total for the two-week period?"
+  golden_answer: "$4,335.75"
+  source: "backend/fixtures/README.md supplier cost sheet total, 12 invoices"
+
+- id: A5
+  question: "iFood's share of delivery revenue on 2026-08-01?"
+  golden_answer: "$69.50"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-01, iFood column"
+
+- id: A6
+  question: "Just Eat Takeaway's share on 2026-08-01?"
+  golden_answer: "$76.25"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-01, JET column"
+
+- id: A7
+  question: "ROI on campaign IFOOD-CAMP-BOOST01?"
+  golden_answer: "+$34.00 (spend 180.00, incremental revenue 214.00), positive, not flagged"
+  source: "backend/fixtures/README.md Promotion ROI table"
+
+- id: A8
+  question: "ROI on campaign JET-CAMP-LUNCHFIX?"
+  golden_answer: "-$165.00 (spend 220.00, incremental revenue 55.00), negative, flagged"
+  source: "backend/fixtures/README.md Promotion ROI table"
+
+- id: A9
+  question: "ROI on campaign JET-CAMP-NEWMENU?"
+  golden_answer: "+$19.50 (spend 60.00, incremental revenue 79.50), positive"
+  source: "backend/fixtures/README.md Promotion ROI table"
+
+- id: A10
+  question: "Which campaigns should be flagged as underperforming?"
+  golden_answer: "JET-CAMP-LUNCHFIX only"
+  source: "backend/fixtures/README.md Promotion ROI table (only negative-ROI row)"
+
+- id: A11
+  question: "Delivery revenue on 2026-08-04?"
+  golden_answer: "$125.50"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-04"
+
+- id: A12
+  question: "Delivery revenue on 2026-08-14?"
+  golden_answer: "$140.50"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-14"
+
+- id: A13
+  question: "iFood's share on 2026-08-14?"
+  golden_answer: "$66.75"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-14, iFood column"
+
+- id: A14
+  question: "Just Eat Takeaway's share on 2026-08-05?"
+  golden_answer: "$71.25"
+  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-05, JET column"
+
+- id: A15
+  question: "Delivery revenue on 2026-08-02, net of the refund?"
+  golden_answer: "$119.75"
+  source: "backend/fixtures/README.md netting note (154.25 gross - 34.50 refund) + docs/technical-rfc.md accrual-netting decision (netted at original order date)"
