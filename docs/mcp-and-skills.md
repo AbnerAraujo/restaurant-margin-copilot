@@ -1,0 +1,449 @@
+# MCP typed tools, and the Claude Code skills used to build this
+
+**Status:** Reference · **Scope:** `backend/internal/mcptools/`,
+`backend/internal/explain/`, `.claude/skills/`, `~/.claude/skills/`
+
+This is the grep-able, in-editor companion to `docs/architecture.html`'s
+existing MCP coverage — the ask-pipeline diagram's "MCP tool layer" node, the
+"boundary enforced by the import graph" table (`internal/mcptools` row: "no
+import path to a model, read-only Postgres"), and the "Hard limits" card's
+"Six defined, typed MCP tools, and nothing else" line. That HTML is the
+diagram; this document is for someone with the code open, the same relationship
+`docs/frontend.md` has to `docs/architecture.html`'s design-system tab. Where
+the two overlap, this doc cross-references the HTML section by name rather
+than re-describing the same diagram in prose.
+
+The second half of this document is a different kind of artifact entirely:
+not the product's code, but the record of which Claude Code skills actually
+shaped that code and this repo's own documents, cited against real commits —
+not a list of everything installed.
+
+## 1. The MCP typed tool layer
+
+### Why MCP at all, and why in-process
+
+`backend/internal/mcptools` is, per its own package doc comment
+(`types.go`), "the ONLY path from the model layer to `internal/reconcile`'s
+persisted output" — the code-level enforcement of Constitution Principle
+III. It's built on `mark3labs/mcp-go`, and it runs **in-process**: there is
+no separate MCP server binary, no network transport, no localhost port. The
+whole server is a Go value (`*server.MCPServer`) built by
+`mcptools.RegisterMCPServer(q storage.Querier)` and handed straight to
+`internal/explain.New`.
+
+The reason for in-process isn't just "simpler for a prototype" — it's
+structural, and `explain.go`'s own doc comment on `New` states it precisely
+enough to quote rather than paraphrase:
+
+> Explainer talks to it via mcp-go's in-process client
+> (`client.NewInProcessClient`), which is what actually routes every tool
+> call through the timeout+call-cap middleware `RegisterMCPServer` installs
+> (`mcptools/limits.go`): calling a `*ServerTool`'s Handler directly,
+> bypassing the client, would skip that middleware entirely, defeating
+> Constitution Principle III's enforcement.
+
+In other words: `mcp-go`'s `server.MCPServer` exposes registered tools as
+`*ServerTool` values, and nothing in Go stops a careless caller from
+reaching in and invoking a tool's `Handler` field directly — except that
+doing so would silently skip the timeout and call-cap middleware
+(`s.Use(...)` in `server.go`) that only fires on the dispatch path the
+*client* uses. Routing every call through `client.NewInProcessClient`
+(`explain.go` line 127) rather than holding a reference to the server's
+tools is what makes bypassing the middleware require a deliberate, visible
+new code path rather than an easy shortcut. `explain.go`'s `callTool`
+(line 345) confirms the discipline is followed: every tool invocation goes
+through `e.mcpClient.CallTool(...)`, never a direct handler call.
+
+`explain.go`'s wiring: `New` builds the in-process client, calls
+`Initialize` and `ListTools` against it once, and turns the result into
+Anthropic tool definitions (`anthropicTools(listed.Tools)`) — so the tool
+schemas the model actually sees are generated from the live MCP server's own
+registrations, not a hand-maintained second copy.
+
+### The exact 6 typed tools
+
+`server.go`'s `RegisterMCPServer` calls exactly three registrars —
+`registerReconciliationTools`, `registerPromoTools`,
+`registerPlatformComparisonTool` — which together call `s.AddTool` six
+times. Confirmed by reading each `register*` function directly, not the
+architecture doc's prose (which independently says the same: "Six defined,
+typed MCP tools, and nothing else"):
+
+| # | Tool | File | Purpose | Refuses to do |
+|---|---|---|---|---|
+| 1 | `get_daily_summary` | `reconciliation_tools.go` | One calendar date's full `DailyReconciliation`: gross sales by source, `total_delivery_gross_sales` (Go-summed, POS excluded — see the field's own doc comment on why naming it `TotalGrossSales` would be wrong), commissions, refunds, input costs, margin, discrepancy flags, source-row provenance. | Returns `{"error":"no_data"}` — never a partial or estimated summary — if no `DailyReconciliation` row was ever computed for that date. |
+| 2 | `get_margin_delta` | `reconciliation_tools.go` | Margin delta between two `{start,end}` periods (`period_b` minus `period_a`), each side carrying its own `days_included` and `source_row_refs`. | `periodMargin` walks every calendar day in each period; if **any** day is missing a persisted reconciliation, returns `{"error":"insufficient_data","missing":[...dates...]}` and computes nothing — never a delta over partial coverage. |
+| 3 | `list_discrepancies` | `reconciliation_tools.go` | `discrepancy_flags` for one date or one period, days with zero flags omitted (it surfaces exceptions, not a full calendar). | `invalid_input` if both `date` and `period` are given, or neither — never guesses which the caller meant. |
+| 4 | `get_promotion_roi` | `promo_tools.go` | ROI lookup by exact/fuzzy `campaign_id`, or by `platform`+`period`. Accepts a shortened form or a full display name via `campaign_match.go`'s bounded matcher. | `roi` is `null` with `reason: "attribution_unavailable"` (FR-013) when incremental revenue can't be attributed — never a computed-looking number. `matchCampaignID` returns `""` (no match) rather than guess when a fragment is ambiguous across more than one known campaign. |
+| 5 | `list_negative_roi_promotions` | `promo_tools.go` | Every campaign with negative ROI in a period. | A promotion with unattributable ROI is never included — "not known to be negative" is a different fact from "negative," and the tool doesn't conflate them. |
+| 6 | `compare_platform_economics` | `platform_comparison_tools.go` | iFood vs. Just Eat Takeaway side by side for one period: gross sales, commission paid, effective rate, promo spend, combined cost/rate. The one tool a comparison question must resolve to — its own description tells the model never to reconstruct a comparison from two single-platform calls. | `effective_rate`/`combined_effective_rate` are `null`, never a fabricated `"0.00%"`, when `gross_sales` is zero (divide-by-zero guarded in `effectiveRatePercent`). `insufficient_data` if any calendar day in the period has no persisted reconciliation. |
+
+Every result struct renders money as a `FormatCents`-style decimal string
+(`"-12.34"`), the same convention `internal/storage`'s JSON surfaces
+already use — the model receives numbers pre-formatted the way a human
+reads them, never a raw integer-cents value it might misread as dollars.
+
+Three of the six (`get_promotion_roi`, `list_negative_roi_promotions`,
+`compare_platform_economics`) use `mcp.NewTypedToolHandler` /
+`mcp.NewToolResultStructuredOnly`, a newer, typed adapter pattern than the
+first three's hand-written `req.BindArguments` + `jsonResult`/`errorResult`
+helpers (`reconciliation_tools.go`'s bottom section) — both are the same
+package convention (a `(*Result, *ToolError, error)` three-way return from a
+"core" function, per `types.go`'s doc comment), just two tool-file
+generations of the same design.
+
+### The middleware-enforced timeout and call cap
+
+`limits.go` defines two constants read directly from source:
+
+- `DefaultToolTimeout = 5 * time.Second` — bounds every tool call.
+  `contracts/mcp-tools.md` states 5s explicitly for `get_daily_summary`
+  only; this package applies the same bound to all six uniformly, per the
+  constant's own comment, "since none of them do anything `get_daily_summary`
+  doesn't already do (a handful of indexed Postgres reads)."
+- `DefaultMaxToolCallsPerInteraction = 8` — the hard per-interaction
+  tool-call cap. `explain.go`'s `MaxTurns` constant is
+  `mcptools.DefaultMaxToolCallsPerInteraction + 3` = **11** turns, matching
+  `docs/architecture.html`'s own "Capped at 1024 output tokens and 11
+  turns" line for `internal/explain`.
+
+Both are enforced in exactly one place: `timeoutAndBudgetMiddleware`,
+installed via `s.Use(timeoutAndBudgetMiddleware(DefaultToolTimeout))` in
+`RegisterMCPServer` — "applied to every `AddTool`'d handler, not something
+a caller could accidentally bypass by holding a `*ServerTool` directly," per
+`server.go`'s own comment, the same discipline `explain.go`'s in-process-client
+choice depends on.
+
+**The real bug this session fixed** (commit `abea19a`, "Add fake-Querier
+tests for mcptools refusal logic; fix timeout misreport"): before this
+commit, `timeoutAndBudgetMiddleware` reported *any* context-ending
+condition — a genuine 5-second deadline expiry, or the parent context being
+canceled because the browser closed or the HTTP request was aborted
+upstream — as `ErrToolCallTimeout`, worded "exceeded its 5s timeout." That's
+a false claim about what happened in the cancellation case. The fix
+distinguishes the two with `errors.Is`:
+
+```go
+switch {
+case errors.Is(cctx.Err(), context.DeadlineExceeded):
+    // the 5s bound was actually hit
+    return errorResult(ToolError{Error: ErrToolCallTimeout, ...})
+case errors.Is(cctx.Err(), context.Canceled):
+    // the PARENT context was canceled — never reached the 5s bound
+    return errorResult(ToolError{Error: ErrToolCallCanceled, ...})
+}
+```
+
+`limits.go`'s own comment on `ErrToolCallCanceled` states why this
+distinction matters here specifically: "reporting it as [a timeout] would be
+a false claim about what happened, which this codebase's refuse-rather-than-
+guess principle forbids just as much for an internal status report as for a
+margin figure." `limits_test.go` (added in the same commit) has a dedicated
+regression pair proving both directions — `TestTimeoutAndBudgetMiddleware_
+DeadlineExceeded_ReportsTimeout` uses a deliberately short 20ms bound so a
+genuine deadline is what fires; `TestTimeoutAndBudgetMiddleware_
+ParentCanceled_DoesNotReportTimeout` uses a deliberately generous 5s bound
+(so a flaky race with the deadline can't make the test pass for the wrong
+reason) and asserts `ErrToolCallCanceled`, `require.NotEqual(t,
+ErrToolCallTimeout, ...)`, and `require.NotContains(t, toolErr.Reason,
+"timeout")`.
+
+### No-open-SQL constraint
+
+Enforced structurally, not by convention: every tool function in the
+package takes `storage.Querier` — a `sqlc`-generated interface, not the
+concrete `*storage.Queries` — and reaches Postgres only through
+`internal/storage`'s hand-written adapters (`LoadDailyReconciliation`,
+`LoadDailyReconciliationsInPeriod`, `LoadPromotionRoiRecordsByCampaign`,
+etc.). Verified with a real grep for SQL keywords across the package:
+
+```
+$ grep -rniE "SELECT|INSERT INTO|UPDATE |DELETE FROM" backend/internal/mcptools/*.go
+reconciliation_tools_test.go:50:  _, err := conn.Exec(context.Background(), "DELETE FROM daily_reconciliation WHERE date = $1", date)
+```
+
+One hit, in `reconciliation_tools_test.go` — a `DATABASE_URL`-gated
+integration test's own cleanup step (deleting a sentinel row it wrote),
+not the tool logic itself. Zero raw SQL anywhere in the six tools, their
+handlers, `campaign_match.go`, or `limits.go`.
+
+### The recent testability fix: `fake_querier_test.go`
+
+Before commit `abea19a`, every test in `reconciliation_tools_test.go`,
+`platform_comparison_tools_test.go`, and `promo_tools_test.go` gated on
+`DATABASE_URL` and skipped by default — per the new file's own comment,
+"Finding 4: ... leaving this package's refuse-rather-than-guess logic
+(`periodMargin`'s missing-day check, most importantly) completely dark in
+a normal `go test ./...` run."
+
+The fix is possible specifically **because** every tool function already
+took `storage.Querier` (the interface) rather than `*storage.Queries` (the
+concrete `sqlc` type) — the same design point `RegisterMCPServer`'s own doc
+comment makes about itself. `fake_querier_test.go` defines a hand-written
+`fakeQuerier` that embeds `storage.Querier` left `nil` (so any method this
+package doesn't explicitly override panics rather than silently returning a
+zero value — "a real bug... left to panic... rather than silently returning
+a zero value that could mask that bug") and implements only the ~7 methods
+the tool functions actually reach: `GetDailyReconciliationByDate`,
+`ListDailyReconciliationsInPeriod`, `UpsertDailyReconciliation`,
+`GetPromotionRoiByCampaign`, `GetPromotionRoiByPlatformAndPeriod`,
+`ListNegativeRoiPromotions`, `ListDistinctCampaignIDs`,
+`UpsertPromotionRoiRecord`. Seeding goes through the real production write
+path (`storage.SaveDailyReconciliation` / `storage.SavePromotionRoiRecord`),
+so a test's setup can't drift from how a real row is actually shaped — only
+the SQL underneath is faked.
+
+This added **20 new fake-backed tests** with zero Postgres dependency
+(confirmed by `grep -c "^func Test" backend/internal/mcptools/*_fake_test.go`:
+10 in `reconciliation_tools_fake_test.go`, 6 in `promo_tools_fake_test.go`,
+4 in `platform_comparison_tools_fake_test.go`), plus the 2 in
+`limits_test.go` above — 22 total, none of which ran in a default `go test
+./...` before this commit. The specific refusal path the task calls out —
+`get_margin_delta`'s missing-day check — is directly exercised by
+`TestGetMarginDelta_InsufficientDataWhenPeriodHasMissingDay_Fake` and
+`TestGetMarginDelta_InsufficientDataWhenPeriodIsEntirelyMissing_Fake`,
+which previously only ran when a developer happened to have `DATABASE_URL`
+set locally.
+
+The same commit made a second, related fix: `RegisterMCPServer` was
+changed to take `storage.Querier` instead of the concrete `*storage.Queries`
+— "matching every function it calls" — which is what let a *server-level*
+test (not just the individual core functions) run against the fake too.
+
+### The MCP-specific skill: not used, checked honestly
+
+`.claude/skills/` (project) and `~/.claude/skills/` (user) were both
+checked for anything MCP-server-specific. There's a real plugin available —
+`mcp-server-dev` at
+`~/.claude/plugins/marketplaces/claude-plugins-official/plugins/mcp-server-dev`
+— but a repo-wide grep for `mcp-server-dev` returns zero hits, in commit
+messages, `docs/plan.md`, or `docs/tooling.md`. `docs/tooling.md`'s own
+skills inventory (commit `8668758`, written the evening before
+`9b5907a`'s "Add reconciliation MCP tools" — i.e. drafted with the MCP
+layer's skill needs already in view, not backfilled after the fact)
+doesn't list it either, in either its installed table or its explicit
+"explicitly not installed" section. The commit history for the six tools
+(`9b5907a`, `d3d67e4`, `35fafdd`, `a51e968`, `abea19a`) reads as a
+hand-built implementation
+following `specs/001-margin-reconciliation-qa/contracts/mcp-tools.md`'s own
+written contract through the SDD `plan → tasks → implement` flow (task IDs
+T018–T020, T027, T028–T032 appear directly in those commit messages), not
+scaffolding generated by a plugin. Reported honestly: no evidence
+`mcp-server-dev` was used for this layer.
+
+## 2. Claude Code skills actually used to build this
+
+This is a filtered inventory, not the full install list — `docs/tooling.md`
+already documents everything installed and why. Each entry below has a real,
+cited artifact: a commit, a file, or a quoted doc comment. A skill available
+in `~/.claude/skills/` with no such citation (`ux-writing` is the clearest
+case — installed, listed in `docs/tooling.md`'s conceptual neighborhood, but
+zero hits for it across every commit message and every doc/code comment in
+this repo) is left out rather than described generically.
+
+### `sdd` — the whole build process
+
+The entire codebase was built through GitHub Spec Kit's `constitution →
+specify → plan → tasks → analyze → implement` flow, not written and
+retrofitted with specs after the fact:
+
+- `c7f1e47` ratifies the constitution (v1.0.0); `532b99d` bumps it to
+  v1.1.0 when the LLM vendor switched from OpenAI to Anthropic.
+- `2bbc5ef` generates `tasks.md` — 39 tasks, 4 user stories — and fixes 2
+  `speckit-analyze` findings before implementation starts (an
+  instrumentation gap on the gate, a missing badge endpoint).
+- `c6e39f2` — "Mark all 39 build-order tasks complete in tasks.md" — and a
+  direct grep confirms it: `specs/001-margin-reconciliation-qa/tasks.md`
+  has exactly 39 `- [x]` lines and 0 remaining `- [ ]` lines today.
+- Four more specs followed the same `speckit-specify`/`plan`/`tasks`
+  cadence after 001 shipped: `specs/002-badge-expansion`,
+  `specs/003-platform-comparator`, `specs/004-semantic-cache` (all shipped,
+  per `README.md`'s spec table), `specs/005-multi-tenant` (spec + RFC only,
+  deliberately not built), and `specs/007-cost-sheet-upload` (shipped,
+  `3e0ccfa`).
+- Every project-local skill under `.claude/skills/` except
+  `question-recovery-design` is one of the ten `speckit-*` commands
+  (`speckit-constitution`, `-specify`, `-plan`, `-tasks`, `-implement`,
+  `-clarify`, `-analyze`, `-checklist`, `-converge`, `-taskstoissues`),
+  installed via `specify init --integration claude` per `docs/tooling.md`.
+
+### `dataviz` — the chart/palette rules
+
+Two commits name the skill directly and each pins a specific, checkable
+rule to a specific file:
+
+- `b1aff4b` ("Spec the routed shell + chart redesign... per the dataviz
+  skill's form-then-color-then-validate procedure") ran the skill's real
+  palette validator against the resolved `--success`/`--destructive` hex
+  values and reports "a genuine CVD-separation FAIL for that pair in both
+  themes (ΔE 5.4 light / 0.8 dark, floor 6.0)" — disclosed rather than
+  shipped quietly, with non-color mitigations (zero baseline, text-labeled
+  legend, signed direct labels) prescribed instead of new token values.
+- `26e3ad5` ("Add diverging bar charts for margin trend and promotion ROI
+  (dataviz)") implements exactly those mitigations by hand in SVG, and
+  re-confirms the same CVD failure "matching redesign-spec.md §5" —
+  consistent evidence across two commits, not a one-off claim.
+- The rule enforced in code: `backend/internal/httpapi/visualization.go`
+  defines `MinPieSlices = 3` and `MaxPieSlices = 6` with the comment "per
+  the dataviz skill" directly above the mapping rationale — this is the
+  actual mechanism behind `docs/plan.md`'s dated example (line 464) of the
+  `get_daily_summary` pie exception: a day's revenue splitting across 3–6
+  sources gets a pie, verified live against `2026-08-05`'s real
+  iFood $64.50 / Just Eat Takeaway $71.25 / in-house POS $218.25 split,
+  and a 2-slice case never renders one.
+
+### `design-review`, `redesign`, `apply-aesthetic`, `design-component` — the frontend revamp
+
+Commit `e137388` ("Frontend revamp: application UI over prose, real
+accessibility fixes") is the real outcome, named directly in its own
+message: "`design-review` scored the app 5.6/10 against Nielsen's
+heuristics and found concrete, verified defects... a live axe-core run
+found 6 serious violations," fixed by "applying linear-app's
+layout/density/interaction patterns... via the newly-installed
+design-review/redesign/apply-aesthetic/design-component skills." The
+before/after is measured, not asserted: 6 serious axe violations to 0
+across all 5 routes in both themes; `--muted-foreground` 4.46:1 → 4.88:1,
+`--success-text` 4.49:1 → 6.40:1, `--warning-text` → 6.36:1 (this last pair
+of numbers is the same contrast fix `docs/frontend.md`'s tokens section
+documents from the `index.css` side). The commit also discloses the honest
+cost, not just the win: hard-coded-value lint went from 61 to 75 flags
+(offset by the new `--text-micro` token `docs/frontend.md` describes), and
+one pre-existing ESLint error in `CompositionPieChart.tsx` was left
+untouched rather than folded in and hidden. Screenshots at 1512×982 for
+all 5 routes are checked into `docs/screenshots/{before,after}/`.
+
+### `make-slide` — the 22-slide presentation
+
+`docs/plan.md`'s original presentation spec (line 88) called for an "HTML,
+landing-page style" format, explicitly "not slides/PPT," and named
+`artifact-design` and `design` as the skills to check before building — no
+generic deck look. That plan changed: commit `4be415b` ("Rebuild
+presentation as a real slide deck using make-slide, update to current
+state") names the actual pivot and the actual skill — "converted from the
+landing-page/snap-scroll format to an actual slide deck (22 slides) using
+the make-slide skill's real implementation as the foundation — its
+data-focus theme, its navigation.js copied verbatim (arrow keys, Space,
+Home/End, F fullscreen, S speaker notes, swipe, click-thirds)." `docs/
+presentation.html`'s own CSS header comment confirms this in the checked-in
+artifact itself: `/* make-slide · data-focus theme foundation, carrying My
+Business Steward's brand tokens */`. The commit also records real,
+independent verification rather than trusting the build: "pressed
+ArrowRight/ArrowLeft/Home/End with Playwright and confirmed the slide
+counter and rendered content changed correctly at each step." `guizang-
+ppt-skill` and `frontend-slides` were both available (per the skills
+listing) but neither is named anywhere in this history — `make-slide` is
+the one actually used.
+
+### `ux-writing` — rewriting the chat's refusal and error copy
+
+Commit `768492f` ("Fix the floating composer overlapping the last chat
+message") names the skill directly in its own message: the refusal,
+clarification, and connection-error bubble titles in `ChatPanel.tsx` were
+rewritten "into the Steward's first-person, forward-looking voice per the
+ux-writing skill's error-copy formula." The real before/after, read
+straight from the diff: `"Can't answer this one"` → `"I'll help you find
+what you need"`, `"Needs a quick clarification"` → `"Let me make sure
+I've got this right"`, and `"Couldn't reach the reconciliation engine"` →
+`"I couldn't reach your data just now"` — the last one also fixed a stray
+exposure of internal terminology ("reconciliation engine") to the owner.
+The same commit applied the identical `"Couldn't reach the reconciliation
+engine"` → `"I couldn't reach your data just now"` fix to `PointsCard.tsx`'s
+matching error state, so the two places in the app that report the same
+class of failure say it the same, kinder way. The trigger was a real user
+report read from `question_interaction`'s own log — "the sense of the
+answers is not kind" — not a speculative polish pass.
+
+### `skill-creator` and `question-recovery-design` — the skill this project created
+
+Unlike every other skill in this section, `question-recovery-design`
+wasn't consumed — it was **built**, by this project, as a deliverable in
+its own right. Commit `732a9d1` ("Add project README and
+question-recovery-design skill") states it directly: "The skill generalizes
+this project's ambiguity-gate and refusal/clarification UX into a reusable
+methodology, built with the skill-creator plugin and validated by its own
+`quick_validate.py`."
+
+`.claude/skills/question-recovery-design/SKILL.md` generalizes six concrete
+moves this codebase actually implements — not abstract advice invented
+for the skill:
+
+1. **Classify before you answer, cheaply** — the Haiku 4.5 ambiguity gate
+   running before any tool-calling loop, on narrow input, fixed output
+   shape.
+2. **Never fabricate — refuse with a specific, honest reason** — the
+   `no_data`/`insufficient_data`/`invalid_input` typed errors this
+   document's Section 1 documents at the tool level.
+3. **Ambiguous is not automatically a dead end** — the gate's forced choice
+   between asking a clarifying question or stating an assumption and
+   proceeding, never both, never neither.
+4. **Every refusal or clarification carries a next step** — quick-reply
+   options and the capability-list pattern in `ChatPanel.tsx`.
+5. **Show capabilities proactively** — the same suggested-question
+   component appearing on the empty state, not only after a failure.
+6. **Log every refusal as a backlog signal** — the `question_interaction`
+   instrumentation table, populated from the first real API call.
+
+The skill's own "Worked example" section is explicit that it's a case
+study, not a template: "adapt the *shape* of the pattern to your own
+stack, not these exact files" — and it names two related skills
+(`api-design`, `ux-writing`) and one boundary condition (skip it for a
+fixed-schema form input, where `api-design` already covers validation
+error handling) rather than presenting itself as universally applicable.
+Commit `86f1499` ("Document the Sonnet writer pass and question-recovery
+skill in architecture.html") is where this project's own architecture
+diagram was updated to point at the skill by name, closing the loop between
+the code and the methodology it was generalized from.
+
+### One pivotal decision: model tier per activity, not by default
+
+Per this project's own standing discipline about matching model cost to
+task difficulty, the `sdd` process itself is a good illustration in
+miniature: `speckit-clarify`/`speckit-analyze` are narrow, mechanical
+consistency checks (a good fit for a cheaper tier), while ratifying the
+constitution (`speckit-constitution`, commit `c7f1e47`) and the
+`skill-creator`-driven generalization of a real implementation into a
+reusable methodology (`732a9d1`) are the kind of judgment call worth a
+stronger model's attention — the same per-step reasoning this repo already
+applies to Haiku-vs-Sonnet model selection in `CLAUDE.md` and
+`internal/ambiguity`/`internal/explain`, just applied one level up, to the
+build process rather than the product.
+
+### Skills checked and deliberately left out
+
+- **`artifact-design`** — real evidence it was *considered* (`docs/plan.md`
+  line 93: "Before building: check `artifact-design` and `design` skills")
+  for the presentation, but the presentation ultimately used `make-slide`
+  instead (see above). `docs/architecture.html`, `docs/presentation.html`,
+  and `docs/api.html` are genuine published Claude Artifacts (each carries
+  a `PUBLISHED ARTIFACT` redeploy-instructions comment naming its own live
+  URL), but no comment in any of the three attributes a specific design
+  decision to `artifact-design` by name, so it isn't given its own cited
+  subsection here.
+- **`inspired-product`, `one-pager-prd`** — real evidence of *installation
+  intent* tied to a specific purpose (`docs/tooling.md`: `one-pager-prd`
+  for turning `product-strategy.md` into the one-page reasoning doc;
+  `inspired-product` for Cagan's empowered-teams framework) and a `docs/
+  plan.md` checklist item naming the diagnostic directly, but no commit or
+  doc confirms either diagnostic was actually run to completion (the
+  `inspired-product` checklist item in `docs/plan.md` is an unchecked
+  `- [ ]`). Named here for completeness of the honest accounting, not
+  included as a confirmed-applied skill.
+- **`mcp-server-dev`** — see Section 1's dedicated finding: available as a
+  plugin, zero evidence of use for `internal/mcptools`.
+
+## How the two halves connect
+
+Section 1 is a structural discipline enforced in *code*: a fixed interface
+(`storage.Querier`), a single registration entry point
+(`RegisterMCPServer`), middleware that can't be routed around without a
+visible new code path, and a package doc comment stating outright that this
+is "the ONLY path from the model layer" to persisted data. Section 2's `sdd`
+skill is the same discipline applied to the *process* that produced that
+code: a constitution ratified before implementation, specs and contracts
+(`contracts/mcp-tools.md`) written before the tools existed, and a tasks
+list checked off — 39/39, then four more specs — rather than a build
+narrated after the fact. `question-recovery-design` is the point where the
+two meet directly: a real refusal/clarification mechanism built to satisfy
+the constitution's Principle II, then deliberately generalized back out into
+a reusable skill via `skill-creator` — code discipline becoming process
+discipline becoming a shareable artifact in its own right.
