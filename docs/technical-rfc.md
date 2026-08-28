@@ -100,3 +100,7 @@ contradicts the "trustworthy, same-day" framing this product is built around.
 ## Rollout
 
 Not applicable — this is a local prototype with no deployment. Post-launch rollout into Segment 1 (Prosus/ToqanClaw customers) is described at the product level in `docs/product-strategy.md`, not here.
+
+## Extension RFCs
+
+Four roadmap items each got their own spec/plan rather than being retrofitted into this document: `specs/002-badge-expansion/`, `specs/003-platform-comparator/`, and `specs/004-semantic-cache/` extend this architecture directly (same tool layer, same deterministic/probabilistic split, same instrumentation discipline). `specs/005-multi-tenant/` plus the standalone `docs/rfc-multi-tenant.md` propose a real architectural change to this RFC's Module architecture section (every data-access function gains a required `tenant_id`) — treated as its own gated decision, not assumed approved by virtue of being written down.

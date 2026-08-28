@@ -85,3 +85,12 @@ None blocking — all prior open questions (scope, growth lever, badge scope, ma
 ## 10. Success Criteria
 
 Launch criteria for *this build*: all functional requirements met (tasks.md, 39 tasks), evaluation harness run with real numbers reported, `quickstart.md` validated end-to-end including a real-file trial if available before Tuesday.
+
+## 11. Roadmap items promoted to specs (post-launch expansion)
+
+Section 3's "explicitly out of scope" list is being worked through, not abandoned. Each item below has its own full spec/plan under `specs/`, rather than being described only here:
+
+- **Growth, Engagement, Campaign-Creation badge categories** — `specs/002-badge-expansion/`. Campaign-Creation is deliberately reframed from the original "integrates with Prosus's promotional tooling" concept (no API access exists for that) to a real in-app action this build can actually verify; Engagement is built on real, honestly-near-zero usage tracking rather than any simulated signal.
+- **The cross-platform economics comparator** (Product D from the original 5-products comparison, `docs/product-strategy.md`) — `specs/003-platform-comparator/`. Re-scored as buildable now that both platforms' real, distinct commission economics already exist in the ingested data — the original blocker ("needs two platform data models") no longer applies.
+- **The semantic-memory/LLMOps harness vision** — concretized as `specs/004-semantic-cache/`, extending the build's own answer cache to recognize paraphrased repeat questions, using a bounded Claude Haiku classification rather than a new embeddings vendor (Anthropic has none; adding one would reopen the single-vendor decision this project's constitution already made once).
+- **Segment 2 (non-Prosus customers)** — implies real multi-tenancy. `specs/005-multi-tenant/spec.md` plus `docs/rfc-multi-tenant.md` define what this requires; **implementation is explicitly gated on review of that RFC**, not bundled with the other three, given a tenant-isolation defect is a data-breach class of bug, not a UX defect.
