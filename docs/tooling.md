@@ -60,5 +60,5 @@ These don't make sense to install standalone; they're pulled in as dependencies 
 ## Explicitly not installed
 
 - **Kubernetes MCP servers** (`Flux159/mcp-server-kubernetes`, `containers/kubernetes-mcp-server`) — this is a single-tenant prototype with no live cluster to manage; the brief itself says "not a production system."
-- **Any agent framework** (LangChain, etc.) — the brief explicitly calls for direct OpenAI API calls with defined tools, not a framework.
+- **Any agent framework** (LangChain, etc.) — the brief explicitly calls for direct API calls with defined tools, not a framework. (LLM vendor changed from OpenAI to Anthropic — see `docs/plan.md` and the constitution v1.1.0 — the "no framework" constraint itself is unchanged.)
 - **A database-access MCP server as a dev tool** — the MCP tool layer (`mark3labs/mcp-go`) is the product's own deliberate boundary between the LLM and Postgres; a second, separate DB-access MCP would duplicate or undermine that boundary.

@@ -64,7 +64,7 @@ in the plan instead of living only behind a link.
 ## Day 3 — Sunday Aug 30
 
 - [ ] Ambiguity gate (cheap model) — answerable/ambiguous check before any tool call
-- [ ] OpenAI explanation step (stronger model), direct API calls against the MCP tools — no agent framework
+- [ ] Claude Sonnet 5 explanation step, direct Anthropic API calls against the MCP tools — no agent framework
 - [ ] Instrumentation from the first real API call: tokens, cost, latency, refusal/clarify flags, logged to Postgres
 - [ ] Refusal path fully wired and tested
 

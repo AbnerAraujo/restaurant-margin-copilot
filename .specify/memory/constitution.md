@@ -1,14 +1,20 @@
 <!--
 Sync Impact Report
+- Version change: 1.0.0 → 1.1.0
+- Modified principles: none renamed/removed
+- Modified sections: Technology & Scope Constraints — LLM vendor changed from
+  OpenAI API to Anthropic API (Claude Haiku 4.5 for the ambiguity gate, Claude
+  Sonnet 5 for explanation), reflecting the builder's existing Anthropic
+  subscription/API account rather than a separate OpenAI account.
+- Added sections: none
+- Removed sections: none
+- Templates requiring updates: none pending.
+- Follow-up TODOs: none.
+
+Prior report (1.0.0, superseded above):
 - Version change: (none) → 1.0.0
-- Modified principles: n/a (initial ratification)
 - Added sections: Core Principles (I–VI), Technology & Scope Constraints,
   Development Workflow, Governance
-- Removed sections: none
-- Templates requiring updates: none pending — plan/spec/tasks templates read
-  this file at runtime and were not modified.
-- Follow-up TODOs: none. All placeholders resolved from CLAUDE.md and
-  docs/product-strategy.md, already committed to this repo.
 -->
 
 # Restaurant Margin Copilot Constitution
@@ -71,9 +77,12 @@ product requirement, not an afterthought metric.
 
 Stack: Go (backend, reconciliation engine, MCP tool layer via
 `mark3labs/mcp-go`), PostgreSQL (data + instrumentation log), React
-(frontend), OpenAI API (direct calls, no agent framework — LangChain-style
-orchestration is explicitly rejected in favor of defined tools called
-directly). This is a single-tenant prototype demonstrating judgment, not
+(frontend), Anthropic API (direct calls via the official Go SDK, no agent
+framework — LangChain-style orchestration is explicitly rejected in favor of
+defined tools called directly). Model choice per step is deliberate: Claude
+Haiku 4.5 for the ambiguity gate, Claude Sonnet 5 for explanation — chosen
+against a real pricing/capability comparison, not defaulted. This is a
+single-tenant prototype demonstrating judgment, not
 production infrastructure: no Kubernetes, no multi-tenant concerns, no
 deployment pipeline are in scope. The interview this project is built for is
 scheduled for Tuesday; scope decisions MUST be weighed against that fixed
@@ -105,4 +114,4 @@ fixes), and an updated Sync Impact Report at the top of this file. Any
 above MUST be revised before implementation proceeds — complexity or
 convenience is not sufficient justification to override a principle.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-27
+**Version**: 1.1.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-27

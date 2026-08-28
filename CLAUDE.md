@@ -38,9 +38,11 @@ This split must be documented and easy to point at in a demo.
 - **Frontend:** React — chat-style Q&A, plus a visible cost/token panel and
   provenance display (which file, which rows, which period, for every number
   shown).
-- **LLM:** OpenAI API, called directly with the MCP tool definitions — no agent
-  framework. Model choice per step is a documented decision (cheaper model for
-  the ambiguity gate, stronger model for explanation).
+- **LLM:** Anthropic API, called directly with the MCP tool definitions — no
+  agent framework. Model choice per step is a documented decision: **Claude
+  Haiku 4.5** for the ambiguity gate (cheap classification task), **Claude
+  Sonnet 5** for the explanation step (narrates an already-computed number —
+  doesn't need frontier reasoning, so no Opus/Fable here).
 
 ## Pre-processing gate before execution
 Before anything runs, evaluate the question in isolation:
