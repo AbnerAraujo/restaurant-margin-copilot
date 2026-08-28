@@ -145,7 +145,74 @@ func deriveVisualization(invocations []explain.ToolInvocation) *Visualization {
 	if viz := marginDeltaVisualization(byTool["get_margin_delta"]); viz != nil {
 		return viz
 	}
+	if viz := periodTotalsVisualization(byTool["get_period_totals"]); viz != nil {
+		return viz
+	}
 	return dailySummaryVisualization(byTool["get_daily_summary"])
+}
+
+// --- get_period_totals -> pie (gross sales by source, whole period) --------
+
+type periodTotalsJSON struct {
+	Start              string            `json:"start"`
+	End                string            `json:"end"`
+	GrossSalesBySource map[string]string `json:"gross_sales_by_source"`
+}
+
+// periodTotalsVisualization mirrors grossSalesPie's exact gate and shape —
+// same MinPieSlices..MaxPieSlices rule, same humanizeSource labels — just
+// summed across the whole period instead of one day. get_period_totals
+// shipped without a visualization case at all; a question resolved through
+// it alone fell all the way through to dailySummaryVisualization's empty
+// input and rendered no chart, silently, for one of the tool set's richer
+// results.
+func periodTotalsVisualization(results []string) *Visualization {
+	var parsed periodTotalsJSON
+	found := false
+	for _, raw := range results {
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil || parsed.Start == "" {
+			continue
+		}
+		found = true
+		break
+	}
+	if !found {
+		return nil
+	}
+
+	sources := make([]string, 0, len(parsed.GrossSalesBySource))
+	for source, amount := range parsed.GrossSalesBySource {
+		cents, err := money.ParseCents(amount)
+		if err != nil || cents <= 0 {
+			continue
+		}
+		sources = append(sources, source)
+	}
+	if len(sources) < MinPieSlices || len(sources) > MaxPieSlices {
+		return nil
+	}
+	sort.Strings(sources)
+
+	points := make([]VizPoint, 0, len(sources))
+	for _, source := range sources {
+		point, ok := moneyPoint(humanizeSource(source), parsed.GrossSalesBySource[source])
+		if !ok {
+			continue
+		}
+		points = append(points, point)
+	}
+	if len(points) < MinPieSlices {
+		return nil
+	}
+
+	return &Visualization{
+		Kind:       VizKindPie,
+		Title:      "Where the period's revenue came from",
+		Subtitle:   "Gross sales by source, " + parsed.Start + " to " + parsed.End,
+		ValueLabel: "Gross sales (USD)",
+		SourceTool: "get_period_totals",
+		Points:     points,
+	}
 }
 
 // --- list_discrepancies -> table --------------------------------------

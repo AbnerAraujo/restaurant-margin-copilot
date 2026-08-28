@@ -46,6 +46,20 @@ const (
 		 "spend":"180.00","attributed_incremental_orders":6,"attributed_incremental_revenue":"214.00","roi":"34.00","flagged_negative":false}
 	]}`
 
+	periodTotalsPieJSONFixture = `{"start":"2026-08-01","end":"2026-08-14","days_included":14,
+		"gross_sales_by_source":{"pos":"3472.75","ifood":"838.00","just_eat_takeaway":"908.00"},
+		"total_delivery_gross_sales":"1746.00","commissions":"366.45","refunds":"34.50","refunds_by_source":{"ifood":"34.50"},
+		"input_costs":"4335.75","margin_total":"482.05","avg_daily_margin":"34.43",
+		"best_day":{"date":"2026-08-07","margin":"375.82"},"worst_day":{"date":"2026-08-02","margin":"-227.09"},"source_row_refs":[]}`
+
+	// One source: below MinPieSlices, must yield no chart, matching
+	// get_daily_summary's single-source case.
+	periodTotalsSingleSourceJSONFixture = `{"start":"2026-08-01","end":"2026-08-01","days_included":1,
+		"gross_sales_by_source":{"pos":"487.50"},
+		"total_delivery_gross_sales":"0.00","commissions":"0.00","refunds":"0.00","refunds_by_source":{},
+		"input_costs":"335.00","margin_total":"152.50","avg_daily_margin":"152.50",
+		"best_day":{"date":"2026-08-01","margin":"152.50"},"worst_day":{"date":"2026-08-01","margin":"152.50"},"source_row_refs":[]}`
+
 	platformComparisonJSONFixture = `{"period":{"start":"2026-08-01","end":"2026-08-14"},"days_included":14,"platforms":[
 		{"source":"ifood","display_name":"iFood","gross_sales":"838.00","commission_paid":"184.85","effective_rate":"22.06%",
 		 "promo_spend":"275.00","combined_cost":"459.85","combined_effective_rate":"54.87%","source_row_refs":[]},
@@ -163,6 +177,18 @@ func TestDeriveVisualizationKind(t *testing.T) {
 			wantKind:    VizKindBar,
 			wantTool:    "compare_platform_economics",
 			wantPoints:  4,
+		},
+		{
+			name:        "get_period_totals with three revenue sources becomes a pie, same gate as a single day",
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsPieJSONFixture)},
+			wantKind:    VizKindPie,
+			wantTool:    "get_period_totals",
+			wantPoints:  3,
+		},
+		{
+			name:        "get_period_totals with one revenue source yields no chart, not a one-slice pie",
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsSingleSourceJSONFixture)},
+			wantKind:    "",
 		},
 	}
 
