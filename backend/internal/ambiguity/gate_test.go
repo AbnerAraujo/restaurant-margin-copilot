@@ -154,3 +154,59 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 		t.Logf("ambiguous smoke test: %d in / %d out tokens, $%.6f, clarify=%q assume=%q", d.InputTokens, d.OutputTokens, d.EstimatedCostUSD, d.ClarifyingQuestion, d.AssumptionStated)
 	})
 }
+
+// TestGate_Classify_DateGroundingRegression reproduces, live against Claude
+// Haiku 4.5, the exact "date-year grounding defect" recorded in
+// docs/plan.md's mistakes log and docs/product-strategy.md's "Real
+// evaluation results" section: a bare, no-year, relative-date question
+// ("this week") whose classification varied unprompted across repeated
+// calls with IDENTICAL input — sometimes answering correctly, sometimes
+// asking a clarifying question about the year, and in the worst observed
+// case confidently inventing a wrong year ("no data for ..., 2024") and
+// refusing against that fabricated premise.
+//
+// The fix (buildSystemPrompt's "Date grounding" paragraph) tells the gate
+// explicitly that its only "today" is dataEnd (2026-08-14), not the real
+// wall-clock date, so this question should now resolve unambiguously and
+// IDENTICALLY every time — this test calls Classify 3 times with the exact
+// same input specifically to catch a regression to the old
+// sometimes-right-sometimes-wrong behavior, not just check a single lucky
+// pass. Skipped, not faked, when ANTHROPIC_API_KEY isn't set.
+func TestGate_Classify_DateGroundingRegression(t *testing.T) {
+	if os.Getenv("ANTHROPIC_API_KEY") == "" {
+		t.Skip("ANTHROPIC_API_KEY not set; skipping live Claude Haiku 4.5 regression test")
+	}
+
+	g := New(llmclient.New(), testDataStart, testDataEnd)
+	ctx := context.Background()
+
+	for i := 1; i <= 3; i++ {
+		t.Run(fmt.Sprintf("run_%d", i), func(t *testing.T) {
+			d, err := g.Classify(ctx, "How did we do this week?")
+			require.NoError(t, err)
+
+			// The specific worst-case failure: inventing a year the data
+			// doesn't cover, anywhere in the gate's own output.
+			for _, s := range []string{d.ClarifyingQuestion, d.AssumptionStated, d.RefusalReason} {
+				require.NotContains(t, s, "2024")
+				require.NotContains(t, s, "2025")
+				require.NotContains(t, s, "2027")
+			}
+
+			// There IS reconciled data for the trailing week ending
+			// 2026-08-14 — a bare "this week" must never be refused as
+			// unanswerable.
+			require.NotEqual(t, instrumentation.GateUnanswerable, d.Result,
+				"must not refuse a bare 'this week' question — the trailing week ending %s has real data", testDataEnd)
+
+			// Asking about the boundary of "week" is a legitimate ambiguous
+			// case (and is exactly what the systemPrompt's own example
+			// covers by stating a default assumption instead) — but asking
+			// WHICH YEAR is the specific bug this test guards against.
+			require.NotContains(t, strings.ToLower(d.ClarifyingQuestion), "year",
+				"must not ask which year — dataEnd grounds this unambiguously to 2026")
+
+			t.Logf("run %d: classification=%s clarify=%q assume=%q reason=%q", i, d.Result, d.ClarifyingQuestion, d.AssumptionStated, d.RefusalReason)
+		})
+	}
+}

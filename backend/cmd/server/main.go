@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -110,16 +111,37 @@ func main() {
 func buildAskDeps(ctx context.Context, store *storage.Queries) (httpapi.Deps, error) {
 	llm := llmclient.New()
 
+	// Resolve the real data date range ONCE, from Postgres, rather than
+	// hardcoding a literal in internal/ambiguity or internal/explain — the
+	// fix for the "date-year grounding defect" (docs/plan.md mistakes log):
+	// relative date language ("today", "this week", a year-less date) must
+	// ground against what the data actually covers, not the host machine's
+	// wall-clock date. This requires the ingestion pipeline (-ingest) to
+	// have already run at least once; a -serve with no data yet fails fast
+	// here with a clear error rather than starting with a gate/explain that
+	// has no sensible "today" to reason from.
+	dataStart, dataEnd, err := storage.LoadDataDateRange(ctx, store)
+	if err != nil {
+		return httpapi.Deps{}, fmt.Errorf("resolving data date range (has -ingest been run yet?): %w", err)
+	}
+	dataStartStr := dataStart.Format(dateLayout)
+	dataEndStr := dataEnd.Format(dateLayout)
+	log.Printf("resolved data date range for date-grounding: %s..%s", dataStartStr, dataEndStr)
+
 	mcpServer := mcptools.RegisterMCPServer(store)
 
-	explainer, err := explain.New(ctx, llm, mcpServer)
+	explainer, err := explain.New(ctx, llm, mcpServer, dataStartStr, dataEndStr)
 	if err != nil {
 		return httpapi.Deps{}, err
 	}
 
 	return httpapi.Deps{
-		Gate:      ambiguity.New(llm),
+		Gate:      ambiguity.New(llm, dataStartStr, dataEndStr),
 		Explainer: explainer,
 		Logger:    instrumentation.NewLogger(storage.NewInstrumentationAdapter(store)),
 	}, nil
 }
+
+// dateLayout matches internal/mcptools' own YYYY-MM-DD convention for every
+// date string this product hands to the model layer.
+const dateLayout = "2006-01-02"

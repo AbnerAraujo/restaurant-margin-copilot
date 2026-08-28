@@ -43,8 +43,12 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { conn.Close(context.Background()) })
 
-	mcpServer := mcptools.RegisterMCPServer(storage.New(conn))
-	explainer, err := explain.New(ctx, llmclient.New(), mcpServer)
+	store := storage.New(conn)
+	dataStart, dataEnd, err := storage.LoadDataDateRange(ctx, store)
+	require.NoError(t, err, "the real fixture pipeline must already be persisted for this smoke test to resolve a data date range")
+
+	mcpServer := mcptools.RegisterMCPServer(store)
+	explainer, err := explain.New(ctx, llmclient.New(), mcpServer, dataStart.Format("2006-01-02"), dataEnd.Format("2006-01-02"))
 	require.NoError(t, err)
 
 	t.Run("answerable question about real fixture data", func(t *testing.T) {
@@ -60,13 +64,27 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 		t.Logf("tool calls=%d, tokens=%d in / %d out, cost=$%.6f", result.ToolCallsMade, result.InputTokens, result.OutputTokens, result.EstimatedCostUSD)
 	})
 
-	t.Run("question about data outside the fixture period narrates the tool's no_data error rather than guessing", func(t *testing.T) {
+	t.Run("question about data outside the fixture period states the range is out of bounds rather than guessing", func(t *testing.T) {
 		result, err := explainer.Explain(ctx, "What was our margin on 2026-09-01?", "")
 		require.NoError(t, err)
-		require.Empty(t, result.IncompleteReason)
-		require.NotEmpty(t, result.AnswerText)
-		require.GreaterOrEqual(t, result.ToolCallsMade, 1)
 		t.Logf("answer: %s", result.AnswerText)
 		t.Logf("tool calls=%d, tokens=%d in / %d out, cost=$%.6f", result.ToolCallsMade, result.InputTokens, result.OutputTokens, result.EstimatedCostUSD)
+		require.Empty(t, result.IncompleteReason)
+		require.NotEmpty(t, result.AnswerText)
+		require.Regexp(t, `(?i)outside|no data|not (available|covered)|only.*2026-08`, result.AnswerText,
+			"must plainly say the date is outside the covered range, never fabricate a margin figure for it")
+		// This system prompt's "Date grounding" paragraph explicitly
+		// establishes the 2026-08-01..14 range as a known fact the model
+		// may state directly, so 2026-09-01 being unambiguously outside it
+		// no longer requires spending a tool call to confirm something
+		// already given as ground truth in its own instructions (see
+		// explain.go's systemPromptTemplate) — ToolCallsMade may
+		// legitimately be 0 or more here; this is a deliberate loosening
+		// from an earlier phase's assumption that every out-of-range answer
+		// must be tool-confirmed, narrowed (per docs/plan.md's mistakes
+		// log) so that "confirm via a tool before asserting absence" rule
+		// now targets only named-entity claims (a campaign/promotion/
+		// supplier not existing), where the model has no such stated
+		// ground truth and must actually check.
 	})
 }

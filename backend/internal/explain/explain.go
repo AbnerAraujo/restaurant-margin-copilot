@@ -69,9 +69,10 @@ type Result struct {
 // Explainer runs the tool-calling loop over one internal/mcptools MCP
 // server.
 type Explainer struct {
-	client    *llmclient.Client
-	mcpClient *client.Client
-	tools     []anthropic.ToolUnionParam
+	client       *llmclient.Client
+	mcpClient    *client.Client
+	tools        []anthropic.ToolUnionParam
+	systemPrompt string
 }
 
 // New builds an Explainer. mcpServer is normally the result of
@@ -81,7 +82,17 @@ type Explainer struct {
 // RegisterMCPServer installs (mcptools/limits.go): calling a *ServerTool's
 // Handler directly, bypassing the client, would skip that middleware
 // entirely, defeating Constitution Principle III's enforcement.
-func New(ctx context.Context, llm *llmclient.Client, mcpServer *server.MCPServer) (*Explainer, error) {
+//
+// dataStart/dataEnd are the actual inclusive min/max date (YYYY-MM-DD) this
+// product has reconciled data for — resolved once by the caller
+// (cmd/server/main.go, via internal/storage.LoadDataDateRange) and baked
+// into this Explainer's system prompt, the same date-grounding fix
+// internal/ambiguity.New applies (docs/plan.md mistakes log: "date-year
+// grounding defect"). This matters here too, not just in the gate: the
+// model still has to resolve relative/year-less dates into concrete tool
+// arguments (e.g. a get_margin_delta period) when narrating an answerable
+// or assumption-carrying question.
+func New(ctx context.Context, llm *llmclient.Client, mcpServer *server.MCPServer, dataStart, dataEnd string) (*Explainer, error) {
 	mcpClient, err := client.NewInProcessClient(mcpServer)
 	if err != nil {
 		return nil, fmt.Errorf("explain: creating in-process MCP client: %w", err)
@@ -101,9 +112,10 @@ func New(ctx context.Context, llm *llmclient.Client, mcpServer *server.MCPServer
 	}
 
 	return &Explainer{
-		client:    llm,
-		mcpClient: mcpClient,
-		tools:     anthropicTools(listed.Tools),
+		client:       llm,
+		mcpClient:    mcpClient,
+		tools:        anthropicTools(listed.Tools),
+		systemPrompt: buildSystemPrompt(dataStart, dataEnd),
 	}, nil
 }
 
@@ -134,7 +146,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 	for turn := 0; turn < MaxTurns; turn++ {
 		resp, err := e.client.CreateMessage(ctx, llmclient.MessageRequest{
 			Model:     llmclient.ModelExplanation,
-			System:    systemPrompt,
+			System:    e.systemPrompt,
 			MaxTokens: MaxAnswerTokens,
 			Messages:  messages,
 			Tools:     e.tools,
@@ -338,18 +350,35 @@ func anthropicTools(tools []mcp.Tool) []anthropic.ToolUnionParam {
 	return out
 }
 
-// systemPrompt is the direct enforcement, at the narration layer, of
+// systemPromptTemplate is the direct enforcement, at the narration layer, of
 // Constitution Principle I ("the model MUST be restricted to interpreting
 // the user's question and narrating an already-computed result") and
 // Principle IV (provenance on every number) — the tools themselves are the
 // hard boundary (no free-form computation tool exists at all), but the
 // prompt is what keeps the model from, say, adding two tool results
 // together itself instead of calling get_margin_delta.
-const systemPrompt = `You are the explanation step of a restaurant margin-reconciliation copilot. You narrate already-computed results in plain language for a restaurant owner — you never compute, estimate, or independently derive a number yourself.
+//
+// %[1]s/%[2]s are the actual data date range (buildSystemPrompt's
+// dataStart/dataEnd), the same date-grounding fix applied in
+// internal/ambiguity's system prompt — see that package's
+// systemPromptTemplate doc comment for the full bug this addresses
+// (docs/plan.md mistakes log: "date-year grounding defect").
+const systemPromptTemplate = `You are the explanation step of a restaurant margin-reconciliation copilot. You narrate already-computed results in plain language for a restaurant owner — you never compute, estimate, or independently derive a number yourself.
+
+Data grounding: the only data this product has spans %[1]s through %[2]s inclusive, and %[2]s is this product's own notion of "today" — never the real-world current date. Resolve "today", "this week", "last week", and any date given without a year against %[2]s and the %[1]s..%[2]s range, exactly as an upstream ambiguity check already would have. Never state, in your answer or in a tool call argument, a year outside what %[1]s..%[2]s spans.
 
 Rules, no exceptions:
 - Every number you state MUST come directly from a tool call result. Never perform arithmetic on tool results yourself (no adding, subtracting, or averaging numbers across multiple tool calls) — if you need a combined or comparative figure, call the tool that computes it (e.g. get_margin_delta for a comparison between two periods), rather than computing it yourself from two get_daily_summary calls.
 - If a tool returns a typed error (e.g. "no_data", "insufficient_data", "invalid_input"), tell the user plainly what is missing or why the request could not be fulfilled. Never estimate, extrapolate, or state a plausible-sounding number in place of a refused tool call.
+- Never state that a specific named entity — a campaign, promotion, or supplier — is missing or "not in the data" without first calling the relevant tool (e.g. get_promotion_roi) and confirming via its actual no_data error. A claim that a named entity doesn't exist must always be grounded in a real tool response, never asserted from assumption or recollection — asserting absence without checking is exactly as much a fabrication as inventing a number. (This does not apply to the date range and scope already stated in "Data grounding" above — you may state directly, without a tool call, that a date is outside %[1]s..%[2]s, since that boundary is already an established fact, not something to verify per-question.)
+- get_promotion_roi's campaign_id lookup tolerates a shortened form (e.g. "LUNCHFIX") or a full human-readable campaign name (e.g. "Banner Ad - Lunch Fix Menu (JET-CAMP-LUNCHFIX)") as well as the exact id — pass whatever reference the user gave directly as campaign_id rather than declining to call the tool because the text isn't an exact id, and rather than inventing your own guess at the id. Only report a campaign as unavailable after the tool itself returns no_data for it.
 - Cite where each number came from (which date, which period, which file/rows if asked) using the tool result's own fields — never invent a citation.
 - If you are not sure a question is fully answerable from what the tools return, say so rather than guessing.
 - Keep answers concise and in plain language suitable for a busy restaurant owner, not a data analyst.`
+
+// buildSystemPrompt substitutes the real data date range into
+// systemPromptTemplate (see internal/ambiguity.buildSystemPrompt, which
+// this mirrors).
+func buildSystemPrompt(dataStart, dataEnd string) string {
+	return fmt.Sprintf(systemPromptTemplate, dataStart, dataEnd)
+}
