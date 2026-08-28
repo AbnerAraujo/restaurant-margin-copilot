@@ -1,18 +1,19 @@
-# Feature Specification: Daily Margin Reconciliation & Q&A
+# Feature Specification: Daily Margin & Growth Copilot
 
 **Feature Branch**: `main` (no per-feature branch — single-feature take-home prototype)
 
-**Created**: 2026-08-28
+**Created**: 2026-08-28 · **Updated**: 2026-08-28 (added promo-ROI scope, Product A / KR3)
 
 **Status**: Draft
 
-**Input**: User description: "Daily close and margin reconciliation copilot for an
-independent restaurant/bar: ingest delivery-platform, POS, and supplier-cost
-exports; deterministically reconcile and compute margin/deltas; let the owner
-ask natural-language questions about the day/week with typed-tool-backed
-answers, provenance, refusal on ambiguous/unanswerable questions, and visible
-cost/token instrumentation." (derived from `docs/product-strategy.md` and
-`CLAUDE.md`, already committed to this repo.)
+**Input**: User description: "Daily close and margin/growth copilot for an
+independent restaurant/bar: ingest delivery-platform, POS, supplier-cost, and
+promotion-spend exports; deterministically reconcile margin and flag
+underperforming promotions; let the owner ask natural-language questions
+about the day/week with typed-tool-backed answers, provenance, refusal on
+ambiguous/unanswerable questions, and visible cost/token instrumentation."
+(derived from `docs/product-strategy.md` — OKR Objective, KR1–KR4, and the
+Product A decision — and `CLAUDE.md`, already committed to this repo.)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -106,6 +107,38 @@ a fabricated number.
    reports that it could not complete the request, rather than returning a
    partial, unlabeled answer.
 
+---
+
+### User Story 4 - Flag underperforming promotions (Priority: P4)
+
+The owner asks about (or is shown) promotions or sponsored placements running
+below their cost in incremental revenue, so spend can be redirected toward
+what's actually working — the revenue-growth lever (KR3), built on the same
+reconciled, provenanced pipeline as Stories 1–3.
+
+**Why this priority**: This is the growth-side half of the Objective
+("increase revenue without eroding margin") — it depends on the same
+deterministic core and refusal discipline already proven by Stories 1–3, so
+it's built last, once that core is trustworthy, not in parallel with it.
+
+**Independent Test**: Load fixture data including at least one promotion
+whose spend exceeds the incremental revenue it drove, and confirm the system
+flags it correctly with the computed ROI and provenance — independent of any
+margin question being asked.
+
+**Acceptance Scenarios**:
+
+1. **Given** a promotion whose incremental revenue is below its cost,
+   **When** the owner asks about it, **Then** the system reports the
+   negative ROI with the specific orders and spend it was computed from.
+2. **Given** a promotion whose incremental revenue exceeds its cost,
+   **When** evaluated, **Then** the system does not flag it, and states its
+   positive ROI if asked.
+3. **Given** insufficient data to attribute incremental revenue to a
+   specific promotion, **When** asked about it, **Then** the system refuses
+   to assert an ROI figure rather than guessing — the same Principle II
+   discipline as Stories 1–3, applied to the growth side.
+
 ### Edge Cases
 
 - A day's data arrives with an inconsistent date format between the
@@ -116,6 +149,7 @@ a fabricated number.
 - A question spans a period that crosses a missing day.
 - A tool call exceeds its timeout.
 - The model attempts more tool calls than the configured per-interaction cap.
+- A promotion's spend record exists but its attributed incremental orders are missing or incomplete.
 
 ## Requirements *(mandatory)*
 
@@ -144,6 +178,13 @@ a fabricated number.
 - **FR-009**: Users MUST be able to see a running total of interaction cost.
 - **FR-010**: System MUST cap tool-call iterations per interaction and apply
   a timeout to every tool call.
+- **FR-011**: System MUST ingest promotion/sponsored-placement spend records
+  alongside delivery-platform, POS, and cost-sheet data.
+- **FR-012**: System MUST compute an incremental-revenue-to-spend ratio per
+  promotion and flag any promotion where cost exceeds incremental revenue.
+- **FR-013**: When a promotion's incremental revenue cannot be attributed
+  from available data, the system MUST refuse to assert an ROI figure for
+  it, per the same discipline as FR-007.
 
 ### Key Entities
 
@@ -154,8 +195,11 @@ a fabricated number.
   provenance references, tokens/cost/latency, whether a refusal or
   clarification fired.
 - **Fixture Data Source**: delivery-platform export, POS export, supplier
-  cost sheet — each carrying known, deliberate irregularities used to prove
-  the reconciliation logic.
+  cost sheet, promotion/ad-spend export — each carrying known, deliberate
+  irregularities used to prove the reconciliation logic.
+- **Promotion / Ad Spend Record**: platform, campaign identifier, spend
+  amount, period, attributed incremental orders and revenue, computed ROI,
+  references to the source rows it was computed from.
 
 ## Success Criteria *(mandatory)*
 
@@ -174,6 +218,10 @@ a fabricated number.
   source citation, with zero exceptions.
 - **SC-005**: Per-interaction cost, token usage, and latency are visible to
   the user for 100% of interactions, from the first interaction onward.
+- **SC-006**: On a fixture set of promotions including at least one
+  negative-ROI case, the system correctly flags it end-to-end (ingestion
+  through natural-language answer) with provenance — the KR3 growth-lever
+  proof point.
 
 ## Assumptions
 
@@ -190,3 +238,14 @@ a fabricated number.
 - No specific numeric targets are set in advance for SC-001–SC-003 — per the
   brief and Constitution Principle V, these are measured honestly and
   reported including failures, not pre-committed to a passing threshold.
+- Incremental-revenue attribution for a promotion (FR-012) is computed via a
+  defined, deterministic tagging in the fixture data (which orders a
+  promotion drove), not statistical multi-touch attribution modeling — full
+  marketing-attribution science is out of scope; the fixture data is
+  constructed clean enough to demonstrate the mechanism honestly.
+- The user wants this build to be usable with a real restaurant/bar's actual
+  export files, not only the synthetic fixtures — so ingestion parsing
+  targets realistic, generic CSV shapes for each source type rather than a
+  format hard-coded to the fixture files' exact columns. This is a design
+  constraint for `/speckit-plan`, not a claim that real-file compatibility
+  is validated in this build.

@@ -83,6 +83,16 @@ in the plan instead of living only behind a link.
 - [ ] Demo recorded or rehearsed live, including at least one on-screen refusal
 - [ ] Final read-through against the constitution and the hard-truth rules on background claims before walking in
 
+## Presentation notes (save for Day 5)
+
+- Present the product-strategy narrative (5 problems → Objective/KRs →
+  5 products → Product A decision, all in `docs/product-strategy.md`) framed
+  as a **Double Diamond** (Discover → Define → Develop → Deliver): Discover
+  = the 5 candidate problems researched from real iFood/JET/industry data;
+  Define = the OKR Objective and 4 Key Results; Develop = the 5 candidate
+  products scored against the objective; Deliver = the Product A decision
+  and what got built. Not built yet — a presentation-design task for later.
+
 ## Running log of real mistakes (fill in as we go — do not backfill from memory later)
 
 - —
