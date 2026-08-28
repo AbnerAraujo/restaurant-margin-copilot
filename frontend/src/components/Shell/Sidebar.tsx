@@ -5,6 +5,7 @@ import {
   Megaphone,
   MessagesSquare,
   Scale,
+  UploadCloud,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -28,6 +29,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: LayoutGrid, end: true },
   { to: '/close', label: "Today's Close", icon: CalendarCheck },
+  { to: '/upload', label: 'Upload costs', icon: UploadCloud },
   { to: '/ask', label: 'Ask', icon: MessagesSquare },
   { to: '/promotions', label: 'Promotions', icon: Megaphone },
   { to: '/platforms', label: 'Platforms', icon: Scale },

@@ -1,0 +1,99 @@
+# Implementation Plan: Cost Sheet Upload
+
+**Spec**: [spec.md](./spec.md) · **Status**: Ready for implementation
+
+## Technical Context
+
+A new write path over already-correct deterministic logic — `internal/ingest.ParseCostSheet` (parsing/validation) and `internal/pipeline.RunIngestionPipeline` (re-ingest a directory) both already exist and are reused unchanged. What's new is: (1) a fixed, hardcoded "live data" directory distinct from the git-tracked `backend/fixtures/`, seeded from it on first use; (2) three HTTP endpoints (preview / commit / template); (3) a web upload page. No model involvement anywhere in this feature — pure deterministic file I/O and validation, per the Constitution's "zero-model feature" framing.
+
+## Constitution Check
+
+- **Principle I (deterministic core)**: Every number in this feature — parsed rows, before/after margin totals — comes from `internal/ingest`/`internal/reconcile`/`internal/storage` reads. No model call anywhere in the request path. ✅
+- **Principle II (refuse rather than guess)**: A malformed upload is rejected with `ParseCostSheet`'s own specific error, never coerced or partially accepted. ✅
+- **Principle III (typed tools / no open computation)**: N/A — this is not a chat-surface capability and adds no MCP tool, the same posture `internal/httpapi/data.go` and `promotions_create.go` already document for endpoints that serve a human directly with no model anywhere in the path.
+- **Principle IV (provenance)**: Every previewed row carries `ingest.SourceRowRef` (file, row) exactly as `ParseCostSheet` already attaches it; the commit response's before/after figures are read through the same `mcptools`/`storage` rendering every other page uses, never re-derived ad hoc.
+- **New hard constraint specific to this feature**: the live-data directory path is a compile-time-anchored constant, never derived from request input (filename, header, query string) — see "Live-data directory" below. This is a stronger guarantee than a runtime check: there is no code path in this feature that ever builds a filesystem path from anything the client sent.
+
+No violations requiring justification.
+
+## Live-data directory
+
+`backend/data/live/` — git-ignored, seeded from `backend/fixtures/` the first time it's needed.
+
+Path resolution is anchored to the `internal/livedata` package's own source file location via `runtime.Caller(0)`, not `os.Getwd()` — this project's dev server has been started with different working directories across sessions (repo root for some `-ingest` invocations per `quickstart.md`, `backend/` for others per how `-serve` has actually been launched in this session), and a `os.Getwd()`-relative path would silently point somewhere different depending on that accident of how the process was started. Anchoring to the source file's own compile-time location makes the live-data path a true constant: the same absolute directory every time, regardless of invocation.
+
+```go
+package livedata
+
+var (
+    backendDir  = ...        // derived once via runtime.Caller(0), always backend/
+    Dir         = filepath.Join(backendDir, "data", "live")
+    FixturesDir = filepath.Join(backendDir, "fixtures")
+)
+
+func EnsureSeeded() error { ... } // idempotent: no-op if Dir already exists
+```
+
+`EnsureSeeded` copies every `*.csv` file from `FixturesDir` into `Dir` (flat copy, no subdirectories) the first time `Dir` doesn't exist — giving a first-ever commit a real delivery/POS baseline (spec FR-012), and never writing back to `FixturesDir` in either direction (spec FR-010).
+
+The commit handler writes the newly uploaded bytes to a **fixed filename** inside `Dir` — `supplier_cost_sheet.csv`, matching the seeded copy's own name — never to a filename derived from the multipart upload's original filename. This is what makes FR-011 ("never derived from request input") true for the write path as well as the read path: there is no string concatenation of client-supplied data into any path this feature touches, so path traversal is not a risk to be mitigated at runtime — it's a code shape that cannot occur.
+
+## New package: `internal/livedata`
+
+Single source of truth for the live-data path and seeding, imported by `internal/httpapi` (this feature) and by nothing else — kept as its own package rather than folding into `internal/httpapi` so a future feature that also needs to write into the live-data directory (e.g. a delivery/POS upload, named explicitly as future scope in spec.md's Assumptions) has one place to import from, not a copy-pasted path constant.
+
+## HTTP endpoints (`internal/httpapi/ingest_cost_sheet.go`)
+
+All three follow this codebase's established `internal/httpapi` conventions exactly (see `data.go`, `promotions_create.go`): manual method check inside the handler, `writeJSONError`/`writeJSON` helpers, `storage.Querier` as the dependency type so tests can run against the real database the same way `promotions_create_test.go` does.
+
+### `POST /api/ingest/cost-sheet/preview`
+
+- Reads a `multipart/form-data` body, field name `file`.
+- Calls `ingest.ParseCostSheet` directly against the uploaded content (`io.Reader`) — no intermediate temp file, no disk write of any kind.
+- On parse error: `422 Unprocessable Entity`, `{error: "invalid_cost_sheet", detail: "<ParseCostSheet's own message>"}` — the message already includes filename/row/field per `ingest.go`'s existing error wrapping, so no additional formatting is needed to satisfy spec FR-003.
+- On success: `200 OK` with every parsed row rendered as `{invoice_id, invoice_date, supplier, category, amount, notes, source_row_ref}` (`amount` as a decimal string via `money.FormatCents`, matching every other money field this API returns) plus a `row_count` and `total_amount` summary.
+- Does not touch `internal/livedata` at all — preview is pure in-memory parsing (spec FR-005).
+
+### `POST /api/ingest/cost-sheet/commit`
+
+- Same multipart parse + `ingest.ParseCostSheet` call, from scratch, against the request's own bytes (spec FR-007 — no reuse of, or trust in, a prior preview call's result).
+- On parse error: identical `422` shape to preview.
+- On success:
+  1. `livedata.EnsureSeeded()`.
+  2. Read the current before-state: `storage.LoadDataDateRange` + `storage.LoadDailyReconciliationsInPeriod`, summing `MarginCents` across the returned days. If `LoadDataDateRange` errors (no data persisted yet — a genuinely first-ever commit), the before-state is reported as "no prior data" (`days: 0, margin: null`), never a fabricated zero (mirrors `compare_platform_economics`' own "real absence, never a fabricated zero" convention).
+  3. Write the request's raw bytes to `filepath.Join(livedata.Dir, "supplier_cost_sheet.csv")` (fixed filename, see above).
+  4. `pipeline.RunIngestionPipeline(livedata.Dir, store)`.
+  5. Read the after-state the same way as step 2.
+  6. Respond `200 OK` with `{rows_committed, before: {days, margin_cents|null}, after: {days, margin_cents}}`.
+- If the pipeline run itself fails (e.g. the live-data directory somehow has no dated rows at all), respond `500` with the real underlying error — this is an operational failure of an already-validated file, not a validation failure, so it gets the same treatment `cmd/server/main.go`'s own `-ingest` flag gives a pipeline failure (`log.Fatalf` there; a `500` here, since a live server cannot simply exit).
+
+### `GET /api/ingest/cost-sheet/template`
+
+- Serves a static, hand-written CSV (headers + 2 example rows, values fabricated but clearly plausible, not copied verbatim from `backend/fixtures/` to avoid any appearance that this is fixture data leaking into a "template" — see spec FR-006/US3) with `Content-Disposition: attachment; filename="cost_sheet_template.csv"` and `Content-Type: text/csv`.
+- No request body, no query parameters, no dependency on `storage.Querier` at all — this is the one endpoint of the three that touches neither the database nor the live-data directory.
+
+## `cmd/server/main.go` wiring
+
+Three new `mux.HandleFunc` registrations alongside the existing ones, in the same place `/api/platforms` was added for spec 003. The log line listing served routes gains the three new paths.
+
+## Frontend changes
+
+New route `/upload` (`frontend/src/components/Upload/UploadPage.tsx`), added to `router.tsx`'s route table and `Sidebar.tsx`'s `NAV_ITEMS` (an `UploadCloud` icon, placed after "Today's Close" — this is a data-entry action adjacent to the Close page's daily-reconciliation view, not adjacent to the read-only Platforms/Points pages later in the nav).
+
+State machine: `idle → previewing → previewed (rows | error) → committing → committed (result) | commit_error`. Reuses `postJson`/`ApiError` from `lib/api.ts` for the JSON error shape, but preview/commit themselves need `FormData` + `fetch` directly (multipart, not JSON) — a small `postMultipart` helper added to `lib/api.ts` alongside the existing `getJson`/`postJson`, following their exact error-surfacing convention (throw `ApiError` with the server's real `error`/`detail` fields).
+
+Components:
+- A drop zone / file input (click-to-browse required, drag-and-drop as the documented nice-to-have — implemented, since `<input type="file">` plus native HTML5 drag events costs little once the click-to-browse path exists).
+- "Download template" — a plain link to `GET /api/ingest/cost-sheet/template` (a real anchor tag with `download`, not a JS-fetched blob — the endpoint already sets `Content-Disposition`, so a plain link is sufficient and simpler).
+- Validation-error panel — renders the server's real `detail` string verbatim (never a generic re-wording), matching `LogReplacementForm.tsx`'s existing error-display pattern (`role="alert"`, destructive-tone text).
+- Preview table — `DataGrid` (already exists, used by `PlatformsPage`/`PromotionsPage`), columns `Invoice ID / Date / Supplier / Category / Amount / Notes`.
+- "Confirm & Ingest" button — disabled until a successful preview exists; calls commit with the *same File object* still held in state (never re-reads from the `<input>`, which could have changed — this is what makes FR-007's server-side re-validation meaningful end-to-end: the UI cannot silently commit different bytes than it previewed, and even if it did, the server would catch it).
+- Commit-result panel — days reconciled, before/after total margin, formatted the same way `PlatformsPage`'s `formatUsd` does.
+
+No new chart component; this page is a form + a data grid, not a visualization.
+
+## Testing strategy
+
+- **Backend**: table-driven tests in `internal/httpapi/ingest_cost_sheet_test.go` following `promotions_create_test.go`'s exact pattern — skipped without `DATABASE_URL`, sentinel live-data behavior verified against a temp-seeded copy rather than the real `backend/data/live/` (so tests never depend on, or corrupt, whatever an operator has actually uploaded). Explicit test: after N preview/commit cycles, `backend/fixtures/supplier_cost_sheet.csv`'s checksum is unchanged (spec SC-003) — this is the one test in this feature that is as much about what did NOT happen as what did.
+- **Frontend**: `UploadPage.test.tsx` following `PromotionsPage.test.tsx`'s pattern (mocked `fetch`), covering: a malformed-upload error renders the server's specific message; a valid upload renders every previewed row; commit renders the before/after summary.
+- **Manual/live verification** (this build's actual acceptance gate, per the task): upload a CSV missing `amount` and confirm the specific real error; upload a modified cost sheet (one changed amount) and confirm the preview reflects it; commit and confirm `GET /api/reconciliation` shows the new margin for the affected day.

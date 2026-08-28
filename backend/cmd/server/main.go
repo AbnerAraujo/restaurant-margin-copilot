@@ -125,6 +125,16 @@ func main() {
 		// — a real crash report, logged so the next one leaves a queryable
 		// trace instead of depending on someone noticing and describing it.
 		mux.HandleFunc("/api/client-errors", httpapi.HandleRecordClientError(store))
+		// specs/007-cost-sheet-upload: letting the owner upload/replace the
+		// supplier cost sheet through the web UI instead of requiring a
+		// developer to run -ingest on their behalf. Preview and template need
+		// no dependencies (pure parsing / a static file); commit needs the
+		// concrete *storage.Queries RunIngestionPipeline requires plus the
+		// same answer cache the -ingest flag above invalidates, for the same
+		// reason (new cost data can change any previously-cached answer).
+		mux.HandleFunc("/api/ingest/cost-sheet/preview", httpapi.HandlePreviewCostSheet)
+		mux.HandleFunc("/api/ingest/cost-sheet/commit", httpapi.HandleCommitCostSheet(store, cache))
+		mux.HandleFunc("/api/ingest/cost-sheet/template", httpapi.HandleCostSheetTemplate)
 
 		askDeps, err := buildAskDeps(ctx, store, cache)
 		if err != nil {
@@ -132,7 +142,7 @@ func main() {
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, POST /api/client-errors, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

@@ -57,3 +57,33 @@ export async function postJson<T>(path: string, body?: unknown): Promise<T> {
   }
   return (await response.json()) as T
 }
+
+/**
+ * POSTs a `multipart/form-data` body carrying a single file under field name
+ * `file` (specs/007-cost-sheet-upload's preview/commit endpoints) — no
+ * `Content-Type` header is set explicitly, since the browser must generate
+ * the multipart boundary itself; setting one manually is a classic way to
+ * silently corrupt a multipart body. Error handling matches `postJson`
+ * exactly: the server's real `{error, detail}` body surfaces as a typed
+ * `ApiError`, never a generic re-wording.
+ */
+export async function postMultipart<T>(path: string, file: File): Promise<T> {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    body: formData,
+  })
+  if (!response.ok) {
+    const raw = await response.text()
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; detail?: string }
+      throw new ApiError(parsed.error ?? 'unknown_error', parsed.detail ?? raw)
+    } catch (caught) {
+      if (caught instanceof ApiError) throw caught
+      throw new Error(`${path} returned ${response.status}: ${raw.trim()}`)
+    }
+  }
+  return (await response.json()) as T
+}

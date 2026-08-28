@@ -11,6 +11,7 @@ import HomePage from '@/components/Home/HomePage'
 import PlatformsPage from '@/components/Platforms/PlatformsPage'
 import PointsPage from '@/components/Points/PointsPage'
 import PromotionsPage from '@/components/Promotions/PromotionsPage'
+import UploadPage from '@/components/Upload/UploadPage'
 
 /**
  * Each page gets its OWN error boundary rather than one wrapping the whole
@@ -36,6 +37,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: withBoundary('Home', <HomePage />) },
       { path: 'close', element: withBoundary('Today’s Close', <ClosePage />) },
+      { path: 'upload', element: withBoundary('Upload cost sheet', <UploadPage />) },
       { path: 'ask', element: withBoundary('Ask', <AskPage />) },
       { path: 'promotions', element: withBoundary('Promotions', <PromotionsPage />) },
       { path: 'platforms', element: withBoundary('Platforms', <PlatformsPage />) },
