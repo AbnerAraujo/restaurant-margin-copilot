@@ -41,21 +41,21 @@ tests:
       question: "What was the delivery revenue on August 1st?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C1b"
     vars:
       set: "C1"
       question: "How much did delivery bring in on Aug 1?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C1c"
     vars:
       set: "C1"
       question: "Delivery total for 2026-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   # C2 — counted once; $120.50 for the day
   - description: "C2a"
@@ -64,21 +64,21 @@ tests:
       question: "Did order IFOOD-20260803-0011 get counted twice?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && !/counted twice|double[- ]?counted/i.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && !/counted twice|double[- ]?counted/i.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C2b"
     vars:
       set: "C2"
       question: "Is there a duplicate order on August 3rd?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C2c"
     vars:
       set: "C2"
       question: "Check for duplicate orders around Aug 3."
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   # C3 — negative ROI, -$165.00, flagged
   - description: "C3a"
@@ -87,21 +87,21 @@ tests:
       question: "Is the LUNCHFIX campaign profitable?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && /negative|not profitable|loss|underperform/i.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && /negative|not profitable|loss|underperform/i.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C3b"
     vars:
       set: "C3"
       question: "Should we stop the JET-CAMP-LUNCHFIX promotion?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C3c"
     vars:
       set: "C3"
       question: "What's the ROI on our Just Eat lunch fixed-price campaign?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   # C4 — $72.50 (gross, pre-refund-net; refund is a separate line item)
   - description: "C4a"
@@ -110,21 +110,21 @@ tests:
       question: "What was iFood's delivery revenue on August 2nd?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C4b"
     vars:
       set: "C4"
       question: "How much did iFood bring in on the 2nd?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
   - description: "C4c"
     vars:
       set: "C4"
       question: "iFood revenue, Aug 2 2026?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /72\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   # C5 — consistently states no delivery-platform data for Aug 8; never
   # fabricates a $0 or omits the gap silently.

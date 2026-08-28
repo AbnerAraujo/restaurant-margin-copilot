@@ -46,49 +46,49 @@ tests:
       question: "Delivery revenue on 2026-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A2"
     vars:
       question: "Delivery revenue on 2026-08-03? (tests duplicate-order dedup)"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A3"
     vars:
       question: "POS revenue on 2026-08-08?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /487\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /487\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A4"
     vars:
       question: "Supplier cost total for the two-week period?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /4[,]?335\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /4[,]?335\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A5"
     vars:
       question: "iFood's share of delivery revenue on 2026-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /69\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /69\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A6"
     vars:
       question: "Just Eat Takeaway's share on 2026-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /76\\.25/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /76\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A7"
     vars:
       question: "ROI on campaign IFOOD-CAMP-BOOST01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /34\\.00/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /34\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
         value: "!/-\\$?34\\.00/.test(output?.answer_text ?? '') && !/flagged/i.test(output?.answer_text ?? '')"
 
@@ -97,7 +97,7 @@ tests:
       question: "ROI on campaign JET-CAMP-LUNCHFIX?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
         value: "/-\\$?165\\.00|negative|loss|underperform/i.test(output?.answer_text ?? '')"
 
@@ -106,7 +106,7 @@ tests:
       question: "ROI on campaign JET-CAMP-NEWMENU?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /19\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /19\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
         value: "!/-\\$?19\\.50/.test(output?.answer_text ?? '')"
 
@@ -115,39 +115,39 @@ tests:
       question: "Which campaigns should be flagged as underperforming?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /LUNCHFIX/i.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /LUNCHFIX/i.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A11"
     vars:
       question: "Delivery revenue on 2026-08-04?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /125\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /125\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A12"
     vars:
       question: "Delivery revenue on 2026-08-14?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /140\\.50/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /140\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A13"
     vars:
       question: "iFood's share on 2026-08-14?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /66\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /66\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A14"
     vars:
       question: "Just Eat Takeaway's share on 2026-08-05?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /71\\.25/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /71\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A15"
     vars:
       question: "Delivery revenue on 2026-08-02, net of the refund?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /119\\.75/.test(output?.answer_text ?? '')"
+        value: "output?.status === 'answered' && /119\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
