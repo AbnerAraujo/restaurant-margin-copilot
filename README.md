@@ -69,6 +69,7 @@ fact.
 | [`docs/brand.md`](docs/brand.md) | Visual identity / design tokens used across the app and docs |
 | [`docs/frontend.md`](docs/frontend.md) | Frontend design system and architecture reference — real file paths, real consumer counts, real bugs found and fixed |
 | [`docs/openapi.yaml`](docs/openapi.yaml) + **[live API docs ↗](https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764)** | OpenAPI 3.0 spec for every backend endpoint, grounded against real live responses, rendered as an interactive Swagger UI page |
+| [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 6 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the one this project created itself |
 
 ## User stories and specs (spec-driven development)
 
