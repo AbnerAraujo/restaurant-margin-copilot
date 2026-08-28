@@ -11,8 +11,18 @@
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
+
+  /* Brand accent — iFood-inspired warm red. #EA1D2C is a commonly-cited
+     third-party sourced value, not confirmed from an official iFood brand
+     guideline: used as inspiration for a warm, appetite-associated accent,
+     not a trademark clone. This is the app's primary action color (CTAs,
+     links, active nav) — it is NOT reused for "danger"/error semantics;
+     see --destructive below, kept as an independent token on purpose. */
+  --primary: #ea1d2c;
+  --primary-foreground: #ffffff;
+  --primary-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --primary-active: color-mix(in oklch, var(--primary) 76%, black);
+
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
@@ -20,9 +30,31 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --destructive-text: color-mix(in oklch, var(--destructive) 82%, black);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+
+  /* Status/semantic palette — reconciliation badges and flag states.
+     Deliberately separate tokens from --primary: badges are never
+     brand-colored just because they happen to render in a similar hue
+     family; each has its own meaning and may diverge from the brand
+     color independently later.
+       success  -> "Clean Close" badge, positive ROI, resolved states
+       warning  -> "Discrepancy Catcher" badge (a caught anomaly is a
+                   quiet "system worked" acknowledgment, not a failure —
+                   amber, not red)
+       destructive (above) -> negative-ROI flags, refusals, hard errors
+     Each has a `-text` variant tuned for legible text ON a pale tint of
+     itself (see design-tokens.md "Quiet pill" recipe), separate from the
+     base+foreground pair used for solid fills/dots/icons. */
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+  --success-text: #15803d;
+  --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --warning-text: #b45309;
 }
 
 .dark {
@@ -32,8 +64,15 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
+
+  /* Brighter/lighter than the light-mode brand red so it stays legible
+     and doesn't muddy against a near-black surface. Hover/active lighten
+     toward white in dark mode instead of darkening toward black. */
+  --primary: #f0384a;
+  --primary-foreground: #ffffff;
+  --primary-hover: color-mix(in oklch, var(--primary) 88%, white);
+  --primary-active: color-mix(in oklch, var(--primary) 78%, white);
+
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -41,9 +80,18 @@
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.145 0 0);
+  --destructive-text: color-mix(in oklch, var(--destructive) 75%, white);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+
+  --success: #22c55e;
+  --success-foreground: #052e14;
+  --success-text: #4ade80;
+  --warning: #f59e0b;
+  --warning-foreground: #1f1300;
+  --warning-text: #fbbf24;
 }
 
 @theme inline {
@@ -59,6 +107,8 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
@@ -66,6 +116,14 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-text: var(--success-text);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-text: var(--warning-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
