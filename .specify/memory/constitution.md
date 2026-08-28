@@ -1,50 +1,108 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report
+- Version change: (none) → 1.0.0
+- Modified principles: n/a (initial ratification)
+- Added sections: Core Principles (I–VI), Technology & Scope Constraints,
+  Development Workflow, Governance
+- Removed sections: none
+- Templates requiring updates: none pending — plan/spec/tasks templates read
+  this file at runtime and were not modified.
+- Follow-up TODOs: none. All placeholders resolved from CLAUDE.md and
+  docs/product-strategy.md, already committed to this repo.
+-->
+
+# Restaurant Margin Copilot Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Deterministic Arithmetic, Probabilistic Narration
+All arithmetic — ingestion, parsing, reconciliation, margin calculation,
+week-over-week deltas, anomaly thresholds — MUST be produced by Go code
+against PostgreSQL, never by a model. The model MUST be restricted to
+interpreting the user's question and narrating an already-computed result in
+plain language. A number the LLM invents or recalculates independently is a
+constitution violation, not a bug to patch later. Rationale: this split is
+the direct, demonstrable answer to whether AI is the right tool for each
+step of this product — the central question the evaluation framework tests
+for — and a blurred line here silently fails that test.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Refuse Rather Than Guess
+The system MUST refuse, or explicitly ask a clarifying question, rather than
+estimate or assume when data is missing, incomplete, or the question is
+ambiguous. A confidently wrong margin figure is a worse outcome than a
+refusal. Every refusal and every clarifying question fired MUST be logged.
+Rationale: a restaurant owner acts on these numbers; an error here has real
+financial consequence, not just a worse conversion rate.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Typed Tools Only, No Open Computation
+The model MUST reach the reconciliation engine only through a fixed set of
+typed MCP tools (e.g. `get_daily_summary`, `get_margin_delta`,
+`list_discrepancies`). Open SQL, free-form computation tools, or any path
+that lets the model query the database directly are prohibited. Every tool
+call MUST carry a timeout, and the number of tool calls per interaction MUST
+be capped. Rationale: this is the enforceable boundary that makes Principle I
+real rather than aspirational.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Provenance on Every Number
+Every number shown to the user MUST carry its provenance: which file, which
+rows, which period it was computed from. An answer without provenance MUST
+NOT be presented as fact. Rationale: provenance is what makes "trustworthy"
+falsifiable instead of asserted, and is the cheapest possible trust signal
+to build.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Test-First for the Deterministic Core
+Build order is fixed and MUST NOT be reordered: (1) fixture data, including
+deliberate messiness (duplicate order, refund, missing day, inconsistent
+date format), (2) the Go reconciliation engine, proven with tests, before
+(3) any LLM call exists. The model layer, instrumentation, and evaluation
+harness follow only after the deterministic core is proven. Rationale: if
+the interface is polished before the numbers are right, the project has
+failed regardless of how it looks.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### VI. Instrument From the First API Call
+Every model interaction MUST log input/output tokens, model used, estimated
+cost in USD, latency, whether the clarifying-question path fired, and
+whether a refusal fired — from the first API call made, not retrofitted at
+the end. A running cost total MUST be visible in the UI. Rationale: token
+discipline and real-time cost visibility are treated as a first-class
+product requirement, not an afterthought metric.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Technology & Scope Constraints
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+Stack: Go (backend, reconciliation engine, MCP tool layer via
+`mark3labs/mcp-go`), PostgreSQL (data + instrumentation log), React
+(frontend), OpenAI API (direct calls, no agent framework — LangChain-style
+orchestration is explicitly rejected in favor of defined tools called
+directly). This is a single-tenant prototype demonstrating judgment, not
+production infrastructure: no Kubernetes, no multi-tenant concerns, no
+deployment pipeline are in scope. The interview this project is built for is
+scheduled for Tuesday; scope decisions MUST be weighed against that fixed
+date rather than expanded for its own sake.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+## Development Workflow
+
+Development follows Spec-Driven Development via GitHub Spec Kit
+(`/speckit-specify` → `/speckit-plan` → `/speckit-tasks` →
+`/speckit-implement`), with this constitution taking precedence over any
+individual spec, plan, or task when they conflict. `CLAUDE.md` at the repo
+root carries the operational architecture summary for day-to-day agent
+context; this constitution is the authority when the two diverge. Any
+material not intended for the evaluator to see — personal analysis of the
+interviewer, interview strategy, or similar — MUST NOT be committed to this
+repository, enforced via `.gitignore`, regardless of repository visibility.
+The evaluation harness (accuracy, consistency, refusal-correctness) MUST be
+built and run before interface polish work begins, and its results,
+including failures, MUST be reported rather than hidden.
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution supersedes CLAUDE.md and any other project guidance where
+they conflict. Amendments require: a stated rationale, a version bump under
+semantic versioning (MAJOR for principle removal/redefinition, MINOR for a
+new or materially expanded principle/section, PATCH for wording/clarity
+fixes), and an updated Sync Impact Report at the top of this file. Any
+`/speckit-plan` or `/speckit-tasks` output that conflicts with a principle
+above MUST be revised before implementation proceeds — complexity or
+convenience is not sufficient justification to override a principle.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-27
