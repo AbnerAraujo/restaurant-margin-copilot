@@ -102,6 +102,8 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .kbd{padding:2px 6px;border-radius:3px;background:var(--surface);border:1px solid var(--border);font-family:var(--mono);font-size:10px;color:var(--text-secondary)}
 .fullscreen-btn{position:fixed;top:16px;right:20px;padding:6px 16px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-secondary);font-size:11px;cursor:pointer;z-index:100;font-family:var(--sans)}
 .fullscreen-btn:hover{color:var(--accent);border-color:var(--accent)}
+.arch-link{display:inline-flex;align-items:center;gap:5px;margin-left:14px;padding:6px 14px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-secondary);font-size:11px;font-family:var(--sans);text-decoration:none;cursor:pointer;vertical-align:middle}
+.arch-link:hover{color:var(--accent);border-color:var(--accent)}
 .nav-btns{position:fixed;bottom:14px;right:22px;z-index:100;display:flex;gap:6px}
 .nav-btns button{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .nav-btns button:hover{color:var(--accent);border-color:var(--accent)}
@@ -530,7 +532,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 <!-- 10 · Architecture flow -->
 <div class="slide wide" data-notes="The one boundary that matters: every number is computed left of the gate, in Go against Postgres. The model only ever narrates a typed tool result — the dashed line is the line Claude never crosses.">
   <div class="a tag">Architecture &middot; request flow</div>
-  <h2 class="a md">No number the owner sees is ever produced by a model</h2>
+  <h2 class="a md">No number the owner sees is ever produced by a model<a class="arch-link" href="https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441" target="_blank" rel="noopener noreferrer" onclick="openArchPopup(event, this.href)">Full detailed diagram &#8599;</a></h2>
   <figure class="a arch">
     <svg viewBox="0 0 1220 620" role="img" aria-label="Daily ingestion runs in Go and writes to PostgreSQL; a user question passes through an ambiguity gate (Claude Haiku 4.5) that either refuses/clarifies directly or forwards to the MCP tool layer, which reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, which answers the user.">
       <defs>
@@ -1013,6 +1015,23 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       document.documentElement.requestFullscreen().catch(function() {});
     } else {
       document.exitFullscreen().catch(function() {});
+    }
+  };
+
+  // ---- Architecture popup ----
+  // Opens the live, detailed architecture diagram in a real popup window
+  // (explicit width/height/toolbar flags, not just a new tab) rather than
+  // navigating the deck away. Falls through to the anchor's normal
+  // target="_blank" behavior if a popup blocker refuses window.open.
+  window.openArchPopup = function(event, url) {
+    var popup = window.open(
+      url,
+      'architectureDetail',
+      'width=1400,height=900,noopener,noreferrer,resizable=yes,scrollbars=yes'
+    );
+    if (popup) {
+      event.preventDefault();
+      popup.focus();
     }
   };
 
