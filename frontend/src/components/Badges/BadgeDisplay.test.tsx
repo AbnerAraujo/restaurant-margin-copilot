@@ -77,6 +77,39 @@ describe('BadgeDisplay', () => {
     expect(items[1]).toHaveTextContent('Discrepancy Catcher')
   })
 
+  it('renders a count badge as one pill labeled with the count, not one pill per day', () => {
+    const cleanCloseSummary: ReconciliationBadge = {
+      id: 'clean_close-summary-2026-08-01-2026-08-14',
+      type: 'clean_close',
+      date: '2026-08-14',
+      count: 12,
+    }
+
+    render(<BadgeDisplay badges={[cleanCloseSummary]} />)
+
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByText('Clean Close ×12')).toBeInTheDocument()
+    expect(screen.getByLabelText('Clean Close, 12 days')).toBeInTheDocument()
+    // The individual day (Aug 14) must not leak into the visible or
+    // accessible label once a count is set — a count pill speaks for the
+    // whole period, not for one day inside it.
+    expect(screen.queryByText(/Aug 14/)).not.toBeInTheDocument()
+  })
+
+  it('renders a count of 1 exactly like an ordinary single-day badge', () => {
+    const singleCleanDay: ReconciliationBadge = {
+      id: '2026-08-14-clean_close',
+      type: 'clean_close',
+      date: '2026-08-14',
+      count: 1,
+    }
+
+    render(<BadgeDisplay badges={[singleCleanDay]} />)
+
+    expect(screen.getByText('Clean Close')).toBeInTheDocument()
+    expect(screen.getByLabelText(/Clean Close, Aug 14/i)).toBeInTheDocument()
+  })
+
   it('falls back to the raw string when a badge date is not parseable', () => {
     const malformed: ReconciliationBadge = {
       id: 'bad-date-clean_close',

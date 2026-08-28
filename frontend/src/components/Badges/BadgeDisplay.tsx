@@ -22,6 +22,15 @@ export interface ReconciliationBadge {
    * inline pill.
    */
   detail?: string
+  /**
+   * When set to more than 1, this badge stands in for that many identical
+   * per-day badges (e.g. a period view's clean days) rather than a single
+   * day's. Renders as one pill labeled with the count instead of one pill
+   * per day — a 14-day period should never stack 12 identical unlabeled
+   * "Clean Close" pills. `date` is ignored for display when `count` is
+   * set; callers should still pass a real date for the id/key.
+   */
+  count?: number
 }
 
 export interface BadgeDisplayProps {
@@ -61,12 +70,16 @@ function BadgeDisplay({ badges, className }: BadgeDisplayProps) {
   return (
     <ul className={cn('flex flex-col gap-1.5', className)} aria-label="Reconciliation badges">
       {badges.map((badge) => {
-        const { label, icon: Icon } = BADGE_COPY[badge.type]
+        const { label: baseLabel, icon: Icon } = BADGE_COPY[badge.type]
         const tone = TONE_CLASSES[badge.type]
+        const isCount = Boolean(badge.count && badge.count > 1)
+        const label = isCount ? `${baseLabel} ×${badge.count}` : baseLabel
         const dateLabel = formatBadgeDate(badge.date)
-        const accessibleLabel = badge.detail
-          ? `${label}, ${dateLabel}: ${badge.detail}`
-          : `${label}, ${dateLabel}`
+        const accessibleLabel = isCount
+          ? `${baseLabel}, ${badge.count} days`
+          : badge.detail
+            ? `${label}, ${dateLabel}: ${badge.detail}`
+            : `${label}, ${dateLabel}`
 
         return (
           <li key={badge.id}>

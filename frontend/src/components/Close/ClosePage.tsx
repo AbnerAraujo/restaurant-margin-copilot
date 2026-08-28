@@ -138,6 +138,35 @@ function toBadges(day: DailySummaryApi): ReconciliationBadge[] {
 }
 
 /**
+ * The period view's badge list — NOT a plain days.flatMap(toBadges). A
+ * 14-day clean period would otherwise stack 12 identical, unlabeled
+ * "Clean Close" pills (each one only distinguishable by an aria-label a
+ * sighted user never sees), which reads as broken rather than as 12 good
+ * days. Every Discrepancy Catcher stays listed individually — each one
+ * carries a distinct, actionable detail worth a owner's attention — while
+ * every Clean Close day collapses into one quiet count pill.
+ */
+function toPeriodBadges(days: DailySummaryApi[]): ReconciliationBadge[] {
+  const cleanDays = days.filter((day) => day.discrepancy_flags.length === 0)
+  const discrepancyBadges = days
+    .filter((day) => day.discrepancy_flags.length > 0)
+    .flatMap(toBadges)
+
+  if (cleanDays.length === 0) return discrepancyBadges
+
+  const lastCleanDay = cleanDays[cleanDays.length - 1]
+  return [
+    ...discrepancyBadges,
+    {
+      id: `clean_close-summary-${cleanDays[0].date}-${lastCleanDay.date}`,
+      type: 'clean_close',
+      date: lastCleanDay.date,
+      count: cleanDays.length,
+    },
+  ]
+}
+
+/**
  * Sums an already-computed decimal field across days. This is the same class
  * of arithmetic `grossSalesTotal` above already does (adding figures the Go
  * engine produced) — not a second implementation of reconciliation math, just
@@ -578,7 +607,7 @@ export default function ClosePage() {
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
                 Where the period landed
               </h2>
-              <BadgeDisplay badges={days.flatMap(toBadges)} />
+              <BadgeDisplay badges={toPeriodBadges(days)} />
             </div>
 
             <StatGroup>
