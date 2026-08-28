@@ -15,6 +15,18 @@
 | `front-end-testing` | citypaul/.dotfiles | General UI testing patterns (paired with react-testing) |
 | `tdd` | citypaul/.dotfiles | Red-green-refactor workflow/gate rules |
 | `clean-names`, `clean-functions`, `clean-comments`, `clean-general`, `clean-tests`, `boy-scout`, `typescript-clean-code` | [ertugrul-dmr/clean-code-skills](https://github.com/ertugrul-dmr/clean-code-skills) (typescript track) | Clean-code checks for the React/TS frontend |
+| `hexagonal-architecture` | citypaul/.dotfiles | Ports-and-adapters — keeps the deterministic reconciliation core isolated behind the MCP tool boundary (Principle III) |
+| `domain-driven-design` | citypaul/.dotfiles | Modeling the reconciliation domain (margin, discrepancy, period) cleanly |
+| `bff-design`, `bff-entry-points` | citypaul/.dotfiles | Shape of the API boundary between the React frontend and the Go backend |
+| `api-design` | citypaul/.dotfiles | General API design principles for the Go backend's HTTP surface |
+| `observability` | citypaul/.dotfiles | General observability patterns — pairs with the instrumentation requirement (Principle VI) |
+| `twelve-factor` | citypaul/.dotfiles | Backend service hygiene (config, logs, dependencies) |
+| `golang-design-patterns` | samber/cc-skills-golang | Idiomatic Go patterns (vs. porting OOP patterns verbatim) |
+| `golang-dependency-injection` | samber/cc-skills-golang | DI approaches in Go, keeping the reconciliation engine testable |
+| `golang-context` | samber/cc-skills-golang | `context.Context` propagation — underlies the per-tool-call timeouts Principle III requires |
+| `golang-observability` | samber/cc-skills-golang | Go-specific structured logging/metrics for the instrumentation log |
+| `golang-database` | samber/cc-skills-golang | Go/Postgres data-access patterns, pairs with `sqlc`/`pgx` |
+| `golang-security` | samber/cc-skills-golang | Baseline Go backend security hygiene |
 
 **Project-local** (`.claude/skills` in this repo, from `specify init --integration claude`):
 
