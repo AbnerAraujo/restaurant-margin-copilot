@@ -205,6 +205,18 @@ deterministic Go logic against already-computed facts — the model may
 *narrate* a badge in conversation, never *decide* one, so this never touches
 Principle I.
 
+**Badges are the UX answer to complexity, not decoration on top of it.** A
+reconciliation tool genuinely has several distinct capabilities (daily
+close, Q&A, promo-ROI flagging) — enough that a flat feature list or a
+traditional dashboard risks intimidating exactly the time-poor, non-
+technical owner this product is for. Badge-styled tiles double as
+navigation on the home screen: the same visual language that quietly
+confirms "this worked" also answers "what can I do here" and "where do I go
+next," so the gamification layer is load-bearing for usability, not
+ornamental. This is why badges extend beyond the Reconciliation category
+into being the home screen's actual information architecture, not just an
+achievement strip bolted onto a separate dashboard.
+
 **Built now** (Day 4, proof of mechanism — kept small on purpose given the
 deadline):
 - **Reconciliation category only**: "Clean Close" (a day reconciled with
