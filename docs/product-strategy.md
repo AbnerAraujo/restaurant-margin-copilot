@@ -85,6 +85,28 @@ token-discipline and real-time-cost-visibility position (LinkedIn, ~May
 2026; cited in `CLAUDE.md`/the constitution) — this KR is measured against
 his own stated criteria, not an arbitrary add-on.
 
+## Product concepts considered
+
+Five distinct product shapes were scored against the Objective and the data
+above, not against each other in the abstract:
+
+| # | Product | Serves growth | Serves margin protection | Fixture-data realism | Differentiated from ToqanClaw | Buildable by Tuesday |
+|---|---|---|---|---|---|---|
+| **A** | **Margin & Growth Copilot** — daily reconciliation + promo-ROI flagging, one NL interface, refusal discipline, cost transparency | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **B** | Margin Reconciliation only (drop the growth lever) | ❌ | ✅ | ✅ | ✅ | ✅✅ |
+| **C** | Promo/Ad-Spend ROI Advisor only (drop reconciliation) | ✅ | ~partial | ✅ | ~partial (thinner AI-judgment story alone) | ✅ |
+| **D** | Cross-Platform Economics Comparator (iFood vs. JET) | ~partial (reallocation, not real growth) | ✅ | ❌ (needs two believable platform data models) | ✅✅ (most novel, Prosus-unique) | ❌ |
+| **E** | Algorithmic Penalty/Visibility Guardian | ✅ | ❌ | ❌ (no real owner has ranking-algorithm data) | ✅ | ❌ |
+
+**Ranking:**
+1. **A** — the only concept satisfying both halves of the Objective directly. Grounded in the strongest evidence in this document: the "deducted from payout without a clear line-item breakdown" finding applies to both the commission side (KR2) and the promo side (KR3) — one architecture answering one underlying opacity problem twice, not two features bolted together.
+2. **B** — safest to build, but directly reverts to option (a) in the OKR Objective section above, which was explicitly rejected: it only ever protects money already earned, never grows it.
+3. **C** — real growth angle, but alone it has no use for the deliberately messy fixture data (duplicates, refunds, missing days) central to demonstrating the deterministic core, and is a simpler analytics question with less inherent ambiguity — a thinner demonstration of the refusal/clarification discipline the evaluation framework weighs most heavily.
+4. **D** — the most strategically interesting idea (uniquely something only Prosus, owning both platforms, could build in good faith) — but needs two internally-consistent platform data models instead of one, a materially bigger fixture-engineering lift with four build days left, and doesn't map cleanly onto the daily North Star metric.
+5. **E** — real, sourced pain, but fails the same feasibility test as growth-lever option #2 earlier: no real restaurant owner has a CSV of "ranking algorithm inputs" to hand us, so building it means fabricating data that isn't plausibly real.
+
+**Decision: build Product A.** This confirms, by structured comparison rather than momentum, that KR1–KR4 as already defined describe the right combined product — not a compromise between two half-measures.
+
 ## Vision
 
 Give every independent restaurant or bar owner a same-day, trustworthy answer to "did we make money today, and why" — without hiring a bookkeeper, opening three exports, or waiting for month-end to find out margin already slipped.
