@@ -88,6 +88,7 @@ func (m *memoryCacheStore) UpsertAnswerCacheEntry(_ context.Context, arg storage
 		OriginalQuestion:   arg.OriginalQuestion,
 		Response:           arg.Response,
 		OriginCostUsd:      arg.OriginCostUsd,
+		SchemaVersion:      arg.SchemaVersion,
 	}
 	if _, existed := m.entries[arg.NormalizedQuestion]; !existed {
 		m.insertOrder = append(m.insertOrder, arg.NormalizedQuestion)

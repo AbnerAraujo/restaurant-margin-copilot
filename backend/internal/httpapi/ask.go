@@ -281,7 +281,15 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 
 		decision, err := deps.Gate.Classify(ctx, req.Question, pending)
 		if err != nil {
-			http.Error(w, "ambiguity gate failed: "+err.Error(), http.StatusBadGateway)
+			// ambiguity.Gate.Classify's error contract returns (nil, err) on
+			// every failure path, so there is no partial Decision here to
+			// pull tokens/cost out of and log — unlike internal/explain's
+			// Explain below, which was fixed to carry partial usage back
+			// specifically so this handler could still log it. The real
+			// error goes to the server log; the client gets a generic,
+			// safe message rather than a raw internal error string.
+			log.Printf("httpapi: ambiguity gate failed (question=%q): %v", req.Question, err)
+			writeJSONError(w, http.StatusBadGateway, "gate_failed", "the ambiguity check failed; please try again")
 			return
 		}
 
@@ -352,7 +360,29 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		// gate had already worked out what was being asked.
 		result, err := deps.Explainer.Explain(ctx, resolved, decision.AssumptionStated)
 		if err != nil {
-			http.Error(w, "explanation step failed: "+err.Error(), http.StatusBadGateway)
+			// Explain still returns a non-nil *Result on a mid-loop failure,
+			// carrying whatever tokens/cost this interaction's earlier turns
+			// already accumulated before the failure — those Anthropic
+			// calls were genuinely billed regardless of how this request
+			// ends, so that spend must still be logged (Constitution
+			// Principle VI) rather than silently discarded just because the
+			// interaction as a whole failed. The gate's own call was already
+			// logged above, before Explain ran, so this only ever adds
+			// explain's row.
+			if result != nil {
+				deps.logOrWarn(ctx, instrumentation.Record{
+					QuestionText:        req.Question,
+					AmbiguityGateResult: decision.Result,
+					RefusalFired:        true,
+					ModelUsed:           llmclient.ModelExplanation,
+					InputTokens:         result.InputTokens,
+					OutputTokens:        result.OutputTokens,
+					EstimatedCostUSD:    result.EstimatedCostUSD,
+					LatencyMs:           result.LatencyMs,
+				})
+			}
+			log.Printf("httpapi: explanation step failed (question=%q): %v", req.Question, err)
+			writeJSONError(w, http.StatusBadGateway, "explanation_failed", "the explanation step failed; please try again")
 			return
 		}
 		explainInteraction := CostInteraction{ModelUsed: llmclient.ModelExplanation, InputTokens: result.InputTokens, OutputTokens: result.OutputTokens, EstimatedCostUSD: result.EstimatedCostUSD, LatencyMs: result.LatencyMs}

@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -72,9 +73,11 @@ type Result struct {
 	ToolInvocations []ToolInvocation
 
 	// IncompleteReason is set (and AnswerText left empty) when the loop
-	// exhausted MaxTurns, or the model refused, without ever producing a
-	// final narrated answer — the caller (internal/httpapi) treats this as
-	// a refusal, not a partial answer.
+	// exhausted MaxTurns, the model refused, or the model narrated an
+	// answer without ever making a grounded tool call (see Explain's
+	// zero-tool-call guard), without ever producing a final narrated
+	// answer — the caller (internal/httpapi) treats this as a refusal, not
+	// a partial answer.
 	IncompleteReason string
 
 	InputTokens      int64
@@ -83,10 +86,21 @@ type Result struct {
 	LatencyMs        int64
 }
 
+// llmCaller is the subset of *llmclient.Client this package's tool-calling
+// loop needs. Declared as an interface — rather than depending on the
+// concrete *llmclient.Client directly — solely so tests can drive Explain's
+// multi-turn loop (a mid-loop API failure, a first-turn answer with no
+// tool call) with scripted responses, without making real, billed
+// Anthropic API calls. *llmclient.Client satisfies this today with no
+// changes; New (below) still takes one exactly as before.
+type llmCaller interface {
+	CreateMessage(ctx context.Context, req llmclient.MessageRequest) (*llmclient.MessageResult, error)
+}
+
 // Explainer runs the tool-calling loop over one internal/mcptools MCP
 // server.
 type Explainer struct {
-	client       *llmclient.Client
+	client       llmCaller
 	mcpClient    *client.Client
 	tools        []anthropic.ToolUnionParam
 	systemPrompt string
@@ -141,6 +155,19 @@ func New(ctx context.Context, llm *llmclient.Client, mcpServer *server.MCPServer
 // gate already decided to proceed under (spec FR-006) — it is handed to
 // the model as a fact already established, not something for the model to
 // re-derive or second-guess.
+//
+// On a mid-loop failure (a turn's CreateMessage call, or its cost
+// estimation, errors), Explain still returns a non-nil *Result alongside
+// the error, carrying whatever InputTokens/OutputTokens/EstimatedCostUSD/
+// LatencyMs/ToolCallsMade this interaction had already accumulated from
+// earlier turns before the failure. Those tokens were really billed by
+// Anthropic regardless of how this call ends, so the caller
+// (internal/httpapi) MUST still log that partial spend via
+// internal/instrumentation before turning the error into an HTTP response
+// — never discard it just because the interaction as a whole failed. This
+// mirrors the same "a real API call may have run and been billed even when
+// err is non-nil" discipline internal/ambiguity.Gate.writeBetterText
+// already applies to its own second-pass call.
 func (e *Explainer) Explain(ctx context.Context, question, assumptionStated string) (*Result, error) {
 	budget := mcptools.NewCallBudget(mcptools.DefaultMaxToolCallsPerInteraction)
 	ctx = mcptools.WithCallBudget(ctx, budget)
@@ -170,7 +197,17 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			Tools:     e.tools,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("explain: turn %d: %w", turn, err)
+			// The call itself failed (transport/timeout/API error) —
+			// nothing new was billed on THIS turn, but turns 0..turn-1 may
+			// already have accumulated real, billed usage. Return it rather
+			// than discarding it (see this method's doc comment).
+			return &Result{
+				IncompleteReason: fmt.Sprintf("model call failed on turn %d: %v", turn, err),
+				ToolCallsMade:    budget.Used(),
+				ToolInvocations:  invocations,
+				InputTokens:      totalIn, OutputTokens: totalOut,
+				EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
+			}, fmt.Errorf("explain: turn %d: %w", turn, err)
 		}
 
 		totalIn += resp.InputTokens
@@ -178,7 +215,17 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		totalLatencyMs += resp.Latency.Milliseconds()
 		cost, err := resp.EstimatedCostUSD(llmclient.ModelExplanation)
 		if err != nil {
-			return nil, fmt.Errorf("explain: turn %d: %w", turn, err)
+			// Unlike the branch above, THIS turn's tokens (already folded
+			// into totalIn/totalOut/totalLatencyMs just above) were
+			// genuinely billed — only the cost estimate itself failed (an
+			// unpriced model string). Carry that real usage back too.
+			return &Result{
+				IncompleteReason: fmt.Sprintf("cost estimation failed on turn %d: %v", turn, err),
+				ToolCallsMade:    budget.Used(),
+				ToolInvocations:  invocations,
+				InputTokens:      totalIn, OutputTokens: totalOut,
+				EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
+			}, fmt.Errorf("explain: turn %d: %w", turn, err)
 		}
 		totalCostUSD += cost
 
@@ -204,6 +251,35 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			// didn't come from a tool result — this package cannot itself
 			// verify that a given sentence's numbers trace to a tool call,
 			// but it never computes one either.
+			//
+			// One structural check IS available and cheap, though: this
+			// interaction never made a single tool call (budget.Used()==0)
+			// and collected zero provenance (orderedRefs empty), yet the
+			// text states a currency-shaped figure. By this system's own
+			// definition every number MUST come from a tool result
+			// (Principle I) — a dollar amount with no tool call behind it
+			// cannot be that, whatever the model claims. Refuse exactly
+			// like the MaxTurns-exhaustion path below, rather than
+			// returning it as an answer.
+			//
+			// Deliberately scoped to a CURRENCY-shaped answer rather than
+			// "any zero-tool-call answer": systemPromptTemplate's own "Date
+			// grounding" paragraph explicitly permits the model to state,
+			// with no tool call, that a date falls outside the covered
+			// range (an established fact, not something to verify
+			// per-question) — see explain_test.go's
+			// "question about data outside the fixture period" case, which
+			// legitimately makes zero tool calls and must keep answering
+			// rather than being refused here.
+			if budget.Used() == 0 && len(orderedRefs) == 0 && looksLikeCurrencyAmount(resp.Text) {
+				return &Result{
+					IncompleteReason: "model stated a currency-shaped figure without making any MCP tool call or collecting any provenance — refusing rather than trusting a number that cannot trace to the deterministic layer",
+					ToolCallsMade:    budget.Used(),
+					ToolInvocations:  invocations,
+					InputTokens:      totalIn, OutputTokens: totalOut,
+					EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
+				}, nil
+			}
 			return &Result{
 				AnswerText:      resp.Text,
 				ProvenanceRefs:  orderedRefs,
@@ -284,6 +360,24 @@ func toolResultText(r *mcp.CallToolResult) string {
 // is skipped rather than treated as fatal: provenance collection is a
 // best-effort enrichment on top of an answer the model already has, not a
 // gate on whether the interaction can proceed.
+// currencyShapedPattern matches text that states an amount of money: a
+// currency symbol immediately followed by a digit (e.g. "$1,234", "R$50"),
+// or a bare decimal-cents number (e.g. "1234.56"). It deliberately does
+// NOT match a plain calendar date like "2026-08-14" (dashes, not a decimal
+// point) — see the zero-tool-call guard in Explain that relies on this
+// distinction to keep allowing the model's documented no-tool-call
+// "that date is outside our range" answers through unrefused.
+var currencyShapedPattern = regexp.MustCompile(`[$\p{Sc}]\s?\d|\d[\d,]*\.\d{2}\b`)
+
+// looksLikeCurrencyAmount reports whether text appears to state a money
+// figure — see Explain's zero-tool-call guard (Finding 13: a narrated
+// answer with zero tool calls and zero provenance stating a currency-shaped
+// number cannot, by this system's own definition, have come from the
+// deterministic layer).
+func looksLikeCurrencyAmount(text string) bool {
+	return currencyShapedPattern.MatchString(text)
+}
+
 func collectProvenance(rawJSON string, seen map[string]struct{}, ordered *[]string) {
 	var v any
 	if err := json.Unmarshal([]byte(rawJSON), &v); err != nil {
