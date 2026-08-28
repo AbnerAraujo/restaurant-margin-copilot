@@ -60,7 +60,7 @@ Full list with acceptance criteria: `specs/001-margin-reconciliation-qa/spec.md`
 
 ## 4. Design & Experience
 
-iFood-inspired visual direction (primary red ~#EA1D2C, third-party sourced, not an official guideline; used as inspiration, not the actual iFood trademark/logo). Chat UI via shadcn AI Elements, with a visible provenance citation and running cost panel on every answer, and quiet (not arcade-style) badge acknowledgment per the B2B gamification research in `product-strategy.md`.
+**Product name: My Business Steward.** Final brand mark: batwing café doors (tall frame posts, hexagonal panels hinged mid-frame, tapering to a point at the center gap — the real anatomy of a swinging kitchen/bar door), rendered in a prosperity-emerald green (`#0E6E52` light / `#1FA876` dark), replacing the earlier iFood-red exploration — green plays on the "in the red / in the green" financial idiom this product's whole job is to cross. Chat UI via custom components (not shadcn AI Elements, per the actual frontend build), with a visible provenance citation and running cost panel on every answer, and quiet (not arcade-style) badge acknowledgment per the B2B gamification research in `product-strategy.md`. Full logo exploration/rationale: `docs/brand.md` (or the published artifact, if still live).
 
 ## 5. Technical Considerations
 
