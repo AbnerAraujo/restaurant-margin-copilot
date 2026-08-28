@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Outlet, useOutletContext } from 'react-router-dom'
 
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
+import FullscreenToggle from '@/components/Shell/FullscreenToggle'
 import Sidebar, { MobileNavBar } from '@/components/Shell/Sidebar'
 import SplashScreen from '@/components/Shell/SplashScreen'
 import { postJson } from '@/lib/api'
@@ -65,6 +66,7 @@ export default function AppShell() {
     // were ever visible at once.
     <div className="flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
       <SplashScreen />
+      <FullscreenToggle />
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <MobileNavBar />
