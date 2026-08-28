@@ -344,3 +344,72 @@ when that time comes, not a task queued for now.
   Reported here rather than folded quietly into a rounder-sounding number.
   Full comparison table and honest breakdown: `docs/product-strategy.md`,
   "Fix verification: before/after."
+- **Own mistake, caught before it caused real damage (Day 5, overnight
+  session)**: while cleaning up an unrelated orphaned frontend file
+  (`ReportPage.tsx`, dead code left over from a frontend redesign), I staged
+  the commit with `git add -A` instead of naming the specific files I'd
+  touched. A background bug-fix agent was mid-edit on several backend files
+  at that exact moment (the date-grounding/campaign-lookup fix above); the
+  broad `git add -A` swept its in-progress, uncommitted changes into my
+  commit under an unrelated message ("Remove orphaned ReportPage…") and
+  pushed them to `main` before that agent had finished or verified its own
+  work — at that instant the pushed tree did not build (`cmd/server/main.go`
+  called `ambiguity.New` with the old three-argument signature the agent
+  hadn't finished updating everywhere yet). Caught immediately afterward by
+  running `go build ./...` on principle before trusting the state of the
+  repo, rather than assuming a "cleanup-only" commit couldn't have broken
+  anything. No history was rewritten — the bug-fix agent's own subsequent
+  commits landed cleanly on top once it finished, and the tree has built and
+  tested clean ever since — but the misleading commit message on `1665aea`
+  is a permanent, disclosed blemish on `main`'s history. Lesson: `git add
+  -A`/`git add .` is unsafe the moment more than one process (a background
+  agent, in this case) can be writing to the same working tree — stage
+  files by explicit path, always, especially in any autonomous/overnight
+  session where a background agent might be mid-edit.
+- **Real product gap, not a harness artifact (Day 5, overnight session)**:
+  the "combined total" quirk noted above (three previously-passing
+  "delivery revenue" questions stopped stating the summed figure) was first
+  suspected to be an overcorrection in the explain prompt, but turned out to
+  be a genuine, pre-existing data-shape gap once actually investigated:
+  `get_daily_summary`'s response never included a combined delivery-revenue
+  figure at all — only a per-source breakdown (`gross_sales_by_source`).
+  Before the date-grounding fix strengthened the "never do arithmetic
+  yourself" instruction, the model had apparently been quietly summing the
+  per-source map itself to answer these questions — which is itself a
+  violation of Constitution Principle I (Go computes, the model narrates)
+  that the passing test scores had been masking rather than rewarding
+  correct behavior. Fixed at the tool layer, not the prompt: added
+  `total_delivery_gross_sales` to `DailySummaryResult`, computed
+  deterministically in Go as the sum of every source except `pos` (in-house
+  dine-in/takeaway is not delivery revenue — a naive sum-everything total
+  would have silently inflated the figure with non-delivery sales). All
+  three previously-regressed questions (A1/A11/A12) now state the correct
+  golden combined total, verified live against the real backend, not just
+  by re-reading the prompt. Lesson: when an LLM's output changes after a
+  prompt-only fix, check whether the underlying tool contract actually
+  supports the correct answer before assuming the prompt itself needs more
+  tuning — the honest fix here was a one-line deterministic sum, not more
+  prompt engineering.
+- **Real integration gap found only by testing the actual browser path
+  (Day 5, overnight session)**: asked to leave both servers live for the
+  user to test end-to-end, direct verification (starting from "is this
+  actually wired up," not from the last commit's claims) found two things
+  the frontend redesign's own commit message ("Wire AskPage to real
+  ChatPanel...") had not actually done: `AskPage.tsx` was still calling
+  `mockResolveAnswer` (in-memory canned demo data), never the real `/api/ask`
+  endpoint, and the backend had no CORS headers, so even a corrected fetch
+  call would have been silently blocked by the browser once the frontend
+  (port 5173) tried to call the backend (port 8080) directly. Fixed both:
+  added a dev-only CORS allowlist for the one known frontend origin, and
+  rewrote `AskPage` to call the live endpoint and map its real response
+  shape (a flat `"file:row"` provenance string list with no period data —
+  different from the mocked `SourceRowRef[]` shape `ProvenanceTag` was built
+  against, requiring `period_start`/`period_end` to become optional there).
+  Also added real per-call `CostInteraction` data to the `/api/ask` response
+  so the frontend's cost panel reflects this session's actual measured
+  spend instead of hard-coded placeholder figures — matching the PRD's own
+  stated design intent ("a visible provenance citation and running cost
+  panel on every answer") rather than approximating it. Lesson: a commit
+  message claiming "wired to real X" is a claim to verify, not a fact to
+  build on — confirmed here by actually curling the endpoint with a browser
+  `Origin` header, not by reading the diff and trusting its own summary.

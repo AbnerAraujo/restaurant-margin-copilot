@@ -497,6 +497,63 @@ as zero-cost. Total estimated real session spend, including this
 undisclosed-by-instrumentation-design portion, is approximately **$1.07** —
 still comfortably under the $4.50 checkpoint and the $5 session ceiling.
 
+**Second fix pass: the A1/A11/A12 quirk was a real tool-contract gap, not a
+prompt overcorrection.** Investigating the combined-total quirk above found
+its actual root cause: `get_daily_summary` never returned a combined
+delivery-revenue figure at all — only `gross_sales_by_source`, a per-platform
+map. Before this session's date-grounding fix strengthened the "never do
+arithmetic on tool results yourself" instruction, explain had apparently
+been quietly summing that map itself to answer these questions — a real,
+undetected violation of Constitution Principle I (the model narrates, Go
+computes) that the previously-passing test scores had been rewarding by
+accident, not by correct design. The honest fix was in the tool, not the
+prompt: `DailySummaryResult` now carries `total_delivery_gross_sales`,
+computed deterministically in Go as the sum of every `gross_sales_by_source`
+entry **except** `pos` — in-house dine-in/takeaway sales are not delivery
+revenue, so a naive sum-everything total would have silently inflated the
+figure with non-delivery income. Verified live against the real backend
+(not just re-read from the prompt): all three regressed questions now state
+the correct golden figure —
+
+| Question | Golden | Live answer after fix |
+|---|---|---|
+| A1: Delivery revenue on 2026-08-01? | $145.75 | "$145.75" (iFood $69.50 + Just Eat Takeaway $76.25, POS $248.75 excluded) |
+| A11: Delivery revenue on 2026-08-04? | $125.50 | "$125.50" |
+| A12: Delivery revenue on 2026-08-14? | $140.50 | "$140.50" ($66.75 iFood + $73.75 Just Eat Takeaway) |
+
+With this fix, accuracy on the identical 15-question suite returns to
+**10/15 (67%)** — A9 (the original target) stays fixed and A1/A11/A12 are
+no longer regressed — while refusal correctness (5/5) and the
+year-hallucination elimination (0/15) both hold. A4, A10, and A15 remain
+the same three previously-known, out-of-scope gaps named above. A new
+regression test (`TestGetDailySummary_ReturnsPersistedDay` in
+`backend/internal/mcptools/reconciliation_tools_test.go`) locks in the
+POS-exclusion behavior specifically, using a fixture (iFood $50.00 + POS
+$30.00) chosen so a bug that summed everything would produce a visibly
+wrong $80.00 instead of the correct $50.00.
+
+**Third fix: the frontend was never actually calling the live backend.**
+Verifying "both servers are live for the user to test" end-to-end (rather
+than trusting an earlier commit's own message that AskPage was "wired to
+real ChatPanel") found it was still calling an in-memory mock resolver, and
+the backend had no CORS headers — so even a corrected fetch call would have
+been silently blocked by the browser the moment the frontend (port 5173)
+tried to reach the backend (port 8080) directly. Both fixed: a dev-only CORS
+allowlist for that one origin, `AskPage` rewritten to call the real
+`POST /api/ask`, and the endpoint extended to return each request's real,
+just-measured `CostInteraction` data (model, tokens, cost, latency) so the
+UI's running cost panel shows this session's actual spend rather than the
+hard-coded placeholder figures it shipped with — matching this project's own
+PRD design intent ("a visible provenance citation and running cost panel on
+every answer") rather than approximating it. Confirmed with a real browser-
+shaped request (`curl` carrying an `Origin: http://localhost:5173` header)
+against the live server, not by re-reading the diff.
+
+**Final cumulative session cost after both fix passes**: $1.007795
+(Postgres-tracked) + the ~$0.10–0.11 disclosed-but-uninstrumented portion
+above ≈ **$1.11 total**, still well under the $4.50 checkpoint and the $5
+ceiling.
+
 **Net read of the fix.** Both targeted root causes are fixed and verified
 by dedicated regression tests plus the live harness: the year-hallucination
 pattern is completely gone (0 of 15 consistency answers, R1 now passing),
