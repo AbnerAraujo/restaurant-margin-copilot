@@ -19,6 +19,17 @@ export default defineConfig({
       // network request, never a cached response.
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icons.svg'],
+      // vite-plugin-pwa disables itself under `vite dev` by default — the
+      // manifest link and service worker only exist in a production build
+      // unless this is turned on. This project's actual daily-use path is
+      // `npm run dev` (the backend's own -serve flag is the same "just run
+      // it locally" pattern), so dev mode has to serve a real manifest and
+      // SW too, or the install option never appears for the one command
+      // people actually run.
+      devOptions: {
+        enabled: true,
+        type: 'module',
+      },
       manifest: {
         name: 'My Business Steward',
         short_name: 'Steward',
