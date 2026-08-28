@@ -103,4 +103,38 @@ in the plan instead of living only behind a link.
 
 ## Running log of real mistakes (fill in as we go — do not backfill from memory later)
 
-- —
+- Phase 3 (User Story 1, T011-T017): the live-Postgres integration test's
+  cleanup initially used `defer conn.Close(ctx)` alongside a separate
+  `t.Cleanup(func() { conn.Exec(...DELETE...) })` to remove the test row.
+  Go runs a function's own `defer`s when the test function body returns,
+  but `t.Cleanup` callbacks run afterward — so the connection was already
+  closed by the time the delete cleanup fired, the `DELETE` failed silently
+  (its error was discarded), and a row was left behind in the live
+  `daily_reconciliation` table. Caught by manually querying the table after
+  the test run and finding a row that should have been cleaned up. Fixed by
+  registering the connection close itself via `t.Cleanup` (registered
+  first, so LIFO ordering runs it last, after the delete). Lesson: in a Go
+  test, `defer` and `t.Cleanup` are two different queues that interleave in
+  a specific order — don't rely on `defer` to outlive `t.Cleanup`-registered
+  work in the same test.
+- Phase 3: the ingest column-matching normalizer (`internal/ingest/columns.go`)
+  initially handled spaces, hyphens, and `#` in real-world header names but
+  not `%` — a synthetic "Commission %" column (written specifically to test
+  the real-file-compatibility requirement from research.md) failed to match
+  any alias for `commission_rate_pct`. Caught immediately by the test written
+  for that requirement (`TestParseDeliveryExport_ToleratesRealisticColumnNameVariance`)
+  failing on the first implementation pass — exactly what writing that test
+  first was for. Fixed by mapping `%` to `_pct` in the header normalizer.
+- Phase 3: every commission/margin figure in this phase was independently
+  hand-verified twice before being hardcoded into Go tests as golden
+  values — once via Python's `Decimal` module with explicit
+  `ROUND_HALF_UP` (to avoid Python's own default banker's-rounding
+  artifact on exact `.5`-cent cases like 34.50 × 23% = 7.935), and again
+  end-to-end against the real fixture files via the actual `go run
+  ./cmd/server -ingest` pipeline output. Both independent computations and
+  the Go implementation's persisted output agreed exactly on all 14 days
+  and the period total (482.05). Recorded here because Principle V's
+  "prove it with tests" only means something if the expected values in
+  those tests were themselves verified independently of the code being
+  tested — a test whose golden values were back-computed from the
+  implementation proves nothing.
