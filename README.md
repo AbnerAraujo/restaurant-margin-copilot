@@ -66,6 +66,7 @@ fact.
 | [`docs/tooling.md`](docs/tooling.md) | Toolchain and dependency choices |
 | [`docs/why-ai.md`](docs/why-ai.md) | Why this problem is a good fit for an LLM layer, and where it deliberately isn't used |
 | [`docs/brand.md`](docs/brand.md) | Visual identity / design tokens used across the app and docs |
+| [`docs/frontend.md`](docs/frontend.md) | Frontend design system and architecture reference — real file paths, real consumer counts, real bugs found and fixed |
 
 ## User stories and specs (spec-driven development)
 
