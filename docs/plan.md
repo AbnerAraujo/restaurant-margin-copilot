@@ -98,7 +98,16 @@ look.
 **Section-by-section outline** (each a landing-page section, not a literal
 PowerPoint slide, but keep the one-section-one-idea discipline slides imply):
 
-1. **One-pager**: product strategy — vision, OKR Objective, all 4 Key
+0. **Cover** (the actual first slide/section, added explicitly): product
+   name and logo lockup (My Business Steward — the batwing café-door mark,
+   `docs/brand.md`), a one-line tagline, and context — Prosus/Toqan
+   Technical PM challenge, presenter name, date. This is what's on screen
+   before anything else, not folded into the one-pager below.
+1. **One-pager**: product strategy — vision, OKR Objective, **Reason to
+   Believe** (why this is worth Prosus funding, not just worth the
+   restaurant adopting — partner prosperity and platform prosperity move on
+   the same curve, `product-strategy.md`'s new "Reason to Believe" section,
+   not to be cut for space), all 4 Key
    Results (not just the chosen path — show the ranking), the hypotheses
    (all of them, tagged, with which one was actually tested and why),
    success KPIs. This is the section the earlier "Double Diamond" framing

@@ -21,6 +21,19 @@ moves, and it can move via either lever — which is why the candidate
 problems explored below span both a growth-side lever (visibility/ranking,
 promo ROI) and a margin-protection-side lever (payout reconciliation).
 
+## Reason to Believe
+
+Why this is worth Prosus funding, not only worth the restaurant adopting:
+partner prosperity and platform prosperity move on the same curve, not
+opposite ends of a trade-off. A restaurant that grows revenue while
+protecting margin becomes a healthier, longer-tenured partner — one that
+transacts more, churns less, and stands as a stronger reference case for the
+next partner we sign. Every dollar of margin we help protect and every
+dollar of revenue we help a partner capture without eroding it compounds
+into higher-quality, more durable GMV on our own platform. This is not
+goodwill dressed up as strategy; it is the flywheel the Objective above is
+actually justified by.
+
 **Resolved: (b)** — scope is broadened to cover both levers, not just margin
 protection.
 
