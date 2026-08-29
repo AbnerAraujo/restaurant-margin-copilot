@@ -8,6 +8,7 @@ import {
   Scale,
   Settings,
   UploadCloud,
+  UserCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/promotions', label: 'Promotions', icon: Megaphone },
   { to: '/platforms', label: 'Platforms', icon: Scale },
   { to: '/points', label: 'Points', icon: Coins },
+  { to: '/profile', label: 'Profile', icon: UserCircle },
   { to: '/settings', label: 'Settings', icon: Settings },
   { to: '/help', label: 'Help', icon: HelpCircle },
 ]

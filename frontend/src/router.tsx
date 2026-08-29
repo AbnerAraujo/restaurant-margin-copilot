@@ -12,6 +12,7 @@ import HomePage from '@/components/Home/HomePage'
 import { clearThreadStorage } from '@/lib/chatStorage'
 import PlatformsPage from '@/components/Platforms/PlatformsPage'
 import PointsPage from '@/components/Points/PointsPage'
+import ProfilePage from '@/components/Profile/ProfilePage'
 import PromotionsPage from '@/components/Promotions/PromotionsPage'
 import SettingsPage from '@/components/Settings/SettingsPage'
 import UploadPage from '@/components/Upload/UploadPage'
@@ -70,6 +71,7 @@ export const routes: RouteObject[] = [
       { path: 'promotions', element: withBoundary('Promotions', <PromotionsPage />) },
       { path: 'platforms', element: withBoundary('Platforms', <PlatformsPage />) },
       { path: 'points', element: withBoundary('Points', <PointsPage />) },
+      { path: 'profile', element: withBoundary('Profile', <ProfilePage />) },
       { path: 'settings', element: withBoundary('Settings', <SettingsPage />) },
       { path: 'help', element: withBoundary('Help', <HelpPage />) },
     ],
