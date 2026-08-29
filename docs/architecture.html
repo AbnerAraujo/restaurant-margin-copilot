@@ -1094,7 +1094,7 @@
           <text x="40" y="186" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">HTTP</text>
           <rect x="40" y="200" width="380" height="100" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
           <text x="64" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">POST /api/ask</text>
-          <text x="64" y="252" font-size="11.5" fill="currentColor">Cache &rarr; Haiku 4.5 gate &rarr; typed Go tools</text>
+          <text x="64" y="252" font-size="11.5" fill="currentColor">Cache &rarr; Sonnet 5 gate &rarr; typed Go tools</text>
           <text x="64" y="270" font-size="11.5" fill="currentColor">&rarr; Sonnet 5 narration &rarr; Go chart choice.</text>
           <text x="64" y="290" font-size="11" fill="var(--prob)">Detailed below.</text>
 
@@ -1152,7 +1152,7 @@
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Haiku 4.5 ambiguity gate. If the gate lands on ambiguous or unanswerable, a second, conditional Claude Sonnet 5 call writes the final clarifying-question or refusal text — Haiku's classification is structurally final by then, since that second call's reply schema has no classification field at all — and the result returns straight to the user, with the main explanation step never running. Otherwise the question passes to the Go MCP tool layer, which reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
+        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Sonnet 5 ambiguity gate (moved off Claude Haiku 4.5 on 2026-08-29 after a multi-year date-comparison bug). If the gate lands on ambiguous or unanswerable, a second, conditional Claude Sonnet 5 call writes the final clarifying-question or refusal text — the gate's classification is structurally final by then, since that second call's reply schema has no classification field at all — and the result returns straight to the user, with the main explanation step never running. Otherwise the question passes to the Go MCP tool layer, which reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
           <defs>
             <marker id="bDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1174,7 +1174,7 @@
           <text x="804" y="196" font-size="11" fill="var(--det)">typed reads only &mdash; no open SQL, ever</text>
 
           <!-- main row -->
-          <text x="560" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Haiku 4.5</text>
+          <text x="560" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
           <text x="995" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
 
           <rect x="40" y="250" width="170" height="90" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
@@ -1225,7 +1225,7 @@
           <text x="560" y="422" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
           <text x="560" y="440" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
           <text x="560" y="460" text-anchor="middle" font-size="10.5" fill="var(--prob)">Claude Sonnet 5 writes this text</text>
-          <text x="560" y="475" text-anchor="middle" font-size="10" fill="var(--alert)">can't override Haiku's call &middot; explain never runs</text>
+          <text x="560" y="475" text-anchor="middle" font-size="10" fill="var(--alert)">can't override the gate's call &middot; explain never runs</text>
 
           <!-- returns -->
           <path d="M320,340 L320,375 L130,375 L130,345" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
@@ -1238,7 +1238,7 @@
           <text x="620" y="512" font-size="11" fill="var(--det)">answer + chart + provenance</text>
         </svg>
         </div>
-        <figcaption>Two deterministic steps bracket the model layer: a cache in front of it, so a repeated <em>or paraphrased</em> question spends little to nothing, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Haiku call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat. The paraphrase check inside the cache box is itself a small, real, billed Haiku call &mdash; disclosed as spend, never presented as free.</figcaption>
+        <figcaption>Two deterministic steps bracket the model layer: a cache in front of it, so a repeated <em>or paraphrased</em> question spends little to nothing, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Sonnet 5 call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat. The paraphrase check inside the cache box is itself a small, real, billed Haiku call &mdash; disclosed as spend, never presented as free.</figcaption>
       </figure>
 
       <div class="legend">
@@ -1252,10 +1252,10 @@
       <h2>Two models, two jobs, and why each one</h2>
       <div class="cols">
         <div class="card soft">
-          <h3>Claude Haiku 4.5 &mdash; the ambiguity gate</h3>
-          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at 512 output tokens. (This same package also makes a conditional Sonnet 5 call to write the final prose &mdash; see the callout below.)</p>
+          <h3>Claude Sonnet 5 &mdash; the ambiguity gate <span style="font-weight:400;color:var(--muted);font-size:0.7em;">(moved off Haiku 4.5, 2026-08-29)</span></h3>
+          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at 512 output tokens. (This same package also makes a conditional second Sonnet 5 call to write the final prose &mdash; see the callout below.)</p>
           <ul style="font-size:14.5px;padding-left:18px;">
-            <li><strong>Why the cheap model:</strong> this is classification, not reasoning. Frontier capability buys nothing and costs 5&times; more per token.</li>
+            <li><strong>Why not the cheap model anymore:</strong> this ran on Haiku 4.5 for the original single-year fixture, where classification didn't need frontier reasoning. Once the live dataset grew to span 2024&ndash;2026, Haiku repeatedly misclassified fully in-range, explicitly-dated questions (e.g. &ldquo;July 2026&rdquo;) as unanswerable &mdash; a real date-comparison failure across a year boundary, not a prompt-wording issue. Three prompt-only fixes were tried and verified <em>not</em> to fix it; swapping this one call to Sonnet 5 fixed it immediately. Full rationale in <code>internal/llmclient/cost.go</code>'s doc comment.</li>
             <li><strong>Why it cannot leak a number:</strong> the package has no import path to <code>internal/storage</code> or <code>internal/mcptools</code> at all. It sees question text and nothing else. The one exception is deliberate and narrow &mdash; it is handed the data's real min/max date range as two plain strings, so &ldquo;today&rdquo; grounds against what the data covers rather than the host machine's clock.</li>
             <li>On ambiguity it either asks a clarifying question or proceeds with the assumption <em>stated back to the user</em>. It never silently assumes.</li>
           </ul>
@@ -1271,11 +1271,11 @@
         </div>
       </div>
       <div class="callout" style="margin-top:20px;">
-        <strong>A third, conditional call: Sonnet writes the words, never the verdict.</strong> When Haiku lands on <code>ambiguous</code> or <code>unanswerable</code>, a second model call &mdash; Claude Sonnet 5, in the same <code>internal/ambiguity</code> package &mdash; rewrites the clarifying question or refusal reason into clearer, more specific prose than the classification call is worth spending frontier-adjacent tokens on. It is structurally unable to overturn Haiku's decision: its fixed reply schema (<code>writerResponse</code>) has no <code>classification</code> field at all, so there is nothing for the caller to read back even if the model tried. On an <code>answerable</code> question this second call never fires &mdash; cost stays exactly what it was. Both passes are logged as separate <code>question_interaction</code> rows, so the running cost total always reflects real calls made, never a single row standing in for two.
+        <strong>A second, conditional call: a writer pass that rewrites the words, never the verdict.</strong> When the gate lands on <code>ambiguous</code> or <code>unanswerable</code>, a second model call &mdash; also Claude Sonnet 5, in the same <code>internal/ambiguity</code> package, and unaffected by the gate's model change &mdash; rewrites the clarifying question or refusal reason into clearer, more specific prose than the classification call is worth spending frontier-adjacent tokens on. It is structurally unable to overturn the gate's decision: its fixed reply schema (<code>writerResponse</code>) has no <code>classification</code> field at all, so there is nothing for the caller to read back even if the model tried. On an <code>answerable</code> question this second call never fires &mdash; cost stays exactly what it was. Both passes are logged as separate <code>question_interaction</code> rows, so the running cost total always reflects real calls made, never a single row standing in for two.
       </div>
-      <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $1/$5 per MTok for Haiku, $2/$10 for Sonnet &mdash; and an unrecognised model id is an error, not a silent zero.</p>
+      <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $2/$10 per MTok for Sonnet 5 (the gate, its conditional writer pass, and the explanation step), $1/$5 for Haiku 4.5 (the paraphrase-match cache check only, in <code>internal/paraphrase</code>) &mdash; and an unrecognised model id is an error, not a silent zero.</p>
       <div class="callout" style="margin-top:20px;">
-        <strong>A zero-cost fourth path: a meta-question never reaches either model.</strong> "What do you do?", "how can you help me?" used to reach the Haiku gate, get correctly judged out-of-scope for the restaurant's data, and refused &mdash; honest, but the worst possible first impression. <code>internal/httpapi/capability.go</code> pattern-matches a fixed set of real meta-question phrasings <em>before</em> the cache probe or either model call, and answers directly from a hand-written, tool-grounded capability description &mdash; the same discipline as never asking a model to describe its own capabilities (it would happily invent one that doesn't exist). Zero tokens, zero latency, and gated on there being no clarification already in flight, so a bare reply like "hi" answering an unrelated clarifying question is never mistaken for a fresh meta-question.
+        <strong>A zero-cost fourth path: a meta-question never reaches either model.</strong> "What do you do?", "how can you help me?" used to reach the ambiguity gate, get correctly judged out-of-scope for the restaurant's data, and refused &mdash; honest, but the worst possible first impression. <code>internal/httpapi/capability.go</code> pattern-matches a fixed set of real meta-question phrasings <em>before</em> the cache probe or either model call, and answers directly from a hand-written, tool-grounded capability description &mdash; the same discipline as never asking a model to describe its own capabilities (it would happily invent one that doesn't exist). Zero tokens, zero latency, and gated on there being no clarification already in flight, so a bare reply like "hi" answering an unrelated clarifying question is never mistaken for a fresh meta-question.
       </div>
       <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">This project's whole ambiguity/refusal discipline &mdash; classify cheaply first, refuse rather than fabricate, pair every non-answer with a concrete next step &mdash; is generalised into a reusable Claude Code skill, <code>.claude/skills/question-recovery-design</code>, so the same recovery-design pattern can be applied to a future chat or agent surface beyond this product. Its sibling, <code>.claude/skills/proactive-guidance-design</code>, covers the other half: what a chat surface should offer <em>before</em> the first question and <em>after</em> a successful one &mdash; the zero-state capability list and the follow-up suggestions above are its worked example in this exact codebase. The meta-question path above is <code>question-recovery-design</code>'s newest worked example, folded into that skill's Move 5.</p>
     </section>
@@ -1293,7 +1293,7 @@
             <tr><td class="mono">internal/mcptools</td><td class="mono">reconcile, storage, money</td><td class="no">no</td><td class="yes">read-only</td></tr>
             <tr><td class="mono">internal/answercache</td><td class="mono">storage</td><td class="no">no</td><td class="yes">yes</td></tr>
             <tr><td class="mono">internal/badges</td><td class="mono">reconcile, storage</td><td class="no">no</td><td class="yes">read-only</td></tr>
-            <tr><td class="mono">internal/ambiguity</td><td class="mono">llmclient, instrumentation</td><td class="yes">Haiku 4.5 + Sonnet 5 (conditional)</td><td class="no"><strong>no import path exists</strong></td></tr>
+            <tr><td class="mono">internal/ambiguity</td><td class="mono">llmclient, instrumentation</td><td class="yes">Sonnet 5 (gate) + Sonnet 5 (writer, conditional)</td><td class="no"><strong>no import path exists</strong></td></tr>
             <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
             <tr><td class="mono">internal/httpapi</td><td class="mono">ambiguity, explain, answercache, mcptools, instrumentation, llmclient, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
           </tbody>
