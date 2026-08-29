@@ -232,6 +232,34 @@ function formatMonthDay(iso: string): string {
   })
 }
 
+function formatMonthYear(iso: string): string {
+  const date = new Date(`${iso}T00:00:00Z`)
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
+}
+
+/**
+ * The month/year context shown above the plot, honest about however many
+ * months the chart actually spans — this used to always show just the LAST
+ * date's month ("Aug 2026"), which was correct for the original single-month
+ * fixture but became a real, reported bug once this same label kept
+ * appearing on a chart spanning a full year or more: a lone "Aug 2026" above
+ * a chart running from 2024 to 2026 reads as if the whole chart were August
+ * 2026, when the per-tick day-of-month labels (bucketDays === 1) carry no
+ * month of their own to disambiguate. Collapses to one month when the range
+ * genuinely doesn't leave it, so the common (still single-month) case reads
+ * exactly as it always did.
+ */
+function formatChartMonthContext(firstIso: string, lastIso: string): string {
+  if (!firstIso || !lastIso) return ''
+  const first = formatMonthYear(firstIso)
+  const last = formatMonthYear(lastIso)
+  return first === last ? last : `${first} – ${last}`
+}
+
 /** A single day reads as "Aug 7"; a bucketed range reads as "Aug 7 – 13" so a
  *  weekly total is never mistaken for one day's figure. */
 function formatBarDateLabel(datum: DisplayDatum): string {
@@ -602,16 +630,22 @@ function MarginTrendChart({
             )
           })}
 
-          {/* Single month/year label rather than repeating it per tick.
-              Sits ABOVE the plot: on the tick row it overlapped the last
-              day-of-month tick once the day count came from live data. */}
+          {/* Month/year context rather than repeating it per tick. Sits
+              ABOVE the plot: on the tick row it overlapped the last
+              day-of-month tick once the day count came from live data.
+              Reported live as a real bug: this used to show only the LAST
+              date's month ("Aug 2026") even when the chart spanned a full
+              year or more, which reads as if the entire chart were that one
+              month — formatChartMonthContext spans the full range honestly
+              ("Aug 2024 – Aug 2026") and only collapses to one month when
+              the data genuinely doesn't leave it. */}
           <text
             x={chartWidth - MARGIN.right}
             y={MARGIN.top - 14}
             textAnchor="end"
             className="fill-muted-foreground text-[10px]"
           >
-            {lastDate ? `${formatMonthDay(lastDate).split(' ')[0]} ${lastDate.slice(0, 4)}` : ''}
+            {formatChartMonthContext(firstDate, lastDate)}
           </text>
         </svg>
 

@@ -133,6 +133,35 @@ describe('MarginTrendChart', () => {
     expect(within(table).getAllByRole('row')).toHaveLength(745)
   })
 
+  // Reported live: the month/year label above the plot used to show only
+  // the LAST date's month ("Aug 2026") even when the chart spanned a full
+  // year or more — reading as if the whole multi-year chart were that one
+  // month, since the per-tick day-of-month labels carry no month of their
+  // own to disambiguate at this scale.
+  it('shows an honest month/year range above the plot when the period spans more than one month, not just the last date\'s month', () => {
+    const longPeriod = buildLongPeriod(744) // 2026-08-15 -> spans ~2 years
+    const { container } = render(<MarginTrendChart data={longPeriod} />)
+
+    const monthLabel = [...container.querySelectorAll('text')].find((el) =>
+      /^[A-Z][a-z]{2} \d{4}/.test(el.textContent ?? ''),
+    )
+    expect(monthLabel).toBeDefined()
+    // A real range, not a single trailing month — proves the fix reports
+    // the full span rather than just where the data happens to end.
+    expect(monthLabel?.textContent).toContain('Aug 2026')
+    expect(monthLabel?.textContent).toMatch(/–/)
+    expect(monthLabel?.textContent).not.toBe('Aug 2026')
+  })
+
+  it('collapses the month/year label to a single month when the period genuinely stays within one (unchanged from before)', () => {
+    const { container } = render(<MarginTrendChart />) // DEFAULT_DAILY_MARGIN: a 14-day August fixture
+
+    const monthLabel = [...container.querySelectorAll('text')].find((el) =>
+      /^[A-Z][a-z]{2} \d{4}$/.test(el.textContent ?? ''),
+    )
+    expect(monthLabel?.textContent).toBe('Aug 2026')
+  })
+
   it('renders exactly as before for a period under the bucketing threshold (no behavior change at normal scale)', () => {
     render(<MarginTrendChart data={buildLongPeriod(30)} />)
 

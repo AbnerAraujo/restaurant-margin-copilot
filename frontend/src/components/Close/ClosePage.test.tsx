@@ -116,6 +116,63 @@ describe('ClosePage', () => {
     ).not.toBeInTheDocument()
   })
 
+  // Reported live: "Latest" showed a "744-Day Margin Trend" bucketed into
+  // weekly totals — the full multi-year history, not "the latest" at
+  // day-level granularity — and weekly bucketing netted individual loss
+  // days against a profitable week, so every bar rendered green even
+  // though real days were in the red.
+  it('scopes the "Latest" chart to a trailing 90-day window, not the full history (real day-level bars, loss days visible)', async () => {
+    const totalDays = 150
+    const days = Array.from({ length: totalDays }, (_, i) => {
+      const date = new Date(Date.UTC(2026, 0, 1))
+      date.setUTCDate(date.getUTCDate() + i)
+      const iso = date.toISOString().slice(0, 10)
+      // Every 10th day is a real loss — enough to prove loss days survive
+      // scoping without asserting an exact count sensitive to bucketing.
+      const isLossDay = i % 10 === 9
+      return {
+        date: iso,
+        gross_sales_by_source: { pos: '100.00' },
+        total_delivery_gross_sales: '0.00',
+        commissions: '0.00',
+        refunds: '0.00',
+        input_costs: isLossDay ? '250.00' : '50.00',
+        margin: isLossDay ? '-150.00' : '50.00',
+        discrepancy_flags: [],
+        source_row_refs: [{ file: 'fixtures/pos_export.csv', row: i + 2 }],
+      }
+    })
+    stubFetch({ start: days[0].date, end: days[days.length - 1].date, days })
+    renderPage()
+
+    await screen.findByRole('region', { name: /latest reconciled day/i })
+
+    // The heading reads "90-Day", not "150-Day" — the chart is genuinely
+    // scoped, not just visually truncated.
+    expect(
+      screen.getByRole('heading', { name: /90-day margin trend/i }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('heading', { name: /150-day margin trend/i }),
+    ).not.toBeInTheDocument()
+
+    // At 90 real days, MarginTrendChart's own MAX_DISPLAY_BARS threshold
+    // (120) never triggers weekly bucketing — every day, including a loss
+    // day, renders as its own bar, so the "grouped into N-day totals"
+    // caption must be absent and the range must start 89 days before the
+    // last date (day index 60 of the 150 generated), not day index 0.
+    expect(screen.queryByText(/grouped into/i)).not.toBeInTheDocument()
+    const chartGroup = screen.getByRole('group', {
+      name: /bar chart of daily reconciled margin/i,
+    })
+    // days[0] is 2026-01-01; day index 149 (the last) is 2026-05-30; the
+    // trailing 90 days start at index 60 (149 - 89) = 2026-03-02.
+    const expectedFirstDate = days[totalDays - 90].date
+    expect(expectedFirstDate).toBe('2026-03-02')
+    expect(chartGroup.getAttribute('aria-label')).toContain('Mar 2')
+    expect(chartGroup.getAttribute('aria-label')).not.toContain('Jan 1')
+  })
+
   it('reports a backend failure instead of an empty page that looks like "no data"', async () => {
     vi.stubGlobal(
       'fetch',

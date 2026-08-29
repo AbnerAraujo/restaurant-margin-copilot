@@ -78,6 +78,22 @@ interface DataBounds {
 
 type ViewMode = 'latest' | 'day' | 'period'
 
+// Reported live: "Latest" fetches the full, unfiltered history (so the
+// single most-recent day can be read off its own echoed start/end — see the
+// effect below), but the chart was then handed that SAME full multi-year
+// `days` array unconditionally, rendering a "744-Day Margin Trend" bucketed
+// into weekly totals by default. Two real problems followed from that: the
+// chart never actually showed "the latest" at readable, day-level
+// granularity, and weekly bucketing silently netted individual loss days
+// against a mostly-profitable week, making every bar render green even
+// though a genuine fraction of real days were in the red. Scoping "Latest"
+// to a trailing window — same RECENT_WINDOW_SIZE convention HomePage.tsx
+// already established for its own "last 90 days" stats — fixes both at
+// once: at <=120 days MarginTrendChart's own MAX_DISPLAY_BARS threshold
+// never bucket-aggregates, so every real day, including a loss day, renders
+// as its own bar again.
+const RECENT_WINDOW_SIZE = 90
+
 /** Money arrives as "-227.09"-style decimal strings; parse once, here. */
 function parseMoney(decimal: string): number {
   return Number(decimal)
@@ -379,6 +395,18 @@ export default function ClosePage() {
   const latest = days[days.length - 1]
   const isPeriodView = viewMode === 'period'
   const margin = latest ? parseMoney(latest.margin) : 0
+
+  // The chart's own window, trailing RECENT_WINDOW_SIZE real days — see the
+  // constant's doc comment. A no-op for 'day' mode (already a single
+  // fetched day) and for 'period' mode (which builds its own chart range
+  // below from the explicitly picked start/end, never this one); the fix
+  // is specifically for 'latest' mode's previously-unscoped full history.
+  // `.slice(-N)` on a shorter array just returns however many days really
+  // exist — the same honest-degrade behavior HomePage.tsx's own 90-day
+  // stats already rely on.
+  const chartDays = days.slice(-RECENT_WINDOW_SIZE)
+  const chartRangeStart = chartDays[0]?.date ?? data?.start ?? ''
+  const chartRangeEnd = chartDays[chartDays.length - 1]?.date ?? data?.end ?? ''
   const periodMargin = sumField(days, 'margin')
 
   return (
@@ -600,8 +628,12 @@ export default function ClosePage() {
               column with content the chart does not carry. */}
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_18rem]">
             <MarginTrendChart
-              data={toChartData(days, data.start, data.end)}
-              sourceRefs={toPeriodProvenanceRefs(days, data.start, data.end)}
+              data={toChartData(chartDays, chartRangeStart, chartRangeEnd)}
+              sourceRefs={toPeriodProvenanceRefs(
+                chartDays,
+                chartRangeStart,
+                chartRangeEnd,
+              )}
               onDataPointClick={handleChartDataPointClick}
             />
 
