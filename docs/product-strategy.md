@@ -1852,20 +1852,48 @@ data, which is precisely the seam this product's daily close owns.
 
 ### Category 3 — Delivery platforms' own merchant portals
 
-**[Sourced]** Each portal documents itself as single-platform: DoorDash's
-help center scopes the Merchant Portal to DoorDash-channel data
-(Marketplace, its Online Ordering product, Drive); Uber Eats Manager's
-analytics cover Uber Eats sales and customer insights; iFood's Portal do
-Parceiro and Just Eat Takeaway's partner hub are likewise their own-side
-views. Each platform sees only its own side of the transaction, so
-none of these portals can reconcile *across* platforms or against the
-owner's POS and input costs — that is definitional, not a feature gap a
-release could close. **[Assumption]** And no single platform is the
-natural owner of a cross-platform audit of its own commissions; a
-platform-neutral steward is structurally better placed — which is the
-sharpest, most durable gap in this landscape. (Prosus, owning more than
-one side via iFood and JET, is unusually positioned to fund exactly that
-steward — the Product D argument, restated from the landscape side.)
+**Genuinely external comparators — independent public companies, no Prosus
+ownership stake:**
+
+**[Sourced]** DoorDash's help center scopes the Merchant Portal to
+DoorDash-channel data (Marketplace, its Online Ordering product, Drive);
+Uber Eats Manager's analytics cover Uber Eats sales and customer insights.
+Both DoorDash, Inc. and Uber Technologies, Inc. are separate, independently
+listed public companies with no Prosus equity stake (Uber's ownership is
+dispersed institutional/retail with no controlling shareholder; DoorDash's
+founders hold the controlling Class B votes). Each sees only its own side
+of the transaction, so neither portal can reconcile *across* platforms or
+against the owner's POS and input costs — that is definitional, not a
+feature gap a release could close.
+
+**Not external competitors — this product's own channel, via Prosus:**
+
+**[Sourced]** iFood's Portal do Parceiro and Just Eat Takeaway's partner hub
+are, on their face, the same kind of own-side-only view as DoorDash's and
+Uber Eats' portals — but neither company is an external rival. iFood has
+been wholly Prosus-owned (via Movile) since Prosus completed the buyout of
+Just Eat Takeaway's minority stake in November 2022 (~€1.8bn, Business
+Wire/Bloomberg). Just Eat Takeaway.com N.V. is now also Prosus-owned:
+Prosus's 2025 tender offer closed with Prosus holding 98.19% of shares,
+Just Eat Takeaway delisted from Euronext Amsterdam on Nov 17, 2025, and a
+squeeze-out is underway for the remainder (Just Eat Takeaway newsroom,
+Prosus/Naspers investor updates). Both are this product's own distribution
+— the Vision slide's "724 thousand restaurants are already on Prosus
+rails" and the persona slide's "on Prosus rails" notes name exactly this —
+not competitors whose merchant portal represents a gap to exploit. Their
+portals do still share the same single-platform structural limit as
+DoorDash's and Uber Eats', which is worth stating precisely because it
+means the reconciliation gap this product closes exists even on Prosus's
+own rails, not only against outside rivals.
+
+**[Assumption]** No single platform is the natural owner of a
+cross-platform audit of its own commissions; a platform-neutral steward is
+structurally better placed — which is the sharpest, most durable gap in
+this landscape. Prosus, now owning both iFood and Just Eat Takeaway
+outright, is unusually positioned to fund exactly that steward — the
+Product D argument, restated from the landscape side. (That Prosus owns
+both is now **[Sourced]** fact, not assumption; the "platform-neutral
+steward" framing itself remains judgment.)
 
 ### Category 4 — The closest overlap: delivery-reconciliation specialists
 
@@ -1914,3 +1942,39 @@ grounded" stands as the real incumbent for this product's target customer
    measures one. Incumbents bet on coverage; this bets that at 3–5% net
    margin, one confidently wrong number costs the owner more than a
    hundred honest refusals.
+
+### Correction, 2026-08-29 — iFood was listed as a competitor. It isn't.
+
+Caught the same day, on review: the "Platform portals" row of the
+competitive-landscape table (and this entry's Category 3, above) originally
+listed iFood in one undifferentiated group with Uber Eats, DoorDash, and
+Just Eat Takeaway — four "external rivals" whose merchant portals all
+create the same reconciliation gap. That framing directly contradicts this
+deck's own thesis on the Vision slide ("724 thousand restaurants are
+already on Prosus rails — this launches inside ToqanClaw") and the persona
+slide's speaker notes ("on Prosus rails"): iFood is not a competitor to a
+Prosus-backed product, it's this product's own real distribution channel,
+majority/wholly owned by Prosus since November 2022.
+
+Checking further surfaced a second, larger version of the same mistake:
+Just Eat Takeaway was named alongside Uber Eats and DoorDash as if equally
+independent. It no longer is. Prosus's 2025 tender offer for Just Eat
+Takeaway.com N.V. closed with Prosus holding 98.19% of shares; the company
+delisted from Euronext Amsterdam on November 17, 2025, and a squeeze-out
+for the remainder is underway. So both iFood *and* JET needed the same
+correction, not just the one this review was pointed at.
+
+Verified before touching anything else in the row: Uber Eats' parent, Uber
+Technologies, Inc., and DoorDash, Inc. are both genuinely independent,
+separately listed public companies with no Prosus equity stake — they stay
+in the "Platform portals" row as real external comparators.
+
+**Fix applied:** the table now separates "Platform portals" (Uber Eats,
+DoorDash — genuine external comparators) from a new row, "Prosus's own
+channel" (iFood, Just Eat Takeaway — this product's distribution, not
+rivals), while keeping the true observation that even Prosus's own
+channel-partner portals are single-platform by design — the same seam,
+just not a competitive one. `docs/presentation.html`'s Competitive
+landscape slide and speaker notes were updated to match. Pattern, again:
+never let a "these all look alike" grouping survive without checking who
+actually owns each row.
