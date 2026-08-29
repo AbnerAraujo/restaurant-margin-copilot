@@ -1,6 +1,7 @@
 import {
   CalendarCheck,
   Coins,
+  HelpCircle,
   LayoutGrid,
   Megaphone,
   MessagesSquare,
@@ -36,6 +37,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/platforms', label: 'Platforms', icon: Scale },
   { to: '/points', label: 'Points', icon: Coins },
   { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/help', label: 'Help', icon: HelpCircle },
 ]
 
 const INACTIVE_LINK_CLASSES =

@@ -5,6 +5,7 @@ import AppShell from '@/components/Shell/AppShell'
 import AskPage from '@/components/Ask/AskPage'
 import ClosePage from '@/components/Close/ClosePage'
 import ErrorBoundary, { RouteErrorBoundary } from '@/components/ErrorBoundary'
+import HelpPage from '@/components/Help/HelpPage'
 // Real, already-built capability-tile grid (a parallel agent's work) — not a
 // stub, reused as-is per redesign-spec.md §3.
 import HomePage from '@/components/Home/HomePage'
@@ -70,6 +71,7 @@ export const routes: RouteObject[] = [
       { path: 'platforms', element: withBoundary('Platforms', <PlatformsPage />) },
       { path: 'points', element: withBoundary('Points', <PointsPage />) },
       { path: 'settings', element: withBoundary('Settings', <SettingsPage />) },
+      { path: 'help', element: withBoundary('Help', <HelpPage />) },
     ],
   },
 ]
