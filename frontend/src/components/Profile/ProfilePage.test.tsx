@@ -82,15 +82,57 @@ describe('ProfilePage', () => {
     expect(alert).toHaveTextContent(/couldn't load your profile/i)
   })
 
-  it('refuses to submit with a blank restaurant name and never calls the save endpoint', async () => {
+  it('marks the restaurant name as required, matching the form copy', async () => {
+    stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    render(<ProfilePage />)
+
+    const nameInput = await screen.findByLabelText(/restaurant name/i)
+    expect(nameInput).toBeRequired()
+    expect(nameInput).toHaveAttribute('aria-required', 'true')
+  })
+
+  it('blocks a blank restaurant name natively and never calls the save endpoint', async () => {
+    const fetchMock = stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    const nameInput = await screen.findByLabelText(/restaurant name/i)
+    const saveButton = screen.getByRole('button', { name: /save profile/i })
+    await user.click(saveButton)
+
+    // The native `required` attribute stops the browser from ever
+    // dispatching the form's submit event, so the field is left flagged
+    // invalid and the save endpoint is never reached.
+    expect(nameInput).toBeInvalid()
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0)
+  })
+
+  it('refuses to submit a whitespace-only restaurant name (passes native required, fails the trim check)', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
     render(<ProfilePage />)
 
-    const saveButton = await screen.findByRole('button', { name: /save profile/i })
-    await user.click(saveButton)
+    await user.type(await screen.findByLabelText(/restaurant name/i), '   ')
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/enter your restaurant's name/i)
+  })
+
+  it('shows a clear, actionable message when the save request never reaches the server', async () => {
+    stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
+
+    // The exact failure QA found: a blocked CORS preflight surfaces to
+    // fetch() as a raw TypeError, never an HTTP response.
+    vi.mocked(fetch).mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).not.toHaveTextContent(/failed to fetch/i)
+    expect(alert).toHaveTextContent(/couldn't reach the server/i)
   })
 
   it('previews a chosen photo before saving, using a client-side data URI', async () => {
