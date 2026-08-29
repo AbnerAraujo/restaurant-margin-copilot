@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   ArrowDownNarrowWide,
   ArrowUpNarrowWide,
+  ChevronDown,
   Megaphone,
   ShieldAlert,
   TrendingDown,
@@ -67,6 +68,10 @@ interface PromotionsApiResponse {
 }
 
 type RoiSortDirection = 'desc' | 'asc'
+
+// How many needs-action campaigns render before the "needs a decision"
+// panel collapses the rest behind a "Show N more" toggle (spec 008 FR-010).
+const NEEDS_ACTION_VISIBLE_COUNT = 3
 
 function formatSignedUsd(value: number): string {
   const magnitude = Math.abs(value).toLocaleString('en-US', {
@@ -198,6 +203,13 @@ export default function PromotionsPage() {
   // asks to sort (FR-012) — never sorted implicitly on load.
   const [roiSortDirection, setRoiSortDirection] =
     useState<RoiSortDirection | null>(null)
+  // Collapsed by default once the needs-action list grows past
+  // NEEDS_ACTION_VISIBLE_COUNT — a real restaurant can accumulate many
+  // never-replaced losing campaigns over a long operating history, and
+  // stacking every single one into this alert makes it read as broken
+  // rather than actionable. Same discipline as BadgeDisplay's
+  // BadgeSummaryRow collapsing repeated Discrepancy Catcher days.
+  const [needsActionExpanded, setNeedsActionExpanded] = useState(false)
 
   const loadPromotions = useCallback(() => {
     return getJson<PromotionsApiResponse>('/api/promotions')
@@ -306,7 +318,10 @@ export default function PromotionsPage() {
 
       {/* Steward-style proactive insight (spec 008 FR-010) — surfaced above
           the chart, without the owner having to ask, so an un-replaced
-          losing campaign is never just one row among many. */}
+          losing campaign is never just one row among many. Capped to
+          NEEDS_ACTION_VISIBLE_COUNT rows by default (never every campaign
+          unconditionally) so a long operating history's worth of flagged
+          campaigns doesn't turn one proactive alert into its own scroll. */}
       {needsActionCampaigns.length > 0 ? (
         <Panel
           role="status"
@@ -319,7 +334,10 @@ export default function PromotionsPage() {
               : `${needsActionCampaigns.length} campaigns need a decision`}
           </div>
           <ul className="flex flex-col gap-1.5 text-sm">
-            {needsActionCampaigns.map((promotion) => (
+            {(needsActionExpanded
+              ? needsActionCampaigns
+              : needsActionCampaigns.slice(0, NEEDS_ACTION_VISIBLE_COUNT)
+            ).map((promotion) => (
               <li
                 key={promotion.campaign_id}
                 className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5"
@@ -333,6 +351,25 @@ export default function PromotionsPage() {
               </li>
             ))}
           </ul>
+          {needsActionCampaigns.length > NEEDS_ACTION_VISIBLE_COUNT ? (
+            <button
+              type="button"
+              onClick={() => setNeedsActionExpanded((was) => !was)}
+              aria-expanded={needsActionExpanded}
+              className="flex w-fit items-center gap-1 text-xs font-medium text-warning-text underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              {needsActionExpanded
+                ? 'Show fewer'
+                : `Show ${needsActionCampaigns.length - NEEDS_ACTION_VISIBLE_COUNT} more`}
+              <ChevronDown
+                className={cn(
+                  'size-3.5 transition-transform',
+                  needsActionExpanded && 'rotate-180',
+                )}
+                aria-hidden="true"
+              />
+            </button>
+          ) : null}
         </Panel>
       ) : null}
 

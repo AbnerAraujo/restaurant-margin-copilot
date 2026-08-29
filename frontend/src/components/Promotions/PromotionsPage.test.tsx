@@ -216,6 +216,49 @@ describe('PromotionsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('collapses a large needs-action list to 3 rows with a "Show N more" toggle, never one row per campaign unconditionally', async () => {
+    const flaggedCampaigns = Array.from({ length: 5 }, (_, i) => ({
+      platform: 'Just Eat Takeaway',
+      campaign_id: `JET-CAMP-LOSER-${i}`,
+      period: { start: '2026-08-01', end: '2026-08-07' },
+      spend: '100.00',
+      attributed_incremental_orders: 1,
+      attributed_incremental_revenue: '20.00',
+      roi: '-80.00',
+      flagged_negative: true,
+      source_row_refs: [
+        { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+      ],
+    }))
+    stubFetch({
+      promotions: [...PROMOTIONS_RESPONSE.promotions, ...flaggedCampaigns],
+    })
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    const panel = screen.getByRole('status')
+    expect(within(panel).getByText('5 campaigns need a decision')).toBeInTheDocument()
+
+    // Capped to 3 visible rows, not all 5.
+    expect(within(panel).getByText('JET-CAMP-LOSER-0')).toBeInTheDocument()
+    expect(within(panel).getByText('JET-CAMP-LOSER-1')).toBeInTheDocument()
+    expect(within(panel).getByText('JET-CAMP-LOSER-2')).toBeInTheDocument()
+    expect(within(panel).queryByText('JET-CAMP-LOSER-3')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('JET-CAMP-LOSER-4')).not.toBeInTheDocument()
+
+    const toggle = within(panel).getByRole('button', { name: /show 2 more/i })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await userEvent.click(toggle)
+
+    expect(within(panel).getByText('JET-CAMP-LOSER-3')).toBeInTheDocument()
+    expect(within(panel).getByText('JET-CAMP-LOSER-4')).toBeInTheDocument()
+    expect(
+      within(panel).getByRole('button', { name: /show fewer/i }),
+    ).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('shows the real sum of each platform\'s attributed ROI, excluding unattributable campaigns (spec 008 FR-011)', async () => {
     stubFetch({
       promotions: [
