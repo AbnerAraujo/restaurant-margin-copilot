@@ -50,6 +50,35 @@ var knownComparatorPlatforms = []struct {
 	{Source: "just_eat_takeaway", DisplayName: "Just Eat Takeaway"},
 }
 
+// KnownPlatformDisplayNames returns the exact DisplayName strings above —
+// the only values reconcile.PromotionRoiRecord.Platform is meant to ever
+// carry. Exported so internal/httpapi's promotion-creation endpoint (POST
+// /api/promotions) can validate an owner-typed platform field against this
+// SAME list rather than inventing a second one: an unconstrained free-text
+// platform field is exactly how "iFood" and "Ifood" ended up as two
+// distinct, silently-diverging values in this database (see the
+// accompanying QA report) — this is the one canonical source both the
+// comparator tool and the write path must agree on.
+func KnownPlatformDisplayNames() []string {
+	names := make([]string, len(knownComparatorPlatforms))
+	for i, p := range knownComparatorPlatforms {
+		names[i] = p.DisplayName
+	}
+	return names
+}
+
+// IsKnownPlatformDisplayName reports whether name is exactly (case-
+// sensitively) one of KnownPlatformDisplayNames' values — "Ifood" is
+// deliberately NOT "iFood".
+func IsKnownPlatformDisplayName(name string) bool {
+	for _, p := range knownComparatorPlatforms {
+		if p.DisplayName == name {
+			return true
+		}
+	}
+	return false
+}
+
 // PlatformEconomicsView is one platform's entry in
 // compare_platform_economics' result (FR-001/FR-004). EffectiveRate and
 // CombinedEffectiveRate are nil — never a fabricated "0.00%" and never a

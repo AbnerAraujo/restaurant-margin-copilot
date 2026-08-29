@@ -123,6 +123,21 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 			return
 		}
 
+		// Defense in depth against exactly the bug a QA pass found: an
+		// unconstrained free-text platform field let "iFood" and "Ifood"
+		// diverge into two distinct database values (duplicate stat cards,
+		// a filter that silently drops half a platform's campaigns,
+		// under-reported spend). The frontend now offers a fixed <select>
+		// over mcptools.KnownPlatformDisplayNames(), but this endpoint is a
+		// genuine write path other callers could hit directly — refuse
+		// anything that isn't exactly one of those known values rather than
+		// silently accepting free text the client happened to send.
+		if !mcptools.IsKnownPlatformDisplayName(platform) {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input",
+				fmt.Sprintf("platform %q is not recognized — must be exactly one of: %s", platform, strings.Join(mcptools.KnownPlatformDisplayNames(), ", ")))
+			return
+		}
+
 		start, end, err := parseStrictPeriod(req.Period.Start, req.Period.End)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_input", err.Error())
