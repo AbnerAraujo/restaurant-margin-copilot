@@ -101,6 +101,54 @@ describe('PromotionsPage', () => {
     expect(within(boostRow).getByText('$214.00')).toBeInTheDocument()
   })
 
+  it('excludes a freshly-logged, not-yet-attributed campaign from the chart bars but keeps it in the count and table', async () => {
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'iFood',
+          campaign_id: 'OWNER-CAMP-FRESH',
+          period: { start: '2026-08-20', end: '2026-08-20' },
+          spend: '40.00',
+          attributed_incremental_orders: null,
+          attributed_incremental_revenue: null,
+          roi: null,
+          reason: 'not_yet_attributed',
+          flagged_negative: false,
+          origin: 'owner_created',
+          source_row_refs: [
+            { file: 'fixtures/promotion_ad_spend_export.csv', row: 9 },
+          ],
+        },
+      ],
+    })
+    render(<PromotionsPage />)
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    // Still counted in the header chip — a real campaign on file, just with
+    // nothing plottable yet.
+    expect(screen.getByText('3 campaigns')).toBeInTheDocument()
+
+    // Never rendered as a bar target or refusal box — "hasn't happened yet"
+    // is not the same fact as "refused", so it has nothing to plot at all.
+    expect(
+      screen.queryByRole('button', { name: /OWNER-CAMP-FRESH:/i }),
+    ).not.toBeInTheDocument()
+
+    // The genuine FR-013 refusal keeps its refused bar treatment.
+    expect(
+      screen.getByRole('button', {
+        name: /IFOOD-CAMP-WEEKEND: unattributable/i,
+      }),
+    ).toBeInTheDocument()
+
+    // Still present in the table underneath — every logged campaign belongs
+    // there, including one with nothing attributed yet.
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('OWNER-CAMP-FRESH')).toBeInTheDocument()
+  })
+
   it('reports a backend failure instead of an empty page that looks like "no campaigns"', async () => {
     vi.stubGlobal(
       'fetch',

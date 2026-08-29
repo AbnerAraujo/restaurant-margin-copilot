@@ -84,6 +84,11 @@ function toChartDatum(promotion: PromotionApi): PromotionRoiDatum {
     // computed in Go — never recomputed here from the two components, which
     // would put a second arithmetic implementation on the client.
     net: promotion.roi === null ? null : Number(promotion.roi),
+    // Passed through so the chart can tell FR-013's permanent refusal
+    // ("attribution_unavailable") apart from an owner-created promotion
+    // that simply hasn't been through attribution yet ("not_yet_attributed")
+    // — see PromoRoiChart's PromotionRoiDatum.reason doc comment.
+    reason: promotion.reason,
     sourceRefs: collapseRefs(promotion.source_row_refs, promotion.period),
   }
 }

@@ -23,8 +23,23 @@ export interface PromotionRoiDatum {
   attributedIncrementalRevenue: number | null
   /** Null exactly when `attributedIncrementalRevenue` is null. */
   net: number | null
+  /**
+   * Backend reason when `net` is null — the two are different facts, not one
+   * conflated "no number" state. "attribution_unavailable" (FR-013): a
+   * permanent refusal after trying — zero delivery-platform orders carry
+   * this campaign_id, so it never resolves, and this chart draws it as the
+   * dashed "Unattributable" bar below. "not_yet_attributed": an
+   * owner-created promotion that hasn't been through attribution at all
+   * yet — nothing to refuse or plot, so `buildBars` below excludes it from
+   * the bars entirely; it still appears in the table further down, since
+   * every logged campaign belongs there.
+   */
+  reason?: string
   sourceRefs: SourceRowRef[]
 }
+
+/** See PromotionRoiDatum.reason — the "hasn't run yet" case, never plotted. */
+const NOT_YET_ATTRIBUTED = 'not_yet_attributed'
 
 export const DEFAULT_PROMOTION_ROI: PromotionRoiDatum[] = [
   {
@@ -82,6 +97,7 @@ export const DEFAULT_PROMOTION_ROI: PromotionRoiDatum[] = [
     spend: 95.0,
     attributedIncrementalRevenue: null,
     net: null,
+    reason: 'attribution_unavailable',
     // Only the ad-spend export is cited — proving the campaign itself is
     // sourced, but zero delivery_platform_export.csv rows carry this
     // campaign_id, which is why attribution — and net — is refused.
@@ -262,8 +278,16 @@ function PromoRoiChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(defaultTableOpen)
 
-  const { ticks, yToPixel, baselineY } = buildScale(data)
-  const bars = buildBars(data, yToPixel)
+  // A `not_yet_attributed` campaign has nothing to plot yet — not a refusal,
+  // just "hasn't been checked yet" — so it never reaches the bars, the
+  // y-scale, or the SVG's slot layout. `data` (unfiltered) still drives the
+  // table and provenance list further down, since every logged campaign
+  // belongs there.
+  const chartableData = data.filter(
+    (datum) => datum.reason !== NOT_YET_ATTRIBUTED,
+  )
+  const { ticks, yToPixel, baselineY } = buildScale(chartableData)
+  const bars = buildBars(chartableData, yToPixel)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
 
   return (

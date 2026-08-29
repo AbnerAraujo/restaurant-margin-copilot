@@ -18,6 +18,7 @@ secrets/
 # --- Go ---
 backend/bin/
 backend/*.exe
+backend/cmd/gendata/gendata
 vendor/
 
 # --- Node / React ---

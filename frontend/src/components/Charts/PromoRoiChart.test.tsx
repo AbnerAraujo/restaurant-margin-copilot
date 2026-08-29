@@ -2,7 +2,10 @@ import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
-import PromoRoiChart, { DEFAULT_PROMOTION_ROI } from './PromoRoiChart'
+import PromoRoiChart, {
+  DEFAULT_PROMOTION_ROI,
+  type PromotionRoiDatum,
+} from './PromoRoiChart'
 
 describe('PromoRoiChart', () => {
   it('renders one bar target per campaign', () => {
@@ -92,6 +95,54 @@ describe('PromoRoiChart', () => {
     expect(
       within(legend).getByText('Unattributable — refused'),
     ).toBeInTheDocument()
+  })
+
+  it('excludes a not_yet_attributed campaign from the bars, unlike attribution_unavailable', async () => {
+    const freshlyLogged: PromotionRoiDatum = {
+      campaignId: 'OWNER-CAMP-FRESH',
+      campaignName: 'OWNER-CAMP-FRESH',
+      platform: 'iFood',
+      spend: 40.0,
+      attributedIncrementalRevenue: null,
+      net: null,
+      reason: 'not_yet_attributed',
+      sourceRefs: [
+        {
+          source_file: 'promotion_ad_spend_export.csv',
+          row_start: 9,
+          row_end: 9,
+          period_start: '2026-08-20',
+          period_end: '2026-08-20',
+        },
+      ],
+    }
+    const user = userEvent.setup()
+    render(<PromoRoiChart data={[...DEFAULT_PROMOTION_ROI, freshlyLogged]} />)
+
+    // Not plotted at all — no bar target, no refusal box, nothing to hover.
+    expect(
+      screen.queryByRole('button', { name: /OWNER-CAMP-FRESH/i }),
+    ).not.toBeInTheDocument()
+    // The genuine FR-013 refusal is untouched by the filter.
+    expect(
+      screen.getByRole('button', {
+        name: /Featured Placement.*unattributable, ROI refused/i,
+      }),
+    ).toBeInTheDocument()
+    // Bar count stays at the original four — the fifth, deferred campaign
+    // never reaches buildBars.
+    const bars = screen.getAllByRole('button', {
+      name: /: (net |unattributable)/i,
+    })
+    expect(bars).toHaveLength(DEFAULT_PROMOTION_ROI.length)
+
+    // Still present in the table underneath — every logged campaign belongs
+    // there, including one with nothing plottable yet.
+    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('OWNER-CAMP-FRESH')).toBeInTheDocument()
+    const rows = within(table).getAllByRole('row')
+    expect(rows).toHaveLength(DEFAULT_PROMOTION_ROI.length + 1 + 1)
   })
 
   it('exposes a table view with the refusal spelled out, not a null or zero', async () => {
