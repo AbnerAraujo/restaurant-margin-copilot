@@ -44,6 +44,7 @@ import {
   type ThreadStore,
 } from '@/lib/chatStorage'
 import AnswerText from '@/components/Chat/AnswerText'
+import { buildCompareToLastPeriodQuestion } from '@/components/Chat/comparePeriod'
 import SuggestionChips from '@/components/Chat/SuggestionChips'
 import {
   CAPABILITY_SUMMARY,
@@ -157,7 +158,21 @@ export interface AnswerChatMessage {
    * Omitted (or empty) whenever no tool ran.
    */
   toolCalls?: ChatToolCall[]
+  /**
+   * Spec 008 FR-004 ("Compare to last period"): the real [start, end] this
+   * answer was grounded in (`AskResponse.resolved_period`), present only
+   * for a period-totals/daily-summary question. Used to derive the prior
+   * period client-side and offer a one-tap comparison — never re-parsed
+   * from the original question text, per spec.md's own stated edge case.
+   */
+  resolvedPeriod?: ChatResolvedPeriod
   askedAt: string
+}
+
+/** Mirrors `httpapi.ResolvedPeriodView`'s wire shape. */
+export interface ChatResolvedPeriod {
+  start: string
+  end: string
 }
 
 /** One real MCP tool invocation, mirroring `httpapi.ToolCallView`'s wire shape. */
@@ -675,6 +690,7 @@ function AnswerBubble({
   const sourceCount = message.provenance.length
   const followUps = message.followUps ?? []
   const toolCalls = message.toolCalls ?? []
+  const resolvedPeriod = message.resolvedPeriod
 
   return (
     <li className="flex items-start gap-2">
@@ -709,6 +725,19 @@ function AnswerBubble({
         ) : null}
 
         <AnswerText text={message.text} />
+
+        {resolvedPeriod ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => onSuggestionSelect(buildCompareToLastPeriodQuestion(resolvedPeriod))}
+          >
+            <CalendarRange className="size-3.5" />
+            Compare to last period
+          </Button>
+        ) : null}
 
         {message.provenance.length > 0 || message.cache ? (
           <div className="space-y-1.5 border-t border-border pt-2.5">

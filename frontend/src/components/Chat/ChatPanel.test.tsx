@@ -865,6 +865,89 @@ describe('ChatPanel', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('offers "Compare to last period" on an answer with a resolved period, and submits the real derived comparison question', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-resolved-period',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Your margin for August 2026 was $8,214.50.',
+        provenance: [],
+        resolvedPeriod: { start: '2026-08-01', end: '2026-08-31' },
+        askedAt: '2026-08-27T11:25:00Z',
+      })
+      .mockResolvedValueOnce({
+        id: 'test-answer-comparison',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'July 2026 was $7,900.00 — August was up $314.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:25:05Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'What was our margin for August 2026?{Enter}')
+
+    const answer = await screen.findByText('Your margin for August 2026 was $8,214.50.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    const compareButton = within(bubble).getByRole('button', { name: /compare to last period/i })
+    await user.click(compareButton)
+
+    await screen.findByText('July 2026 was $7,900.00 — August was up $314.50.')
+
+    // The real, calendar-aware derived comparison question — the immediately
+    // preceding calendar month, not a fixed 30-day shift — submitted through
+    // the SAME resolveAnswer path as any typed question (no bypass).
+    expect(resolveAnswer).toHaveBeenCalledTimes(2)
+    expect(resolveAnswer.mock.calls[1][0]).toBe(
+      'What was our margin for 2026-08-01 through 2026-08-31, compared to 2026-07-01 through 2026-07-31?',
+    )
+  })
+
+  it('renders no "Compare to last period" button when an answer carries no resolved period', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-resolved-period',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-08 was $152.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:30:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-08 was $152.50.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(
+      within(bubble).queryByRole('button', { name: /compare to last period/i }),
+    ).not.toBeInTheDocument()
+  })
+
   it('auto-submits a chart click-to-ask question exactly once on mount', async () => {
     const resolveAnswer = vi
       .fn<

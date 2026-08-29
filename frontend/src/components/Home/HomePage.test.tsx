@@ -234,4 +234,27 @@ describe('HomePage', () => {
       screen.queryByRole('region', { name: 'Biggest win and catch this week' }),
     ).not.toBeInTheDocument()
   })
+
+  it('shows a real year-over-year tile when the exact same calendar days one year earlier exist (spec 008 FR-006)', async () => {
+    stubFetchByUrl([
+      day('2025-08-01', '100.00'),
+      day('2025-08-02', '120.00'),
+      day('2026-08-01', '150.00'),
+      day('2026-08-02', '130.00'),
+    ])
+    renderHomePageWithRoutes()
+
+    const panel = await screen.findByRole('region', { name: 'Year over year' })
+    expect(within(panel).getByText('$280.00')).toBeInTheDocument() // this year: 150+130
+    expect(within(panel).getByText('$220.00')).toBeInTheDocument() // last year: 100+120
+    expect(within(panel).getByText('+$60.00')).toBeInTheDocument()
+  })
+
+  it('omits the year-over-year tile with no matching prior-year data, never a partial or fabricated figure (FR-013)', async () => {
+    stubFetchByUrl([day('2026-08-01', '100.00'), day('2026-08-02', '130.00')])
+    renderHomePageWithRoutes()
+
+    await screen.findAllByText('2026-08-02')
+    expect(screen.queryByRole('region', { name: 'Year over year' })).not.toBeInTheDocument()
+  })
 })

@@ -473,6 +473,56 @@ paths:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
 
   # ------------------------------------------------------------------
+  /api/platforms/trend:
+    get:
+      tags: [Platforms]
+      summary: Effective-rate trend across the trailing calendar months
+      description: |
+        Spec 008 FR-007's Platforms effective-rate trend — the same
+        `compare_platform_economics` computation `GET /api/platforms`
+        exposes, run server-side across the trailing 6 calendar months
+        ending on the real persisted data's own max date. A bounded, fully
+        deterministic aggregation (no model call): a genuinely new small
+        endpoint rather than several sequential frontend calls, since
+        fetching up to 6 months one at a time would be chattier than this
+        project's own "2-3 sequential calls" guideline for when to prefer
+        assembling from existing endpoints instead.
+
+        A calendar month with no persisted reconciliation for any day in
+        it is silently **omitted** from `periods` — never zero-padded or
+        fabricated (spec 008 FR-013). The most recent entry's `end` is
+        truncated to the real data's max date rather than padded to the
+        end of that calendar month.
+      operationId: getPlatformsTrend
+      responses:
+        "200":
+          description: 0-6 real, non-refused trailing months, oldest first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlatformsTrendResponse" }
+              example:
+                periods:
+                  - month: "2026-08"
+                    result:
+                      period: { start: "2026-08-01", end: "2026-08-14" }
+                      days_included: 14
+                      platforms:
+                        - source: ifood
+                          display_name: iFood
+                          gross_sales: "838.00"
+                          effective_rate: "22.06%"
+        "405":
+          description: Any method other than GET.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: A Postgres query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ------------------------------------------------------------------
   /api/usage:
     post:
       tags: [Usage]
@@ -1160,6 +1210,22 @@ components:
           items: { $ref: "#/components/schemas/PlatformEconomicsView" }
       required: [period, days_included, platforms]
 
+    PlatformsTrendPeriod:
+      type: object
+      properties:
+        month: { type: string, description: "YYYY-MM — the calendar month this entry covers.", example: "2026-08" }
+        result: { $ref: "#/components/schemas/PlatformComparisonResponse" }
+      required: [month, result]
+
+    PlatformsTrendResponse:
+      type: object
+      properties:
+        periods:
+          type: array
+          description: 0-6 entries, oldest first. A calendar month with no persisted reconciliation for any day in it is simply absent — never zero-padded or fabricated (spec 008 FR-013).
+          items: { $ref: "#/components/schemas/PlatformsTrendPeriod" }
+      required: [periods]
+
     # --- usage --------------------------------------------------------
     RecordUsageResponse:
       type: object
@@ -1374,6 +1440,7 @@ components:
             re-computation. Populated only when status=answered; empty or
             absent whenever no tool ran (a refusal or clarification never
             reaches one).
+        resolved_period: { $ref: "#/components/schemas/ResolvedPeriodView" }
       required: [status]
 
     ToolCallView:
@@ -1382,3 +1449,18 @@ components:
         name: { type: string, description: "The exact MCP tool name invoked, e.g. get_daily_summary." }
         result_json: { description: "The tool's raw JSON result, embedded verbatim (not double-encoded as a string)." }
       required: [name, result_json]
+
+    ResolvedPeriodView:
+      type: object
+      description: >-
+        Spec 008 FR-004's "the answered question's actual resolved dates" —
+        the real [start, end] this answer was grounded in, extracted from
+        whichever period-shaped tool actually ran (get_period_totals or
+        get_daily_summary). Present only for period/daily-summary
+        questions, so a client can derive a "Compare to last period"
+        question from real resolved dates rather than re-parsing the
+        original question text.
+      properties:
+        start: { $ref: "#/components/schemas/DateString" }
+        end: { $ref: "#/components/schemas/DateString" }
+      required: [start, end]

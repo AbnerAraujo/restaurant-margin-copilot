@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   CalendarCheck,
+  CalendarClock,
   Coins,
   Megaphone,
   MessagesSquare,
@@ -19,6 +20,7 @@ import {
   type DaySummaryApi,
   type MarginTrend,
 } from '@/components/Home/homeInsights'
+import { deriveYearOverYear } from '@/components/Home/yearOverYear'
 import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
@@ -209,6 +211,7 @@ export default function HomePage() {
   const margin = latest ? Number(latest.margin) : 0
   const marginTrend = deriveMarginTrend(days)
   const biggestWinCatch = deriveBiggestWinCatch(days)
+  const yearOverYear = deriveYearOverYear(days)
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -315,6 +318,40 @@ export default function HomePage() {
               }
               icon={TrendingDown}
               caption={biggestWinCatch.worstDay.date}
+            />
+          </StatGroup>
+        </Panel>
+      ) : null}
+
+      {/* Year-over-year (spec 008 FR-006), computed client-side from the
+          same `days` array — no new fetch, no new backend endpoint. Shown
+          ONLY when the exact same calendar days one year earlier are all
+          present in the data (deriveYearOverYear's own strict, honest
+          "equal length" requirement); omitted entirely otherwise (FR-013),
+          never a partial or estimated year-over-year figure. */}
+      {yearOverYear ? (
+        <Panel aria-label="Year over year" className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            vs. {yearOverYear.label} last year
+          </h2>
+          <StatGroup className="mt-3">
+            <Stat
+              label={`${yearOverYear.label}, this year`}
+              value={formatUsd(String(yearOverYear.thisPeriodUsd))}
+              icon={CalendarClock}
+              tone={yearOverYear.thisPeriodUsd < 0 ? 'negative' : 'positive'}
+            />
+            <Stat
+              label={`${yearOverYear.label}, last year`}
+              value={formatUsd(String(yearOverYear.priorYearUsd))}
+              icon={CalendarClock}
+              tone={yearOverYear.priorYearUsd < 0 ? 'negative' : 'neutral'}
+            />
+            <Stat
+              label="Change"
+              value={`${yearOverYear.deltaUsd >= 0 ? '+' : ''}${formatUsd(String(yearOverYear.deltaUsd))}`}
+              tone={yearOverYear.deltaUsd < 0 ? 'negative' : 'positive'}
+              icon={yearOverYear.deltaUsd < 0 ? TrendingDown : TrendingUp}
             />
           </StatGroup>
         </Panel>

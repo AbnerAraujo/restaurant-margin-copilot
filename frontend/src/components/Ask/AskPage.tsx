@@ -72,6 +72,14 @@ interface AskApiResponse {
    * this page never re-fetches or reformats the underlying data.
    */
   tool_calls?: { name: string; result_json: unknown }[]
+  /**
+   * Spec 008 FR-004 ("Compare to last period"): the real [start, end] this
+   * answer was grounded in (`httpapi.AskResponse.resolved_period`), present
+   * only for a period-totals/daily-summary question. Passed straight
+   * through to `AnswerChatMessage.resolvedPeriod` — this page never
+   * re-derives it from the original question text.
+   */
+  resolved_period?: { start: string; end: string }
 }
 
 /**
@@ -195,6 +203,7 @@ export default function AskPage() {
         visualization: data.visualization,
         followUps: data.suggested_followups,
         toolCalls: data.tool_calls,
+        resolvedPeriod: data.resolved_period,
         cache: data.cache,
         askedAt,
       }

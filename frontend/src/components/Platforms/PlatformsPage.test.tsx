@@ -72,6 +72,59 @@ function stubFetch(body: unknown) {
   )
 }
 
+/**
+ * Routes by URL so a test can supply a real /api/platforms/trend body
+ * alongside the main /api/platforms response every render needs regardless
+ * — a single flat mock would silently hand the comparison body to both
+ * fetches, which is exactly what stubFetch above does for the tests that
+ * don't care about the trend section at all.
+ */
+function stubFetchByUrl(comparisonBody: unknown, trendBody: unknown) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/api/platforms/trend')) {
+        return Promise.resolve({ ok: true, json: async () => trendBody })
+      }
+      return Promise.resolve({ ok: true, json: async () => comparisonBody })
+    }),
+  )
+}
+
+function trendPeriod(month: string, ifoodRate: string | null, jetRate: string | null) {
+  return {
+    month,
+    result: {
+      period: { start: `${month}-01`, end: `${month}-28` },
+      days_included: 28,
+      platforms: [
+        {
+          source: 'ifood',
+          display_name: 'iFood',
+          gross_sales: '0',
+          commission_paid: '0',
+          effective_rate: ifoodRate,
+          promo_spend: '0',
+          combined_cost: '0',
+          combined_effective_rate: ifoodRate,
+          source_row_refs: [],
+        },
+        {
+          source: 'just_eat_takeaway',
+          display_name: 'Just Eat Takeaway',
+          gross_sales: '0',
+          commission_paid: '0',
+          effective_rate: jetRate,
+          promo_spend: '0',
+          combined_cost: '0',
+          combined_effective_rate: jetRate,
+          source_row_refs: [],
+        },
+      ],
+    },
+  }
+}
+
 describe('PlatformsPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -131,5 +184,47 @@ describe('PlatformsPage', () => {
     render(<PlatformsPage />)
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/boom/i)
+  })
+
+  it('shows the effective-rate trend chart with at least 2 real trailing months (spec 008 FR-007)', async () => {
+    stubFetchByUrl(PLATFORM_COMPARISON_RESPONSE, {
+      periods: [
+        trendPeriod('2026-06', '21.00%', '19.50%'),
+        trendPeriod('2026-07', '21.50%', '19.80%'),
+        trendPeriod('2026-08', '22.06%', '20.00%'),
+      ],
+    })
+    render(<PlatformsPage />)
+
+    const panel = await screen.findByRole('region', { name: 'Effective rate trend' })
+    expect(panel).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: /effective commission rate trend/i })).toBeInTheDocument()
+  })
+
+  it('omits the effective-rate trend chart with fewer than 2 real trailing months, never a single-point chart (FR-013)', async () => {
+    stubFetchByUrl(PLATFORM_COMPARISON_RESPONSE, {
+      periods: [trendPeriod('2026-08', '22.06%', '20.00%')],
+    })
+    render(<PlatformsPage />)
+
+    await screen.findAllByText('iFood')
+    expect(screen.queryByRole('region', { name: 'Effective rate trend' })).not.toBeInTheDocument()
+  })
+
+  it('omits the effective-rate trend chart when the trend fetch fails, without blocking the main comparison', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/api/platforms/trend')) {
+          return Promise.resolve({ ok: false, status: 500, text: async () => 'boom' })
+        }
+        return Promise.resolve({ ok: true, json: async () => PLATFORM_COMPARISON_RESPONSE })
+      }),
+    )
+    render(<PlatformsPage />)
+
+    await screen.findAllByText('iFood')
+    expect(screen.queryByRole('region', { name: 'Effective rate trend' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 })
