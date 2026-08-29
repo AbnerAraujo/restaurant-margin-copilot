@@ -224,7 +224,14 @@ export default function AskPage() {
       // The live surface remembers the thread across reloads and keeps a
       // short history of previous ones (localStorage — see lib/chatStorage).
       persistConversation
-      autoSubmitQuestion={autoSubmitQuestion}
+      // ChatPanel only prefills the composer from this — it no longer
+      // submits on the owner's behalf (reported live: let them review/edit
+      // before sending). The navigation-state key itself stays named
+      // `autoSubmitQuestion` (chartFollowUpQuestion.ts's
+      // AskPageNavigationState, and ClosePage.tsx/PromotionsPage.tsx's own
+      // navigate() calls) — only this one prop name changed to match what
+      // ChatPanel actually does with it now.
+      prefillQuestion={autoSubmitQuestion}
       className="max-w-none"
     />
   )

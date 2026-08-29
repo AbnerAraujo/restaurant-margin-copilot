@@ -259,15 +259,18 @@ export interface ChatPanelProps {
    */
   persistConversation?: boolean
   /**
-   * Submits this question exactly once, as soon as the panel mounts — spec
-   * 008 FR-001's chart click-to-ask: `/close` and `/promotions` are separate
-   * routes from `/ask` (no shared chat context exists to call across pages),
-   * so a chart click navigates here with the built question as router state
-   * (see AskPage) instead. Re-fires only if this prop changes to a NEW,
-   * different question while already mounted — never twice for the same one
-   * (e.g. a duplicate navigation with identical state).
+   * Prefills the composer with this question exactly once, as soon as the
+   * panel mounts — spec 008 FR-001's chart click-to-ask: `/close` and
+   * `/promotions` are separate routes from `/ask` (no shared chat context
+   * exists to call across pages), so a chart click navigates here with the
+   * built question as router state (see AskPage) instead. Deliberately
+   * does NOT submit on the owner's behalf — it only populates the draft, so
+   * they can review or edit it before choosing to send. Re-fires only if
+   * this prop changes to a NEW, different question while already mounted —
+   * never twice for the same one (e.g. a duplicate navigation with
+   * identical state), so it never stomps on text the owner has since typed.
    */
-  autoSubmitQuestion?: string
+  prefillQuestion?: string
   className?: string
 }
 
@@ -969,7 +972,7 @@ export default function ChatPanel({
   resolveAnswer,
   suggestions = DEFAULT_SUGGESTIONS,
   persistConversation = false,
-  autoSubmitQuestion,
+  prefillQuestion,
   className,
 }: ChatPanelProps) {
   // Real, live coverage range (lib/useDataCoverage) for the capability-ideas
@@ -1208,20 +1211,18 @@ export default function ChatPanel({
     [isPending, messages, resolveAnswer],
   )
 
-  // Kept in a ref, not a `submitQuestion` dependency below: submitQuestion's
-  // own identity changes on every `isPending`/`messages` change, and this
-  // effect must fire exactly once per distinct `autoSubmitQuestion` value,
-  // never once per keystroke-adjacent re-render.
-  const submitQuestionRef = React.useRef(submitQuestion)
-  submitQuestionRef.current = submitQuestion
-  const lastAutoSubmittedRef = React.useRef<string | null>(null)
+  // Populates the draft only — never submits on the owner's behalf. Guarded
+  // the same way the old auto-submit effect was: fires exactly once per
+  // distinct `prefillQuestion` value, so a duplicate navigation with the
+  // same question never re-stomps text the owner has since started editing.
+  const lastPrefilledRef = React.useRef<string | null>(null)
   React.useEffect(() => {
-    if (!autoSubmitQuestion || lastAutoSubmittedRef.current === autoSubmitQuestion) {
+    if (!prefillQuestion || lastPrefilledRef.current === prefillQuestion) {
       return
     }
-    lastAutoSubmittedRef.current = autoSubmitQuestion
-    void submitQuestionRef.current(autoSubmitQuestion)
-  }, [autoSubmitQuestion])
+    lastPrefilledRef.current = prefillQuestion
+    setDraft(prefillQuestion)
+  }, [prefillQuestion])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

@@ -747,7 +747,7 @@ describe('ChatPanel', () => {
   })
 
   // Spec 008 US1 — flag-based follow-up chips, show-your-work, and chart
-  // click-to-ask (via autoSubmitQuestion).
+  // click-to-ask (via prefillQuestion).
 
   it('renders a flag-based "why is this different?" follow-up exactly like any other suggestion', async () => {
     // ChatPanel itself never special-cases a flag-based suggestion — the
@@ -948,7 +948,7 @@ describe('ChatPanel', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('auto-submits a chart click-to-ask question exactly once on mount', async () => {
+  it('prefills a chart click-to-ask question into the composer without submitting it', async () => {
     const resolveAnswer = vi
       .fn<
         (
@@ -957,7 +957,7 @@ describe('ChatPanel', () => {
         ) => Promise<AssistantChatMessage>
       >()
       .mockResolvedValue({
-        id: 'test-answer-auto-submit',
+        id: 'test-answer-prefill',
         role: 'assistant',
         kind: 'answer',
         text: 'What happened on 2026-08-07 was a strong lunch rush.',
@@ -969,9 +969,53 @@ describe('ChatPanel', () => {
       <ChatPanel
         initialMessages={[]}
         resolveAnswer={resolveAnswer}
-        autoSubmitQuestion="What happened on 2026-08-07?"
+        prefillQuestion="What happened on 2026-08-07?"
       />,
     )
+
+    // Populates the composer...
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    expect(input).toHaveValue('What happened on 2026-08-07?')
+    // ...but never submits on the owner's behalf — no answer, no user
+    // message, no call to resolveAnswer, until they choose to send it.
+    expect(resolveAnswer).not.toHaveBeenCalled()
+    expect(
+      screen.queryByText('What happened on 2026-08-07 was a strong lunch rush.'),
+    ).not.toBeInTheDocument()
+  })
+
+  it('lets the owner edit and submit a prefilled chart click-to-ask question themselves', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-prefill-submitted',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'What happened on 2026-08-07 was a strong lunch rush.',
+        provenance: [],
+        askedAt: '2026-08-27T11:25:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        prefillQuestion="What happened on 2026-08-07?"
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, '{Enter}')
 
     expect(resolveAnswer).toHaveBeenCalledTimes(1)
     expect(resolveAnswer).toHaveBeenCalledWith(
@@ -984,11 +1028,6 @@ describe('ChatPanel', () => {
       await screen.findByText(
         'What happened on 2026-08-07 was a strong lunch rush.',
       ),
-    ).toBeInTheDocument()
-    // The literal question the chart click built is shown as the user's own
-    // message, exactly like a typed question — never hidden or summarized.
-    expect(
-      screen.getByText('What happened on 2026-08-07?'),
     ).toBeInTheDocument()
   })
 })
