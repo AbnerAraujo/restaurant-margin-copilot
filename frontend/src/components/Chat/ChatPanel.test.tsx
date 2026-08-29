@@ -568,6 +568,117 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('renders the tool-name chip from the real tool call even when the answer draws no chart', async () => {
+    // Regression test for a real QA repro: a day-of-month expense-pattern
+    // question answers in prose (with a source-row provenance note) but the
+    // backend's deriveVisualization never draws a chart for it. The tool
+    // chip must be keyed off `toolCalls`, not `visualization`, so it still
+    // shows which typed MCP tool actually ran.
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-no-viz-tool-chip',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Expenses tend to run higher in the first week of the month.',
+        // Six distinct source-row citations, matching the exact repro that
+        // surfaced this bug: a prose-only answer showing "6 source rows"
+        // and nothing naming which tool computed it.
+        provenance: Array.from({ length: 6 }, (_, index) => ({
+          source_file: 'daily_reconciliation.csv',
+          row_start: index + 1,
+          row_end: index + 1,
+          period_start: '2026-08-01',
+          period_end: '2026-08-06',
+        })),
+        toolCalls: [
+          {
+            name: 'get_expense_pattern',
+            result_json: { pattern: 'front_loaded' },
+          },
+        ],
+        askedAt: '2026-08-27T11:35:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(
+      input,
+      'Do expenses follow a pattern by day of month?{Enter}',
+    )
+
+    const answer = await screen.findByText(
+      'Expenses tend to run higher in the first week of the month.',
+    )
+    const bubble = answer.closest('li') as HTMLElement
+
+    // No chart was drawn — the old bug's exact repro — yet the tool chip
+    // must still appear, naming the real tool.
+    expect(
+      within(bubble).queryByRole('table'),
+    ).not.toBeInTheDocument()
+    expect(
+      within(bubble).getByText('get_expense_pattern', { selector: 'span.font-mono' }),
+    ).toBeInTheDocument()
+    expect(within(bubble).getByText('6 source rows')).toBeInTheDocument()
+  })
+
+  it('still shows the correct tool-name chip when an answer has both a tool call and a chart', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-viz-and-tool-chip',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Two days had discrepancy flags.',
+        provenance: [],
+        toolCalls: [
+          {
+            name: 'list_discrepancies',
+            result_json: { flagged_days: 2 },
+          },
+        ],
+        visualization: {
+          kind: 'table',
+          title: 'Flagged days',
+          source_tool: 'list_discrepancies',
+          columns: ['Date', 'Discrepancy'],
+          rows: [['2026-08-03', 'Duplicate order removed']],
+        },
+        askedAt: '2026-08-27T11:36:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'Which days had discrepancies?{Enter}')
+
+    const answer = await screen.findByText('Two days had discrepancy flags.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    expect(within(bubble).getByRole('table')).toBeInTheDocument()
+    expect(
+      within(bubble).getByText('list_discrepancies', { selector: 'span.font-mono' }),
+    ).toBeInTheDocument()
+  })
+
   it('renders deterministic follow-up chips under a successful answer, and submits one as a new question', async () => {
     const user = userEvent.setup()
     const resolveAnswer = vi
@@ -876,14 +987,25 @@ describe('ChatPanel', () => {
     const answer = await screen.findByText('Margin on 2026-08-07 was $375.82.')
     const bubble = answer.closest('li') as HTMLElement
 
-    // Collapsed by default: the raw JSON is not on screen until asked for.
-    expect(within(bubble).queryByText(/get_daily_summary/)).not.toBeInTheDocument()
+    // The tool-name chip (derived from the real tool call, independent of
+    // any visualization) is visible immediately — it is not gated behind
+    // the disclosure. Only the raw JSON is collapsed by default.
+    expect(
+      within(bubble).getByText('get_daily_summary', { selector: 'span.font-mono' }),
+    ).toBeInTheDocument()
+    expect(
+      within(bubble).queryByRole('group', { name: /tool calls behind this answer/i }),
+    ).not.toBeInTheDocument()
+    expect(within(bubble).queryByText(/"margin": "375\.82"/)).not.toBeInTheDocument()
 
     const toggle = within(bubble).getByRole('button', { name: /show your work/i })
     await user.click(toggle)
 
-    expect(within(bubble).getByText('get_daily_summary')).toBeInTheDocument()
-    expect(within(bubble).getByText(/"margin": "375\.82"/)).toBeInTheDocument()
+    const panel = within(bubble).getByRole('group', {
+      name: /tool calls behind this answer/i,
+    })
+    expect(within(panel).getByText('get_daily_summary')).toBeInTheDocument()
+    expect(within(panel).getByText(/"margin": "375\.82"/)).toBeInTheDocument()
   })
 
   it('renders no "show your work" affordance when an answer carries no tool calls', async () => {
