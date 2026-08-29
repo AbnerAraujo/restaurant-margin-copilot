@@ -1,18 +1,34 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  CAPABILITY_SUMMARY,
-  COVERAGE_PERIOD,
+  buildCapabilitySummary,
   EXAMPLE_QUESTIONS,
 } from '@/components/Chat/exampleQuestions'
 import HelpPage from './HelpPage'
+
+const COVERAGE_RESPONSE = { start: '2024-08-01', end: '2026-08-14', days: [] }
+
+// WhatYouCanAskPanel now fetches the real coverage range (useDataCoverage)
+// instead of a hardcoded string — every test needs a stubbed fetch so it
+// never makes a real network call and never depends on a real backend
+// happening to be running.
+function stubReconciliationFetch() {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => COVERAGE_RESPONSE,
+    }),
+  )
+}
 
 // HelpPage links to other routes with <Link>, which requires a router
 // context — the same reason other routed components' tests wrap in
 // MemoryRouter rather than rendering the bare component.
 function renderHelpPage() {
+  stubReconciliationFetch()
   return render(
     <MemoryRouter>
       <HelpPage />
@@ -21,6 +37,10 @@ function renderHelpPage() {
 }
 
 describe('HelpPage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders the page header', () => {
     renderHelpPage()
 
@@ -41,11 +61,16 @@ describe('HelpPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('renders the capability summary and coverage period from the single source of truth, not a hand-typed copy', () => {
+  it('renders the capability summary and coverage period from the real, live data range, not a hardcoded string', async () => {
     renderHelpPage()
 
-    expect(screen.getByText(CAPABILITY_SUMMARY)).toBeInTheDocument()
-    expect(screen.getByText(COVERAGE_PERIOD)).toBeInTheDocument()
+    const coveragePeriod = `${COVERAGE_RESPONSE.start} to ${COVERAGE_RESPONSE.end}`
+    await waitFor(() => {
+      expect(
+        screen.getByText(buildCapabilitySummary(coveragePeriod)),
+      ).toBeInTheDocument()
+    })
+    expect(screen.getByText(coveragePeriod)).toBeInTheDocument()
   })
 
   it('lists every example question and its answering tool, so it can never drift from the chat surface', () => {

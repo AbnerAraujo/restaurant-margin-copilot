@@ -17,12 +17,12 @@ import {
 import { Link } from 'react-router-dom'
 
 import {
-  CAPABILITY_SUMMARY,
-  COVERAGE_PERIOD,
+  buildCapabilitySummary,
   EXAMPLE_QUESTIONS,
   type ExampleQuestion,
 } from '@/components/Chat/exampleQuestions'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
+import { useDataCoverage } from '@/lib/useDataCoverage'
 
 /**
  * `/help` — in-app documentation for a first-time owner.
@@ -148,23 +148,30 @@ const TOOL_ICON: Record<ExampleQuestion['tool'], LucideIcon> = {
 }
 
 /**
- * Section 2 — pulled directly from `EXAMPLE_QUESTIONS`/`CAPABILITY_SUMMARY`,
- * the exact constants the chat surface (`ChatPanel.tsx`) renders its own
+ * Section 2 — pulled directly from `EXAMPLE_QUESTIONS`/`buildCapabilitySummary`,
+ * the exact source the chat surface (`ChatPanel.tsx`) renders its own
  * suggestion chips and capability blurb from. Adding an eighth MCP tool and
  * its example question there updates this page automatically — nothing
- * here is a hand-typed second copy of that list.
+ * here is a hand-typed second copy of that list. The coverage range itself
+ * comes from `useDataCoverage` (a live fetch), not a hardcoded date string —
+ * see that hook's doc comment for why this page used to go stale.
  */
 function WhatYouCanAskPanel() {
+  const coverage = useDataCoverage()
   return (
     <Panel aria-label="What you can ask" className="overflow-hidden">
       <div className="p-5 sm:p-6">
         <PanelHeader eyebrow="On the Ask page" title="What you can ask" />
-        <p className="mt-3 max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
-          {CAPABILITY_SUMMARY}
-        </p>
-        <div className="mt-3">
-          <Chip icon={CalendarRange}>{COVERAGE_PERIOD}</Chip>
-        </div>
+        {coverage.label ? (
+          <>
+            <p className="mt-3 max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
+              {buildCapabilitySummary(coverage.label)}
+            </p>
+            <div className="mt-3">
+              <Chip icon={CalendarRange}>{coverage.label}</Chip>
+            </div>
+          </>
+        ) : null}
       </div>
       <ul className="divide-y divide-border border-t border-border">
         {EXAMPLE_QUESTIONS.map((question) => {

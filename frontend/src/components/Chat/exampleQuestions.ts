@@ -69,14 +69,16 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
 /**
  * What the product answers, in one sentence, for the header of a
  * "here's what I can do" surface. Written by hand from the tool set rather
- * than asked of the model, for the same reason the list above is.
+ * than asked of the model, for the same reason the list above is — but the
+ * date range is a real parameter, not baked into this string. It used to be
+ * hardcoded to "2026-08-01 through 2026-08-14" (the original 14-day
+ * fixture's own window), which silently went stale the moment the live
+ * dataset grew to a multi-year synthetic history behind it — the sentence
+ * kept claiming a period that was no longer the only one this data covers.
+ * Callers get the real, current range from `useDataCoverage` (lib/) and pass
+ * it in here, so this claim can never drift from what the backend actually
+ * answers against.
  */
-export const CAPABILITY_SUMMARY =
-  'I answer questions about one restaurant’s reconciled daily margin, its period totals and best/worst days, its discrepancies, its promotion ROI, and how its delivery platforms compare on commission and promo cost — for 2026-08-01 through 2026-08-14, the only period this data covers.'
-
-/**
- * The same coverage window as a standalone label, for surfaces that show it as
- * a metadata chip rather than inside the sentence. One constant, so the chip
- * and the sentence can never drift apart and claim two different periods.
- */
-export const COVERAGE_PERIOD = '2026-08-01 to 2026-08-14'
+export function buildCapabilitySummary(coveragePeriod: string): string {
+  return `I answer questions about one restaurant’s reconciled daily margin, its period totals and best/worst days, its discrepancies, its promotion ROI, and how its delivery platforms compare on commission and promo cost — for ${coveragePeriod}, the only period this data covers.`
+}

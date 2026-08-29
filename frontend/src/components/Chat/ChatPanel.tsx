@@ -46,13 +46,13 @@ import AnswerText from '@/components/Chat/AnswerText'
 import { buildCompareToLastPeriodQuestion } from '@/components/Chat/comparePeriod'
 import SuggestionChips from '@/components/Chat/SuggestionChips'
 import {
-  CAPABILITY_SUMMARY,
-  COVERAGE_PERIOD,
+  buildCapabilitySummary,
   EXAMPLE_QUESTIONS,
   type ExampleQuestion,
 } from '@/components/Chat/exampleQuestions'
 import AnswerVisualizationView from '@/components/Charts/AnswerVisualizationView'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
+import { useDataCoverage } from '@/lib/useDataCoverage'
 
 // ---------------------------------------------------------------------------
 // Types — shaped to line up with QuestionInteraction in data-model.md and the
@@ -907,6 +907,10 @@ function EmptyState({
   suggestions: ExampleQuestion[]
   onSelect: (text: string) => void
 }) {
+  // Real, live coverage range (lib/useDataCoverage) — not a hardcoded date
+  // string. Renders nothing coverage-specific until it resolves rather than
+  // showing a stale or guessed range while loading.
+  const coverage = useDataCoverage()
   return (
     <li className="flex flex-col items-start gap-5 px-1 py-6">
       <div className="space-y-3">
@@ -917,12 +921,16 @@ function EmptyState({
             are scannable, and each is a claim the reader can check against
             what the app then does. */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <Chip icon={CalendarRange}>{COVERAGE_PERIOD}</Chip>
+          {coverage.label ? (
+            <Chip icon={CalendarRange}>{coverage.label}</Chip>
+          ) : null}
           <Chip icon={FileText}>Source rows on every figure</Chip>
         </div>
-        <p className="max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
-          {CAPABILITY_SUMMARY}
-        </p>
+        {coverage.label ? (
+          <p className="max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
+            {buildCapabilitySummary(coverage.label)}
+          </p>
+        ) : null}
       </div>
       <SuggestionChips
         label="Example questions"
@@ -964,6 +972,10 @@ export default function ChatPanel({
   autoSubmitQuestion,
   className,
 }: ChatPanelProps) {
+  // Real, live coverage range (lib/useDataCoverage) for the capability-ideas
+  // popover's summary sentence — see EmptyState's own use of this same hook
+  // for why it's fetched rather than hardcoded.
+  const coverage = useDataCoverage()
   // Restored synchronously in the initializer, not in an effect: mounting
   // empty and then swapping in the saved thread a frame later would flash
   // the empty state on every reload.
@@ -1480,9 +1492,11 @@ export default function ChatPanel({
                 </div>
               ) : null}
 
-              <p className="mb-1.5 text-xs text-muted-foreground">
-                {CAPABILITY_SUMMARY}
-              </p>
+              {coverage.label ? (
+                <p className="mb-1.5 text-xs text-muted-foreground">
+                  {buildCapabilitySummary(coverage.label)}
+                </p>
+              ) : null}
               <SuggestionChips
                 label="Example questions"
                 questions={suggestions}
