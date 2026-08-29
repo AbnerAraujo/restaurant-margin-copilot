@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import LogReplacementForm, { type FlaggedCampaign } from './LogReplacementForm'
+import { KNOWN_PLATFORMS } from '@/components/Chat/guidedQuestion'
 
 const FLAGGED: FlaggedCampaign[] = [
   { campaignId: 'JET-CAMP-LUNCHFIX', platform: 'Just Eat Takeaway' },
@@ -38,7 +39,7 @@ async function fillRequiredFields(
   user: ReturnType<typeof userEvent.setup>,
   overrides: { campaignId?: string; spend?: string } = {},
 ) {
-  await user.type(screen.getByLabelText(/platform/i), 'Just Eat Takeaway')
+  await user.selectOptions(screen.getByLabelText(/platform/i), 'Just Eat Takeaway')
   await user.type(
     screen.getByLabelText(/campaign identifier/i),
     overrides.campaignId ?? 'JET-CAMP-NEWREPLACEMENT',
@@ -64,6 +65,26 @@ describe('LogReplacementForm', () => {
     expect(screen.getByLabelText(/period end/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/spend/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/replacing a flagged campaign/i)).toBeInTheDocument()
+  })
+
+  it('constrains the platform field to a <select> offering ONLY the known platforms, never free text', () => {
+    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+
+    const platformField = screen.getByLabelText<HTMLSelectElement>(/^platform$/i)
+    // A real <select>, not a text <input> an owner could type "Ifood" into
+    // — the exact free-text gap that let "iFood" and "Ifood" diverge into
+    // two distinct database values (see the QA report this fixes).
+    expect(platformField.tagName).toBe('SELECT')
+
+    const optionLabels = Array.from(platformField.querySelectorAll('option')).map(
+      (option) => option.textContent,
+    )
+    // The blank placeholder, plus exactly the known platforms — one entry
+    // per platform, nothing invented and nothing duplicated.
+    expect(optionLabels).toEqual([
+      'Choose a platform',
+      ...KNOWN_PLATFORMS.map((p) => p.label),
+    ])
   })
 
   it('populates the replaces dropdown ONLY from the flagged campaigns already on screen', () => {
