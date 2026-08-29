@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 
@@ -238,6 +238,88 @@ describe('QuestionComposer', () => {
 
     expect(screen.getByText('What do you want to know?')).toBeInTheDocument()
     expect(screen.queryByLabelText('Date')).not.toBeInTheDocument()
+  })
+
+  it('blocks progression on an out-of-range single date with a clear inline error (Check a single day)', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer
+        open
+        onClose={vi.fn()}
+        onAsk={vi.fn()}
+        minDate="2024-08-01"
+        maxDate="2026-08-14"
+      />,
+    )
+
+    await user.click(screen.getByText('Check a single day'))
+
+    const dateInput = screen.getByLabelText('Date')
+    // The browser's own `max` constraint doesn't stop this value from
+    // landing in `value` — see QuestionComposer's DateField doc comment.
+    await user.type(dateInput, '2027-01-05')
+
+    expect(
+      screen.getByText('Choose a date between Aug 1, 2024 and Aug 14, 2026.'),
+    ).toBeInTheDocument()
+    expect(dateInput).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled()
+  })
+
+  it('blocks progression on an out-of-range period end date with a clear inline error (Get period totals)', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer
+        open
+        onClose={vi.fn()}
+        onAsk={vi.fn()}
+        minDate="2024-08-01"
+        maxDate="2026-08-14"
+      />,
+    )
+
+    await user.click(screen.getByText('Get period totals'))
+    await user.type(screen.getByLabelText('Start date'), '2026-08-01')
+    await user.type(screen.getByLabelText('End date'), '2027-01-05')
+
+    expect(
+      screen.getByText('Choose a date between Aug 1, 2024 and Aug 14, 2026.'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled()
+  })
+
+  it('traps Tab/Shift+Tab cycling within the dialog’s own focusable elements', async () => {
+    render(
+      <>
+        <button type="button">Outside before</button>
+        <QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} />
+        <button type="button">Outside after</button>
+      </>,
+    )
+
+    const dialog = screen.getByRole('dialog')
+    const focusable = within(dialog).getAllByRole('button')
+    expect(focusable.length).toBeGreaterThan(1)
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+
+    // Shift+Tab from the first element must wrap to the last, never escape
+    // to "Outside before".
+    first.focus()
+    fireEvent.keyDown(dialog, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(last)
+
+    // Tab from the last element must wrap back to the first, never escape
+    // to "Outside after".
+    fireEvent.keyDown(dialog, { key: 'Tab' })
+    expect(document.activeElement).toBe(first)
+
+    // The rest of the page is inert while the dialog is open — `inert`
+    // cascades to descendants, so it's set on the ancestor these buttons
+    // share (their render container), not repeated on every leaf.
+    expect(screen.getByText('Outside before').closest('[inert]')).not.toBeNull()
+    expect(screen.getByText('Outside after').closest('[inert]')).not.toBeNull()
+    expect(dialog.closest('[inert]')).toBeNull()
   })
 
   it('shows a loading state while campaigns are in flight', async () => {
