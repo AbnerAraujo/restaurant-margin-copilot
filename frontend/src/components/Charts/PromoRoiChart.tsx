@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -227,6 +227,19 @@ const COMPACT_REFUSAL_BOX_SIZE = 20
 // much longer than that chart's day-of-month digits, so fewer, better-
 // spaced ticks read cleanly where more, tighter ones would collide.
 const MAX_AXIS_TICKS = 8
+// Reported live at 29 real campaigns: each bar's invisible hover/click
+// hit-target was BAR_WIDTH (24) + 14px of padding on EACH side (52px
+// total) — a generous, easy-to-click affordance that made sense at the
+// original 4-campaign fixture's wide slots (124px+), but at MIN_SLOT_WIDTH
+// (28px) that 52px-wide hit-rect overlaps BOTH neighbors' hit-rects by a
+// large margin, so hovering near a slot boundary could trigger the WRONG
+// bar's tooltip ("getting data from the left bar"). HIT_RECT_MAX_PADDING
+// is now a ceiling, not a fixed value — the real padding used per-render
+// is clamped so adjacent hit-rects never overlap (see hitRectPadding
+// below), while still using the full 14px at low campaign counts where
+// slots are wide enough to afford it.
+const HIT_RECT_MAX_PADDING = 14
+const HIT_RECT_MIN_PADDING = 2
 
 /**
  * Y scale derived from the data, not hard-coded. The previous fixed
@@ -340,6 +353,36 @@ function PromoRoiChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(defaultTableOpen)
 
+  // Reported live: with few enough campaigns that the data-driven width
+  // stays under the panel's real available width, the chart rendered at
+  // its minimum computed size and left visible dead space to the right
+  // inside its own card, instead of using the space it actually has.
+  // Measured via ResizeObserver on the scroll-viewport div below (the one
+  // sized `w-full` by its parent card) rather than hard-coding a guess —
+  // this project's cards aren't a fixed width (sidebar/viewport-dependent),
+  // so only a real measurement is honest. Null until the first observation
+  // fires post-mount; chartWidth falls back to the data/CHART_WIDTH floor
+  // for that one initial render, matching this chart's behavior before this
+  // fix existed.
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [containerWidth, setContainerWidth] = useState<number | null>(null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    // jsdom (this project's test environment) has no ResizeObserver at
+    // all — same guard ChatPanel.tsx already uses for its own observers,
+    // rather than every test file needing to stub one just to mount this
+    // chart. Real browsers all have it; this only ever short-circuits
+    // under test, where chartWidth simply stays at its data/floor value.
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width
+      if (width) setContainerWidth(width)
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   // A `not_yet_attributed` campaign has nothing to plot yet — not a refusal,
   // just "hasn't been checked yet" — so it never reaches the bars, the
   // y-scale, or the SVG's slot layout. `data` (unfiltered) still drives the
@@ -348,10 +391,17 @@ function PromoRoiChart({
   const chartableData = data.filter(
     (datum) => datum.reason !== NOT_YET_ATTRIBUTED,
   )
-  const chartWidth = Math.max(
-    CHART_WIDTH,
-    MARGIN.left + MARGIN.right + chartableData.length * MIN_SLOT_WIDTH,
-  )
+  const dataWidth =
+    MARGIN.left + MARGIN.right + chartableData.length * MIN_SLOT_WIDTH
+  // The larger of: the base floor, what the data actually needs, and the
+  // real container width. When data needs more room than the container has
+  // (many campaigns), this stays exactly the old data-driven value and the
+  // wrapper below scrolls horizontally, unchanged. When the container has
+  // MORE room than the data needs (few campaigns, a wide panel), this now
+  // grows to fill it instead of leaving dead space — bars spread out to
+  // use the real width, via `plotWidth`/`slotWidth` below, which are both
+  // already derived from `chartWidth`.
+  const chartWidth = Math.max(CHART_WIDTH, dataWidth, containerWidth ?? 0)
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right
   const labelEveryBar = chartableData.length <= LABEL_ALL_MAX
   // Same formula as MarginTrendChart's tickLabelStep: 1-for-1 at small
@@ -361,6 +411,15 @@ function PromoRoiChart({
     ? 1
     : Math.max(1, Math.ceil(chartableData.length / MAX_AXIS_TICKS))
   const slotWidth = plotWidth / chartableData.length
+  // Never wider than half the room actually left in a slot after the bar
+  // itself, so adjacent bars' hit-rects can't overlap — clamped between
+  // HIT_RECT_MIN_PADDING (always a little easier to hit than the bar's
+  // bare pixels) and HIT_RECT_MAX_PADDING (the original generous value,
+  // still used whenever slots are wide enough to afford it).
+  const hitRectPadding = Math.min(
+    HIT_RECT_MAX_PADDING,
+    Math.max(HIT_RECT_MIN_PADDING, (slotWidth - BAR_WIDTH) / 2),
+  )
   const refusalBoxWidth = labelEveryBar
     ? REFUSAL_BOX_WIDTH
     : Math.min(REFUSAL_BOX_WIDTH, Math.max(COMPACT_REFUSAL_BOX_SIZE, slotWidth - 4))
@@ -402,7 +461,7 @@ function PromoRoiChart({
           the moment a bar chart with 20+ campaigns grows past CHART_WIDTH
           and starts scrolling, so every overlay would render squeezed
           into the visible viewport instead of tracking its actual bar. */}
-      <div className="w-full overflow-x-auto">
+      <div ref={containerRef} className="w-full overflow-x-auto">
         <div
           className="relative"
           style={chartWidth > CHART_WIDTH ? { width: chartWidth } : undefined}
@@ -505,9 +564,9 @@ function PromoRoiChart({
                 className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 <rect
-                  x={barX - 14}
+                  x={barX - hitRectPadding}
                   y={MARGIN.top}
-                  width={BAR_WIDTH + 28}
+                  width={BAR_WIDTH + hitRectPadding * 2}
                   height={PLOT_HEIGHT}
                   fill="transparent"
                 />
