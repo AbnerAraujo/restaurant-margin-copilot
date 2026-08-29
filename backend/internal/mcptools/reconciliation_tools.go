@@ -241,7 +241,13 @@ func periodMargin(ctx context.Context, q storage.Querier, p Period) (*periodMarg
 			End:           p.End,
 			DaysIncluded:  len(days),
 			MarginTotal:   money.FormatCents(marginCents),
-			SourceRowRefs: refs,
+			// collapseSourceRowRefsByFile (period_tools.go): the same
+			// per-row-per-day accumulation that produced a real
+			// 1,000,000+-token explain-step prompt on get_period_totals
+			// applies identically here — get_margin_delta sums two
+			// periods, each capable of spanning the same wide, real
+			// date range.
+			SourceRowRefs: collapseSourceRowRefsByFile(refs),
 		},
 	}, nil, nil
 }

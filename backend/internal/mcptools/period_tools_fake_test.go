@@ -50,7 +50,7 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 		{"2020-04-02", 2000, 4000, 400, 200, 1500, 3900},
 		{"2020-04-03", 1000, 1000, 100, 0, 5000, -3100},
 	}
-	for _, d := range days {
+	for i, d := range days {
 		date := sentinelDate(t, d.date)
 		day := reconcile.DailyReconciliation{
 			Date:               date,
@@ -59,7 +59,12 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 			RefundsCents:       d.refundCents,
 			InputCostsCents:    d.inputCostCents,
 			MarginCents:        d.marginCents,
-			SourceRowRefs:      []reconcile.SourceRowRef{{File: "test.csv", Row: 1}},
+			// A distinct row per day (1, 2, 3), not all the same row —
+			// so this test actually exercises collapseSourceRowRefsByFile's
+			// min/max collapsing (see period_tools.go's doc comment on
+			// that function for the real bug this collapsing fixes)
+			// rather than trivially collapsing 3 identical refs into 1.
+			SourceRowRefs: []reconcile.SourceRowRef{{File: "test.csv", Row: i + 1}},
 		}
 		// Attribute day 2's refund to Just Eat Takeaway (A15,
 		// docs/product-strategy.md) — a distinct source from the ifood
@@ -94,7 +99,16 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 	require.Equal(t, "65.00", result.BestDay.Margin)
 	require.Equal(t, "2020-04-03", result.WorstDay.Date)
 	require.Equal(t, "-31.00", result.WorstDay.Margin)
-	require.Len(t, result.SourceRowRefs, 3)
+	// Collapsed to the min and max row seen for "test.csv" (1 and 3, from
+	// the three days' distinct rows above) — not one entry per day. See
+	// collapseSourceRowRefsByFile's doc comment: this is the fix for a
+	// real live failure where an unbounded per-day ref list, multiplied
+	// across the full 744-day live dataset, pushed a single explain-step
+	// prompt past 1,000,000 tokens.
+	require.Equal(t, []reconcile.SourceRowRef{
+		{File: "test.csv", Row: 1},
+		{File: "test.csv", Row: 3},
+	}, result.SourceRowRefs)
 }
 
 // TestGetPeriodTotals_BestAndWorstDayTieBreakToEarliestDate_Fake proves the

@@ -102,6 +102,56 @@ type GetPeriodTotalsArgs struct {
 	Period Period `json:"period"`
 }
 
+// collapseSourceRowRefsByFile keeps exactly the first and last row seen per
+// source file, instead of one entry per row per day. Reported live, and
+// root-caused from the real failure: a period-totals question spanning the
+// live dataset's full 744-day history built up one SourceRowRef per row per
+// day (every delivery/POS/cost-sheet row that contributed to each day),
+// producing tens of thousands of entries for a single "overall" question —
+// serialized into the explain step's prompt, this pushed a real request to
+// over 1,000,000 tokens and the Anthropic API rejected it outright
+// (400: "prompt is too long"), surfacing to the owner as a bare "the
+// explanation step failed; please try again" with no indication why. This
+// was invisible at the original 14-day fixture scale (a handful of refs
+// total) and only became a real failure once the live dataset grew.
+//
+// Two refs per file (min row, max row) still satisfies Constitution
+// Principle IV — the exact file and the real row range it spans over the
+// requested period, re-derivable by anyone who wants the individual rows —
+// without the per-row explosion. Order-preserving by first appearance so a
+// caller iterating the result sees files in a stable, sensible order rather
+// than sorted arbitrarily.
+func collapseSourceRowRefsByFile(refs []reconcile.SourceRowRef) []reconcile.SourceRowRef {
+	type bounds struct{ min, max int }
+	seen := make(map[string]bounds)
+	var order []string
+	for _, ref := range refs {
+		b, ok := seen[ref.File]
+		if !ok {
+			seen[ref.File] = bounds{min: ref.Row, max: ref.Row}
+			order = append(order, ref.File)
+			continue
+		}
+		if ref.Row < b.min {
+			b.min = ref.Row
+		}
+		if ref.Row > b.max {
+			b.max = ref.Row
+		}
+		seen[ref.File] = b
+	}
+
+	collapsed := make([]reconcile.SourceRowRef, 0, len(order)*2)
+	for _, file := range order {
+		b := seen[file]
+		collapsed = append(collapsed, reconcile.SourceRowRef{File: file, Row: b.min})
+		if b.max != b.min {
+			collapsed = append(collapsed, reconcile.SourceRowRef{File: file, Row: b.max})
+		}
+	}
+	return collapsed
+}
+
 // GetPeriodTotals backs get_period_totals' core logic: sum every money
 // field and rank every day's margin across [period.Start, period.End].
 // Refuses (insufficient_data) rather than partially total a period, the
@@ -209,7 +259,7 @@ func GetPeriodTotals(ctx context.Context, q storage.Querier, period Period) (*Pe
 		AvgDailyMargin:          money.FormatCents(avgDailyMarginCents),
 		BestDay:                 DayMarginRef{Date: bestDate, Margin: money.FormatCents(bestMarginCents)},
 		WorstDay:                DayMarginRef{Date: worstDate, Margin: money.FormatCents(worstMarginCents)},
-		SourceRowRefs:           refs,
+		SourceRowRefs:           collapseSourceRowRefsByFile(refs),
 	}, nil, nil
 }
 

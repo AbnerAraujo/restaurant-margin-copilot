@@ -155,14 +155,18 @@ func TestGetMarginDelta_ComputesDeltaAcrossTwoFullPeriods(t *testing.T) {
 		{"1999-02-05", 2500},
 		{"1999-02-06", 4500},
 	}
-	for _, d := range days {
+	for i, d := range days {
 		date := sentinelDate(t, d.date)
 		deleteDay(t, conn, date)
 		_, err := storage.SaveDailyReconciliation(ctx, q, reconcile.DailyReconciliation{
 			Date:               date,
 			GrossSalesBySource: map[string]int64{"pos": d.marginCents},
 			MarginCents:        d.marginCents,
-			SourceRowRefs:      []reconcile.SourceRowRef{{File: "test.csv", Row: 1}},
+			// A distinct row per day, not all the same row — exercises
+			// collapseSourceRowRefsByFile's real min/max collapsing (see
+			// period_tools.go's doc comment) instead of trivially
+			// collapsing identical refs.
+			SourceRowRefs: []reconcile.SourceRowRef{{File: "test.csv", Row: i + 1}},
 		})
 		require.NoError(t, err)
 	}
@@ -180,8 +184,16 @@ func TestGetMarginDelta_ComputesDeltaAcrossTwoFullPeriods(t *testing.T) {
 	require.Equal(t, "70.00", result.PeriodB.MarginTotal)
 	require.Equal(t, 2, result.PeriodB.DaysIncluded)
 	require.Equal(t, "40.00", result.DeltaMarginTotal)
-	require.Len(t, result.PeriodA.SourceRowRefs, 2)
-	require.Len(t, result.PeriodB.SourceRowRefs, 2)
+	// Collapsed to the min/max row per file, not one entry per day (rows
+	// 1,2 for period A -> [1,2]; rows 3,4 for period B -> [3,4]).
+	require.Equal(t, []reconcile.SourceRowRef{
+		{File: "test.csv", Row: 1},
+		{File: "test.csv", Row: 2},
+	}, result.PeriodA.SourceRowRefs)
+	require.Equal(t, []reconcile.SourceRowRef{
+		{File: "test.csv", Row: 3},
+		{File: "test.csv", Row: 4},
+	}, result.PeriodB.SourceRowRefs)
 }
 
 func TestGetMarginDelta_InsufficientDataWhenPeriodHasMissingDay(t *testing.T) {

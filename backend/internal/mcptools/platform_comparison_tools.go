@@ -154,7 +154,12 @@ func ComparePlatformEconomics(ctx context.Context, q storage.Querier, period Per
 			PromoSpend:            money.FormatCents(promoSpendCents),
 			CombinedCost:          money.FormatCents(combinedCents),
 			CombinedEffectiveRate: effectiveRatePercent(combinedCents, grossCents),
-			SourceRowRefs:         refs,
+			// collapseSourceRowRefsByFile (period_tools.go): the same
+			// per-row-per-day accumulation that produced a real
+			// 1,000,000+-token explain-step prompt on get_period_totals
+			// applies here too — a wide period times every platform's
+			// own daily refs plus its promo-record refs.
+			SourceRowRefs: collapseSourceRowRefsByFile(refs),
 		})
 	}
 
