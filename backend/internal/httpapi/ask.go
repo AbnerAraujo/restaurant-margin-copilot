@@ -5,10 +5,12 @@
 // directly"; a later Integration phase does that).
 //
 // HandleAsk is the one place that sequences a whole question-answering
-// interaction: the ambiguity gate (internal/ambiguity, Claude Haiku 4.5)
-// first, then either a refusal/clarification short-circuit or the
-// explanation step (internal/explain, Claude Sonnet 5) against the typed
-// MCP tools — and, for every branch, an internal/instrumentation write.
+// interaction: the ambiguity gate (internal/ambiguity, Claude Sonnet 5 as
+// of 2026-08-29 — moved off Haiku 4.5 after a multi-year date-comparison
+// bug, see internal/llmclient/cost.go) first, then either a
+// refusal/clarification short-circuit or the explanation step
+// (internal/explain, Claude Sonnet 5) against the typed MCP tools — and,
+// for every branch, an internal/instrumentation write.
 //
 // Instrumentation design decision (tasks.md's T022/T026 note: the gate's
 // own tokens/cost/latency must be logged "even when the request never

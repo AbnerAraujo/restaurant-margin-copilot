@@ -191,9 +191,10 @@ func isLocalhostOrigin(origin string) bool {
 }
 
 // buildAskDeps wires httpapi.HandleAsk's dependencies: internal/llmclient's
-// shared Anthropic client (Claude Haiku 4.5 for the gate, Claude Sonnet 5
-// for explain — both model choices live inside internal/ambiguity and
-// internal/explain themselves, not here), internal/mcptools' in-process MCP
+// shared Anthropic client (Claude Sonnet 5 for both the gate and explain,
+// as of 2026-08-29 — see internal/llmclient/cost.go — both model choices
+// live inside internal/ambiguity and internal/explain themselves, not
+// here), internal/mcptools' in-process MCP
 // server (the fixed, typed tool set backing every explain call), and
 // internal/instrumentation's Logger backed by the storage.InstrumentationAdapter
 // (storage/instrumentation.go) — the concrete adapter internal/instrumentation's

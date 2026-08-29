@@ -1,9 +1,11 @@
 // Package llmclient is the single shared entry point this project uses to
-// talk to the Anthropic API. Both the ambiguity gate (internal/ambiguity/,
-// Claude Haiku 4.5) and the explanation step (internal/explain/, Claude
-// Sonnet 5) go through this wrapper rather than constructing their own SDK
-// clients, so every model call is instrumented, timed, and timed-out the
-// same way (Constitution Principle VI, Principle III's timeout requirement).
+// talk to the Anthropic API. The ambiguity gate (internal/ambiguity/,
+// Claude Sonnet 5 as of 2026-08-29 — see cost.go), the explanation step
+// (internal/explain/, Claude Sonnet 5), and the paraphrase-match cache
+// classifier (internal/paraphrase/, Claude Haiku 4.5) all go through this
+// wrapper rather than constructing their own SDK clients, so every model
+// call is instrumented, timed, and timed-out the same way (Constitution
+// Principle VI, Principle III's timeout requirement).
 //
 // This package never computes a margin, delta, or ROI figure — it only
 // carries a question/prompt to the model and returns the model's text and

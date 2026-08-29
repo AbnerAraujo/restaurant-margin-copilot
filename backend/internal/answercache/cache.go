@@ -1,6 +1,7 @@
 // Package answercache is an exact-match cache in front of POST /api/ask's
 // two model calls. A repeated question is served from Postgres without
-// invoking either the Claude Haiku 4.5 ambiguity gate or the Claude Sonnet 5
+// invoking either the Claude Sonnet 5 ambiguity gate (Haiku 4.5 before
+// 2026-08-29 — see internal/llmclient/cost.go) or the Claude Sonnet 5
 // explanation step — the whole point being that the tokens are not spent at
 // all, not that they are spent more cheaply.
 //
