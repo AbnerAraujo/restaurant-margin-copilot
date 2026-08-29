@@ -80,7 +80,15 @@ const (
 	randSeed       = 20260815 // deterministic — same seed, same dataset, every regen
 )
 
-var startDate = time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+// startDate is chosen so the 730-day run ends the day BEFORE
+// backend/fixtures' own window begins (2026-08-01) — the synthetic
+// history is the two years leading UP TO the evaluation fixture, never
+// dates after it. The first generation of this tool got this backwards
+// (started the day AFTER the fixture, running through 2028) and produced
+// a dataset whose "today" was over a year in the real-world future —
+// confusing in any chat answer that narrates a date. Everything here must
+// stay in the past relative to both the fixture and the real calendar.
+var startDate = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
 
 func main() {
 	outDir := flag.String("out", "data/live", "output directory for the generated CSVs (relative to backend/)")
