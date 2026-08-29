@@ -124,9 +124,21 @@
      stays legible against a near-black surface, and still kept teal-leaning
      so it never converges on --success's yellow-green (#22c55e) below.
      Hover/active lighten toward white in dark mode instead of darkening
-     toward black. */
+     toward black.
+
+     --primary-foreground was pure white here, which measured 3.03:1 against
+     #1fa876 — under the 4.5:1 AA floor for normal text (this drives every
+     primary button label and the user's own dark-mode chat bubbles). Reusing
+     the same near-black-on-saturated-color treatment already applied to
+     --success-foreground/--warning-foreground below (same rationale: light
+     text doesn't clear AA on a mid-lightness saturated dark-mode fill, dark
+     text does) fixes it without touching the brand hue itself:
+       #052e14 on #1fa876 -> 4.92:1 (verified via WCAG relative-luminance
+       formula, not eyeballed; hover/active lighten further toward white so
+       they clear by more, not less). Light mode is unaffected (still
+       #ffffff on #0e6e52 -> 6.23:1). */
   --primary: #1fa876;
-  --primary-foreground: #ffffff;
+  --primary-foreground: #052e14;
   --primary-hover: color-mix(in oklch, var(--primary) 88%, white);
   --primary-active: color-mix(in oklch, var(--primary) 78%, white);
 
