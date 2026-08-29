@@ -60,6 +60,25 @@ function day(date: string, margin: string) {
   return { date, margin, discrepancy_flags: [] }
 }
 
+function flaggedDay(date: string, margin: string) {
+  return { date, margin, discrepancy_flags: [{ type: 'refund', detail: 'test' }] }
+}
+
+/** N consecutive days ending on 2026-08-14, oldest first — for exercising
+ * the "At a glance" strip's 90-day window against a history much longer
+ * than 90 real days, the way the live 744-day dataset now does. */
+function consecutiveDays(count: number, flaggedIndexes: number[] = []) {
+  const end = new Date('2026-08-14T00:00:00Z')
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(end)
+    d.setUTCDate(d.getUTCDate() - (count - 1 - i))
+    const date = d.toISOString().slice(0, 10)
+    return flaggedIndexes.includes(i)
+      ? flaggedDay(date, '10.00')
+      : day(date, '10.00')
+  })
+}
+
 describe('HomePage', () => {
   // HomePage now mounts PointsCard, which fetches GET /api/badges. Stubbed
   // so these navigation assertions don't depend on a live backend; the card's
@@ -256,5 +275,29 @@ describe('HomePage', () => {
 
     await screen.findAllByText('2026-08-02')
     expect(screen.queryByRole('region', { name: 'Year over year' })).not.toBeInTheDocument()
+  })
+
+  it('scopes "Days reconciled" and "Days with a flag" to the trailing 90 days, not the full all-time history', async () => {
+    // 100 real days, 2 flagged outside the trailing-90 window (days 0 and 5)
+    // and 1 flagged inside it (day 95) — the stats must reflect only the 90
+    // most recent days: 90 reconciled, 1 flagged, never 100 and 3.
+    stubFetchByUrl(consecutiveDays(100, [0, 5, 95]))
+    renderHomePageWithRoutes()
+
+    const glance = await screen.findByRole('region', { name: 'At a glance' })
+    expect(within(glance).getByText('90')).toBeInTheDocument()
+    expect(within(glance).getByText('1')).toBeInTheDocument()
+    expect(within(glance).getByText('last 90 days')).toBeInTheDocument()
+  })
+
+  it('shows the true, smaller count and an honest window label when fewer than 90 days of history exist', async () => {
+    stubFetchByUrl(consecutiveDays(12, [3]))
+    renderHomePageWithRoutes()
+
+    const glance = await screen.findByRole('region', { name: 'At a glance' })
+    expect(within(glance).getByText('12')).toBeInTheDocument()
+    expect(within(glance).getByText('1')).toBeInTheDocument()
+    expect(within(glance).getByText('last 12 days')).toBeInTheDocument()
+    expect(within(glance).queryByText(/last 90 days/)).not.toBeInTheDocument()
   })
 })

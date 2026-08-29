@@ -36,6 +36,32 @@ import { cn } from '@/lib/utils'
  */
 const RECENT_CLOSE_ROWS = 7
 
+/**
+ * How many trailing days the "At a glance" strip's "Days reconciled" and
+ * "Days with a flag" stats scope to. Reported live: with a 744+ day history
+ * now behind this page, an ALL-TIME count of either stopped answering "how's
+ * the business doing lately" and started reading as a lifetime tally instead
+ * — 290 all-time flagged days looks alarming next to a business that's fine
+ * this week. Scoped to a recent window instead, same reasoning `homeInsights`
+ * already applies to the "This week" card, just at a 90-day rather than
+ * 7-day horizon. "Latest margin" (a single most-recent-day figure) and
+ * "Steward points" (a cumulative REWARDS total, not a health metric — scoping
+ * it would misread as points being lost) are deliberately left as-is.
+ */
+const RECENT_WINDOW_SIZE = 90
+
+/**
+ * Labels the actual trailing window used for the "At a glance" stats —
+ * "last 90 days" once that much history exists, or the true (smaller) count
+ * before then, so a fresh install never claims a 90-day window it doesn't
+ * have yet (same degrade-honestly discipline `deriveBiggestWinCatch`'s
+ * `windowDays` already applies to the "This week" card).
+ */
+function recentWindowLabel(actualDays: number): string {
+  if (actualDays >= RECENT_WINDOW_SIZE) return `last ${RECENT_WINDOW_SIZE} days`
+  return `last ${actualDays} day${actualDays === 1 ? '' : 's'}`
+}
+
 interface ReconciliationApiResponse {
   start: string
   end: string
@@ -207,7 +233,13 @@ export default function HomePage() {
 
   const days: DaySummaryApi[] = reconciliation?.days ?? []
   const latest = days[days.length - 1]
-  const flaggedDays = days.filter((day) => day.discrepancy_flags.length > 0)
+  // "At a glance" recency window (see RECENT_WINDOW_SIZE) — "Days reconciled"
+  // and "Days with a flag" read from this, never the full all-time `days`.
+  const recentDays = days.slice(-RECENT_WINDOW_SIZE)
+  const recentFlaggedDays = recentDays.filter(
+    (day) => day.discrepancy_flags.length > 0,
+  )
+  const windowLabel = recentWindowLabel(recentDays.length)
   const margin = latest ? Number(latest.margin) : 0
   const marginTrend = deriveMarginTrend(days)
   const biggestWinCatch = deriveBiggestWinCatch(days)
@@ -242,18 +274,19 @@ export default function HomePage() {
             />
             <Stat
               label="Days reconciled"
-              value={String(days.length)}
+              value={String(recentDays.length)}
               icon={CalendarCheck}
+              caption={windowLabel}
             />
             <Stat
               label="Days with a flag"
-              value={String(flaggedDays.length)}
+              value={String(recentFlaggedDays.length)}
               icon={ShieldCheck}
-              tooltip="A flag means the reconciliation engine caught something worth a second look on that day — a duplicate order, a refund, or a number outside the usual range. It's already been caught and accounted for, not an open problem waiting on you."
+              tooltip={`A flag means the reconciliation engine caught something worth a second look on that day — a duplicate order, a refund, or a number outside the usual range. It's already been caught and accounted for, not an open problem waiting on you. Scoped to the ${windowLabel}.`}
               caption={
-                flaggedDays.length === 0
-                  ? 'Nothing caught'
-                  : 'Caught before you paid'
+                recentFlaggedDays.length === 0
+                  ? `Nothing caught, ${windowLabel}`
+                  : `Caught before you paid, ${windowLabel}`
               }
             />
             <Stat
