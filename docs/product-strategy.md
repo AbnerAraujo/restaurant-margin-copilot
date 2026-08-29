@@ -1319,3 +1319,66 @@ theme; the chat capability answer and the recolored refusal bubble), both
 before and after a full cache clear (`DELETE FROM answer_cache,
 answer_cache_hit, paraphrase_match`) and a clean restart of both the backend
 and frontend dev servers.
+
+## 2026-08-28 — Presentation audit: stale numbers fixed, two new slides, roadmap slide drafted with Fable
+
+Triggered by direct user feedback that the deck had fallen behind the real
+product: a re-read found the "Token discipline" slide still stating **226
+interactions / $1.57 spent** and the closing slide stating **$3.35** — two
+different, both-stale numbers for the same metric in the same deck, next to
+each other in the nav order. The real, live number from `question_interaction`
+at the time of this check: **430 interactions, $3.5603 spent**. Both slides
+now state $3.56 consistently, and the cost-track bar's fill width was
+recalculated (31.4% → 71.2% of the $5 cap) rather than left visually wrong
+under a corrected label. The architecture flow, ports/adapters, and RFC
+model-table slides all still said "6 typed tools" — fixed to 7 in every
+instance (`get_period_totals` shipped after those slides were last touched).
+The ports/adapters diagram's `internal/ambiguity` box also only showed
+"Claude Haiku 4.5," with no mention of the conditional Sonnet writer pass
+that already existed in the real code — added a second line to the box
+rather than leaving the diagram one step behind the architecture doc, which
+already documented the writer pass correctly.
+
+**Two new slides**, matching the existing `democard`/`cols3`/`livenote`
+visual pattern exactly rather than introducing a new one:
+
+- **"A steward that sounds like one — and knows its own job"** (slide 9c,
+  right after the existing follow-up-suggestions slide): three real
+  before/after moments — the capability-question path, the red→green
+  refusal recolor, and the warm narration opening — each with a real
+  logged value (`interactions: [] · $0.000 spent`, `tone: destructive →
+  refusal`, an actual narrated opening line).
+- **"The one input the owner builds by hand — replacing the sheet"**
+  (the new second-to-last slide, immediately before Closing): a staged,
+  three-phase roadmap for reducing the manual supplier-cost-sheet burden —
+  the one input source this product's spec 007 already identifies as
+  entirely owner-constructed rather than received as a file.
+
+**The roadmap slide's content was drafted by Claude Fable 5, not this
+session's default model**, per this project's own standing model-selection
+discipline (documented in this same file's earlier sections: Haiku for
+cheap classification, Sonnet for the default work, Fable reserved for a
+small number of genuinely pivotal decisions). A product roadmap that a real
+Prosus/Toqan PM interviewer will read and probe — is the sequencing
+defensible, is each risk actually honest, does "why Prosus specifically"
+hold up — is exactly the kind of judgment call this project's own
+model-tier framework says to spend the expensive model on, not routine
+prose editing. Fable was briefed with the real spec 007 constraints (manual,
+irregular-cadence CSV re-keying), this project's durable architectural
+rules (single-LLM-vendor, deterministic-engine/probabilistic-narrator, never
+open-ended computation), and Prosus's actual distribution asset (724K
+restaurants already on its rails, per this deck's own Vision slide) — and
+asked for a staged plan with one honest risk named per phase, not
+roadmap-as-marketing. Its three phases (Snap the Invoice → Prosus Rails
+First → Price Watch, each sequenced explicitly by what it depends on and
+what's genuinely hard about it) were used close to verbatim, condensed only
+for slide space.
+
+Verified via a headless-browser navigation sweep of the whole deck
+(`document.querySelectorAll('.slide').length` — 25, up from 24 before this
+pass, matching the two slides actually added) with zero console errors, and
+via direct screenshots of the token-discipline, architecture, ports/
+adapters, new steward-warmth, new roadmap, and closing slides, confirming
+every number renders correctly and no layout regressed. `README.md`'s own
+slide-count and cumulative-spend lines were updated to match (23→25 slides,
+$3.35→$3.56).
