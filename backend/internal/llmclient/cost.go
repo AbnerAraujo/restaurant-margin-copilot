@@ -17,12 +17,26 @@ import (
 // inside a 2024-08-01..2026-08-14 window) as unanswerable — a real date-
 // comparison failure across a year boundary, not a prompt-wording issue
 // (three separate prompt fixes were tried and verified NOT to resolve it;
-// swapping the same call to Sonnet resolved it on the first try). This is
-// "the cheapest model that clears the bar" applied honestly: Haiku no
-// longer clears the bar for this task at this data scale, so it is no
-// longer the model used for it, even though the cost roughly doubles for
-// every classification call (a fully refusal-correct classifier being
-// worth more than the second and third fractions of a cent it costs).
+// swapping the same call to Sonnet resolved it on the first try).
+//
+// The honest correction to that account, recorded here because every doc
+// points at this comment: the model swap treated a symptom. Comparing an
+// explicit, parseable date against a known min/max window is date
+// ARITHMETIC — exactly what Constitution Principle I says no model, cheap
+// or expensive, may be responsible for — and for a while the gate's prompt
+// delegated that comparison to the model anyway; the three failed prompt
+// fixes were attempts to make a model better at arithmetic rather than
+// taking the arithmetic away from it. The real fix is
+// internal/ambiguity/daterange.go's deterministic pre-check: clearly
+// out-of-range explicit dates are refused in Go before any model call
+// (zero tokens), and in-range explicit dates reach the model with their
+// range verdicts precomputed as fact. Sonnet stays as the gate's model for
+// what is genuinely a language job — resolving relative/vague date
+// phrasing, date forms the conservative Go parser deliberately doesn't
+// attempt, and the answerable/ambiguous/unanswerable judgment itself —
+// which is "the cheapest model that clears the bar" applied to the job as
+// now correctly scoped, at roughly double Haiku's cost per classification
+// call.
 //
 // ModelExplanation narrates an already-computed result — reusing the same
 // constant here (both now "claude-sonnet-5") rather than adding a second

@@ -471,18 +471,26 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		}
 
 		if decision.Result == instrumentation.GateUnanswerable {
+			// A refusal decided by the deterministic date-range pre-check
+			// never touched a model: record it under an honest "no model"
+			// label with its genuinely zero token/cost figures, rather than
+			// attributing a phantom zero-token call to the gate's model.
+			gateModel := llmclient.ModelAmbiguityGate
+			if decision.DeterministicPrecheck {
+				gateModel = ambiguity.PrecheckModelLabel
+			}
 			deps.logOrWarn(ctx, instrumentation.Record{
 				QuestionText:        req.Question,
 				AmbiguityGateResult: instrumentation.GateUnanswerable,
 				RefusalFired:        true,
-				ModelUsed:           llmclient.ModelAmbiguityGate,
+				ModelUsed:           gateModel,
 				InputTokens:         decision.InputTokens,
 				OutputTokens:        decision.OutputTokens,
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
 			interactions := []CostInteraction{
-				{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+				{ModelUsed: gateModel, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
 			}
 			interactions = deps.logWriterCallIfAny(ctx, req.Question, decision, false, true, interactions)
 			deps.writeAndCache(ctx, w, resolved, AskResponse{

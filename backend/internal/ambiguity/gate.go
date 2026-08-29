@@ -11,9 +11,15 @@
 // 2026-08-29 after Haiku was caught, live and reproducibly, misclassifying
 // a fully in-range dated question as unanswerable once the real dataset
 // grew to a multi-year span — see llmclient/cost.go's doc comment for the
-// full account. "The cheapest model that clears the bar" now means Sonnet
-// for this step, not Haiku, because Haiku stopped clearing the bar at this
-// data scale.
+// full account, including the honest correction to it: that failure was a
+// date-range COMPARISON on an explicitly dated question, i.e. arithmetic
+// that Constitution Principle I says should never have been any model's
+// job. The real fix is daterange.go's deterministic pre-check, which now
+// refuses clearly-out-of-range explicit dates in Go before any model call
+// runs, and hands the model precomputed range verdicts for explicit dates
+// that are in range. The Sonnet swap remains in place for what is left to
+// the model — genuinely linguistic date resolution and the classification
+// judgment itself — but it no longer carries the range arithmetic.
 //
 // Two passes, not one model doing both jobs, even though both now happen
 // to run on the same underlying model: classification is ALWAYS one
@@ -37,15 +43,17 @@
 // classifies question text only and never touches real data itself. The
 // one exception, deliberately kept narrow: New takes the data's actual
 // min/max date range as plain strings (resolved once by the caller, via
-// internal/storage.LoadDataDateRange, at process start) so the gate's
-// system prompt can ground relative date language ("today", "this week", a
-// year-less date) against what the data really covers, instead of either a
-// hardcoded literal that can drift from the fixtures actually loaded, or
-// the host machine's wall-clock date — see systemPrompt's "Date grounding"
-// paragraph and docs/plan.md's mistakes log ("date-year grounding
-// defect") for the bug this fixes. This package still never queries
-// Postgres, never imports internal/storage, and never touches question
-// data beyond the string it's asked to classify.
+// internal/storage.LoadDataDateRange, at process start) so that (a) the
+// gate's system prompt can ground relative date language ("today", "this
+// week", a year-less date) against what the data really covers, instead of
+// either a hardcoded literal that can drift from the fixtures actually
+// loaded, or the host machine's wall-clock date — see systemPrompt's "Date
+// grounding" paragraph and docs/plan.md's mistakes log ("date-year
+// grounding defect") for the bug this fixes — and (b) daterange.go's
+// deterministic pre-check can compare explicit, parseable dates against
+// that window in Go before any model call happens at all. This package
+// still never queries Postgres, never imports internal/storage, and never
+// touches question data beyond the string it's asked to classify.
 //
 // It also never writes a QuestionInteraction row itself —
 // internal/httpapi.HandleAsk does that, via internal/instrumentation, for
@@ -130,6 +138,17 @@ type Decision struct {
 	OutputTokens     int64
 	EstimatedCostUSD float64
 	LatencyMs        int64
+
+	// DeterministicPrecheck marks a Decision produced entirely by
+	// daterange.go's explicit-date range pre-check: every explicit date the
+	// question named falls wholly outside the known data window, so the
+	// refusal was decided and worded in Go and NO model call of any kind was
+	// made — every token/cost/latency field above is genuinely zero, and
+	// Writer is nil by construction. The caller (internal/httpapi) uses this
+	// to record the interaction honestly as a no-model refusal
+	// (PrecheckModelLabel) rather than attributing a zero-token call to the
+	// gate's model.
+	DeterministicPrecheck bool
 
 	// Writer is set when — and only when — this Decision's ambiguous/
 	// unanswerable message was upgraded by the second-pass Claude Sonnet 5
@@ -221,21 +240,53 @@ type PreviousExchange struct {
 	AnswerText string
 }
 
+// PrecheckModelLabel is what a deterministic pre-check refusal records as
+// its "model used" — an honest sentinel, not a model ID: no model ran, no
+// tokens were spent, and instrumentation must say so rather than logging a
+// zero-token call against a real model name.
+const PrecheckModelLabel = "none (deterministic date-range pre-check)"
+
+// messageCreator is the one llmclient capability this package uses,
+// declared as an interface at the point of use so tests can substitute a
+// counting fake and assert — structurally, not by trust — that the
+// deterministic pre-check path makes zero model calls. *llmclient.Client
+// satisfies it directly.
+type messageCreator interface {
+	CreateMessage(ctx context.Context, req llmclient.MessageRequest) (*llmclient.MessageResult, error)
+}
+
 // Gate wraps an llmclient.Client to run this project's answerable /
 // ambiguous / unanswerable classification.
 type Gate struct {
-	client       *llmclient.Client
+	client       messageCreator
 	systemPrompt string
+	// dataStart/dataEnd (YYYY-MM-DD, inclusive) are kept beyond prompt
+	// construction because daterange.go's deterministic pre-check compares
+	// explicit dates against them in Go on every Classify call.
+	dataStart string
+	dataEnd   string
 }
 
 // New constructs a Gate over client (internal/llmclient, Phase 1).
 // dataStart/dataEnd are the actual inclusive min/max date (YYYY-MM-DD) this
 // product has reconciled data for — the caller (cmd/server/main.go)
 // resolves these once via internal/storage.LoadDataDateRange at process
-// start, so the gate's classification prompt reflects the real data
-// actually loaded rather than a hardcoded literal baked into this package.
+// start, so the gate's classification prompt and its deterministic
+// date-range pre-check both reflect the real data actually loaded rather
+// than a hardcoded literal baked into this package.
 func New(client *llmclient.Client, dataStart, dataEnd string) *Gate {
-	return &Gate{client: client, systemPrompt: buildSystemPrompt(dataStart, dataEnd)}
+	return newGate(client, dataStart, dataEnd)
+}
+
+// newGate is New minus the concrete client type, for tests that inject a
+// counting fake messageCreator.
+func newGate(client messageCreator, dataStart, dataEnd string) *Gate {
+	return &Gate{
+		client:       client,
+		systemPrompt: buildSystemPrompt(dataStart, dataEnd),
+		dataStart:    dataStart,
+		dataEnd:      dataEnd,
+	}
 }
 
 // gateResponse is the fixed JSON shape systemPrompt instructs the model to
@@ -270,9 +321,38 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 		return nil, ErrEmptyQuestion
 	}
 
+	// Deterministic date-range pre-check (daterange.go), BEFORE any model
+	// call: range inclusion for an explicit, parseable date is arithmetic
+	// (Constitution Principle I), so it is decided here in Go, never by the
+	// model. It runs on the user's own new text only — never on composed
+	// follow-up context, whose quoted previous answers legitimately contain
+	// in-range dates that are not what the user is asking about now.
+	check := checkExplicitDateRange(question, g.dataStart, g.dataEnd)
+	if check != nil && check.AllOutOfRange {
+		// Refused with zero model calls: no classification call, no writer
+		// pass. The refusal text is composed from the same facts a model
+		// would have been handed, so there is nothing for a writer pass to
+		// improve — and spending tokens polishing a deterministic refusal
+		// would defeat the point of having decided it deterministically.
+		return &Decision{
+			Result:                instrumentation.GateUnanswerable,
+			RefusalReason:         precheckRefusalReason(check.Verdicts, g.dataStart, g.dataEnd),
+			DeterministicPrecheck: true,
+		}, nil
+	}
+
 	resolved := ComposeFollowUp(question, pending)
 	if pending == nil || strings.TrimSpace(pending.ClarifyingQuestion) == "" {
 		resolved = ComposeAnswerFollowUp(question, previousAnswer)
+	}
+	if check != nil {
+		// At least one explicit date IS in range (or the mentions are
+		// mixed): the model still classifies the question, but every range
+		// verdict Go could compute travels with it as settled fact, so the
+		// model never re-derives date-range inclusion for a parseable date
+		// — the exact arithmetic-in-the-model failure the 2026-08-29
+		// incident exposed.
+		resolved += "\n\n" + precheckFactNote(check.Verdicts, g.dataStart, g.dataEnd)
 	}
 
 	resp, err := g.client.CreateMessage(ctx, llmclient.MessageRequest{
@@ -704,8 +784,8 @@ func extractJSONObject(text string) string {
 // rule (clarify OR state an assumption, never both, never neither).
 //
 // %[1]s/%[2]s are the actual data date range (buildSystemPrompt's
-// dataStart/dataEnd) substituted in twice each: once in the plain data
-// description, and once in the "Date grounding" paragraph, which is the
+// dataStart/dataEnd) substituted in throughout: in the plain data
+// description, and in the "Date grounding" paragraph, which is the
 // direct fix for the year-omission/wrong-year defect docs/plan.md's
 // mistakes log records (a question with no year, or relative language
 // like "today"/"this week", was sometimes resolved against the real
@@ -723,8 +803,8 @@ Date grounding — read this before classifying any question that mentions a dat
 - This product's only notion of "now"/"today" is %[2]s, the last date it has any data for. Never use the real-world current calendar date for that purpose — you do not know it reliably, and guessing at it (including inventing a plausible-sounding year) is exactly the failure this rule exists to prevent.
 - Relative language — "today", "yesterday", "this week", "last week", "the weekend" — MUST be resolved as an offset from %[2]s, not from the real world's current date. E.g. "this week" is a trailing window ending %[2]s; "last week" is the 7 days before that.
 - A date given without a year (e.g. "August 3rd", "the 2nd", "Aug 1") MUST be resolved against %[2]s (this product's "today") — assume the most recent occurrence of that month/day at or before %[2]s, since that is what "today" and recent relative language ("this week", "last week") already anchor to elsewhere in this prompt. Do not ask a clarifying question about the year, and never state or imply the real-world current year.
-- Before concluding a fully-dated question (one that already names a year) falls outside %[1]s..%[2]s, do the actual comparison explicitly and carefully: a later calendar year is always a later date regardless of month (e.g. any month in 2026 is after any month in 2024) — a date is out of range only if it is truly earlier than %[1]s or truly later than %[2]s once compared this way, never assumed from a superficial reading.
-- Only classify a dated question as "unanswerable" for being outside the range if, once resolved per the rule above, the date still plainly falls outside %[1]s..%[2]s (e.g. a full date that explicitly names a different year, or a month/day that cannot exist within this window at all).
+- Range comparison for explicitly dated references is NOT your job. A deterministic pre-check in Go parses common explicit date forms (an ISO date, "July 2026", "August 9, 2025", a bare year) and compares them against %[1]s..%[2]s before you are ever called: a question whose explicit dates all fall outside the range is refused before this prompt runs, and any explicit reference the pre-check did recognize reaches you inside a "[Deterministic date-range check]" block with its verdict already computed. Treat those verdicts as settled fact — never re-derive, second-guess, or contradict them, and never classify a question as unanswerable on date-range grounds when its reference is marked IN RANGE.
+- Only when a dated reference carries NO precomputed verdict (a phrasing the pre-check does not parse, e.g. "the seventh month of 2026") does the comparison fall to you as a fallback: do it explicitly and carefully — a later calendar year is always a later date regardless of month (e.g. any month in 2026 is after any month in 2024) — and classify "unanswerable" for range reasons only if the resolved date is truly earlier than %[1]s or truly later than %[2]s once compared this way, never assumed from a superficial reading.
 
 Campaign/promotion references — read this before classifying any question that names a specific campaign or promotion:
 - This product's promotion data is identified by campaign_id codes (e.g. IFOOD-CAMP-BOOST01, JET-CAMP-LUNCHFIX). A user may reasonably refer to a real campaign by a shortened fragment of its id (e.g. "LUNCHFIX", "BOOST01"), or by a full human-readable display name that embeds the id (e.g. "Banner Ad - Lunch Fix Menu (JET-CAMP-LUNCHFIX)"), rather than typing the exact id.
