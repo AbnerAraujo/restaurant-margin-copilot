@@ -1,9 +1,22 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HomePage from './HomePage'
+
+// jsdom has no ResizeObserver; Radix's Tooltip needs one to position itself
+// on open. Scoped to this file like ChatPanel's/AskPage's own tests.
+beforeAll(() => {
+  if (!('ResizeObserver' in globalThis)) {
+    class ResizeObserverStub {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    globalThis.ResizeObserver = ResizeObserverStub
+  }
+})
 
 /**
  * Renders `HomePage` inside a real router with stub destination routes, so
@@ -308,6 +321,53 @@ describe('HomePage', () => {
     await screen.findByText('Recent closes')
     expect(
       screen.getByRole('button', { name: 'What does "Status" mean?' }),
+    ).toBeInTheDocument()
+  })
+
+  it('names the specific flag(s) that fired on a given day, not just a generic explanation', async () => {
+    stubFetchByUrl([
+      {
+        date: '2026-08-13',
+        margin: '100.00',
+        discrepancy_flags: [
+          {
+            type: 'duplicate_order_removed',
+            detail: 'Duplicate order removed',
+          },
+        ],
+      },
+      {
+        date: '2026-08-14',
+        margin: '120.00',
+        discrepancy_flags: [
+          { type: 'refund', detail: 'Refund netted to sale date' },
+          {
+            type: 'anomaly_threshold_exceeded',
+            detail: 'Margin outside the usual range',
+          },
+        ],
+      },
+    ])
+    renderHomePageWithRoutes()
+
+    await screen.findByText('Recent closes')
+
+    const singleFlagHint = screen.getByRole('button', {
+      name: 'What flagged 2026-08-13?',
+    })
+    await userEvent.hover(singleFlagHint)
+    expect(
+      await screen.findByText('Duplicate order removed'),
+    ).toBeInTheDocument()
+
+    const multiFlagHint = screen.getByRole('button', {
+      name: 'What flagged 2026-08-14?',
+    })
+    await userEvent.hover(multiFlagHint)
+    expect(
+      await screen.findByText(
+        'Refund netted to sale date · Margin outside the usual range',
+      ),
     ).toBeInTheDocument()
   })
 })

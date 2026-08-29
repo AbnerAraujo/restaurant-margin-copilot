@@ -514,12 +514,27 @@ export default function HomePage() {
                         </th>
                         <td className="px-5 py-3">
                           {flagged ? (
-                            <Chip icon={ShieldCheck} tone="warning">
-                              {day.discrepancy_flags.length}{' '}
-                              {day.discrepancy_flags.length === 1
-                                ? 'flag'
-                                : 'flags'}
-                            </Chip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  type="button"
+                                  className="rounded-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                  aria-label={`What flagged ${day.date}?`}
+                                >
+                                  <Chip icon={ShieldCheck} tone="warning">
+                                    {day.discrepancy_flags.length}{' '}
+                                    {day.discrepancy_flags.length === 1
+                                      ? 'flag'
+                                      : 'flags'}
+                                  </Chip>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {day.discrepancy_flags
+                                  .map((flag) => flag.detail)
+                                  .join(' · ')}
+                              </TooltipContent>
+                            </Tooltip>
                           ) : (
                             <Chip tone="success">Clean</Chip>
                           )}
