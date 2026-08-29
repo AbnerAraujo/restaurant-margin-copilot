@@ -7,6 +7,7 @@ import { Panel, PanelHeader } from '@/components/ui/page'
 import { ApiError, postJson } from '@/lib/api'
 import { usePoints } from '@/components/Points/usePoints'
 import { CENTS_PER_POINT } from '@/components/Points/pointValues'
+import { KNOWN_PLATFORMS } from '@/components/Chat/guidedQuestion'
 
 /**
  * The minimal shape spec 002-badge-expansion's User Story 3 needs (plan.md's
@@ -162,13 +163,34 @@ export default function LogReplacementForm({
           <label htmlFor="lrf-platform" className="text-xs font-medium text-foreground">
             Platform
           </label>
-          <Input
+          {/*
+            A fixed <select> over KNOWN_PLATFORMS (the same list
+            QuestionComposer.tsx's guided platform picker already uses,
+            mirroring the backend's own knownComparatorPlatforms), not the
+            free-text <Input> this used to be. That free-text field is
+            exactly how "iFood" and "Ifood" ended up as two distinct,
+            silently-diverging platform values in the database (duplicate
+            "IFOOD ROI" stat cards, a filter that dropped half the
+            platform's campaigns, under-reported spend) — the option's
+            *value* is p.label (the exact display string
+            reconcile.PromotionRoiRecord.Platform carries, e.g. "iFood"),
+            not p.value (the lowercase comparator-tool source key), since
+            that's what this endpoint persists and the backend now
+            validates against (see promotions_create.go).
+          */}
+          <Select
             id="lrf-platform"
             required
-            placeholder="e.g. iFood"
             value={platform}
             onChange={(event) => setPlatform(event.target.value)}
-          />
+          >
+            <option value="">Choose a platform</option>
+            {KNOWN_PLATFORMS.map((p) => (
+              <option key={p.value} value={p.label}>
+                {p.label}
+              </option>
+            ))}
+          </Select>
         </div>
 
         <div className="flex flex-col gap-1.5">

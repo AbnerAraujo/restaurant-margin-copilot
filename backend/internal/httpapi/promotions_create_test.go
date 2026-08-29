@@ -81,7 +81,7 @@ func TestHandleCreatePromotion_RefusesAReplacesClaimAgainstANonFlaggedCampaign(t
 	require.NoError(t, err)
 
 	rec := doCreatePromotion(t, q, map[string]any{
-		"platform":    "TestPlatform",
+		"platform":    "iFood",
 		"campaign_id": newCampaignID,
 		"period":      map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
 		"spend":       "50.00",
@@ -150,7 +150,7 @@ func TestHandleCreatePromotion_NoReplacesClaimNeedsNoFlaggedCampaignAtAll(t *tes
 	})
 
 	rec := doCreatePromotion(t, q, map[string]any{
-		"platform":    "TestPlatform",
+		"platform":    "iFood",
 		"campaign_id": newCampaignID,
 		"period":      map[string]string{"start": "1999-07-01", "end": "1999-07-07"},
 		"spend":       "40.00",
@@ -178,7 +178,7 @@ func TestHandleCreatePromotion_RejectsMalformedInput(t *testing.T) {
 		{
 			name: "missing campaign_id",
 			body: map[string]any{
-				"platform": "TestPlatform",
+				"platform": "iFood",
 				"period":   map[string]string{"start": "1999-08-01", "end": "1999-08-07"},
 				"spend":    "10.00",
 			},
@@ -186,7 +186,7 @@ func TestHandleCreatePromotion_RejectsMalformedInput(t *testing.T) {
 		{
 			name: "malformed spend is refused, never coerced to zero",
 			body: map[string]any{
-				"platform":    "TestPlatform",
+				"platform":    "iFood",
 				"campaign_id": "TEST-HTTPAPI-SENTINEL-BAD-SPEND",
 				"period":      map[string]string{"start": "1999-08-01", "end": "1999-08-07"},
 				"spend":       "not-a-number",
@@ -195,7 +195,7 @@ func TestHandleCreatePromotion_RejectsMalformedInput(t *testing.T) {
 		{
 			name: "end before start is refused, never silently swapped",
 			body: map[string]any{
-				"platform":    "TestPlatform",
+				"platform":    "iFood",
 				"campaign_id": "TEST-HTTPAPI-SENTINEL-BAD-PERIOD",
 				"period":      map[string]string{"start": "1999-08-07", "end": "1999-08-01"},
 				"spend":       "10.00",
@@ -248,7 +248,7 @@ func TestHandleCreatePromotion_PayWithPointsRefusesWhenBalanceInsufficient(t *te
 	})
 
 	rec := doCreatePromotion(t, q, map[string]any{
-		"platform":       "TestPlatform",
+		"platform":       "iFood",
 		"campaign_id":    campaignID,
 		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
 		"spend":          "999999999.00",
@@ -288,7 +288,7 @@ func TestHandleCreatePromotion_PayWithPointsSucceedsAndDeductsBalance(t *testing
 	})
 
 	rec := doCreatePromotion(t, q, map[string]any{
-		"platform":       "TestPlatform",
+		"platform":       "iFood",
 		"campaign_id":    campaignID,
 		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
 		"spend":          "0.10",
@@ -325,7 +325,7 @@ func TestHandleCreatePromotion_RejectsAnUnknownPaymentMethod(t *testing.T) {
 	_, q := httpapiConnectOrSkip(t)
 
 	rec := doCreatePromotion(t, q, map[string]any{
-		"platform":       "TestPlatform",
+		"platform":       "iFood",
 		"campaign_id":    "TEST-HTTPAPI-SENTINEL-BAD-PAYMENT-METHOD",
 		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
 		"spend":          "10.00",
@@ -333,6 +333,41 @@ func TestHandleCreatePromotion_RejectsAnUnknownPaymentMethod(t *testing.T) {
 	})
 
 	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+// TestHandleCreatePromotion_RejectsAnUnrecognizedPlatform is the fix for the
+// exact data-integrity bug a QA pass found: this endpoint's platform field
+// used to be unconstrained free text, and an owner (or a client bug) typing
+// "Ifood" instead of "iFood" silently created a second, distinct platform
+// value — duplicate "IFOOD ROI" stat cards, a filter dropdown that dropped
+// half the platform's campaigns, under-reported spend. The wrong casing
+// itself is the value under test here: a platform that is anything other
+// than exactly one of mcptools.KnownPlatformDisplayNames() must now be
+// refused with a typed 400, never silently accepted and persisted.
+func TestHandleCreatePromotion_RejectsAnUnrecognizedPlatform(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+
+	campaignID := "TEST-HTTPAPI-SENTINEL-BAD-PLATFORM-CASING"
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), "DELETE FROM promotion_roi_record WHERE campaign_id = $1", campaignID)
+	})
+
+	rec := doCreatePromotion(t, q, map[string]any{
+		"platform":    "Ifood",
+		"campaign_id": campaignID,
+		"period":      map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
+		"spend":       "10.00",
+	})
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "invalid_input", body["error"])
+
+	var count int
+	require.NoError(t, conn.QueryRow(context.Background(), "SELECT count(*) FROM promotion_roi_record WHERE campaign_id = $1", campaignID).Scan(&count))
+	require.Equal(t, 0, count, "a refused platform value must never be persisted")
 }
 
 func intPtrHTTP(v int) *int       { return &v }
