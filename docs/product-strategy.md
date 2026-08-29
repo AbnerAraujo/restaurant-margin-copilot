@@ -1540,3 +1540,63 @@ live-Postgres tests for the success and insufficient-balance paths) and the
 full frontend suite (148/148, `tsc -b --noEmit` clean). `docs/openapi.yaml`
 and the generated `docs/api.html` updated and republished to match the
 real new request/response shape.
+
+## 2026-08-28 — Two years of synthetic operating history for the live database
+
+Requested directly: a real 2-year dataset (`backend/cmd/gendata`, a proper
+Go tool, not an ad hoc script) so the running app has a genuine growth
+story to explore, rather than the 14-day evaluation window alone. Deliberately
+kept separate from `backend/fixtures/` — the small, hand-authored, deliberately
+messy set the promptfoo eval harness and every accuracy number in this
+document depend on — nothing there was touched. The new data lands in
+`backend/data/live/` (already `.gitignore`d, already understood as the
+"real exploration" directory, not new scope) for the 730 days immediately
+after the fixture's own window ends (2026-08-15 through 2028-08-13).
+
+**The honesty check worth recording.** The ask was "grow to around $20,000/
+month in profit." Real-world research (a dedicated research agent, not
+guessed) found that figure implies $250-400k/month revenue if read as true
+bottom-line net profit after labor and rent for one restaurant location —
+implausible for a single site. This product's own "margin" metric is
+narrower by design (gross sales minus commissions minus refunds minus
+input costs — it never computes labor, rent, or any other overhead at
+all), so $20k/month in *this metric* lands at a modest, realistic ~$32-34k/
+month gross revenue for one location — the target was honored as asked,
+on the metric this product actually computes, with the distinction
+disclosed rather than silently reinterpreted or silently overclaimed.
+
+**Growth curve**: a logistic S-curve (faster in year 1, decelerating in
+year 2 — a real small-restaurant ramp, not sustained flat compound growth,
+per the same research), $14,000/mo gross at day 1 to $33,500/mo gross at
+day 730. Realized result: June/July 2028 land at $21.6k-23.0k/month
+margin, on target.
+
+**Two real bugs the first generation run surfaced and this one fixes**:
+(1) week-bucketed cost-sheet invoicing used fixed day offsets that could
+land past the actual last generated day on a partial final week, producing
+a phantom extra "day" with cost-sheet data but no matching sales data at
+all (`missing_delivery_source`) — fixed by stepping per-category
+day-indices directly, bounded by `len(days)`, so an invoice date can never
+exceed the real range. (2) once-a-week invoicing per category produced
+single invoices large enough to swing daily margin by $700-2000 in either
+direction — real lumpiness, but enough to make the intended smooth growth
+curve read as random noise instead. Tightened to 2-4 day cadences per
+category, cutting single-invoice size roughly in half.
+
+**Promotion ROI is computed from real tagged orders, not a random flag.**
+`reconcile.ComputePromotionRoiRecords`'s real formula is
+sum(subtotal of matching-campaign_id orders) − spend — so hitting a
+specific positive/negative outcome per campaign meant computing a target
+attributed-revenue figure per campaign up front (1.3-2.5× spend for an
+intended positive outcome, 0.25-0.7× for negative) and tagging orders
+during that campaign's window until reaching it, rather than a flat
+per-order tagging probability that would let the real ROI fall out
+however ticket sizes happened to land. 25 campaigns generated, a genuine
+mix of positive and negative outcomes.
+
+Verified live: 730 days reconciled with zero ingestion errors, points
+balance and badge counts both scale correctly against the larger dataset
+(`GET /api/badges` returns real, non-fabricated totals), and the backend's
+resolved date-grounding range extends correctly to 2028-08-13 after a
+clean restart — confirmed via direct curl calls against the running
+server, not assumed from the ingest log alone.
