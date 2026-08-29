@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
 import BadgeDisplay, { type ReconciliationBadge } from './BadgeDisplay'
@@ -108,6 +109,58 @@ describe('BadgeDisplay', () => {
 
     expect(screen.getByText('Clean Close')).toBeInTheDocument()
     expect(screen.getByLabelText(/Clean Close, Aug 14/i)).toBeInTheDocument()
+  })
+
+  it('collapses many Discrepancy Catcher days into one expandable count pill, never one row per day', async () => {
+    const user = userEvent.setup()
+    const children: ReconciliationBadge[] = [
+      {
+        id: '2026-09-01-discrepancy_catcher',
+        type: 'discrepancy_catcher',
+        date: '2026-09-01',
+        detail: 'gross revenue deviates 35.7% from the trailing average',
+      },
+      {
+        id: '2026-09-04-discrepancy_catcher',
+        type: 'discrepancy_catcher',
+        date: '2026-09-04',
+        detail: 'duplicate order 9931 removed',
+      },
+    ]
+    const summary: ReconciliationBadge = {
+      id: 'discrepancy_catcher-summary-2026-09-01-2026-09-04',
+      type: 'discrepancy_catcher',
+      date: '2026-09-04',
+      count: 34,
+      children,
+    }
+
+    render(<BadgeDisplay badges={[summary]} />)
+
+    // Collapsed by default: one row on screen, not 34.
+    expect(screen.getAllByRole('listitem')).toHaveLength(1)
+    expect(screen.getByText('Discrepancy Catcher ×34')).toBeInTheDocument()
+    expect(
+      screen.queryByText('duplicate order 9931 removed'),
+    ).not.toBeInTheDocument()
+
+    const toggle = screen.getByRole('button', { name: /discrepancy catcher, 34 days/i })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    // Every individual day's detail is still reachable, just one click away.
+    expect(
+      screen.getByText('gross revenue deviates 35.7% from the trailing average'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('duplicate order 9931 removed')).toBeInTheDocument()
+
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(
+      screen.queryByText('duplicate order 9931 removed'),
+    ).not.toBeInTheDocument()
   })
 
   it('falls back to the raw string when a badge date is not parseable', () => {

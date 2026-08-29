@@ -72,12 +72,96 @@ export interface MarginTrendChartProps {
 const CHART_WIDTH = 700
 const CHART_HEIGHT = 300
 const MARGIN = { top: 40, right: 12, bottom: 40, left: 44 }
-const PLOT_WIDTH = CHART_WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
 
 const BAR_WIDTH = 24 // mark spec: bars <= 24px thick
 const BAR_RADIUS = 4
 const MISSING_CAPSULE_HEIGHT = 28
+
+// ---------------------------------------------------------------------------
+// Scale — the live 2-year dataset (744 days) exposed a real bug the 14-day
+// fixture never could: `PLOT_WIDTH / data.length` with a FIXED 24px
+// `BAR_WIDTH` means bars start overlapping the moment a period holds more
+// than ~27 days, and by 744 days every bar overlaps every neighbor into one
+// solid, unreadable block — a diverging bar chart simply is not the right
+// mark past a few dozen categories (dataviz skill: bars <= 24px thick and
+// unclamped is a per-bar promise this chart cannot keep at unbounded N).
+//
+// Two changes, both scoped to fire only once a period is actually too wide
+// to read, so the default 14-day fixture and any period under
+// MAX_DISPLAY_BARS renders pixel-identical to before:
+//
+//  1. `aggregateForDisplay` buckets consecutive days once there would be more
+//     than MAX_DISPLAY_BARS of them, so the chart is never asked to plot more
+//     bars than it can given a real BAR_WIDTH. A 744-day period buckets into
+//     7-day (weekly) totals; a 90-day period stays daily. Buckets are dated
+//     to their FIRST day and sum the days actually present — a bucket with no
+//     reconciled day at all is `margin: null` (still an explicit gap, never a
+//     fabricated $0), the same honesty rule the unbucketed chart already
+//     applied per day.
+//  2. The SVG's own width now grows with however many bars are actually
+//     rendered (MIN_SLOT_WIDTH per bar) instead of staying pinned to 700px —
+//     the existing `overflow-x-auto` wrapper turns that into a horizontal
+//     scroll for a wide chart rather than a squeeze, matching how this app
+//     already treats overflow everywhere else (the badge/table panels).
+// ---------------------------------------------------------------------------
+
+const MAX_DISPLAY_BARS = 120
+const MIN_SLOT_WIDTH = 28 // BAR_WIDTH + a visible gutter between neighbors
+
+interface DisplayDatum {
+  /** ISO date of the bucket's first day (single day when unbucketed). */
+  date: string
+  /** ISO date of the bucket's last day — equal to `date` when unbucketed. */
+  rangeEndDate: string
+  /** Sum of the days actually present in the bucket, or null if none are. */
+  margin: number | null
+  daysPresent: number
+  daysInBucket: number
+}
+
+/**
+ * Groups `data` into buckets of `bucketDays` consecutive entries so the
+ * chart never plots more than MAX_DISPLAY_BARS bars. Returns `bucketDays: 1`
+ * (one bucket per day, unchanged from before this fix) whenever `data`
+ * already fits, which is every case this app shipped and tested against
+ * until the 2-year dataset.
+ */
+function aggregateForDisplay(data: DailyMarginDatum[]): {
+  display: DisplayDatum[]
+  bucketDays: number
+} {
+  const bucketDays = Math.max(1, Math.ceil(data.length / MAX_DISPLAY_BARS))
+  if (bucketDays === 1) {
+    return {
+      display: data.map((datum) => ({
+        date: datum.date,
+        rangeEndDate: datum.date,
+        margin: datum.margin,
+        daysPresent: datum.margin === null ? 0 : 1,
+        daysInBucket: 1,
+      })),
+      bucketDays,
+    }
+  }
+
+  const display: DisplayDatum[] = []
+  for (let start = 0; start < data.length; start += bucketDays) {
+    const bucket = data.slice(start, start + bucketDays)
+    const present = bucket.filter(
+      (datum): datum is DailyMarginDatum & { margin: number } =>
+        datum.margin !== null,
+    )
+    display.push({
+      date: bucket[0].date,
+      rangeEndDate: bucket[bucket.length - 1].date,
+      margin: present.length === 0 ? null : present.reduce((sum, d) => sum + d.margin, 0),
+      daysPresent: present.length,
+      daysInBucket: bucket.length,
+    })
+  }
+  return { display, bucketDays }
+}
 
 /**
  * Y scale derived from the data rather than hard-coded. The previous fixed
@@ -89,7 +173,7 @@ const MISSING_CAPSULE_HEIGHT = 28
  * Ticks are stepped on a round 100/200/500 so the labels stay readable
  * whatever the range turns out to be.
  */
-function buildScale(data: DailyMarginDatum[]) {
+function buildScale(data: DisplayDatum[]) {
   const values = data
     .map((datum) => datum.margin)
     .filter((value): value is number => value !== null)
@@ -139,6 +223,13 @@ function formatMonthDay(iso: string): string {
   })
 }
 
+/** A single day reads as "Aug 7"; a bucketed range reads as "Aug 7 – 13" so a
+ *  weekly total is never mistaken for one day's figure. */
+function formatBarDateLabel(datum: DisplayDatum): string {
+  if (datum.date === datum.rangeEndDate) return formatMonthDay(datum.date)
+  return `${formatMonthDay(datum.date)} – ${formatMonthDay(datum.rangeEndDate)}`
+}
+
 function formatSignedUsd(value: number): string {
   const magnitude = Math.abs(value).toLocaleString('en-US', {
     style: 'currency',
@@ -150,7 +241,7 @@ function formatSignedUsd(value: number): string {
 }
 
 interface BarGeometry {
-  datum: DailyMarginDatum
+  datum: DisplayDatum
   index: number
   slotCenterX: number
   barX: number
@@ -161,10 +252,11 @@ interface BarGeometry {
 }
 
 function buildBars(
-  data: DailyMarginDatum[],
+  data: DisplayDatum[],
   yToPixel: (value: number) => number,
+  plotWidth: number,
 ): BarGeometry[] {
-  const slotWidth = PLOT_WIDTH / data.length
+  const slotWidth = plotWidth / data.length
   return data.map((datum, index) => {
     const slotCenterX = MARGIN.left + slotWidth * (index + 0.5)
     const barX = slotCenterX - BAR_WIDTH / 2
@@ -217,16 +309,38 @@ function MarginTrendChart({
   const missingDates = data
     .filter((datum) => datum.margin === null)
     .map((datum) => formatMonthDay(datum.date))
+  // Enumerating every missing date in the aria-label reads fine at 1-2 gaps;
+  // a real 2-year period can have dozens, which would turn one sentence into
+  // an unreadable wall of dates — so it collapses to a count past a handful.
+  const missingDatesSummary =
+    missingDates.length === 0
+      ? ''
+      : missingDates.length <= 3
+        ? `, with ${missingDates.join(' and ')} flagged as missing data`
+        : `, with ${missingDates.length} days flagged as missing data`
 
-  const { ticks, yToPixel, baselineY } = buildScale(data)
-  const bars = buildBars(data, yToPixel)
-  const values = data
+  const { display, bucketDays } = aggregateForDisplay(data)
+  const chartWidth = Math.max(
+    CHART_WIDTH,
+    MARGIN.left + MARGIN.right + display.length * MIN_SLOT_WIDTH,
+  )
+  const plotWidth = chartWidth - MARGIN.left - MARGIN.right
+  // Never label every bar past ~14 of them — the fixture's 14-day chart
+  // keeps its exact previous look (one tick per day), while a bucketed
+  // multi-year chart shows at most ~14 evenly-spaced ticks instead of an
+  // illegible smear of overlapping text.
+  const tickLabelStep =
+    display.length <= 14 ? 1 : Math.ceil(display.length / 14)
+
+  const { ticks, yToPixel, baselineY } = buildScale(display)
+  const bars = buildBars(display, yToPixel, plotWidth)
+  const values = display
     .map((d) => d.margin)
     .filter((v): v is number => v !== null)
   const maxValue = Math.max(...values)
   const minValue = Math.min(...values)
-  const maxIndex = data.findIndex((d) => d.margin === maxValue)
-  const minIndex = data.findIndex((d) => d.margin === minValue)
+  const maxIndex = display.findIndex((d) => d.margin === maxValue)
+  const minIndex = display.findIndex((d) => d.margin === minValue)
 
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
 
@@ -242,25 +356,43 @@ function MarginTrendChart({
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           {data.length}-Day Margin Trend
         </h2>
+        {bucketDays > 1 ? (
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Grouped into {display.length} {bucketDays}-day totals so{' '}
+            {data.length} days stay readable — every day is still in the
+            table below.
+          </p>
+        ) : null}
       </figcaption>
 
       <div className="relative w-full overflow-x-auto">
         <svg
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
           // per-day targets below (axe nested-interactive).
           role="group"
           aria-label={`Bar chart of daily reconciled margin, ${rangeLabel}${
-            missingDates.length > 0
-              ? `, with ${missingDates.join(' and ')} flagged as missing data`
+            bucketDays > 1
+              ? `, grouped into ${display.length} ${bucketDays}-day totals`
               : ''
-          }`}
-          // Capped at its own design width. `w-full` alone let the viewBox
-          // scale up inside the widened 1200px content column, which enlarges
-          // the SVG's text with it — axis ticks rendered at roughly 20px and
-          // the whole chart read as a blown-up thumbnail.
-          style={{ maxWidth: CHART_WIDTH }}
-          className="h-auto w-full min-w-[420px]"
+          }${missingDatesSummary}`}
+          // Capped at its own design width (`w-full` alone let the viewBox
+          // scale up inside the widened 1200px content column, which
+          // enlarges the SVG's text with it — axis ticks rendered at roughly
+          // 20px and the whole chart read as a blown-up thumbnail). Once
+          // bucketing has widened the design width past the base 700px,
+          // switching from a responsive `w-full` to a FIXED pixel width is
+          // what actually makes the wrapper's `overflow-x-auto` scroll: a
+          // percentage width still resolves to the (narrower) panel's own
+          // width, which would silently rescale every bar back down instead
+          // of giving each one its real, readable BAR_WIDTH.
+          style={
+            chartWidth > CHART_WIDTH ? { width: chartWidth } : { maxWidth: chartWidth }
+          }
+          className={cn(
+            'h-auto min-w-[420px]',
+            chartWidth > CHART_WIDTH ? '' : 'w-full',
+          )}
         >
           <defs>
             <pattern
@@ -288,7 +420,7 @@ function MarginTrendChart({
             <g key={tick}>
               <line
                 x1={MARGIN.left}
-                x2={CHART_WIDTH - MARGIN.right}
+                x2={chartWidth - MARGIN.right}
                 y1={yToPixel(tick)}
                 y2={yToPixel(tick)}
                 stroke="var(--border)"
@@ -310,7 +442,7 @@ function MarginTrendChart({
           {/* Baseline — the primary above/below cue, independent of color */}
           <line
             x1={MARGIN.left}
-            x2={CHART_WIDTH - MARGIN.right}
+            x2={chartWidth - MARGIN.right}
             y1={baselineY}
             y2={baselineY}
             stroke="var(--border)"
@@ -321,9 +453,14 @@ function MarginTrendChart({
             const { datum, index, slotCenterX, barX, isMissing, isPositive } =
               bar
             const isExtreme = index === maxIndex || index === minIndex
+            const barDateLabel = formatBarDateLabel(datum)
             const focusLabel = isMissing
-              ? `${formatMonthDay(datum.date)}: no data, ${MISSING_MARGIN_REASON.toLowerCase()}`
-              : `${formatMonthDay(datum.date)}: ${formatSignedUsd(datum.margin as number)}`
+              ? `${barDateLabel}: no data, ${MISSING_MARGIN_REASON.toLowerCase()}`
+              : `${barDateLabel}: ${formatSignedUsd(datum.margin as number)}${
+                  bucketDays > 1
+                    ? ` (${datum.daysPresent} of ${datum.daysInBucket} days reconciled)`
+                    : ''
+                }`
 
             return (
               <g
@@ -404,15 +541,22 @@ function MarginTrendChart({
                   </text>
                 ) : null}
 
-                {/* X-axis day-of-month tick */}
-                <text
-                  x={slotCenterX}
-                  y={CHART_HEIGHT - MARGIN.bottom + 16}
-                  textAnchor="middle"
-                  className="fill-muted-foreground text-[10px] tabular-nums"
-                >
-                  {dayOfMonth(datum.date)}
-                </text>
+                {/* X-axis tick — day-of-month when unbucketed (unchanged from
+                    before this fix), the bucket's short start date once
+                    grouped (a bare day-of-month digit is ambiguous once a
+                    bar spans several days across a month boundary). Sparse
+                    past 14 bars so a wide chart shows ~14 readable ticks
+                    instead of one illegible label per bar. */}
+                {index % tickLabelStep === 0 ? (
+                  <text
+                    x={slotCenterX}
+                    y={CHART_HEIGHT - MARGIN.bottom + 16}
+                    textAnchor="middle"
+                    className="fill-muted-foreground text-[10px] tabular-nums"
+                  >
+                    {bucketDays > 1 ? formatMonthDay(datum.date) : dayOfMonth(datum.date)}
+                  </text>
+                ) : null}
                 {isMissing ? (
                   <text
                     x={slotCenterX}
@@ -431,7 +575,7 @@ function MarginTrendChart({
               Sits ABOVE the plot: on the tick row it overlapped the last
               day-of-month tick once the day count came from live data. */}
           <text
-            x={CHART_WIDTH - MARGIN.right}
+            x={chartWidth - MARGIN.right}
             y={MARGIN.top - 14}
             textAnchor="end"
             className="fill-muted-foreground text-[10px]"
@@ -445,12 +589,12 @@ function MarginTrendChart({
             role="status"
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
-              left: `${(hovered.slotCenterX / CHART_WIDTH) * 100}%`,
+              left: `${(hovered.slotCenterX / chartWidth) * 100}%`,
               top: `${(Math.min(hovered.isMissing ? baselineY - MISSING_CAPSULE_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
             }}
           >
             <p className="text-muted-foreground">
-              {formatMonthDay(hovered.datum.date)}
+              {formatBarDateLabel(hovered.datum)}
             </p>
             {hovered.isMissing ? (
               <p className="font-semibold text-muted-foreground">
@@ -464,6 +608,11 @@ function MarginTrendChart({
                 )}
               >
                 {formatSignedUsd(hovered.datum.margin as number)}
+                {bucketDays > 1 ? (
+                  <span className="ml-1 font-normal text-muted-foreground">
+                    ({hovered.datum.daysPresent} of {hovered.datum.daysInBucket} days)
+                  </span>
+                ) : null}
               </p>
             )}
             <p className="text-muted-foreground">daily_reconciliation.csv</p>

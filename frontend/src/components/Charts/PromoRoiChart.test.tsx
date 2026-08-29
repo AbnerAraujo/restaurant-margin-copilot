@@ -145,6 +145,42 @@ describe('PromoRoiChart', () => {
     expect(rows).toHaveLength(DEFAULT_PROMOTION_ROI.length + 1 + 1)
   })
 
+  it('stops labeling every bar past the small-count threshold, and grows the canvas instead of squeezing bars', () => {
+    const manyCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 29 },
+      (_, i) => ({
+        campaignId: `CAMP-${i}`,
+        campaignName: `CAMP-${i}`,
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: 100 + i,
+        net: i - 14, // spans negative to positive, so both extremes exist
+        sourceRefs: [],
+      }),
+    )
+
+    const { container } = render(<PromoRoiChart data={manyCampaigns} />)
+
+    // Every campaign still gets a focusable bar target...
+    const bars = screen.getAllByRole('button', { name: /: net /i })
+    expect(bars).toHaveLength(29)
+
+    // ...but the chart no longer prints a campaign id under every one of
+    // them (the "chart is on the left"/illegible-smear bug at this count) —
+    // only the two extreme bars get a direct value label.
+    expect(screen.queryByText('CAMP-0')).not.toBeInTheDocument()
+    expect(screen.getByText('+$14.00')).toBeInTheDocument() // net = 28-14
+    expect(screen.getByText('−$14.00')).toBeInTheDocument() // net = 0-14
+
+    // The SVG's own design width grows with campaign count rather than
+    // staying pinned to the 4-campaign fixture's 560px, which is what left
+    // a fixed-width chart flush against the left edge with dead space
+    // beside it once there was real data to fill that space with.
+    const svg = container.querySelector('svg')
+    const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
+    expect(viewBoxWidth).toBeGreaterThan(560)
+  })
+
   it('exposes a table view with the refusal spelled out, not a null or zero', async () => {
     const user = userEvent.setup()
     render(<PromoRoiChart />)

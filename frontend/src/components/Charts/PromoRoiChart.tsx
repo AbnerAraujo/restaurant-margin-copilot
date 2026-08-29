@@ -160,13 +160,44 @@ export interface PromoRoiChartProps {
 const CHART_WIDTH = 560
 const CHART_HEIGHT = 300
 const MARGIN = { top: 44, right: 16, bottom: 44, left: 48 }
-const PLOT_WIDTH = CHART_WIDTH - MARGIN.left - MARGIN.right
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
 
 const BAR_WIDTH = 24
 const BAR_RADIUS = 4
 const REFUSAL_BOX_WIDTH = 64
 const REFUSAL_BOX_HEIGHT = 28
+
+// ---------------------------------------------------------------------------
+// Scale — this chart was built and tested against the 4-campaign fixture,
+// where a fixed 560px canvas and a label on every bar both made sense. The
+// real dataset carries 25-30+ campaigns: `PLOT_WIDTH / data.length` with a
+// fixed 24px BAR_WIDTH means bars start overlapping their neighbors past
+// ~20 campaigns, and a value label plus an x-axis campaign-id label on
+// EVERY bar collapses into an illegible smear at that count (this is what
+// the owner saw and reported as "the chart is on the left" — the bars
+// overlap into one dense, unreadable mass on the left/center of a canvas
+// that never grows to fit them, while the fixed-560px SVG sits flush-left
+// in a much wider panel with dead space beside it).
+//
+// Same two-part fix as MarginTrendChart, scoped to fire only once there is
+// real data to warrant it — at <= LABEL_ALL_MAX campaigns (the 4-campaign
+// fixture included) this renders pixel-identical to before:
+//
+//  1. The canvas grows with campaign count (MIN_SLOT_WIDTH per bar) instead
+//     of staying pinned to 560px, so bars get real room and the existing
+//     `overflow-x-auto` wrapper turns a wide chart into a horizontal scroll
+//     rather than a squeeze.
+//  2. Past LABEL_ALL_MAX campaigns, only the two extreme bars (best/worst
+//     ROI) get a direct value label, and the x-axis stops printing every
+//     campaign id underneath its bar — the same "label the extreme, not
+//     every point" rule MarginTrendChart already applies. Every campaign's
+//     identity stays reachable via hover tooltip, the legend-adjacent
+//     provenance list, and the full table below; nothing is hidden, only
+//     decluttered off the chart face itself.
+// ---------------------------------------------------------------------------
+
+const MIN_SLOT_WIDTH = 28 // BAR_WIDTH + a visible gutter between neighbors
+const LABEL_ALL_MAX = 8
 
 /**
  * Y scale derived from the data, not hard-coded. The previous fixed
@@ -238,8 +269,9 @@ interface BarGeometry {
 function buildBars(
   data: PromotionRoiDatum[],
   yToPixel: (value: number) => number,
+  plotWidth: number,
 ): BarGeometry[] {
-  const slotWidth = PLOT_WIDTH / data.length
+  const slotWidth = plotWidth / data.length
   return data.map((datum, index) => {
     const slotCenterX = MARGIN.left + slotWidth * (index + 0.5)
     const barX = slotCenterX - BAR_WIDTH / 2
@@ -286,9 +318,24 @@ function PromoRoiChart({
   const chartableData = data.filter(
     (datum) => datum.reason !== NOT_YET_ATTRIBUTED,
   )
+  const chartWidth = Math.max(
+    CHART_WIDTH,
+    MARGIN.left + MARGIN.right + chartableData.length * MIN_SLOT_WIDTH,
+  )
+  const plotWidth = chartWidth - MARGIN.left - MARGIN.right
+  const labelEveryBar = chartableData.length <= LABEL_ALL_MAX
   const { ticks, yToPixel, baselineY } = buildScale(chartableData)
-  const bars = buildBars(chartableData, yToPixel)
+  const bars = buildBars(chartableData, yToPixel, plotWidth)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
+
+  const netValues = chartableData
+    .map((d) => d.net)
+    .filter((v): v is number => v !== null)
+  const maxNet = netValues.length > 0 ? Math.max(...netValues) : null
+  const minNet = netValues.length > 0 ? Math.min(...netValues) : null
+  const maxIndex = chartableData.findIndex((d) => d.net === maxNet)
+  const minIndex = chartableData.findIndex((d) => d.net === minNet)
+  const refusedCount = bars.filter((bar) => bar.isRefused).length
 
   return (
     <figure
@@ -306,21 +353,33 @@ function PromoRoiChart({
 
       <div className="relative w-full overflow-x-auto">
         <svg
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+          viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
           // per-campaign targets below (axe nested-interactive).
           role="group"
-          aria-label="Bar chart of net ROI across four promotion campaigns, with one campaign flagged as unattributable and refused"
-          // See MarginTrendChart: capped at its design width so the viewBox
-          // never scales the SVG's own text up inside a wide column.
-          style={{ maxWidth: CHART_WIDTH }}
-          className="h-auto w-full min-w-[360px]"
+          aria-label={`Bar chart of net ROI across ${chartableData.length} promotion campaign${
+            chartableData.length === 1 ? '' : 's'
+          }${refusedCount > 0 ? `, with ${refusedCount} flagged as unattributable and refused` : ''}`}
+          // See MarginTrendChart: capped at its design width, which itself
+          // grows with campaign count so bars get real room past the
+          // 4-campaign fixture instead of overlapping or floating in dead
+          // space to the right of a canvas that never grew to fit them. Past
+          // the base 560px, a fixed pixel width (not `w-full`) is what makes
+          // the wrapper's `overflow-x-auto` actually scroll instead of
+          // silently rescaling every bar back down to the panel's width.
+          style={
+            chartWidth > CHART_WIDTH ? { width: chartWidth } : { maxWidth: chartWidth }
+          }
+          className={cn(
+            'h-auto min-w-[360px]',
+            chartWidth > CHART_WIDTH ? '' : 'w-full',
+          )}
         >
           {ticks.map((tick) => (
             <g key={tick}>
               <line
                 x1={MARGIN.left}
-                x2={CHART_WIDTH - MARGIN.right}
+                x2={chartWidth - MARGIN.right}
                 y1={yToPixel(tick)}
                 y2={yToPixel(tick)}
                 stroke="var(--border)"
@@ -341,7 +400,7 @@ function PromoRoiChart({
 
           <line
             x1={MARGIN.left}
-            x2={CHART_WIDTH - MARGIN.right}
+            x2={chartWidth - MARGIN.right}
             y1={baselineY}
             y2={baselineY}
             stroke="var(--border)"
@@ -351,6 +410,8 @@ function PromoRoiChart({
           {bars.map((bar) => {
             const { datum, index, slotCenterX, barX, isRefused, isPositive } =
               bar
+            const isExtreme = index === maxIndex || index === minIndex
+            const showValueLabel = !isRefused && (labelEveryBar || isExtreme)
             const focusLabel = isRefused
               ? `${datum.campaignName}: unattributable, ROI refused — no incremental orders on file`
               : `${datum.campaignName}: net ${formatSignedUsd(datum.net as number)}`
@@ -389,8 +450,12 @@ function PromoRoiChart({
                   />
                 ) : null}
 
-                {/* Direct label mandatory on every bar at only 4 categories */}
-                {!isRefused ? (
+                {/* Direct label mandatory on every bar at <= LABEL_ALL_MAX
+                    categories (the 4-campaign fixture qualifies); past that,
+                    only the two extremes get one — see the Scale comment
+                    above for why a label on all 25-30+ bars stopped being
+                    readable. */}
+                {showValueLabel ? (
                   <text
                     x={slotCenterX}
                     y={
@@ -408,20 +473,25 @@ function PromoRoiChart({
                   </text>
                 ) : null}
 
-                <text
-                  x={slotCenterX}
-                  y={CHART_HEIGHT - MARGIN.bottom + 16}
-                  textAnchor="middle"
-                  className="fill-muted-foreground text-[9.5px] font-medium"
-                >
-                  {datum.campaignId}
-                </text>
+                {/* Per-bar campaign-id tick — same declutter rule as the
+                    value label. Every campaign stays identifiable via the
+                    hover tooltip, the provenance list, and the table below. */}
+                {labelEveryBar ? (
+                  <text
+                    x={slotCenterX}
+                    y={CHART_HEIGHT - MARGIN.bottom + 16}
+                    textAnchor="middle"
+                    className="fill-muted-foreground text-[9.5px] font-medium"
+                  >
+                    {datum.campaignId}
+                  </text>
+                ) : null}
               </g>
             )
           })}
 
           <text
-            x={CHART_WIDTH - MARGIN.right}
+            x={chartWidth - MARGIN.right}
             y={MARGIN.top - 16}
             textAnchor="end"
             className="fill-muted-foreground text-[10px]"
@@ -440,9 +510,9 @@ function PromoRoiChart({
               key={bar.datum.campaignId}
               className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
               style={{
-                left: `${(bar.slotCenterX / CHART_WIDTH) * 100}%`,
+                left: `${(bar.slotCenterX / chartWidth) * 100}%`,
                 top: `${(baselineY / CHART_HEIGHT) * 100}%`,
-                width: `${(REFUSAL_BOX_WIDTH / CHART_WIDTH) * 100}%`,
+                width: `${(REFUSAL_BOX_WIDTH / chartWidth) * 100}%`,
               }}
             >
               <div
@@ -465,7 +535,7 @@ function PromoRoiChart({
             role="status"
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
-              left: `${(hovered.slotCenterX / CHART_WIDTH) * 100}%`,
+              left: `${(hovered.slotCenterX / chartWidth) * 100}%`,
               top: `${(Math.min(hovered.isRefused ? baselineY - REFUSAL_BOX_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
             }}
           >

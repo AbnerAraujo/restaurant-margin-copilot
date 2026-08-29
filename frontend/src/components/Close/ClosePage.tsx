@@ -142,21 +142,44 @@ function toBadges(day: DailySummaryApi): ReconciliationBadge[] {
  * 14-day clean period would otherwise stack 12 identical, unlabeled
  * "Clean Close" pills (each one only distinguishable by an aria-label a
  * sighted user never sees), which reads as broken rather than as 12 good
- * days. Every Discrepancy Catcher stays listed individually — each one
- * carries a distinct, actionable detail worth a owner's attention — while
- * every Clean Close day collapses into one quiet count pill.
+ * days — so every Clean Close day collapses into one quiet count pill.
+ *
+ * A real 2-year period carries the same problem for Discrepancy Catcher:
+ * the 730-day synthetic dataset genuinely earns 30+ of them (one per
+ * flagged day, never a duplicate), and stacking 30+ visually identical rows
+ * reads as "duplicated" to an owner scanning the page even though every row
+ * is a distinct, real catch. Once there is more than one in the period they
+ * collapse into a single "Discrepancy Catcher ×N" pill too — but, unlike
+ * Clean Close, each one carries a distinct, actionable detail worth an
+ * owner's attention, so nothing is discarded: `children` carries every
+ * individual day's badge, and BadgeDisplay's summary row expands to reveal
+ * them on demand instead of burying them. A period with exactly one flagged
+ * day still renders it directly — collapsing a single row into a "×1"
+ * summary would only add a click for no benefit.
  */
 function toPeriodBadges(days: DailySummaryApi[]): ReconciliationBadge[] {
   const cleanDays = days.filter((day) => day.discrepancy_flags.length === 0)
-  const discrepancyBadges = days
-    .filter((day) => day.discrepancy_flags.length > 0)
-    .flatMap(toBadges)
+  const discrepancyDays = days.filter((day) => day.discrepancy_flags.length > 0)
+  const discrepancyBadges = discrepancyDays.flatMap(toBadges)
 
-  if (cleanDays.length === 0) return discrepancyBadges
+  const collapsedDiscrepancy: ReconciliationBadge[] =
+    discrepancyBadges.length <= 1
+      ? discrepancyBadges
+      : [
+          {
+            id: `discrepancy_catcher-summary-${discrepancyDays[0].date}-${discrepancyDays[discrepancyDays.length - 1].date}`,
+            type: 'discrepancy_catcher',
+            date: discrepancyDays[discrepancyDays.length - 1].date,
+            count: discrepancyBadges.length,
+            children: discrepancyBadges,
+          },
+        ]
+
+  if (cleanDays.length === 0) return collapsedDiscrepancy
 
   const lastCleanDay = cleanDays[cleanDays.length - 1]
   return [
-    ...discrepancyBadges,
+    ...collapsedDiscrepancy,
     {
       id: `clean_close-summary-${cleanDays[0].date}-${lastCleanDay.date}`,
       type: 'clean_close',

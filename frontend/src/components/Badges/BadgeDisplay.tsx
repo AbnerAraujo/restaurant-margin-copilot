@@ -1,4 +1,5 @@
-import { BadgeCheck, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { useState } from 'react'
+import { BadgeCheck, ChevronDown, ShieldCheck, type LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -31,6 +32,16 @@ export interface ReconciliationBadge {
    * set; callers should still pass a real date for the id/key.
    */
   count?: number
+  /**
+   * The individual per-day badges a `count` summary stands in for — set only
+   * alongside `count > 1`. A summary pill collapses dozens of visually
+   * identical rows to one line (a 730-day period can legitimately carry 30+
+   * real Discrepancy Catcher days, which read as "duplicated" when stacked
+   * unlabeled), but each one still carries a distinct, actionable detail
+   * worth an owner's attention — `children` is what an expand toggle reveals
+   * so that detail is never actually lost, only collapsed by default.
+   */
+  children?: ReconciliationBadge[]
 }
 
 export interface BadgeDisplayProps {
@@ -54,6 +65,116 @@ function formatBadgeDate(iso: string): string {
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+/** One badge's own visual row — a compact pill, or a single-line subtle
+ *  banner when there's a detail worth a beat of its own. Shared by the
+ *  top-level list and a summary's expanded `children` list so the two never
+ *  render a badge two different ways. */
+function BadgeRow({ badge }: { badge: ReconciliationBadge }) {
+  const { label: baseLabel, icon: Icon } = BADGE_COPY[badge.type]
+  const tone = TONE_CLASSES[badge.type]
+  const dateLabel = formatBadgeDate(badge.date)
+  const accessibleLabel = badge.detail
+    ? `${baseLabel}, ${dateLabel}: ${badge.detail}`
+    : `${baseLabel}, ${dateLabel}`
+
+  if (badge.detail) {
+    return (
+      <div
+        className={cn(
+          'flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium',
+          tone,
+        )}
+        aria-label={accessibleLabel}
+      >
+        <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+        <span>{baseLabel}</span>
+        <span className="text-muted-foreground font-normal">{badge.detail}</span>
+        <span className="text-muted-foreground ml-auto shrink-0 font-normal">
+          {dateLabel}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+        tone,
+      )}
+      aria-label={accessibleLabel}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+      {baseLabel}
+    </span>
+  )
+}
+
+/**
+ * A `count` summary's row — one pill labeled with the count (never one pill
+ * per day), with an expand toggle when `children` carries the individual
+ * badges it stands in for. Collapsed by default: a 730-day period can
+ * legitimately earn 30+ real Discrepancy Catcher badges, and stacking that
+ * many identical-looking rows reads as broken/duplicated rather than as 30
+ * good catches — collapsing to "Discrepancy Catcher ×34" fixes the read
+ * without throwing away any single day's actionable detail, which stays one
+ * click away.
+ */
+function BadgeSummaryRow({ badge }: { badge: ReconciliationBadge }) {
+  const [expanded, setExpanded] = useState(false)
+  const { label: baseLabel, icon: Icon } = BADGE_COPY[badge.type]
+  const tone = TONE_CLASSES[badge.type]
+  const hasChildren = Boolean(badge.children && badge.children.length > 0)
+  const accessibleLabel = `${baseLabel}, ${badge.count} days`
+
+  const pill = (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
+        tone,
+      )}
+    >
+      <Icon className="size-3" aria-hidden="true" />
+      {baseLabel} ×{badge.count}
+    </span>
+  )
+
+  if (!hasChildren) {
+    return <span aria-label={accessibleLabel}>{pill}</span>
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setExpanded((wasExpanded) => !wasExpanded)}
+        aria-expanded={expanded}
+        aria-label={`${accessibleLabel}. ${expanded ? 'Hide' : 'Show'} each day.`}
+        className="inline-flex items-center gap-1.5 rounded-full focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        {pill}
+        <ChevronDown
+          className={cn(
+            'size-3.5 text-muted-foreground transition-transform',
+            expanded && 'rotate-180',
+          )}
+          aria-hidden="true"
+        />
+      </button>
+
+      {expanded ? (
+        <ul className="mt-1.5 flex flex-col gap-1.5 border-l-2 border-border pl-3">
+          {badge.children?.map((child) => (
+            <li key={child.id}>
+              <BadgeRow badge={child} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  )
+}
+
 /**
  * Quiet acknowledgment of a Reconciliation-category badge firing
  * ("Clean Close" / "Discrepancy Catcher") — a small pill, or a single-line
@@ -70,46 +191,10 @@ function BadgeDisplay({ badges, className }: BadgeDisplayProps) {
   return (
     <ul className={cn('flex flex-col gap-1.5', className)} aria-label="Reconciliation badges">
       {badges.map((badge) => {
-        const { label: baseLabel, icon: Icon } = BADGE_COPY[badge.type]
-        const tone = TONE_CLASSES[badge.type]
         const isCount = Boolean(badge.count && badge.count > 1)
-        const label = isCount ? `${baseLabel} ×${badge.count}` : baseLabel
-        const dateLabel = formatBadgeDate(badge.date)
-        const accessibleLabel = isCount
-          ? `${baseLabel}, ${badge.count} days`
-          : badge.detail
-            ? `${label}, ${dateLabel}: ${badge.detail}`
-            : `${label}, ${dateLabel}`
-
         return (
           <li key={badge.id}>
-            {badge.detail ? (
-              <div
-                className={cn(
-                  'flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-medium',
-                  tone,
-                )}
-                aria-label={accessibleLabel}
-              >
-                <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>{label}</span>
-                <span className="text-muted-foreground font-normal">{badge.detail}</span>
-                <span className="text-muted-foreground ml-auto shrink-0 font-normal">
-                  {dateLabel}
-                </span>
-              </div>
-            ) : (
-              <span
-                className={cn(
-                  'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium',
-                  tone,
-                )}
-                aria-label={accessibleLabel}
-              >
-                <Icon className="size-3" aria-hidden="true" />
-                {label}
-              </span>
-            )}
+            {isCount ? <BadgeSummaryRow badge={badge} /> : <BadgeRow badge={badge} />}
           </li>
         )
       })}

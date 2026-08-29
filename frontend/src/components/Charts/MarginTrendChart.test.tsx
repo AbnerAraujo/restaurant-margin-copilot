@@ -5,7 +5,18 @@ import { describe, expect, it } from 'vitest'
 import MarginTrendChart, {
   DEFAULT_DAILY_MARGIN,
   MISSING_MARGIN_REASON,
+  type DailyMarginDatum,
 } from './MarginTrendChart'
+
+/** A synthetic 2-year-scale period (744 days), the same order of magnitude
+ *  as the real `daily_reconciliation` table this chart now has to survive. */
+function buildLongPeriod(days: number): DailyMarginDatum[] {
+  return Array.from({ length: days }, (_, i) => {
+    const date = new Date(Date.UTC(2026, 7, 15))
+    date.setUTCDate(date.getUTCDate() + i)
+    return { date: date.toISOString().slice(0, 10), margin: 100 + i }
+  })
+}
 
 describe('MarginTrendChart', () => {
   it('renders one bar target per day, including the missing day', () => {
@@ -94,6 +105,41 @@ describe('MarginTrendChart', () => {
     expect(
       screen.getByRole('button', { name: /daily_reconciliation\.csv/ }),
     ).toBeInTheDocument()
+  })
+
+  it('buckets a 744-day period into readable groups instead of plotting 744 overlapping bars', () => {
+    const longPeriod = buildLongPeriod(744)
+    const { container } = render(<MarginTrendChart data={longPeriod} />)
+
+    // Never one bar per day at this scale — that was the live "the chart
+    // doesn't make sense" bug: 744 bars at a fixed 24px width overlap into
+    // one unreadable block.
+    const bars = screen.getAllByRole('button', { name: /: [+−]\$/ })
+    expect(bars.length).toBeLessThan(744)
+    expect(bars.length).toBeGreaterThan(1)
+
+    // The canvas grows to give each remaining bar real room rather than
+    // squeezing all 744 into the original 700px design width.
+    const svg = container.querySelector('svg')
+    const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
+    expect(viewBoxWidth).toBeGreaterThan(700)
+
+    // The heading still honestly reports the full 744-day span plotted.
+    expect(screen.getByText('744-Day Margin Trend')).toBeInTheDocument()
+    // ...and the table underneath still has one real row per day, so no
+    // day's detail is lost to the aggregation.
+    fireEvent.click(screen.getByRole('button', { name: /view as table/i }))
+    const table = screen.getByRole('table')
+    expect(within(table).getAllByRole('row')).toHaveLength(745)
+  })
+
+  it('renders exactly as before for a period under the bucketing threshold (no behavior change at normal scale)', () => {
+    render(<MarginTrendChart data={buildLongPeriod(30)} />)
+
+    // One bar per day, same as the 14-day default — 30 days is still well
+    // under the threshold where aggregation kicks in.
+    const bars = screen.getAllByRole('button', { name: /: [+−]\$/ })
+    expect(bars).toHaveLength(30)
   })
 
   it('exposes a table view with every day, including the missing-data reason', async () => {
