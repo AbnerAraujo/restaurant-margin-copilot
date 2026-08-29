@@ -241,6 +241,95 @@ const MAX_AXIS_TICKS = 8
 const HIT_RECT_MAX_PADDING = 14
 const HIT_RECT_MIN_PADDING = 2
 
+// Reported live at 29 real campaigns, scrolled all the way to the chart's
+// own right edge: the last axis tick ("JET-CAMP-NEWMENU") rendered as
+// "JET-CAMP-NEWM" — not a scroll problem (the bar itself was already fully
+// scrollable into view, see the wrapper's overflow-x-auto), but the tick
+// TEXT itself, centered (`textAnchor="middle"`) on a slotCenterX that sits
+// only MARGIN.right (16px) from the chart's own edge, with nowhere close to
+// half a real campaign id's rendered width (a 16-19 char id like
+// "IFOOD-CAMP-BOOST01" runs ~100px+ at this 9.5px font) to grow into on
+// that side. The SVG root's own default `overflow: hidden` then clips
+// mid-word — invisible in the small-fixture/short-synthetic-id tests that
+// exercised this campaign COUNT but never an id long enough to hit an edge.
+// Any label whose center falls within this many px of the plot's left/right
+// boundary anchors from that boundary inward instead of centering outward
+// past it (the same "first/last tick anchors from the edge" rule most
+// charting libraries apply) — see edgeAwareTextAnchor below.
+const AXIS_LABEL_EDGE_GUARD = 58
+
+/**
+ * A `textAnchor="middle"` label centered on `x` draws equally in both
+ * directions — fine mid-chart, but a label whose center sits within
+ * AXIS_LABEL_EDGE_GUARD of the plot's own left/right boundary has nowhere
+ * to grow on the boundary side, and the SVG clips whatever spills past it
+ * (see AXIS_LABEL_EDGE_GUARD's comment for the real campaign-id this was
+ * reported against). Anchoring from the boundary itself, inward, keeps the
+ * full label on-canvas regardless of how long the text turns out to be.
+ */
+function edgeAwareTextAnchor(
+  x: number,
+  chartWidth: number,
+): { x: number; textAnchor: 'start' | 'middle' | 'end' } {
+  const leftEdge = MARGIN.left
+  const rightEdge = chartWidth - MARGIN.right
+  if (x - leftEdge < AXIS_LABEL_EDGE_GUARD) {
+    return { x: leftEdge, textAnchor: 'start' }
+  }
+  if (rightEdge - x < AXIS_LABEL_EDGE_GUARD) {
+    return { x: rightEdge, textAnchor: 'end' }
+  }
+  return { x, textAnchor: 'middle' }
+}
+
+// Rough px-per-character at the 9.5px tick font — no real text metrics are
+// available here (no canvas measureText, no DOM ref timing that would
+// survive SSR-free but still synchronous render), so this trades precision
+// for "good enough to avoid the actual reported collision" the same way
+// MIN_SLOT_WIDTH and the other real-scale constants above do.
+const AXIS_LABEL_CHAR_WIDTH_PX = 5.6
+// Minimum breathing room between two adjacent tick labels' estimated edges.
+const AXIS_LABEL_GAP_PX = 6
+
+function estimatedLabelWidth(text: string): number {
+  return text.length * AXIS_LABEL_CHAR_WIDTH_PX
+}
+
+/**
+ * Reported live immediately after edgeAwareTextAnchor shipped: pinning the
+ * LAST tick's full text on-canvas fixed the clipped-word bug, but that same
+ * full-length label ("JET-CAMP-NEWMENU") now visually overlapped the tick
+ * immediately before it ("IFOOD-CAMP-025") — tickLabelStep spaces ticks
+ * evenly assuming short labels fit the gap, which held for the synthetic
+ * "CAMP-0".."CAMP-28" test ids but not a real ~17-19 char campaign id.
+ * Rather than shrink MAX_AXIS_TICKS globally (most gaps have plenty of
+ * room), this walks the candidate ticks RIGHT TO LEFT — so the rightmost
+ * one (the newest campaign, and the one this bug was specifically reported
+ * against) always wins a collision — dropping any earlier candidate whose
+ * estimated extent would overlap the nearest tick already kept to its
+ * right. The same greedy label-collision-avoidance most charting libraries
+ * apply, just without measured text metrics to drive it.
+ */
+function selectVisibleTickIndices(
+  tickCandidates: BarGeometry[],
+  chartWidth: number,
+): Set<number> {
+  const visible = new Set<number>()
+  let leftEdgeOfNearestKeptLabel = Infinity
+  for (let i = tickCandidates.length - 1; i >= 0; i--) {
+    const bar = tickCandidates[i]
+    const { x, textAnchor } = edgeAwareTextAnchor(bar.slotCenterX, chartWidth)
+    const width = estimatedLabelWidth(bar.datum.campaignId)
+    const left =
+      textAnchor === 'start' ? x : textAnchor === 'end' ? x - width : x - width / 2
+    const right = left + width
+    if (right > leftEdgeOfNearestKeptLabel - AXIS_LABEL_GAP_PX) continue
+    visible.add(bar.index)
+    leftEdgeOfNearestKeptLabel = left
+  }
+  return visible
+}
+
 /**
  * Y scale derived from the data, not hard-coded. The previous fixed
  * [-200, 60] domain was tuned to one fixture; against live /api/promotions
@@ -427,6 +516,18 @@ function PromoRoiChart({
   const { ticks, yToPixel, baselineY } = buildScale(chartableData)
   const bars = buildBars(chartableData, yToPixel, plotWidth)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
+  // The tickLabelStep-selected candidates, further pruned for estimated
+  // overlap — see selectVisibleTickIndices's doc comment. Labeling every
+  // bar (<= LABEL_ALL_MAX) skips this: tight, uniform slot widths there are
+  // already proven to fit (the 4-campaign fixture), and running collision
+  // pruning over real campaign ids at that width could start dropping
+  // labels that were never actually reported as overlapping.
+  const visibleTickIndices = labelEveryBar
+    ? null
+    : selectVisibleTickIndices(
+        bars.filter((bar) => bar.index % tickLabelStep === 0),
+        chartWidth,
+      )
 
   const netValues = chartableData
     .map((d) => d.net)
@@ -592,13 +693,12 @@ function PromoRoiChart({
                     readable. */}
                 {showValueLabel ? (
                   <text
-                    x={slotCenterX}
+                    {...edgeAwareTextAnchor(slotCenterX, chartWidth)}
                     y={
                       isPositive
                         ? bar.barY - 8
                         : bar.barY + bar.barHeight + 14
                     }
-                    textAnchor="middle"
                     className={cn(
                       'text-micro font-semibold tabular-nums',
                       isPositive ? 'fill-success-text' : 'fill-destructive-text',
@@ -615,11 +715,12 @@ function PromoRoiChart({
                     axis instead of going nearly blank at real scale. Every
                     campaign stays identifiable via the hover tooltip, the
                     table below, and its Sources column regardless. */}
-                {index % tickLabelStep === 0 ? (
+                {(visibleTickIndices
+                  ? visibleTickIndices.has(index)
+                  : index % tickLabelStep === 0) ? (
                   <text
-                    x={slotCenterX}
+                    {...edgeAwareTextAnchor(slotCenterX, chartWidth)}
                     y={CHART_HEIGHT - MARGIN.bottom + 16}
-                    textAnchor="middle"
                     className="fill-muted-foreground text-[9.5px] font-medium"
                   >
                     {datum.campaignId}
