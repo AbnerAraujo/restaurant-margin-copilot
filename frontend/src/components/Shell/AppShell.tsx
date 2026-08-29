@@ -32,10 +32,114 @@ export function useShellOutletContext() {
  * root stays a row at `lg`+ (aside beside content) and stacks to a column
  * below it (mobile nav bar above `<main>`, not beside it).
  */
+/** The routed content region's id — the skip link's target and the one
+ * landmark a keyboard user should be able to reach in a single tab/Enter,
+ * per WCAG 2.4.1 (Bypass Blocks). */
+const MAIN_CONTENT_ID = 'main-content'
+
+/**
+ * `bottom-4` (16px) — the same inset `CostPanel`'s own fixed positioning
+ * uses — so the reserved clearance's edge lines up with the pill's actual
+ * edge instead of an arbitrary extra gap.
+ */
+const COST_PANEL_INSET_PX = 16
+
+/**
+ * Pre-measurement default for `costPanelHeight` below: the panel's real
+ * collapsed height (a `text-xs`/`text-sm` row inside `px-3 py-1.5`), so
+ * there's no visible jump in `<main>`'s bottom padding on first paint —
+ * the same "match the pre-measurement steady state" discipline
+ * `ChatPanel`'s own `composerHeight` default comment documents.
+ */
+const DEFAULT_COST_PANEL_HEIGHT_PX = 32
+
 export default function AppShell() {
   const [interactions, setInteractions] = useState<CostInteraction[]>([])
   const mainRef = useRef<HTMLElement>(null)
+  const costPanelRef = useRef<HTMLDivElement>(null)
   const { pathname } = useLocation()
+
+  // Reported live (QA pass): the fixed `CostPanel` sits in the bottom-right
+  // corner of the viewport on every route, and grows a LOT taller the
+  // instant its detail box opens (~40px collapsed to ~180px+ expanded). On
+  // `/ask` that taller footprint sat directly on top of the composer's Send
+  // button — `elementFromPoint` at the button's own center returned the
+  // cost panel, not the button, so it was genuinely unclickable while
+  // expanded. On `/promotions` at a narrow viewport, ordinary scrolled
+  // content (a filter chip) landed under the same fixed footprint.
+  //
+  // The fix reserves real clearance at the bottom of the routed content
+  // region, sized to the panel's ACTUAL measured height (not a guessed
+  // constant, matching this codebase's own `ChatPanel` composerHeight
+  // pattern) — so nothing this shell renders can ever scroll or lay out
+  // underneath the pill, collapsed or expanded. `<main>`'s own `flex-1
+  // min-h-0` means shrinking its content-box height via this padding also
+  // pushes up any `h-full` page (the chat composer included) rather than
+  // just adding dead space to a page that scrolls, so this one fix covers
+  // both reported cases instead of needing a page-specific patch.
+  const [costPanelHeight, setCostPanelHeight] = useState(DEFAULT_COST_PANEL_HEIGHT_PX)
+  useEffect(() => {
+    const node = costPanelRef.current
+    if (!node || typeof ResizeObserver === 'undefined') return
+
+    const observer = new ResizeObserver((entries) => {
+      const height = entries[0]?.borderBoxSize?.[0]?.blockSize ?? node.offsetHeight
+      setCostPanelHeight(Math.ceil(height))
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+
+  // The remaining edge case the padding reservation above doesn't cover on
+  // its own: a page taller than the viewport, scrolled all the way down,
+  // where the owner THEN expands the pill. `<main>`'s `scrollHeight` grows
+  // the instant the reserved padding grows, but a browser never re-clamps
+  // an already-set `scrollTop` to a newly bigger max — so without this, the
+  // page stays exactly as scrolled as it was, the fixed panel grows upward
+  // from the viewport's bottom edge exactly as before, and the two can
+  // still meet in a corner. Mirrors `ChatPanel`'s own "stay pinned to the
+  // bottom" tracking (`isPinnedToBottom`/`BOTTOM_STICK_THRESHOLD_PX`) so the
+  // same discipline applies here: only an owner who was ALREADY at the
+  // bottom gets re-pinned when the panel resizes — someone reading content
+  // higher up the page never has their scroll position yanked.
+  //
+  // Measured live: this relies on `<main>` reading a FRESH `scrollHeight`
+  // the instant its padding-bottom changes, which requires `<main>` to have
+  // no transition on that property. Nothing here authors one — but this
+  // app's own `prefers-reduced-motion` rule (index.css) sets
+  // `transition-duration: 0.01ms !important` on literally every element to
+  // collapse EXISTING transitions, and every element also carries the
+  // CSS-initial `transition-property: all` that nothing ever overrides to
+  // `none`. That combination quietly hands `<main>` a genuine transition on
+  // ITS `padding-bottom` for exactly the reduced-motion users this app's
+  // own accessibility rule exists to serve — `scrollHeight` read even a
+  // full animation frame later was observed still returning the
+  // PRE-transition box size. `transition-none` on `<main>` below (a real
+  // layout reservation, never a decorative value) opts it out of that
+  // default so this reads correctly regardless of the visitor's motion
+  // preference.
+  const [isMainPinnedToBottom, setIsMainPinnedToBottom] = useState(false)
+  useEffect(() => {
+    const main = mainRef.current
+    if (!main) return
+
+    function handleScroll() {
+      if (!main) return
+      const distanceFromBottom = main.scrollHeight - main.scrollTop - main.clientHeight
+      setIsMainPinnedToBottom(distanceFromBottom <= 1)
+    }
+
+    handleScroll()
+    main.addEventListener('scroll', handleScroll, { passive: true })
+    return () => main.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  useEffect(() => {
+    if (!isMainPinnedToBottom) return
+    const main = mainRef.current
+    if (!main) return
+    main.scrollTop = main.scrollHeight
+  }, [costPanelHeight, isMainPinnedToBottom])
 
   // Reported live: opening a new page kept whatever scroll position was
   // left on the PREVIOUS page instead of starting at the top. React
@@ -96,6 +200,21 @@ export default function AppShell() {
     // (h-screen, full width) — but stops the leak at its source rather
     // than chasing it page by page.
     <div className="contain-layout flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
+      {/* WCAG 2.4.1 (Bypass Blocks): every route puts ~10 nav links ahead of
+          the actual page content in tab order. Must be the very first
+          focusable element in the DOM — visually hidden until it receives
+          focus (Tailwind's sr-only / focus:not-sr-only pair), so it costs a
+          sighted mouse user nothing and gives a keyboard user a one-tab exit
+          straight to `<main>`. */}
+      <a
+        href={`#${MAIN_CONTENT_ID}`}
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50
+          focus:rounded-md focus:border focus:border-border focus:bg-background focus:px-4
+          focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg
+          focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        Skip to main content
+      </a>
       <SplashScreen />
       <FullscreenToggle />
       <Sidebar />
@@ -103,12 +222,24 @@ export default function AppShell() {
         <MobileNavBar />
         <main
           ref={mainRef}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8"
+          id={MAIN_CONTENT_ID}
+          // -1, not omitted: this only needs to be a valid target for the
+          // skip link's programmatic focus() (so a screen reader/keyboard
+          // user's next Tab starts from here, not back at the top of the
+          // nav) — never a stop in ordinary Tab order, which -1 guarantees.
+          tabIndex={-1}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-6 outline-none transition-none sm:px-6 lg:px-8"
+          // Reserves real clearance under every route for the fixed
+          // CostPanel's actual measured height (see the effect above) —
+          // never a guess — so a page's own scrolled content or an h-full
+          // page's own bottom-anchored controls (the chat composer's Send
+          // button) can never end up underneath it, collapsed or expanded.
+          style={{ paddingBottom: costPanelHeight + COST_PANEL_INSET_PX * 2 }}
         >
           <Outlet context={{ interactions, logInteractions } satisfies ShellOutletContext} />
         </main>
       </div>
-      <CostPanel interactions={interactions} />
+      <CostPanel ref={costPanelRef} interactions={interactions} />
     </div>
   )
 }
