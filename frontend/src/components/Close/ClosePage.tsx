@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { humanizeSource } from '@/lib/sourceDisplayName'
 
 // ---------------------------------------------------------------------------
 // Live wiring to GET /api/reconciliation (backend internal/httpapi/data.go).
@@ -723,9 +724,13 @@ export default function ClosePage() {
               onDataPointClick={handleChartDataPointClick}
             />
 
-            {/* Gross sales by source: values printed exactly as the API sent
-                them, one stat per source, so "3 sources" above is checkable
-                rather than an assertion. */}
+            {/* Gross sales by source: one stat per source, so "3 sources"
+                above is checkable rather than an assertion. Amounts are
+                printed exactly as the API sent them; the source label is
+                humanized via the same ifood/just_eat_takeaway/pos ->
+                display-name mapping the chat's own pie-chart legend uses
+                (backend's humanizeSource), so "pos" never leaks to the UI
+                as a raw key. */}
             <Panel className="p-5">
               <h2 className="text-sm font-semibold tracking-tight text-foreground">
                 Gross sales by source
@@ -741,7 +746,7 @@ export default function ClosePage() {
                       className="flex items-baseline justify-between gap-3 border-b border-border py-2.5 last:border-b-0"
                     >
                       <dt className="min-w-0 truncate text-xs text-muted-foreground">
-                        {source}
+                        {humanizeSource(source)}
                       </dt>
                       <dd className="shrink-0 text-sm font-semibold tabular-nums text-foreground">
                         {formatUsd(parseMoney(amount))}
