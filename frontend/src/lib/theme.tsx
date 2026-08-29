@@ -77,11 +77,6 @@ function prefersDarkFromSystem(): boolean {
   )
 }
 
-function resolveTheme(preference: ThemePreference): ResolvedTheme {
-  if (preference === 'system') return prefersDarkFromSystem() ? 'dark' : 'light'
-  return preference
-}
-
 /** The one place that actually touches the DOM. */
 function applyResolvedTheme(resolved: ResolvedTheme): void {
   document.documentElement.classList.toggle('dark', resolved === 'dark')
@@ -99,36 +94,43 @@ const ThemeContext = createContext<ThemeContextValue | null>(null)
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference)
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() =>
-    resolveTheme(preference),
-  )
+  // Tracked as its own bit of state, updated ONLY from the matchMedia
+  // "change" event below — a legitimate external-system subscription, not a
+  // value derived from other state. `resolvedTheme` itself is computed
+  // straight from this plus `preference` on every render instead of being
+  // synced via a second `useEffect`, which is what react-hooks'
+  // set-state-in-effect rule flags: calling setState synchronously inside an
+  // effect body (rather than from a subscription callback) causes an
+  // avoidable extra render pass.
+  const [systemPrefersDark, setSystemPrefersDark] = useState<boolean>(prefersDarkFromSystem)
 
-  // Applies on every preference change, including the very first render —
-  // index.html's inline script (see its own comment) already set the
-  // correct class before paint using the same storage key and the same
+  const resolvedTheme: ResolvedTheme =
+    preference === 'system' ? (systemPrefersDark ? 'dark' : 'light') : preference
+
+  // The one effect that actually touches the DOM — a genuine "synchronize
+  // external system with React state" case, not a state update. Runs on
+  // mount too: index.html's inline script (see its own comment) already set
+  // the correct class before paint using the same storage key and the same
   // system-preference fallback, so this is a no-op re-application in the
   // common case, not the first time the class is set.
   useEffect(() => {
-    const resolved = resolveTheme(preference)
-    applyResolvedTheme(resolved)
-    setResolvedTheme(resolved)
-  }, [preference])
+    applyResolvedTheme(resolvedTheme)
+  }, [resolvedTheme])
 
-  // "System" must track the OS live: a user who opens the OS appearance
-  // settings while this tab is open (or has it open across a scheduled
-  // light/dark switch) should see the app follow without a reload. Only
-  // subscribed while "system" is the active preference.
+  // Subscribed unconditionally rather than only while "system" is selected:
+  // keeping `systemPrefersDark` current in the background means switching
+  // *to* "system" later reflects the OS's current state immediately, with
+  // no stale read. It only feeds into `resolvedTheme` above when
+  // `preference === 'system'`, so it's inert the rest of the time.
   useEffect(() => {
-    if (preference !== 'system' || typeof window.matchMedia !== 'function') return
+    if (typeof window.matchMedia !== 'function') return
     const query = window.matchMedia('(prefers-color-scheme: dark)')
-    function handleChange() {
-      const resolved: ResolvedTheme = query.matches ? 'dark' : 'light'
-      applyResolvedTheme(resolved)
-      setResolvedTheme(resolved)
+    function handleChange(event: MediaQueryListEvent) {
+      setSystemPrefersDark(event.matches)
     }
     query.addEventListener('change', handleChange)
     return () => query.removeEventListener('change', handleChange)
-  }, [preference])
+  }, [])
 
   const value = useMemo<ThemeContextValue>(
     () => ({
