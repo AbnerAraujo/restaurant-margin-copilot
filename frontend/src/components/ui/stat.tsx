@@ -1,7 +1,12 @@
-import { CircleSlash, type LucideIcon } from 'lucide-react'
+import { CircleSlash, Info, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
 /**
  * Stat / StatGroup — the KPI primitive.
@@ -56,6 +61,14 @@ export interface StatProps {
   unavailableLabel?: string
   /** One short qualifier under the value. Not a sentence, not an explanation. */
   caption?: string
+  /**
+   * A short explanation of what this figure means, shown in a tooltip
+   * behind an info affordance next to the label — for a stat whose label
+   * alone doesn't make its meaning obvious (e.g. "Days with a flag" reads
+   * as ambiguous without saying a flag means a reconciliation discrepancy
+   * already caught, not an open problem needing action).
+   */
+  tooltip?: string
   tone?: StatTone
   size?: 'sm' | 'md' | 'lg'
   icon?: LucideIcon
@@ -81,6 +94,7 @@ export function Stat({
   value,
   unavailableLabel = 'Not available',
   caption,
+  tooltip,
   tone = 'neutral',
   size = 'md',
   icon: Icon,
@@ -94,6 +108,20 @@ export function Stat({
       <dt className="flex items-center gap-1.5 text-micro font-medium uppercase tracking-wider text-muted-foreground">
         {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
         <span className="truncate">{label}</span>
+        {tooltip ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                aria-label={`What does "${label}" mean?`}
+              >
+                <Info className="size-3" aria-hidden="true" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{tooltip}</TooltipContent>
+          </Tooltip>
+        ) : null}
       </dt>
       <dd className="mt-1">
         {unavailable ? (

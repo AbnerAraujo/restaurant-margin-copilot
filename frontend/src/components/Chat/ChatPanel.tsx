@@ -11,6 +11,7 @@ import {
   RotateCw,
   Lightbulb,
   Send,
+  Compass,
   ShieldAlert,
   SquarePen,
   User,
@@ -482,7 +483,7 @@ function ChatAvatar({
   pending = false,
 }: {
   role: 'user' | 'assistant'
-  tone?: 'neutral' | 'warning' | 'destructive'
+  tone?: 'neutral' | 'warning' | 'refusal'
   /**
    * True only for the bubble standing in for a real model call in flight
    * (PendingBubble). The mark loops the same door-swing the launch splash
@@ -497,8 +498,8 @@ function ChatAvatar({
   const toneClasses =
     tone === 'warning'
       ? 'bg-warning/10 text-warning-text'
-      : tone === 'destructive'
-        ? 'bg-destructive/10 text-destructive-text'
+      : tone === 'refusal'
+        ? 'bg-primary/10 text-primary'
         : role === 'user'
           ? 'bg-primary/10 text-primary'
           : 'bg-muted text-muted-foreground'
@@ -693,10 +694,10 @@ function RefusalBubble({
 }) {
   return (
     <li className="flex items-start gap-2">
-      <ChatAvatar role="assistant" tone="destructive" />
-      <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-destructive/25 bg-destructive/10 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-destructive-text">
-          <ShieldAlert className="size-3.5" aria-hidden="true" />
+      <ChatAvatar role="assistant" tone="refusal" />
+      <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-primary/25 bg-primary/5 px-4 py-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary">
+          <Compass className="size-3.5" aria-hidden="true" />
           I&apos;ll help you find what you need
         </p>
         <p className="text-sm leading-relaxed text-foreground">
@@ -713,7 +714,7 @@ function RefusalBubble({
         {/* A correct refusal is still a dead end unless it hands the reader a
             way back in. These are the same tool-grounded examples the empty
             state offers — deterministic, never the model describing itself. */}
-        <div className="space-y-1.5 border-t border-destructive/20 pt-2">
+        <div className="space-y-1.5 border-t border-primary/15 pt-2">
           <p className="text-xs font-medium text-foreground">
             Here&apos;s what I can answer:
           </p>

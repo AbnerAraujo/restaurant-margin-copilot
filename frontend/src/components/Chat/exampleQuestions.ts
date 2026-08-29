@@ -23,6 +23,7 @@ export interface ExampleQuestion {
     | 'get_promotion_roi'
     | 'list_negative_roi_promotions'
     | 'compare_platform_economics'
+    | 'get_period_totals'
   /** Short label for grouping in the "what can I ask" surface. */
   topic: string
 }
@@ -58,6 +59,11 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
     tool: 'compare_platform_economics',
     topic: 'Platform comparison',
   },
+  {
+    text: 'What was our best day between 2026-08-01 and 2026-08-14, and what was the total margin for the period?',
+    tool: 'get_period_totals',
+    topic: 'Period totals',
+  },
 ]
 
 /**
@@ -66,7 +72,7 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
  * than asked of the model, for the same reason the list above is.
  */
 export const CAPABILITY_SUMMARY =
-  'I answer questions about one restaurant’s reconciled daily margin, its discrepancies, its promotion ROI, and how its delivery platforms compare on commission and promo cost — for 2026-08-01 through 2026-08-14, the only period this data covers.'
+  'I answer questions about one restaurant’s reconciled daily margin, its period totals and best/worst days, its discrepancies, its promotion ROI, and how its delivery platforms compare on commission and promo cost — for 2026-08-01 through 2026-08-14, the only period this data covers.'
 
 /**
  * The same coverage window as a standalone label, for surfaces that show it as

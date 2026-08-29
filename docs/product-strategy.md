@@ -1236,3 +1236,86 @@ Verification commands run: `cd backend && go build ./... && go vet ./...`
 (clean) and `go test ./... -count=1`, both without and with `DATABASE_URL`
 set against the shared dev Postgres (all packages pass either way, including
 the live-Postgres-gated tests this change added assertions to).
+
+## 2026-08-28 — Chat warmth pass: friendly refusal color, warm narration, a deterministic capability-question path, and a Home tooltip
+
+Driven directly by user feedback on the redesigned chat surface: a red
+refusal/error bubble reads as the product being upset at the owner rather
+than helping them, the narration itself felt clinical, and a genuine
+meta-question ("how can you help me?") was being refused outright by the
+ambiguity gate — technically correct (it isn't a question about restaurant
+data) but a bad first experience for anyone who opens the chat not knowing
+what to ask. Four changes, all shipped together:
+
+**1. Refusal/error color: red → brand green.** `ChatPanel.tsx`'s
+`RefusalBubble` and its `ChatAvatar` used `bg-destructive`/`text-destructive`
+throughout — the same red Tailwind token a genuine destructive action (like
+deleting a saved prompt) correctly still uses. A refusal isn't a system
+failure, so it shouldn't look like one: recolored to `bg-primary`/
+`text-primary` (the brand green), swapped the icon from `ShieldAlert` to
+`Compass` (pointing the owner somewhere, not warning them), and renamed the
+`ChatAvatar` tone prop from `'destructive'` to `'refusal'` so the type itself
+no longer claims a color it doesn't render. The genuinely destructive delete
+button elsewhere in the same file was left red on purpose — that one action
+really is destructive.
+
+**2. Warm narration tone, without weakening the refusal discipline.**
+Added one rule to `internal/explain`'s system prompt and one to
+`internal/ambiguity`'s second-pass writer prompt: write like a steward who's
+on the owner's side, a brief warm acknowledgment before the figures is
+welcome, a plain-language read of what a number means is welcome after them
+— but warmth is explicitly scoped to phrasing and framing only, never to
+softening what's missing or turning a refusal into a maybe. Live-verified:
+a real `/api/ask` call for 2026-08-07 now opens "Here's the rundown for
+Friday, August 7, 2026" before the figures, and the Miami-location refusal
+above still states the gap as plainly as before — no hedging crept in.
+
+**3. A deterministic capability-question path (`internal/httpapi/capability.go`).**
+Before this, "how can you help me?" was classified `unanswerable` by the
+gate and refused. New: `isCapabilityQuestion` pattern-matches a fixed set of
+real meta-question phrasings ("what do you do", "how can you help me", "what
+can I ask", a bare greeting) and, on a match, returns a hand-written,
+tool-grounded capability description directly — **before** the cache probe,
+before the gate, before any model call runs at all. Zero tokens, zero
+latency, zero risk of the model inventing a capability this product doesn't
+have (the same discipline `exampleQuestions.ts`'s doc comment already
+states for the frontend's own capability list). Gated on there being no
+active clarification in flight, so a bare reply like "hi" answering an
+unrelated clarifying question is never mistaken for a fresh capability
+question. Covered by `capability_test.go`, including an explicit assertion
+that a capability question never reaches the gate or explainer mock.
+Live-verified via curl: `interactions` comes back empty and the answer
+lists all seven real tools' capabilities in plain language.
+
+**A real gap this surfaced and fixed in passing:** `exampleQuestions.ts`
+(the frontend's own hand-written capability list) was missing
+`get_period_totals` entirely — both from the tool union type and from
+`EXAMPLE_QUESTIONS` — even though it's the sixth of seven real tools and had
+already shipped. Added a `get_period_totals` example question and folded
+period totals/best-worst-day into `CAPABILITY_SUMMARY`, so the frontend's
+zero-state capability list and the new backend capability answer both name
+the same seven tools rather than silently drifting apart at six.
+
+**4. A tooltip on the Home page's "Days with a flag" stat.** That stat had
+no explanation of what a flag actually means, and "flag" alone reads as
+ambiguous — an open problem needing action, or something already resolved?
+Added a generic `tooltip` prop to the shared `Stat` component
+(`components/ui/stat.tsx`, a new `components/ui/tooltip.tsx` built on the
+project's existing `radix-ui` dependency, matching the `Avatar` component's
+own import convention) rather than a one-off fix scoped to this page, so any
+other stat that needs the same affordance later can reuse it. The Home
+page's stat now reads: "A flag means the reconciliation engine caught
+something worth a second look on that day ... It's already been caught and
+accounted for, not an open problem waiting on you." — answering the
+ambiguity directly, in the product's own words.
+
+Verification: `cd backend && go build ./... && go vet ./... && go test ./...`
+(all clean) and `cd frontend && npx tsc -b --noEmit && npm test -- --run`
+(147/147 passing, including one updated assertion in
+`ChatPanel.test.tsx` for the new green refusal color). Live-verified end to
+end via curl (capability question, a real data question, a real refusal) and
+via a real browser (Home page tooltip in light mode — this product's only
+theme; the chat capability answer and the recolored refusal bubble), both
+before and after a full cache clear (`DELETE FROM answer_cache,
+answer_cache_hit, paraphrase_match`) and a clean restart of both the backend
+and frontend dev servers.

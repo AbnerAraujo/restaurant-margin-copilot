@@ -376,6 +376,17 @@ class of failure say it the same, kinder way. The trigger was a real user
 report read from `question_interaction`'s own log — "the sense of the
 answers is not kind" — not a speculative polish pass.
 
+A later pass extended the same discipline from copy to color: the refusal
+bubble and its avatar used `bg-destructive`/`text-destructive` — the same
+red token a genuine destructive action (deleting a saved prompt) correctly
+still uses — which reads as the product being upset rather than helping.
+Recolored to the brand green (`bg-primary`/`text-primary`), swapped
+`ShieldAlert` for `Compass`, and renamed the `ChatAvatar` tone prop from
+`'destructive'` to `'refusal'` so the type no longer claims a color it
+doesn't render. The narration prompts in `internal/explain` and
+`internal/ambiguity`'s writer pass got the matching warmth rule — phrasing
+and framing only, never softening what's actually missing.
+
 ### `skill-creator` and `question-recovery-design` — the skill this project created
 
 Unlike every other skill in this section, `question-recovery-design`
@@ -416,6 +427,17 @@ Commit `86f1499` ("Document the Sonnet writer pass and question-recovery
 skill in architecture.html") is where this project's own architecture
 diagram was updated to point at the skill by name, closing the loop between
 the code and the methodology it was generalized from.
+
+The skill later grew a new worked example from a real fix: `internal/
+httpapi/capability.go`'s deterministic meta-question path. Before it
+existed, "how can you help me?" reached the same Haiku classifier as every
+data question, was correctly judged out-of-scope, and refused — technically
+honest but a poor first experience. The fix pattern-matches a fixed set of
+real phrasings and answers directly from the hand-written capability list,
+*before* the classifier or any model call runs, at zero cost. Documented in
+Move 5 of the skill (`## The five moves`) as an extension of "show
+capabilities proactively," with its own checklist item and anti-pattern-
+table row.
 
 ### `skill-creator` and `proactive-guidance-design` — the success-half companion skill
 

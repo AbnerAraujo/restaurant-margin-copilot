@@ -250,7 +250,7 @@ describe('ChatPanel', () => {
       .getByText(/let me make sure/i)
       .closest('div')
 
-    expect(refusalBanner?.className).toContain('border-destructive/25')
+    expect(refusalBanner?.className).toContain('border-primary/25')
     expect(clarificationBanner?.className).toContain('border-warning/25')
     expect(refusalBanner?.className).not.toBe(clarificationBanner?.className)
   })

@@ -203,6 +203,7 @@ export default function HomePage() {
               label="Days with a flag"
               value={String(flaggedDays.length)}
               icon={ShieldCheck}
+              tooltip="A flag means the reconciliation engine caught something worth a second look on that day — a duplicate order, a refund, or a number outside the usual range. It's already been caught and accounted for, not an open problem waiting on you."
               caption={
                 flaggedDays.length === 0
                   ? 'Nothing caught'

@@ -318,6 +318,21 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			resolved = ambiguity.ComposeAnswerFollowUp(req.Question, previousAnswer)
 		}
 
+		// A meta-question about the product itself ("what do you do?", "how
+		// can you help me?") is answered here, deterministically, before
+		// either model call — see capability.go's doc comment for why this
+		// must never be asked of a model. Gated on pending == nil: a reply
+		// to an active clarifying question is a fragment answering THAT
+		// question, never a fresh capability question, even if its text
+		// happens to match one of these patterns.
+		if pending == nil && isCapabilityQuestion(req.Question) {
+			writeJSON(w, http.StatusOK, AskResponse{
+				Status:     "answered",
+				AnswerText: capabilityAnswerText(deps.DataStart, deps.DataEnd),
+			})
+			return
+		}
+
 		// Cache probe BEFORE the ambiguity gate — the gate is itself a real
 		// billed Haiku call, so checking after it would still spend money on
 		// every repeat. A hit returns the previously-served response verbatim,

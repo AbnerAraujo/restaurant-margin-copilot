@@ -147,6 +147,16 @@ Structural details that matter beyond the rule itself:
   `ClosePage.tsx`, `HomePage.tsx`, `PointsCard.tsx`, `PromotionsPage.tsx`.
   `StatSkeleton` is pulled into 3 of those (`ClosePage`, `HomePage`,
   `PromotionsPage` — the ones that fetch before rendering).
+- An optional `tooltip` prop renders a small `Info` affordance next to the
+  label, behind a new `frontend/src/components/ui/tooltip.tsx` built on the
+  project's existing `radix-ui` dependency (matching `avatar.tsx`'s own
+  import convention — `"use client"`, `import { X as XPrimitive } from
+  "radix-ui"`, `data-slot` attributes). Added for a real gap: Home's "Days
+  with a flag" stat had no explanation of what a flag actually means, and
+  the label alone reads as ambiguous (an open problem, or something already
+  resolved?). Added at the shared-component level rather than scoped to
+  that one page, so any other stat that needs the same affordance can reuse
+  it without a second implementation.
 
 The file's comment is explicit that the rule is scoped, not absolute: it
 governs *reconciliation* figures specifically (sales, margin, commissions,
