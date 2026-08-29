@@ -736,37 +736,48 @@ function AnswerBubble({
   onSuggestionSelect: (text: string) => void
   resolveBusinessInsight?: ResolveBusinessInsight
 }) {
-  const tool = message.visualization?.source_tool
   const sourceCount = message.provenance.length
   const followUps = message.followUps ?? []
   const toolCalls = message.toolCalls ?? []
+  // The tool-name chip's source of truth is the real tool call(s) that ran
+  // for this answer (`AskResponse.tool_calls` / `message.toolCalls`) — NOT
+  // `message.visualization?.source_tool`. A visualization is a
+  // presentational choice layered on top of a tool result (deriveVisualization
+  // in visualization.go can and does decline to draw a chart for plenty of
+  // real, tool-grounded answers, e.g. a prose-only day-of-month pattern
+  // answer), so it must never be the thing that decides whether the
+  // "which typed tool computed this" chip appears. Deduped and order-
+  // preserving: today's backend only ever emits one tool call per answer,
+  // but nothing here should silently drop a second, differently-named one if
+  // that ever changes.
+  const toolNames = Array.from(new Set(toolCalls.map((call) => call.name)))
   const resolvedPeriod = message.resolvedPeriod
 
   return (
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" />
       <div className="w-full max-w-[52rem] space-y-3 rounded-xl rounded-tl-sm border border-border bg-card px-4 py-3.5">
-        {tool || sourceCount > 0 || message.cache ? (
+        {toolNames.length > 0 || sourceCount > 0 || message.cache ? (
           <div className="flex flex-wrap items-center gap-1.5">
-            {/* Both chips below used to carry their explanation on a native
-                `title=` attribute — invisible until the browser's own,
-                unstyled delay fires, and unreachable by keyboard. `Chip` now
-                forwards a ref (ui/page.tsx), so it can be the real trigger
-                for the app's own styled Tooltip instead; `cursor-help` is
-                the one visual addition, so a chip that has more to say reads
-                as such before anyone hovers it. */}
-            {tool ? (
-              <Tooltip>
+            {/* Both chip kinds below used to carry their explanation on a
+                native `title=` attribute — invisible until the browser's
+                own, unstyled delay fires, and unreachable by keyboard.
+                `Chip` now forwards a ref (ui/page.tsx), so it can be the
+                real trigger for the app's own styled Tooltip instead;
+                `cursor-help` is the one visual addition, so a chip that has
+                more to say reads as such before anyone hovers it. */}
+            {toolNames.map((name) => (
+              <Tooltip key={name}>
                 <TooltipTrigger asChild>
                   <Chip icon={Wrench} tone="brand" tabIndex={0} className="cursor-help">
-                    <span className="font-mono">{tool}</span>
+                    <span className="font-mono">{name}</span>
                   </Chip>
                 </TooltipTrigger>
                 <TooltipContent>
                   The typed MCP tool that computed this answer&apos;s figures
                 </TooltipContent>
               </Tooltip>
-            ) : null}
+            ))}
             {sourceCount > 0 ? (
               <Chip icon={FileText}>
                 {sourceCount} source {sourceCount === 1 ? 'row' : 'rows'}
