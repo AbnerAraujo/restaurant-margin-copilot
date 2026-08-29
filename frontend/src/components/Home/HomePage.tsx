@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowRight,
   CalendarCheck,
@@ -25,10 +25,12 @@ import { deriveYearOverYear } from '@/components/Home/yearOverYear'
 import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
+import { FilterBar, FilterChip, FilterEmptyState, FilterSearchInput } from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getJson } from '@/lib/api'
+import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
 /**
@@ -247,6 +249,29 @@ export default function HomePage() {
   const biggestWinCatch = deriveBiggestWinCatch(days)
   const yearOverYear = deriveYearOverYear(days)
 
+  // The exact rows the "Recent closes" table renders (newest first, capped
+  // to RECENT_CLOSE_ROWS) — computed once here so the filter below scopes
+  // the SAME list the table shows, not a differently-windowed one.
+  const recentCloseDays = [...days].reverse().slice(0, RECENT_CLOSE_ROWS)
+
+  // The "Recent closes" grid filter (ux-writing + dataviz skills): status
+  // (clean vs. flagged) is the obvious categorical dimension here, rendered
+  // as chips rather than a dropdown since there are only two values.
+  const recentCloseFilter = useTableFilter({
+    rows: recentCloseDays,
+    getSearchableText: (day) => [day.date],
+    dimensions: useMemo(
+      () => [
+        {
+          key: 'status',
+          getValue: (day: DaySummaryApi) =>
+            day.discrepancy_flags.length > 0 ? 'flagged' : 'clean',
+        },
+      ],
+      [],
+    ),
+  })
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -449,6 +474,64 @@ export default function HomePage() {
               Open Today&apos;s Close
             </Link>
           </div>
+
+          {/* The grid filter: status (clean vs. flagged) as chips, plus a
+              date search — scopes only this table (dataviz skill: one row,
+              above the content it scopes). */}
+          <div className="border-b border-border p-5 sm:px-6">
+            <FilterBar
+              isFiltered={recentCloseFilter.isFiltered}
+              onClear={recentCloseFilter.clearFilters}
+              resultSummary={
+                recentCloseFilter.isFiltered
+                  ? `${recentCloseFilter.visibleCount} of ${recentCloseFilter.totalCount} shown`
+                  : undefined
+              }
+            >
+              <FilterSearchInput
+                id="home-recent-closes-search"
+                label="Search recent closes by date"
+                value={recentCloseFilter.searchQuery}
+                onChange={recentCloseFilter.setSearchQuery}
+                placeholder="Search by date"
+              />
+              <div
+                role="group"
+                aria-label="Filter by status"
+                className="flex items-center gap-1.5"
+              >
+                <FilterChip
+                  pressed={recentCloseFilter.filterValues.status === 'clean'}
+                  onClick={() =>
+                    recentCloseFilter.setFilterValue(
+                      'status',
+                      recentCloseFilter.filterValues.status === 'clean' ? null : 'clean',
+                    )
+                  }
+                >
+                  Clean
+                </FilterChip>
+                <FilterChip
+                  pressed={recentCloseFilter.filterValues.status === 'flagged'}
+                  onClick={() =>
+                    recentCloseFilter.setFilterValue(
+                      'status',
+                      recentCloseFilter.filterValues.status === 'flagged' ? null : 'flagged',
+                    )
+                  }
+                >
+                  Flagged
+                </FilterChip>
+              </div>
+            </FilterBar>
+          </div>
+
+          {recentCloseFilter.filteredRows.length === 0 ? (
+            <FilterEmptyState
+              label="No recent closes match these filters."
+              onClear={recentCloseFilter.clearFilters}
+            />
+          ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[30rem] border-collapse text-left">
               <thead>
@@ -495,9 +578,7 @@ export default function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {[...days]
-                  .reverse()
-                  .slice(0, RECENT_CLOSE_ROWS)
+                {recentCloseFilter.filteredRows
                   .map((day) => {
                     const dayMargin = Number(day.margin)
                     const flagged = day.discrepancy_flags.length > 0
@@ -555,6 +636,7 @@ export default function HomePage() {
               </tbody>
             </table>
           </div>
+          )}
         </Panel>
       ) : null}
 

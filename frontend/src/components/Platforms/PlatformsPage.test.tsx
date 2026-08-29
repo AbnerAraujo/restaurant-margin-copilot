@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PlatformsPage from './PlatformsPage'
@@ -226,5 +227,38 @@ describe('PlatformsPage', () => {
     await screen.findAllByText('iFood')
     expect(screen.queryByRole('region', { name: 'Effective rate trend' })).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('narrows the chart and table to platforms matching the search, and clears back', async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    render(<PlatformsPage />)
+
+    await screen.findAllByText('iFood')
+    expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)
+
+    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood')
+
+    expect(screen.getAllByText('iFood').length).toBeGreaterThan(0)
+    expect(screen.queryByText('Just Eat Takeaway')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2 platforms shown')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+    expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)
+  })
+
+  it('shows a reassuring empty state when the platform search matches nothing', async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    render(<PlatformsPage />)
+
+    await screen.findAllByText('iFood')
+    await userEvent.type(
+      screen.getByLabelText('Search platforms'),
+      'no-such-platform',
+    )
+
+    expect(
+      screen.getByText('No platforms match this search.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
   })
 })

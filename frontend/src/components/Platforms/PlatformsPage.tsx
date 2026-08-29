@@ -6,8 +6,10 @@ import DataGrid from '@/components/Charts/DataGrid'
 import EffectiveRateTrendChart, {
   type EffectiveRateTrendPeriod,
 } from '@/components/Charts/EffectiveRateTrendChart'
+import { FilterBar, FilterEmptyState, FilterSearchInput } from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
+import { useTableFilter } from '@/lib/useTableFilter'
 
 // ---------------------------------------------------------------------------
 // Live wiring to GET /api/platforms (backend internal/httpapi/data.go),
@@ -161,6 +163,16 @@ export default function PlatformsPage() {
     }
   }, [])
 
+  // The comparison grid's filter: a text search over the platform name —
+  // no dropdown here, since the platform IS each row's identity (a
+  // dropdown of platform names would just duplicate the search box). Feeds
+  // BOTH the bar chart and the table below from one filtered list, per the
+  // dataviz skill's "filters scope everything below them".
+  const platformFilter = useTableFilter({
+    rows: data?.platforms ?? [],
+    getSearchableText: (platform) => [platform.display_name, platform.source],
+  })
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -193,29 +205,62 @@ export default function PlatformsPage() {
 
       {!error && data ? (
         <>
-          <CategoryBarChart
-            title="Commission vs. commission + promo spend"
-            subtitle="Same period, both platforms — promo spend shown as a distinct, separately-sourced cost, never merged into commission"
-            valueLabel="Cost (USD)"
-            points={toChartPoints(data.platforms)}
-            sourceTool="compare_platform_economics"
-          />
+          {data.platforms.length > 1 ? (
+            <Panel className="flex flex-wrap items-center gap-3 p-4">
+              <FilterBar
+                isFiltered={platformFilter.isFiltered}
+                onClear={platformFilter.clearFilters}
+                resultSummary={
+                  platformFilter.isFiltered
+                    ? `${platformFilter.visibleCount} of ${platformFilter.totalCount} platforms shown`
+                    : undefined
+                }
+              >
+                <FilterSearchInput
+                  id="platforms-search"
+                  label="Search platforms"
+                  value={platformFilter.searchQuery}
+                  onChange={platformFilter.setSearchQuery}
+                  placeholder="Search by platform name"
+                />
+              </FilterBar>
+            </Panel>
+          ) : null}
 
-          <DataGrid
-            title="Platform economics, side by side"
-            subtitle={`${data.days_included} days included`}
-            columns={[
-              'Platform',
-              'Gross sales',
-              'Commission paid',
-              'Effective rate',
-              'Promo spend',
-              'Combined cost',
-              'Combined effective rate',
-            ]}
-            rows={toTableRows(data.platforms)}
-            sourceTool="compare_platform_economics"
-          />
+          {platformFilter.isFiltered && platformFilter.filteredRows.length === 0 ? (
+            <Panel>
+              <FilterEmptyState
+                label="No platforms match this search."
+                onClear={platformFilter.clearFilters}
+              />
+            </Panel>
+          ) : (
+            <>
+              <CategoryBarChart
+                title="Commission vs. commission + promo spend"
+                subtitle="Same period, both platforms — promo spend shown as a distinct, separately-sourced cost, never merged into commission"
+                valueLabel="Cost (USD)"
+                points={toChartPoints(platformFilter.filteredRows)}
+                sourceTool="compare_platform_economics"
+              />
+
+              <DataGrid
+                title="Platform economics, side by side"
+                subtitle={`${data.days_included} days included`}
+                columns={[
+                  'Platform',
+                  'Gross sales',
+                  'Commission paid',
+                  'Effective rate',
+                  'Promo spend',
+                  'Combined cost',
+                  'Combined effective rate',
+                ]}
+                rows={toTableRows(platformFilter.filteredRows)}
+                sourceTool="compare_platform_economics"
+              />
+            </>
+          )}
 
           {/* Effective-rate trend (spec 008 FR-007) — a separate panel,
               omitted entirely (never a placeholder or a single-point chart)
