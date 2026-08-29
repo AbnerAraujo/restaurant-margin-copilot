@@ -21,15 +21,19 @@ const (
 // list_discrepancies (this package's own reconciliation_tools.go, User
 // Story 2/3), get_promotion_roi and list_negative_roi_promotions
 // (promo_tools.go, User Story 4), compare_platform_economics
-// (platform_comparison_tools.go, specs/003-platform-comparator), and
+// (platform_comparison_tools.go, specs/003-platform-comparator),
 // get_period_totals (period_tools.go — sums and ranks an entire period in
 // one call, closing the per-day-tool-call-budget-exhaustion gap a
-// "which day had the most profit" question otherwise hit) — each file has
-// its own unexported register* function specifically for this function to
-// call. This package's own public surface for building a server is
-// RegisterMCPServer alone; nothing outside this package has any business
-// registering an individual tool on its own mcp-go server, so the
-// per-file registrars stay unexported.
+// "which day had the most profit" question otherwise hit), and
+// get_expense_pattern_by_day_of_month (day_of_month_pattern_tools.go —
+// groups by RECURRING day-of-month across months, a real gap named live
+// when the gate correctly refused to approximate it via repeated
+// get_daily_summary calls) — each file has its own unexported register*
+// function specifically for this function to call. This package's own
+// public surface for building a server is RegisterMCPServer alone;
+// nothing outside this package has any business registering an
+// individual tool on its own mcp-go server, so the per-file registrars
+// stay unexported.
 //
 // q is declared as the storage.Querier interface, not the concrete
 // *storage.Queries, for the same reason every function this one calls
@@ -61,6 +65,7 @@ func RegisterMCPServer(q storage.Querier) *server.MCPServer {
 	registerPromoTools(s, q)
 	registerPlatformComparisonTool(s, q)
 	registerPeriodTools(s, q)
+	registerDayOfMonthPatternTools(s, q)
 
 	return s
 }

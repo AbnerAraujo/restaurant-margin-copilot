@@ -82,6 +82,28 @@ via `mark3labs/mcp-go`, each wrapping a read-only query against
   period-total or best/worst-day question — never reconstruct one from
   repeated `get_daily_summary` calls.
 
+## `get_expense_pattern_by_day_of_month`
+
+- **Input**: `{ "period": {start, end} }`
+- **Output**: Every reconciled day in the period grouped by its DAY-OF-MONTH
+  (1st through 31st) and averaged for total expense (commissions + refunds
+  + input costs) across however many months in the period actually contain
+  that day-of-month — `pattern` (one `{day_of_month, avg_expense,
+  occurrences}` entry per day-of-month that occurs at least once, sorted
+  ascending), plus `highest_expense_day`/`lowest_expense_day` (same shape;
+  an exact tie is broken by the smaller day-of-month number), each
+  carrying `source_row_refs`. Returns `{ "error": "insufficient_data" }` if
+  any calendar day in the period has no computed reconciliation, the same
+  policy every other period-taking tool already applies. Added after a
+  real live question ("is the 15th typically my worst day?" / "which day
+  of the month costs the most on average?") that `get_period_totals`
+  cannot answer — that tool ranks by one specific calendar date within a
+  single period, not by a RECURRING position across many months — and the
+  gate correctly refused to approximate the grouping itself rather than
+  call `get_daily_summary` once per day and average client-side. Call this
+  tool directly for any question about an expense pattern by position in
+  the month — never reconstruct one from repeated single-day calls.
+
 ## Cross-cutting contract rules
 
 - Every tool response that includes a number includes `source_row_refs`.
