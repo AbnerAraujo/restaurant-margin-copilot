@@ -191,6 +191,25 @@ defects** across the full run — every failure traced to the model layer's
 date-grounding and tool/entity-selection behavior, which is the specific
 boundary this architecture's Go/model split is designed to contain.
 
+**Why refusal correctness is the only pre-committed target here.** Accuracy
+and consistency are measured and reported honestly, failures included, but
+neither was promised in advance — only refusal correctness was, at 100%.
+That's deliberate, not an easy target picked to look good: this product's
+riskiest bet (`docs/product-strategy.md`'s Hypothesis H1) is that an
+independent restaurant owner will trust a system that openly refuses or asks
+a clarifying question over one that always answers confidently. Constitution
+Principle II states the reasoning directly — "a confidently wrong margin
+figure is a worse outcome than a refusal" — because in a margin-tracking
+tool, a plausible-looking wrong number can drive a real business decision
+(cutting a shift, dropping a supplier), where an honest "I don't have that
+data" costs nothing. The 5/5 result is scored against
+`evaluation/promptfoo/refusal.yaml`'s five deliberately unanswerable-or-
+ambiguous questions (a missing day, an unattributable promo's ROI, a data
+source that doesn't exist, a date outside the fixture window, and a
+genuinely ambiguous "how was the weekend" that could silently include a
+missing day) — each one engineered against a real gap the ambiguity gate has
+to catch *before* any tool call runs, not a softball.
+
 ## Stack
 
 - **Backend**: Go, `sqlc` + `pgx/v5` + `golang-migrate` over PostgreSQL, fixed-point cents arithmetic — no floats near money
