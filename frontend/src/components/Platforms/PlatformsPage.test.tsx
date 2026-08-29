@@ -240,7 +240,12 @@ describe('PlatformsPage', () => {
 
     expect(screen.getAllByText('iFood').length).toBeGreaterThan(0)
     expect(screen.queryByText('Just Eat Takeaway')).not.toBeInTheDocument()
-    expect(screen.getByText('1 of 2 platforms shown')).toBeInTheDocument()
+    const summary = screen.getByText('1 of 2 platforms shown')
+    expect(summary).toBeInTheDocument()
+    // Matching Home/Promotions/Points (FilterBar's shared resultSummary):
+    // the count must live in an aria-live region, not just be visible text,
+    // so a screen-reader user hears it change as they filter.
+    expect(summary).toHaveAttribute('aria-live', 'polite')
 
     await userEvent.click(screen.getByRole('button', { name: /clear filters/i }))
     expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)

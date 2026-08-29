@@ -102,6 +102,24 @@ describe('ClosePage', () => {
     ).toBeInTheDocument()
   })
 
+  it('labels "Gross sales by source" rows with display names, never raw API keys', async () => {
+    stubFetch(RECONCILIATION_RESPONSE)
+    renderPage()
+
+    const heading = await screen.findByRole('heading', {
+      name: /gross sales by source/i,
+    })
+    const panel = heading.closest('div') ?? heading.parentElement
+    if (!panel) throw new Error('Could not find the Gross sales by source panel')
+
+    expect(within(panel).getByText('In-house POS')).toBeInTheDocument()
+    expect(within(panel).getByText('iFood')).toBeInTheDocument()
+    expect(within(panel).getByText('Just Eat Takeaway')).toBeInTheDocument()
+    expect(within(panel).queryByText('pos')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('ifood')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('just_eat_takeaway')).not.toBeInTheDocument()
+  })
+
   it('draws a calendar day the backend omitted as an explicit gap, never a $0 bar', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
     renderPage()
