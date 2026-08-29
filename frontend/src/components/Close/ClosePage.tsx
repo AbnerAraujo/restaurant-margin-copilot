@@ -334,26 +334,41 @@ export default function ClosePage() {
     const query = buildQuery(viewMode, selectedDate, rangeStart, rangeEnd)
     if (query === null) return
 
+    // Period mode has two independent date fields (rangeStart, rangeEnd),
+    // each its own piece of state with its own onChange handler — so
+    // editing one alone already satisfies this effect's dependency array
+    // and fired an immediate fetch for a range the owner hadn't finished
+    // choosing yet, then a second fetch a moment later once the other
+    // field changed too (reported live). Debounced so the fetch waits
+    // until the whole range has settled. "Latest" and "Day" each have at
+    // most one field to wait on, so they still fetch immediately, same as
+    // before this change.
+    const RANGE_DEBOUNCE_MS = 500
+    const delay = viewMode === 'period' ? RANGE_DEBOUNCE_MS : 0
+
     let cancelled = false
-    getJson<ReconciliationApiResponse>(`/api/reconciliation${query}`)
-      .then((response) => {
-        if (cancelled) return
-        setData(response)
-        // Only the unfiltered "latest" fetch's echoed start/end reflects the
-        // real ingested data's own range — a filtered fetch echoes back the
-        // requested window instead (data.go's servedBound), which would be
-        // the wrong thing to treat as the picker's min/max.
-        if (viewMode === 'latest') {
-          setBounds({ start: response.start, end: response.end })
-        }
-      })
-      .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
-      })
+    const timeoutId = setTimeout(() => {
+      getJson<ReconciliationApiResponse>(`/api/reconciliation${query}`)
+        .then((response) => {
+          if (cancelled) return
+          setData(response)
+          // Only the unfiltered "latest" fetch's echoed start/end reflects the
+          // real ingested data's own range — a filtered fetch echoes back the
+          // requested window instead (data.go's servedBound), which would be
+          // the wrong thing to treat as the picker's min/max.
+          if (viewMode === 'latest') {
+            setBounds({ start: response.start, end: response.end })
+          }
+        })
+        .catch((caught: unknown) => {
+          if (!cancelled) {
+            setError(caught instanceof Error ? caught.message : String(caught))
+          }
+        })
+    }, delay)
     return () => {
       cancelled = true
+      clearTimeout(timeoutId)
     }
   }, [viewMode, selectedDate, rangeStart, rangeEnd])
 

@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -196,5 +196,37 @@ describe('ClosePage', () => {
     expect(
       await screen.findByText(/no reconciled days on file yet/i),
     ).toBeInTheDocument()
+  })
+
+  it('debounces Period range-field edits — one fetch for the settled range, not one per field', async () => {
+    stubFetch(RECONCILIATION_RESPONSE)
+    renderPage()
+
+    // The initial "latest" fetch is unaffected by the debounce (delay=0 for
+    // that mode) — wait for it so bounds/bar data are in place before
+    // switching modes.
+    await screen.findByText('-$120.26')
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Period' }))
+
+    // Switching to Period pre-fills rangeStart/rangeEnd (handleModeChange)
+    // and schedules a debounced fetch — it must NOT have fired yet.
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    // Edit the "From" field before the mode-switch's own debounce elapses —
+    // this must reset the timer rather than queuing a second fetch.
+    const fromInput = screen.getByLabelText('From')
+    fireEvent.change(fromInput, { target: { value: '2026-08-01' } })
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    // Real, unmocked wait past the 500ms debounce window — confirms exactly
+    // ONE new fetch fires for the FINAL settled range, not one per edit.
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2), {
+      timeout: 1500,
+    })
+    expect(fetch).toHaveBeenLastCalledWith(
+      expect.stringContaining('start=2026-08-01'),
+    )
   })
 })
