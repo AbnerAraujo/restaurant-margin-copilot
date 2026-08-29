@@ -133,6 +133,11 @@ func main() {
 		// — a real crash report, logged so the next one leaves a queryable
 		// trace instead of depending on someone noticing and describing it.
 		mux.HandleFunc("/api/client-errors", httpapi.HandleRecordClientError(store))
+		// GET/PUT /api/profile: the restaurant owner's own company
+		// information and photo, shown on and edited from the Profile page
+		// (migration 000011). No model involved, same as every other
+		// plain CRUD endpoint registered directly here.
+		mux.HandleFunc("/api/profile", httpapi.HandleProfile(store))
 		// specs/007-cost-sheet-upload: letting the owner upload/replace the
 		// supplier cost sheet through the web UI instead of requiring a
 		// developer to run -ingest on their behalf. Preview and template need
@@ -166,7 +171,7 @@ func main() {
 			Store:   store,
 		}))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, GET/PUT /api/profile, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

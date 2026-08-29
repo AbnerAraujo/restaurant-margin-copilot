@@ -1,6 +1,9 @@
+import type { ReactElement } from 'react'
 import { render, screen } from '@testing-library/react'
-import { createMemoryRouter, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider, type RouteObject } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import ProfilePage from '@/components/Profile/ProfilePage'
 
 // Stands in for a real chrome crash (the sidebar, the mobile nav bar —
 // anything AppShell itself renders directly, as opposed to a routed page).
@@ -37,5 +40,22 @@ describe('root route', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Something broke in App shell.',
     )
+  })
+})
+
+describe('profile route wiring', () => {
+  it('registers /profile rendering ProfilePage inside its own named error boundary', () => {
+    const shell = routes[0] as RouteObject
+    const profileRoute = shell.children?.find((route) => route.path === 'profile')
+    expect(profileRoute).toBeDefined()
+
+    // withBoundary('Profile', <ProfilePage />) — the same
+    // ErrorBoundary(component=name){children} shape every other route uses.
+    const boundaryElement = profileRoute!.element as ReactElement<{
+      component: string
+      children: ReactElement
+    }>
+    expect(boundaryElement.props.component).toBe('Profile')
+    expect(boundaryElement.props.children.type).toBe(ProfilePage)
   })
 })

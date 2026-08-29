@@ -128,6 +128,20 @@ type QuestionInteraction struct {
 	CreatedAt           pgtype.Timestamptz        `json:"created_at"`
 }
 
+// The one restaurant this single-tenant prototype belongs to: its company information and photo, shown on and edited from the Profile page. Pinned to exactly one row (id=1) by design — see this migration's file header for the forward-compatible rationale.
+type RestaurantProfile struct {
+	ID               int16              `json:"id"`
+	Name             string             `json:"name"`
+	Address          string             `json:"address"`
+	Phone            string             `json:"phone"`
+	Email            string             `json:"email"`
+	Description      string             `json:"description"`
+	PhotoData        []byte             `json:"photo_data"`
+	PhotoContentType pgtype.Text        `json:"photo_content_type"`
+	CreatedAt        pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
+}
+
 // One row per distinct UTC calendar day the app was opened (FR-003). No tenant/account column yet — single-owner prototype (spec 002 Assumptions); the shape to add tenant_id to if/when multi-tenant is ever built. Never pre-seeded: a fresh instance has zero rows, which is the correct, non-fabricated starting state (SC-002).
 type UsageEvent struct {
 	ID         pgtype.UUID        `json:"id"`

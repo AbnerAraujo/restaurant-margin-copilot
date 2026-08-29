@@ -69,6 +69,10 @@ type Querier interface {
 	GetPromotionRoiByCampaign(ctx context.Context, campaignID string) ([]PromotionRoiRecord, error)
 	// Backs the get_promotion_roi MCP tool contract (platform+period input form).
 	GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg GetPromotionRoiByPlatformAndPeriodParams) ([]PromotionRoiRecord, error)
+	// Backs GET /api/profile. Returns pgx.ErrNoRows when the owner has not
+	// saved a profile yet (id=1 never inserted) — the handler renders that as
+	// an empty, not-yet-configured profile rather than an error.
+	GetRestaurantProfile(ctx context.Context) (RestaurantProfile, error)
 	// Backs GET /api/promotions (internal/httpapi/data.go): the whole promotion
 	// set for the Promotions page, which is a deliberate full listing rather
 	// than a period query — the page's job is "every campaign on file and
@@ -153,6 +157,12 @@ type Querier interface {
 	// Writer: internal/reconcile/ only. roi/attributed_* are NULL together when
 	// attribution is unavailable (FR-013) — this query never fills them in.
 	UpsertPromotionRoiRecord(ctx context.Context, arg UpsertPromotionRoiRecordParams) (PromotionRoiRecord, error)
+	// Writer: internal/httpapi's profile handler only (PUT /api/profile).
+	// restaurant_profile is pinned to exactly one row (id=1, see migration
+	// 000011) — this is a full replace of that one row, not a partial patch,
+	// so the caller must pass every field's intended final value, including an
+	// unchanged photo it read back from GET /api/profile.
+	UpsertRestaurantProfile(ctx context.Context, arg UpsertRestaurantProfileParams) (RestaurantProfile, error)
 }
 
 var _ Querier = (*Queries)(nil)

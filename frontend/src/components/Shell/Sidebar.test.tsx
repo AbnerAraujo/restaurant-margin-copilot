@@ -38,6 +38,7 @@ function renderSidebarAt(initialPath: string) {
           { path: 'close', element: <p>Close content</p> },
           { path: 'ask', element: <p>Ask content</p> },
           { path: 'promotions', element: <p>Promotions content</p> },
+          { path: 'profile', element: <p>Profile content</p> },
         ],
       },
     ],
@@ -110,5 +111,20 @@ describe('Sidebar', () => {
     expect(
       screen.getByRole('link', { name: /today's close/i }),
     ).toHaveAttribute('aria-current', 'page')
+  })
+
+  it('renders a Profile nav item linking to /profile', async () => {
+    const user = userEvent.setup()
+    renderSidebarAt('/')
+    const nav = getNav()
+
+    const profileLink = within(nav).getByRole('link', { name: /profile/i })
+    expect(profileLink).toBeInTheDocument()
+    expect(profileLink).toHaveAttribute('href', '/profile')
+
+    await user.click(profileLink)
+
+    expect(screen.getByText('Profile content')).toBeInTheDocument()
+    expect(profileLink).toHaveAttribute('aria-current', 'page')
   })
 })

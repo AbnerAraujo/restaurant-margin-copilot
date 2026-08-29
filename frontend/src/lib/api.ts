@@ -59,6 +59,32 @@ export async function postJson<T>(path: string, body?: unknown): Promise<T> {
 }
 
 /**
+ * PUTs a JSON body, turning a non-2xx into a thrown `ApiError` — the same
+ * shape `postJson` already gives every POST endpoint. Backs
+ * `PUT /api/profile` (the Profile page's full-replace save), and any future
+ * "replace this whole resource" endpoint that isn't a good fit for POST's
+ * create-a-new-thing connotation.
+ */
+export async function putJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) {
+    const raw = await response.text()
+    try {
+      const parsed = JSON.parse(raw) as { error?: string; detail?: string }
+      throw new ApiError(parsed.error ?? 'unknown_error', parsed.detail ?? raw)
+    } catch (caught) {
+      if (caught instanceof ApiError) throw caught
+      throw new Error(`${path} returned ${response.status}: ${raw.trim()}`)
+    }
+  }
+  return (await response.json()) as T
+}
+
+/**
  * POSTs a `multipart/form-data` body carrying a single file under field name
  * `file` (specs/007-cost-sheet-upload's preview/commit endpoints) — no
  * `Content-Type` header is set explicitly, since the browser must generate
