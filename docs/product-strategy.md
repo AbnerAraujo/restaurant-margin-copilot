@@ -1675,6 +1675,14 @@ permanent model-capability limit — not something a better prompt or a
 bigger token budget was ever going to solve. Constitution Principle V asks
 for failures to be named, not smoothed over; this entry is that.
 
+*Correction, later the same day (see the "The model swap was itself
+papering over an architecture violation" entry below): Bug 2's diagnosis
+was honest but its conclusion was wrong-footed. The comparison Haiku kept
+failing was deterministic date arithmetic that Principle I says no model
+should have owned in the first place; the durable fix is a Go pre-check,
+not a smarter model. The Sonnet swap stands only for the genuinely
+linguistic residual of the gate's job.*
+
 ## 2026-08-29 — Spec 008 implementation: real decisions across 4 parallel stories
 
 Spec 008 (Dashboard & Chat Intelligence v2) was implemented the same night it was specified, across 4 independently-scoped P1 user stories, using two waves of parallel agents once file-ownership analysis confirmed which stories could run concurrently without touching the same file (US1+US3 in wave one; US2+US4 in wave two, each depending on a file its wave-one counterpart had already landed). This entry records the real engineering decisions made along the way — tasks.md described the *shape* of each feature; several of the specifics below were only resolved once an implementer actually read the current code.
@@ -1741,3 +1749,55 @@ A live check of the numbers above by the user surfaced a real gap the five-regim
 - **153 of 730 days (21.0%) net-negative daily**, up from 19.5%.
 - Spot-checked: all 21 of August 2025's "Heat-wave compressor overload" invoices in the regenerated `supplier_cost_sheet.csv` are dated within 2025-08, none outside it; `GET /api/reconciliation?start=2025-08-01&end=2025-08-31` independently sums to the same -$5,750.43 Postgres reports.
 - `go build ./... && go vet ./... && go test ./...` (with `DATABASE_URL` set) still fully clean after both the new regime and the bug fix.
+
+## 2026-08-29 — The model swap was itself papering over an architecture violation
+
+**[Sourced]** A reviewer of this project's pitch asked the question the
+Bug 2 entry above should have asked itself: if the gate's job included
+deciding whether "July 2026" falls inside a `2024-08-01..2026-08-14`
+window, that decision is date-range **arithmetic** — and Constitution
+Principle I ("deterministic arithmetic, probabilistic narration") says no
+model may own arithmetic whose verdict the owner relies on. The code
+confirmed it: the gate's system prompt explicitly instructed the model,
+"Before concluding a fully-dated question … falls outside
+%[1]s..%[2]s, do the actual comparison explicitly and carefully." Three prompt rewrites and a
+model swap were, in hindsight, four attempts to make a probabilistic
+component better at a computation that `internal/storage.LoadDataDateRange`
+had already resolved deterministically at process start and that
+`time.Time` comparison decides exactly, every time, for free.
+
+**What changed.** `internal/ambiguity/daterange.go` now runs before any
+model call on every classification: a deliberately conservative Go parser
+extracts explicit, fully-specified date references (ISO dates, month-name
++ year with or without a day, numeric d/m/y-or-m/d/y with every
+calendar-valid reading kept, word-bounded bare years) from the user's own
+text. If **all** of them fall wholly outside the known window, the
+question is refused in Go — zero model calls, zero tokens, a refusal
+worded from the real facts, and instrumented honestly as
+`none (deterministic date-range pre-check)` rather than as a zero-token
+model call. If any are in range, the model still classifies (ambiguity
+judgment is legitimately its job) but receives every range verdict as
+precomputed fact it is forbidden to re-derive or contradict.
+
+**What stays with the model, and why that's the honest boundary.**
+Resolving "last month", "the weekend", or a year-less "August 3rd" against
+the data's own "today" is language understanding, not arithmetic — as is
+any date phrasing the conservative parser deliberately declines to guess
+at ("the seventh month of 2026"). The Sonnet 5 swap therefore stands, but
+its justification is corrected everywhere it was recorded: it bought
+better judgment on the genuinely linguistic residual; it did not — could
+not — "fix" a bug whose correct home was never a model. **[Assumption]**
+The parser's conservatism is the right trade: a date form it cannot
+recognize with certainty falls through to the model path (the pre-swap
+status quo), because a false deterministic refusal would be strictly worse
+than one more model classification.
+
+**Verified live** against the running backend and the real
+`2024-08-01..2026-08-14` dataset: "What was our margin in July 2023?"
+refused in ~9ms with an interactions row of literally zero tokens and
+$0.00; "What was our margin for July 2026?" — the exact question from the
+original incident — classified answerable and returned the reconciled
+month (margin total $79,827.72, provenance-cited), with the gate's call
+carrying the precomputed `"July 2026": IN RANGE` verdict. Structurally
+guaranteed in tests, not just observed: a counting-fake LLM client asserts
+the out-of-range path makes **zero** model invocations.

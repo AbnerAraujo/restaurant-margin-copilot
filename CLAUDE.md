@@ -44,8 +44,13 @@ This split must be documented and easy to point at in a demo.
   Haiku 4.5** for the paraphrase-match cache classifier. The gate started on
   Haiku 4.5 (cheap classification task) and moved to Sonnet 5 on 2026-08-29
   after Haiku repeatedly misclassified in-range questions once the live
-  dataset grew past a single year — see `internal/llmclient/cost.go`'s doc
-  comment for the full rationale.
+  dataset grew past a single year. Corrected record: that failure was
+  date-range arithmetic, which no model should ever have owned — a
+  deterministic Go pre-check (`internal/ambiguity/daterange.go`) now
+  refuses explicit out-of-range dates before any model call and hands
+  in-range verdicts to the gate as precomputed fact; Sonnet 5 stays only
+  for the genuinely linguistic residual — see `internal/llmclient/cost.go`'s
+  doc comment for the full rationale.
 
 ## Pre-processing gate before execution
 Before anything runs, evaluate the question in isolation:

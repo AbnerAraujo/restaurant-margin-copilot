@@ -19,6 +19,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/stretchr/testify/require"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
@@ -241,6 +242,95 @@ func TestClassify_RejectsEmptyQuestion(t *testing.T) {
 	g := New(llmclient.New(), testDataStart, testDataEnd)
 	_, err := g.Classify(context.Background(), "   ", nil, nil)
 	require.ErrorIs(t, err, ErrEmptyQuestion)
+}
+
+// countingCreator is a fake messageCreator in this codebase's counting-fake
+// convention (see internal/httpapi's countingGate): it records every
+// would-be model call so a test can assert, structurally, that a code path
+// made exactly N of them — most importantly N == 0 for the deterministic
+// date-range pre-check.
+type countingCreator struct {
+	calls    int
+	lastReq  llmclient.MessageRequest
+	response *llmclient.MessageResult
+}
+
+func (c *countingCreator) CreateMessage(_ context.Context, req llmclient.MessageRequest) (*llmclient.MessageResult, error) {
+	c.calls++
+	c.lastReq = req
+	if c.response == nil {
+		return nil, fmt.Errorf("countingCreator: no canned response configured")
+	}
+	resp := *c.response
+	return &resp, nil
+}
+
+// The core guarantee of the deterministic pre-check: a question whose
+// explicit date is clearly outside the known data window is refused by Go
+// alone — zero model invocations, zero tokens, zero cost, and a refusal
+// reason naming the real facts.
+func TestClassify_OutOfRangeExplicitDateRefusesWithZeroModelCalls(t *testing.T) {
+	fake := &countingCreator{}
+	g := newGate(fake, testDataStart, testDataEnd)
+
+	d, err := g.Classify(context.Background(), "What was our margin in July 2023?", nil, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, 0, fake.calls, "an out-of-range explicit date must never reach any model — range inclusion is Go's job (Constitution Principle I)")
+	require.Equal(t, instrumentation.GateUnanswerable, d.Result)
+	require.True(t, d.DeterministicPrecheck)
+	require.Nil(t, d.Writer, "no writer pass either — the refusal is worded deterministically")
+	require.Zero(t, d.InputTokens)
+	require.Zero(t, d.OutputTokens)
+	require.Zero(t, d.EstimatedCostUSD)
+	require.Contains(t, d.RefusalReason, `"July 2023"`)
+	require.Contains(t, d.RefusalReason, testDataStart)
+	require.Contains(t, d.RefusalReason, testDataEnd)
+}
+
+// The other half of the pre-check: an explicit IN-RANGE date still goes to
+// the model for classification (ambiguity judgment is legitimately its
+// job), but the range verdict travels with it as an already-computed fact —
+// the model is never asked to re-derive the comparison that Haiku got wrong
+// live on 2026-08-29.
+func TestClassify_InRangeExplicitDateHandsTheModelAPrecomputedVerdict(t *testing.T) {
+	fake := &countingCreator{response: &llmclient.MessageResult{
+		Text:         `{"classification": "answerable", "clarifying_question": "", "clarifying_options": [], "assumption_stated": "", "reason": ""}`,
+		StopReason:   anthropic.StopReasonEndTurn,
+		InputTokens:  400,
+		OutputTokens: 20,
+	}}
+	g := newGate(fake, testDataStart, testDataEnd)
+
+	d, err := g.Classify(context.Background(), "What was our margin on 2026-08-05?", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, instrumentation.GateAnswerable, d.Result)
+	require.False(t, d.DeterministicPrecheck)
+	require.Equal(t, 1, fake.calls, "in-range dates still get a real classification call")
+
+	require.Len(t, fake.lastReq.Messages, 1)
+	sent := fake.lastReq.Messages[0].Content[0].GetText()
+	require.NotNil(t, sent)
+	require.Contains(t, *sent, "[Deterministic date-range check")
+	require.Contains(t, *sent, `"2026-08-05": IN RANGE`)
+}
+
+// A question with no explicit fully-specified date must reach the model
+// exactly as before — no verdict block, no behavior change for the
+// genuinely linguistic cases the model exists for.
+func TestClassify_NonExplicitDateQuestionIsUntouchedByThePrecheck(t *testing.T) {
+	fake := &countingCreator{response: &llmclient.MessageResult{
+		Text:       `{"classification": "answerable", "clarifying_question": "", "clarifying_options": [], "assumption_stated": "", "reason": ""}`,
+		StopReason: anthropic.StopReasonEndTurn,
+	}}
+	g := newGate(fake, testDataStart, testDataEnd)
+
+	_, err := g.Classify(context.Background(), "How did we do this week?", nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, 1, fake.calls)
+	sent := fake.lastReq.Messages[0].Content[0].GetText()
+	require.NotNil(t, sent)
+	require.NotContains(t, *sent, "[Deterministic date-range check")
 }
 
 // TestGate_Classify_LiveSmokeTest makes exactly 3 real Claude Haiku 4.5
