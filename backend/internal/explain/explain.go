@@ -41,8 +41,22 @@ import (
 // the cap-exceeded error and still respond in text once.
 const MaxTurns = mcptools.DefaultMaxToolCallsPerInteraction + 3
 
-// MaxAnswerTokens bounds the model's final narration turn.
-const MaxAnswerTokens = 1024
+// MaxAnswerTokens bounds the model's final narration turn. Raised from the
+// original 1024 after a real, recurring live truncation, confirmed from
+// question_interaction: "The single highest-expense calendar date
+// overall"/"...in 2026" hit exactly 1024 output tokens on three separate
+// live attempts (two before get_expense_pattern_by_day_of_month existed,
+// one after) — a question whose honest answer needs real room, either to
+// explain in detail why "highest expense on one specific calendar date"
+// isn't something get_period_totals ranks (it ranks by margin, not
+// expense) while offering real alternatives, or, now that
+// get_expense_pattern_by_day_of_month exists, to narrate that tool's
+// fuller result (up to 31 day-of-month rows plus highest/lowest) well.
+// 2048 gives real headroom for either case — still a hard, deliberate
+// cap on ONE narration turn, not a loosening into unbounded prose — and
+// a response that still hits it is caught explicitly by the
+// stop_reason==MaxTokens check just below, never silently trusted.
+const MaxAnswerTokens = 2048
 
 // ToolInvocation is one successful MCP tool call this interaction made: the
 // tool's name and the raw JSON result it returned. Recorded so a caller can
