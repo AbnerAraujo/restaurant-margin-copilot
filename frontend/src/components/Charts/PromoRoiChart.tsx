@@ -166,7 +166,11 @@ export interface PromoRoiChartProps {
 
 const CHART_WIDTH = 560
 const CHART_HEIGHT = 300
-const MARGIN = { top: 44, right: 16, bottom: 44, left: 48 }
+// bottom: 44 -> 56 to fit an explicit "Campaigns" x-axis title beneath the
+// campaign-id ticks (mirroring "Net (USD)" on the y-axis) — the reported
+// "the x-axis has no meaning" gap was partly that nothing named what the
+// bars even ARE, not just that too few of them were labeled.
+const MARGIN = { top: 44, right: 16, bottom: 56, left: 48 }
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
 
 const BAR_WIDTH = 24
@@ -205,6 +209,24 @@ const REFUSAL_BOX_HEIGHT = 28
 
 const MIN_SLOT_WIDTH = 28 // BAR_WIDTH + a visible gutter between neighbors
 const LABEL_ALL_MAX = 8
+// Reported live at 29 real campaigns: REFUSAL_BOX_WIDTH (64px) is more than
+// two slot-widths at MIN_SLOT_WIDTH (28px), so the "Unattributable" marker
+// spilled into its neighbors' slots on both sides — the dashed box and its
+// text label visually crowded whatever bar sat next to a refused campaign.
+// Same fix as the value/campaign-id labels below: full box + text label only
+// while there's room (<= LABEL_ALL_MAX, where slots are wide); past that, a
+// small icon-only marker sized to fit its own slot — full detail stays one
+// hover away via the existing tooltip and aria-label, never lost.
+const COMPACT_REFUSAL_BOX_SIZE = 20
+// Evenly-spaced axis ticks past LABEL_ALL_MAX, same discipline
+// MarginTrendChart already applies to its own x-axis at scale (see that
+// file's `tickLabelStep`) — a fixed cap on how many campaign-id ticks ever
+// render, rather than "only the 2 ROI extremes," so the x-axis still reads
+// as a real axis instead of a nearly-blank one past a handful of bars.
+// Lower than MarginTrendChart's 14: campaign ids ("IFOOD-CAMP-001") run
+// much longer than that chart's day-of-month digits, so fewer, better-
+// spaced ticks read cleanly where more, tighter ones would collide.
+const MAX_AXIS_TICKS = 8
 
 /**
  * Y scale derived from the data, not hard-coded. The previous fixed
@@ -332,6 +354,17 @@ function PromoRoiChart({
   )
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right
   const labelEveryBar = chartableData.length <= LABEL_ALL_MAX
+  // Same formula as MarginTrendChart's tickLabelStep: 1-for-1 at small
+  // counts, otherwise evenly spaced so at most MAX_AXIS_TICKS labels ever
+  // render regardless of how many campaigns there are.
+  const tickLabelStep = labelEveryBar
+    ? 1
+    : Math.max(1, Math.ceil(chartableData.length / MAX_AXIS_TICKS))
+  const slotWidth = plotWidth / chartableData.length
+  const refusalBoxWidth = labelEveryBar
+    ? REFUSAL_BOX_WIDTH
+    : Math.min(REFUSAL_BOX_WIDTH, Math.max(COMPACT_REFUSAL_BOX_SIZE, slotWidth - 4))
+  const refusalBoxHeight = labelEveryBar ? REFUSAL_BOX_HEIGHT : COMPACT_REFUSAL_BOX_SIZE
   const { ticks, yToPixel, baselineY } = buildScale(chartableData)
   const bars = buildBars(chartableData, yToPixel, plotWidth)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
@@ -516,10 +549,14 @@ function PromoRoiChart({
                   </text>
                 ) : null}
 
-                {/* Per-bar campaign-id tick — same declutter rule as the
-                    value label. Every campaign stays identifiable via the
-                    hover tooltip, the provenance list, and the table below. */}
-                {labelEveryBar ? (
+                {/* Per-bar campaign-id tick. Every bar below LABEL_ALL_MAX;
+                    past that, evenly spaced at tickLabelStep (same
+                    discipline as MarginTrendChart's x-axis) rather than
+                    only the 2 ROI extremes, so the axis still reads as an
+                    axis instead of going nearly blank at real scale. Every
+                    campaign stays identifiable via the hover tooltip, the
+                    table below, and its Sources column regardless. */}
+                {index % tickLabelStep === 0 ? (
                   <text
                     x={slotCenterX}
                     y={CHART_HEIGHT - MARGIN.bottom + 16}
@@ -541,11 +578,32 @@ function PromoRoiChart({
           >
             Net (USD)
           </text>
+
+          {/* X-axis title — same role as "Net (USD)" above, naming what the
+              bars ARE (one per campaign) rather than leaving the axis to be
+              inferred from whichever ids happen to be labeled. */}
+          <text
+            x={(MARGIN.left + chartWidth - MARGIN.right) / 2}
+            y={CHART_HEIGHT - 8}
+            textAnchor="middle"
+            className="fill-muted-foreground text-[10px]"
+          >
+            Campaigns
+          </text>
         </svg>
 
-        {/* Refusal state — dashed outline + icon + text, never a bar of any
-            height, matching RefusalBubble's visual language for the same
-            "we won't estimate" policy (see FR-013). */}
+        {/* Refusal state — dashed outline + icon (+ text label while there's
+            room), never a bar of any height, matching RefusalBubble's
+            visual language for the same "we won't estimate" policy (see
+            FR-013). REFUSAL_BOX_WIDTH (64px) is wider than a real dataset's
+            slot width (28px at MIN_SLOT_WIDTH) — reported live as the
+            marker spilling into neighboring campaigns' slots on both sides.
+            Past LABEL_ALL_MAX this renders at refusalBoxWidth/Height
+            instead (capped to fit its own slot) with the text label
+            dropped — the marker's pointer-events-none, decorative role is
+            unchanged, so hiding this text costs no accessible name: the
+            bar's own aria-label and the hover tooltip both already state
+            "unattributable, ROI refused" in full. */}
         {bars
           .filter((bar) => bar.isRefused)
           .map((bar) => (
@@ -555,21 +613,23 @@ function PromoRoiChart({
               style={{
                 left: `${(bar.slotCenterX / chartWidth) * 100}%`,
                 top: `${(baselineY / CHART_HEIGHT) * 100}%`,
-                width: `${(REFUSAL_BOX_WIDTH / chartWidth) * 100}%`,
+                width: `${(refusalBoxWidth / chartWidth) * 100}%`,
               }}
             >
               <div
                 className="flex items-center justify-center rounded-md border border-dashed border-destructive/40 bg-destructive/5"
-                style={{ height: REFUSAL_BOX_HEIGHT, width: '100%' }}
+                style={{ height: refusalBoxHeight, width: '100%' }}
               >
                 <ShieldAlert
-                  className="size-3.5 text-destructive-text"
+                  className={labelEveryBar ? 'size-3.5 text-destructive-text' : 'size-3 text-destructive-text'}
                   aria-hidden="true"
                 />
               </div>
-              <span className="text-[10px] font-medium text-destructive-text">
-                Unattributable
-              </span>
+              {labelEveryBar ? (
+                <span className="text-[10px] font-medium text-destructive-text">
+                  Unattributable
+                </span>
+              ) : null}
             </div>
           ))}
 
@@ -579,7 +639,7 @@ function PromoRoiChart({
             className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
             style={{
               left: `${(hovered.slotCenterX / chartWidth) * 100}%`,
-              top: `${(Math.min(hovered.isRefused ? baselineY - REFUSAL_BOX_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
+              top: `${(Math.min(hovered.isRefused ? baselineY - refusalBoxHeight / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
             }}
           >
             <p className="font-medium text-muted-foreground">

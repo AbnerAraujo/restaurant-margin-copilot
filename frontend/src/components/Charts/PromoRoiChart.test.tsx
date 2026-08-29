@@ -168,10 +168,21 @@ describe('PromoRoiChart', () => {
 
     // ...but the chart no longer prints a campaign id under every one of
     // them (the "chart is on the left"/illegible-smear bug at this count) —
-    // only the two extreme bars get a direct value label.
-    expect(screen.queryByText('CAMP-0')).not.toBeInTheDocument()
+    // only the two extreme bars get a direct VALUE label...
     expect(screen.getByText('+$14.00')).toBeInTheDocument() // net = 28-14
     expect(screen.getByText('−$14.00')).toBeInTheDocument() // net = 0-14
+
+    // ...while the x-AXIS itself still reads as an axis: evenly-spaced
+    // campaign-id ticks (tickLabelStep, same discipline as
+    // MarginTrendChart's own x-axis at scale), not just the 2 ROI extremes.
+    // 29 campaigns, MAX_AXIS_TICKS=8 -> step ceil(29/8)=4 -> indices
+    // 0,4,8,...,28 are labeled; the ones in between are not.
+    expect(screen.getByText('CAMP-0')).toBeInTheDocument()
+    expect(screen.getByText('CAMP-4')).toBeInTheDocument()
+    expect(screen.getByText('CAMP-28')).toBeInTheDocument()
+    expect(screen.queryByText('CAMP-1')).not.toBeInTheDocument()
+    expect(screen.queryByText('CAMP-2')).not.toBeInTheDocument()
+    expect(screen.queryByText('CAMP-3')).not.toBeInTheDocument()
 
     // The SVG's own design width grows with campaign count rather than
     // staying pinned to the 4-campaign fixture's 560px, which is what left
@@ -180,6 +191,44 @@ describe('PromoRoiChart', () => {
     const svg = container.querySelector('svg')
     const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
     expect(viewBoxWidth).toBeGreaterThan(560)
+  })
+
+  it('shrinks the refusal marker to fit its own slot at real scale, dropping the text label rather than spilling into neighboring bars', () => {
+    // Reported live: at 29 campaigns (MIN_SLOT_WIDTH=28px), the refusal
+    // marker's original fixed 64px box was wider than 2 slots and visually
+    // overlapped whichever campaigns sat on either side of a refused one.
+    const manyCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 29 },
+      (_, i) => ({
+        campaignId: `CAMP-${i}`,
+        campaignName: `CAMP-${i}`,
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: i === 15 ? null : 100 + i,
+        net: i === 15 ? null : i - 14,
+        reason: i === 15 ? 'attribution_unavailable' : undefined,
+        sourceRefs: [],
+      }),
+    )
+
+    render(<PromoRoiChart data={manyCampaigns} />)
+
+    // The refused bar is still a real, focusable target with its full
+    // refusal state named in its accessible name...
+    expect(
+      screen.getByRole('button', { name: /CAMP-15.*unattributable, ROI refused/i }),
+    ).toBeInTheDocument()
+    // ...but past LABEL_ALL_MAX the box drops its visible text label (kept
+    // only in the aria-label and hover tooltip) so it can shrink to fit its
+    // own slot instead of spilling into CAMP-14's or CAMP-16's.
+    expect(screen.queryByText('Unattributable')).not.toBeInTheDocument()
+  })
+
+  it('names the x-axis explicitly ("Campaigns"), the same way the y-axis names itself ("Net (USD)")', () => {
+    render(<PromoRoiChart />)
+
+    expect(screen.getByText('Campaigns')).toBeInTheDocument()
+    expect(screen.getByText('Net (USD)')).toBeInTheDocument()
   })
 
   it('exposes a table view with the refusal spelled out, not a null or zero', async () => {
