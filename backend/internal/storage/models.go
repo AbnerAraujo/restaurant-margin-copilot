@@ -30,6 +30,20 @@ type AnswerCacheHit struct {
 	ServedAt                pgtype.Timestamptz `json:"served_at"`
 }
 
+// One row per on-demand business-insight advice call (specs/009-business-insight-advisor) — a real, owner-initiated Claude Sonnet 5 call whose kind was first derived deterministically in Go and re-verified against the posted tool results before any tokens were spent. Kept out of question_interaction (this is not the gate or explain running), answer_cache_hit (this is not free), and paraphrase_match (this avoids nothing — it IS the spend) so all four interaction states stay distinguishable and no cost is ever netted or hidden.
+type BusinessInsightInteraction struct {
+	ID                 pgtype.UUID        `json:"id"`
+	Kind               string             `json:"kind"`
+	GroundingToolCalls json.RawMessage    `json:"grounding_tool_calls"`
+	AdviceText         string             `json:"advice_text"`
+	ModelUsed          string             `json:"model_used"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	EstimatedCostUsd   pgtype.Numeric     `json:"estimated_cost_usd"`
+	LatencyMs          int32              `json:"latency_ms"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+}
+
 // One row per frontend crash caught by the ErrorBoundary (frontend/src/components/ErrorBoundary.tsx). Read-only feed for retrospectives, not a support ticket queue — no auth, no PII collected on purpose (single-owner prototype, per the same scope constraint as everywhere else in this build).
 type ClientErrorReport struct {
 	ID         pgtype.UUID        `json:"id"`

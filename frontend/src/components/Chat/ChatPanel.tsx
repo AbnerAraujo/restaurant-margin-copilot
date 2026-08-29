@@ -43,6 +43,10 @@ import {
   type ThreadStore,
 } from '@/lib/chatStorage'
 import AnswerText from '@/components/Chat/AnswerText'
+import BusinessInsightChip, {
+  type BusinessInsightTeaser,
+  type ResolveBusinessInsight,
+} from '@/components/Chat/BusinessInsightChip'
 import { buildCompareToLastPeriodQuestion } from '@/components/Chat/comparePeriod'
 import SuggestionChips from '@/components/Chat/SuggestionChips'
 import {
@@ -165,6 +169,16 @@ export interface AnswerChatMessage {
    * from the original question text, per spec.md's own stated edge case.
    */
   resolvedPeriod?: ChatResolvedPeriod
+  /**
+   * Spec 009 (business-insight advisor): the zero-cost teaser derived
+   * deterministically in Go (`AskResponse.business_insight`) — a kind tag
+   * and a short title, nothing more. Present only when the answer's own
+   * computed data matched one of the five documented insight patterns;
+   * absent for most answers. The full advice text does NOT exist yet: it
+   * is a separate, billed model call made only if the owner taps the chip
+   * (see {@link BusinessInsightChip}), never auto-fetched.
+   */
+  businessInsight?: BusinessInsightTeaser
   askedAt: string
 }
 
@@ -245,6 +259,16 @@ export interface ChatPanelProps {
     pendingClarification?: PendingClarification,
     previousExchange?: PreviousExchange,
   ) => Promise<AssistantChatMessage>
+  /**
+   * Fetches the full advice for a tapped business-insight teaser (spec
+   * 009) — the same dependency-injection shape as {@link resolveAnswer}:
+   * the page-level wiring owns the `POST /api/business-insight` call and
+   * the cost-panel logging (see AskPage). When absent, teasers are not
+   * rendered at all — a chip whose tap could never resolve would be a
+   * dead affordance, and only the live surface (which passes this) ever
+   * receives real teasers anyway.
+   */
+  resolveBusinessInsight?: ResolveBusinessInsight
   /**
    * Starter questions offered when the conversation is empty (Nielsen #6,
    * recognition rather than recall — an empty box gives a time-poor owner no
@@ -684,9 +708,11 @@ function ShowYourWorkPanel({ toolCalls }: { toolCalls: ChatToolCall[] }) {
 function AnswerBubble({
   message,
   onSuggestionSelect,
+  resolveBusinessInsight,
 }: {
   message: AnswerChatMessage
   onSuggestionSelect: (text: string) => void
+  resolveBusinessInsight?: ResolveBusinessInsight
 }) {
   const tool = message.visualization?.source_tool
   const sourceCount = message.provenance.length
@@ -771,6 +797,22 @@ function AnswerBubble({
               label="Worth checking next"
               questions={followUps.map((text) => ({ text }))}
               onSelect={onSuggestionSelect}
+            />
+          </div>
+        ) : null}
+
+        {/* Spec 009: the business-insight teaser, AFTER every part of the
+            provenance-backed answer (follow-ups included) and visually
+            distinct from all of it — probabilistic advice must never blend
+            into computed facts. Rendered only when both the teaser and a
+            resolver exist; the full advice is fetched exclusively on tap
+            inside the chip, never here. */}
+        {message.businessInsight && resolveBusinessInsight ? (
+          <div className="border-t border-border pt-2.5">
+            <BusinessInsightChip
+              teaser={message.businessInsight}
+              toolCalls={toolCalls}
+              resolveBusinessInsight={resolveBusinessInsight}
             />
           </div>
         ) : null}
@@ -970,6 +1012,7 @@ function PendingBubble() {
 export default function ChatPanel({
   initialMessages,
   resolveAnswer,
+  resolveBusinessInsight,
   suggestions = DEFAULT_SUGGESTIONS,
   persistConversation = false,
   prefillQuestion,
@@ -1370,6 +1413,7 @@ export default function ChatPanel({
                   key={message.id}
                   message={message}
                   onSuggestionSelect={submitQuestion}
+                  resolveBusinessInsight={resolveBusinessInsight}
                 />
               ) : message.kind === 'clarification' ? (
                 <ClarificationBubble

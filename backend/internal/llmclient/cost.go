@@ -51,10 +51,31 @@ import (
 // question against a short, bounded candidate list) has no evidence of the
 // date-comparison failure that moved the gate — moving it too would be an
 // unvalidated cost increase for a problem never actually observed there.
+//
+// ModelBusinessInsight (internal/advisor, specs/009-business-insight-advisor)
+// is Claude Sonnet 5 from day one, chosen deliberately rather than started
+// on Haiku the way the gate originally was: this is a genuine advisory/
+// reasoning task — connecting a specific computed pattern (a flagged day, a
+// money-losing promotion, a high effective rate) to general industry
+// practice, in prose an owner will act on — not a cheap classification with
+// a one-word answer space. The failure mode of a weaker model here is
+// plausible-sounding advice subtly disconnected from the pattern it was
+// shown, which is harder to detect than a misclassification and lands on
+// the most trust-sensitive content this product produces. Cost exposure is
+// naturally bounded by the feature's own design: the call runs ONLY when
+// the owner explicitly taps a deterministically-derived teaser, never on
+// every question, so "the cheapest model that clears the bar" is applied
+// against a per-tap spend, not a per-question one. Its own constant rather
+// than reusing ModelExplanation, so a future re-evaluation can move the
+// advisor independently of the narration step — but it shares
+// ModelExplanation's pricePerMTok entry below, since both are
+// "claude-sonnet-5" and a second identical map key would be a duplicate
+// (the same dedup rationale ModelExplanation itself documents above).
 const (
 	ModelAmbiguityGate   = "claude-sonnet-5"
 	ModelExplanation     = "claude-sonnet-5"
 	ModelParaphraseMatch = "claude-haiku-4-5"
+	ModelBusinessInsight = "claude-sonnet-5"
 )
 
 // ErrUnknownModel is returned by EstimateCostUSD for any model this project

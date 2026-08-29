@@ -14,14 +14,22 @@ info:
     route names.
 
     ### The deterministic / probabilistic split
-    Every endpoint except `POST /api/ask` is **pure deterministic REST**:
-    plain reads or writes against Postgres-persisted reconciliation output,
-    with no model anywhere in the request path. `POST /api/ask` is the one
-    endpoint that calls an LLM (Claude Sonnet 5 for an ambiguity gate,
-    Claude Sonnet 5 to narrate an already-computed number, Claude Haiku 4.5
-    for the paraphrase-match cache classifier) — and even there,
-    the model never computes a figure; it only classifies the question and
-    narrates a result the Go reconciliation engine already produced.
+    Every endpoint except `POST /api/ask` and `POST /api/business-insight`
+    is **pure deterministic REST**: plain reads or writes against
+    Postgres-persisted reconciliation output, with no model anywhere in
+    the request path. `POST /api/ask` calls an LLM (Claude Sonnet 5 for an
+    ambiguity gate, Claude Sonnet 5 to narrate an already-computed number,
+    Claude Haiku 4.5 for the paraphrase-match cache classifier) — and even
+    there, the model never computes a figure; it only classifies the
+    question and narrates a result the Go reconciliation engine already
+    produced. `POST /api/business-insight` (specs/009) is the one endpoint
+    that returns openly probabilistic content — general business advice —
+    and it is opt-in by construction: its trigger (`business_insight` on
+    the ask response) is derived deterministically in Go at zero cost, the
+    advice call runs only when the owner explicitly taps that teaser, the
+    posted data is re-verified server-side before any tokens are spent,
+    and the response is labeled with an explicit disclaimer plus its real
+    measured cost.
 
     ### Conventions used throughout
     - **Money** crosses the wire as an already-formatted decimal string
@@ -85,7 +93,9 @@ tags:
   - name: Cost Sheet Ingestion
     description: Letting the owner upload/replace the supplier cost sheet through the web UI (preview, commit, and a downloadable template).
   - name: Ask
-    description: The one model-backed endpoint — natural-language Q&A over the reconciled data, via a pre-processing ambiguity gate and a typed-MCP-tool explanation step.
+    description: The primary model-backed endpoint — natural-language Q&A over the reconciled data, via a pre-processing ambiguity gate and a typed-MCP-tool explanation step.
+  - name: Business Insight
+    description: The opt-in business-advisor skill (specs/009) — a deterministic Go-derived teaser on eligible answers, and an owner-initiated Claude Sonnet 5 advice call that is re-verified, instrumented in its own ledger, and always labeled as a suggestion rather than a computed fact.
 
 paths:
   # ------------------------------------------------------------------
@@ -876,6 +886,9 @@ paths:
                         - { label: In-house POS, value: 195, display: "$195.00" }
                     suggested_followups:
                       - "Were there any discrepancies on 2026-08-03?"
+                    business_insight:
+                      kind: discrepancy_pattern
+                      title: "Recurring discrepancies may be preventable — see how"
                     interactions:
                       - { model_used: claude-haiku-4-5, input_tokens: 1784, output_tokens: 40, estimated_cost_usd: 0.001984, latency_ms: 1180 }
                       - { model_used: claude-sonnet-5, input_tokens: 7852, output_tokens: 203, estimated_cost_usd: 0.017734, latency_ms: 5809 }
@@ -929,6 +942,89 @@ paths:
               examples:
                 gateFailed: { value: { error: gate_failed, detail: "the ambiguity check failed; please try again" } }
                 explanationFailed: { value: { error: explanation_failed, detail: "the explanation step failed; please try again" } }
+
+  # ------------------------------------------------------------------
+  /api/business-insight:
+    post:
+      tags: [Business Insight]
+      summary: Generate the full advice behind a tapped business-insight teaser
+      description: |
+        The on-demand half of the business-insight advisor
+        (specs/009-business-insight-advisor). The trigger — the
+        `business_insight` teaser on a `POST /api/ask` answer — was
+        derived **deterministically in Go at zero cost**; this endpoint
+        runs the one real, billed Claude Sonnet 5 call that turns it into
+        advice text, and ONLY when the owner explicitly taps the teaser
+        (the frontend never auto-fetches it).
+
+        The request carries the same `tool_calls` data the ask response
+        already handed this client — no server-side per-answer state
+        exists. Before any tokens are spent, the handler **re-derives the
+        teaser from the posted tool results** through the exact same
+        deterministic derivation `/api/ask` used, and refuses
+        (`insight_not_supported`) when the posted data does not ground
+        the requested `kind` — a stale, tampered, or mismatched request
+        never produces advice ungrounded in the data it claims to be
+        about.
+
+        The advice is openly probabilistic content: general,
+        best-practice guidance connected to the specific computed pattern
+        (its prompts are grounded in researched industry practice — see
+        `specs/009-business-insight-advisor/plan.md`'s Sourced/Judgment
+        tagging), hard-forbidden from stating restaurant-specific facts
+        beyond the posted JSON or fabricating statistics. The response
+        therefore carries an explicit `disclaimer`, and `interaction`
+        reports the call's real measured cost. Every call is logged to
+        its own dedicated `business_insight_interaction` table — never
+        into `question_interaction` (Constitution Principle VI, applied
+        with the same distinct-ledgers discipline that already separates
+        cache hits and paraphrase matches).
+      operationId: businessInsight
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BusinessInsightRequest" }
+            examples:
+              discrepancyPattern:
+                summary: Advice behind a discrepancy_pattern teaser
+                value:
+                  kind: discrepancy_pattern
+                  tool_calls:
+                    - name: get_daily_summary
+                      result_json: { date: "2026-08-03", margin: "-120.26", discrepancy_flags: [{ type: duplicate_order_removed, detail: "Removed duplicate order IFOOD-20260803-0011." }] }
+      responses:
+        "200":
+          description: The generated advice, its disclosure, and the call's real measured cost.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BusinessInsightResponse" }
+        "400":
+          description: Invalid JSON, an unknown `kind`, or missing `tool_calls`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                unknownKind: { value: { error: invalid_input, detail: "unknown insight kind \"astrology\"" } }
+        "405":
+          description: Any method other than POST.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "422":
+          description: The posted tool results, re-derived server-side, do not support the requested insight kind — refused before any model call runs.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                notSupported: { value: { error: insight_not_supported, detail: "the posted tool results do not support this insight kind" } }
+        "502":
+          description: The advice call failed against the live Anthropic API (a real infrastructure failure). Nothing is ledgered — no call usage exists to record.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                adviceFailed: { value: { error: advice_failed, detail: "the advice call failed; please try again" } }
 
 components:
   schemas:
@@ -1441,6 +1537,7 @@ components:
             absent whenever no tool ran (a refusal or clarification never
             reaches one).
         resolved_period: { $ref: "#/components/schemas/ResolvedPeriodView" }
+        business_insight: { $ref: "#/components/schemas/BusinessInsightTeaser" }
       required: [status]
 
     ToolCallView:
@@ -1464,3 +1561,63 @@ components:
         start: { $ref: "#/components/schemas/DateString" }
         end: { $ref: "#/components/schemas/DateString" }
       required: [start, end]
+
+    BusinessInsightTeaser:
+      type: object
+      description: >-
+        Spec 009's zero-cost business-insight teaser: derived
+        deterministically in Go (httpapi.deriveBusinessInsightTeaser) from
+        the same tool results the answer already carries — never a model
+        call, never a cost. Present only when status=answered AND the
+        computed data matched one of the five documented insight patterns;
+        omitted entirely otherwise (most answers carry nothing here). The
+        full advice text does not exist yet at teaser time — it is
+        generated only if the owner taps (POST /api/business-insight).
+      properties:
+        kind:
+          type: string
+          enum: [discrepancy_pattern, negative_promo_roi, high_commission, day_of_month_expense_spike, margin_decline]
+          description: The internal pattern tag, echoed back when requesting the full advice.
+        title:
+          type: string
+          description: The short, human-readable teaser title the UI shows — a suggestion's headline, never a computed figure.
+          example: "Recurring discrepancies may be preventable — see how"
+      required: [kind, title]
+
+    BusinessInsightRequest:
+      type: object
+      description: >-
+        The tapped teaser's kind plus the SAME tool_calls the ask response
+        already delivered to this client — posted back verbatim so the
+        server can re-derive the trigger and ground the advice in exactly
+        the computed results on screen. No server-side per-answer state.
+      properties:
+        kind:
+          type: string
+          enum: [discrepancy_pattern, negative_promo_roi, high_commission, day_of_month_expense_spike, margin_decline]
+        tool_calls:
+          type: array
+          items: { $ref: "#/components/schemas/ToolCallView" }
+          minItems: 1
+      required: [kind, tool_calls]
+
+    BusinessInsightResponse:
+      type: object
+      description: >-
+        The generated advice. advice_text is openly probabilistic content
+        (general best practice connected to the computed pattern);
+        disclaimer states so on the wire, and interaction carries the
+        call's real measured cost — an advice call must never look free.
+      properties:
+        kind:
+          type: string
+          enum: [discrepancy_pattern, negative_promo_roi, high_commission, day_of_month_expense_spike, margin_decline]
+        advice_text:
+          type: string
+          description: Short (120-180 words), general, best-practice guidance connected to the computed pattern. Never merged into an answer's answer_text.
+        disclaimer:
+          type: string
+          description: The backend's own statement of what this content is — an AI suggestion, not a computed fact — rendered by every client alongside the advice.
+        interaction:
+          $ref: "#/components/schemas/CostInteraction"
+      required: [kind, advice_text, disclaimer, interaction]

@@ -24,6 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/advisor"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ambiguity"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
@@ -143,13 +144,29 @@ func main() {
 		mux.HandleFunc("/api/ingest/cost-sheet/commit", httpapi.HandleCommitCostSheet(store, cache))
 		mux.HandleFunc("/api/ingest/cost-sheet/template", httpapi.HandleCostSheetTemplate)
 
-		askDeps, err := buildAskDeps(ctx, store, cache)
+		// One shared llmclient.Client for every model call this process
+		// makes — the ask pipeline (gate/explain/paraphrase) and the
+		// business-insight advisor alike — so all of them share one
+		// timeout policy and credential source (internal/llmclient's
+		// package doc).
+		llm := llmclient.New()
+
+		askDeps, err := buildAskDeps(ctx, store, cache, llm)
 		if err != nil {
 			log.Fatalf("wiring POST /api/ask: %v", err)
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
+		// POST /api/business-insight: specs/009-business-insight-advisor's
+		// on-demand advice call — the one OTHER model-backed endpoint
+		// besides /api/ask, run only when the owner taps a
+		// deterministically-derived teaser, ledgered in its own dedicated
+		// business_insight_interaction table (see migration 000010).
+		mux.HandleFunc("/api/business-insight", httpapi.HandleBusinessInsight(httpapi.BusinessInsightDeps{
+			Adviser: advisor.New(llm),
+			Store:   store,
+		}))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
@@ -210,9 +227,11 @@ func isLocalhostOrigin(origin string) bool {
 // (internal/llmclient.New's documented default); -serve fails fast here
 // rather than at the first POST /api/ask if that's missing, matching how
 // DATABASE_URL is already checked fast above.
-func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercache.Cache) (httpapi.Deps, error) {
-	llm := llmclient.New()
-
+//
+// llm is constructed by the caller (not here) since specs/009's
+// POST /api/business-insight shares the same client — one construction
+// site, one timeout policy, for every model call this process makes.
+func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercache.Cache, llm *llmclient.Client) (httpapi.Deps, error) {
 	// Resolve the real data date range ONCE, from Postgres, rather than
 	// hardcoding a literal in internal/ambiguity or internal/explain — the
 	// fix for the "date-year grounding defect" (docs/plan.md mistakes log):

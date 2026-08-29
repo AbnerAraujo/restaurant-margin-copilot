@@ -178,6 +178,18 @@ type AskResponse struct {
 	// ONLY when Status is "answered", the same scoping SuggestedFollowUps
 	// already uses, since a refusal/clarification never reached a tool.
 	ToolCalls []ToolCallView `json:"tool_calls,omitempty"`
+	// BusinessInsight is specs/009-business-insight-advisor's zero-cost
+	// teaser: derived deterministically in Go (business_insight.go's
+	// deriveBusinessInsightTeaser) from the SAME tool results this response
+	// already carries — never a model call, never a cost. Populated ONLY
+	// when Status is "answered" and the computed data matches one of the
+	// five documented insight patterns; omitted entirely otherwise, so most
+	// answers carry nothing here (spec FR-001/FR-008 — this must never be
+	// spammy filler). The full advice text is NOT here: it is generated
+	// only if the owner explicitly taps the teaser (POST
+	// /api/business-insight), which is what keeps the probabilistic,
+	// billed half of the advisor strictly opt-in.
+	BusinessInsight *BusinessInsightTeaser `json:"business_insight,omitempty"`
 	// ResolvedPeriod is spec 008 FR-004's "the answered question's actual
 	// resolved dates" — the real [start, end] this answer was grounded in,
 	// extracted from whichever period-shaped tool actually ran
@@ -613,6 +625,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			SuggestedFollowUps: deriveFollowUpSuggestions(result.ToolInvocations, req.Question, deps.DataStart, deps.DataEnd),
 			Interactions:       []CostInteraction{gateInteraction, explainInteraction},
 			ToolCalls:          toToolCallViews(result.ToolInvocations),
+			BusinessInsight:    deriveBusinessInsightTeaser(result.ToolInvocations),
 			ResolvedPeriod:     deriveResolvedPeriod(result.ToolInvocations),
 		}
 		if decision.Result == instrumentation.GateAmbiguous {

@@ -12,10 +12,17 @@ import (
 
 type Querier interface {
 	CountAnswerCacheHits(ctx context.Context) (int64, error)
+	CountBusinessInsightInteractions(ctx context.Context) (int64, error)
 	CountParaphraseMatches(ctx context.Context) (int64, error)
 	// One row per answer served from cache — a non-interaction, recorded in its
 	// own ledger rather than as a fabricated question_interaction.
 	CreateAnswerCacheHit(ctx context.Context, arg CreateAnswerCacheHitParams) (AnswerCacheHit, error)
+	// One row per on-demand business-insight advice call
+	// (specs/009-business-insight-advisor) — the owner tapped a
+	// deterministically-derived teaser and a real Claude Sonnet 5 call ran.
+	// Writer: internal/httpapi's business-insight handler only, alongside
+	// internal/advisor's model call (Constitution Principle VI).
+	CreateBusinessInsightInteraction(ctx context.Context, arg CreateBusinessInsightInteractionParams) (BusinessInsightInteraction, error)
 	// Backs POST /api/promotions (User Story 3): the owner logging a new
 	// promotion record directly in the app, per FR-005/FR-006. Deliberately a
 	// plain INSERT, not the same ON CONFLICT upsert UpsertPromotionRoiRecord
@@ -114,6 +121,9 @@ type Querier interface {
 	RecordUsageEvent(ctx context.Context) (UsageEvent, error)
 	// Total model spend the cache has avoided so far.
 	SumAnswerCacheCostAvoided(ctx context.Context) (pgtype.Numeric, error)
+	// The real total this product's advice skill has spent so far — its own
+	// ledger's sum, never mixed into question_interaction's running total.
+	SumBusinessInsightCost(ctx context.Context) (pgtype.Numeric, error)
 	// Backs the running cost total the UI must show for 100% of interactions (FR-009).
 	SumEstimatedCostUSD(ctx context.Context) (pgtype.Numeric, error)
 	// The real, small cost this project's paraphrase-matching mechanism has
