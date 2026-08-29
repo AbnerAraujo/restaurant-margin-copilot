@@ -105,9 +105,14 @@ export function Stat({
 
   return (
     <div className={cn('min-w-0', className)}>
-      <dt className="flex items-center gap-1.5 text-micro font-medium uppercase tracking-wider text-muted-foreground">
-        {Icon ? <Icon className="size-3.5 shrink-0" aria-hidden="true" /> : null}
-        <span className="truncate">{label}</span>
+      <dt className="flex items-start gap-1.5 text-micro font-medium uppercase tracking-wider text-muted-foreground">
+        {Icon ? <Icon className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" /> : null}
+        {/* Reported live at 390px: single-line `truncate` cut labels like
+            "Days with a flag" off mid-word ("DAYS WITH A FL…"). This is a
+            short overline, not prose that needs a hard one-line clamp — wrap
+            up to two lines instead, so a narrow column shows the whole
+            label rather than an unreadable fragment. */}
+        <span className="line-clamp-2">{label}</span>
         {tooltip ? (
           <Tooltip>
             <TooltipTrigger asChild>
@@ -144,7 +149,10 @@ export function Stat({
           </span>
         )}
         {caption ? (
-          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+          // Same fix as the label above: captions like a platform name or a
+          // "08/01–08/14, this period" date range were the other reported
+          // mid-word truncations at mobile widths.
+          <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
             {caption}
           </span>
         ) : null}
