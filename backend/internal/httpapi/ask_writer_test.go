@@ -46,8 +46,8 @@ func TestUnanswerableWithWriterCallReportsBothInteractions(t *testing.T) {
 	if len(response.Interactions) != 2 {
 		t.Fatalf("interactions = %d, want 2 (gate + writer)", len(response.Interactions))
 	}
-	if response.Interactions[0].ModelUsed != "claude-haiku-4-5" {
-		t.Errorf("interactions[0].model_used = %q, want claude-haiku-4-5", response.Interactions[0].ModelUsed)
+	if response.Interactions[0].ModelUsed != "claude-sonnet-5" {
+		t.Errorf("interactions[0].model_used = %q, want claude-sonnet-5 (the gate moved off Haiku 4.5 on 2026-08-29 — see llmclient/cost.go)", response.Interactions[0].ModelUsed)
 	}
 	if response.Interactions[1].ModelUsed != "claude-sonnet-5" || response.Interactions[1].EstimatedCostUSD != 0.00202 {
 		t.Errorf("interactions[1] = %+v, want the real Sonnet writer cost", response.Interactions[1])
@@ -60,8 +60,8 @@ func TestUnanswerableWithWriterCallReportsBothInteractions(t *testing.T) {
 	if len(h.instrumentation.records) != 2 {
 		t.Fatalf("instrumentation records = %d, want 2 (Constitution Principle VI: per-call, not per-question)", len(h.instrumentation.records))
 	}
-	if h.instrumentation.records[0].ModelUsed != "claude-haiku-4-5" || !h.instrumentation.records[0].RefusalFired {
-		t.Errorf("record[0] = %+v, want the gate's Haiku refusal row", h.instrumentation.records[0])
+	if h.instrumentation.records[0].ModelUsed != "claude-sonnet-5" || !h.instrumentation.records[0].RefusalFired {
+		t.Errorf("record[0] = %+v, want the gate's refusal row", h.instrumentation.records[0])
 	}
 	if h.instrumentation.records[1].ModelUsed != "claude-sonnet-5" || !h.instrumentation.records[1].RefusalFired {
 		t.Errorf("record[1] = %+v, want the writer pass's Sonnet refusal row", h.instrumentation.records[1])

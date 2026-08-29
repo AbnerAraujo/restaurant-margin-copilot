@@ -11,11 +11,15 @@ import (
 )
 
 // TestEstimateCostUSD locks in the pricing this project has documented and
-// decided on (CLAUDE.md / research.md): Claude Haiku 4.5 at $1/$5 per MTok
-// (input/output) for the ambiguity gate, Claude Sonnet 5 at $2/$10 per MTok
-// for the explanation step. This is deterministic arithmetic — Constitution
-// Principle I applies here too: cost estimation is never something a model
-// call gets to report on its own, it is computed the same way every time.
+// decided on (CLAUDE.md / research.md, llmclient/cost.go's own doc
+// comment): Claude Sonnet 5 at $2/$10 per MTok (input/output) for both the
+// ambiguity gate and the explanation step (the gate moved off Haiku 4.5 on
+// 2026-08-29 after a real multi-year date-comparison bug — see cost.go),
+// and Claude Haiku 4.5 at $1/$5 per MTok, kept for the paraphrase-match
+// classifier specifically, which never showed that bug. This is
+// deterministic arithmetic — Constitution Principle I applies here too:
+// cost estimation is never something a model call gets to report on its
+// own, it is computed the same way every time.
 func TestEstimateCostUSD(t *testing.T) {
 	t.Parallel()
 
@@ -27,12 +31,12 @@ func TestEstimateCostUSD(t *testing.T) {
 		wantUSD      float64
 	}{
 		{
-			name:         "haiku ambiguity gate, small request",
+			name:         "sonnet ambiguity gate, small request",
 			model:        llmclient.ModelAmbiguityGate,
 			inputTokens:  1000,
 			outputTokens: 500,
-			// (1000/1e6)*1.00 + (500/1e6)*5.00 = 0.001 + 0.0025 = 0.0035
-			wantUSD: 0.0035,
+			// (1000/1e6)*2.00 + (500/1e6)*10.00 = 0.002 + 0.005 = 0.007
+			wantUSD: 0.007,
 		},
 		{
 			name:         "sonnet explanation step, larger request",
@@ -41,6 +45,14 @@ func TestEstimateCostUSD(t *testing.T) {
 			outputTokens: 100_000,
 			// (2_000_000/1e6)*2.00 + (100_000/1e6)*10.00 = 4.00 + 1.00 = 5.00
 			wantUSD: 5.00,
+		},
+		{
+			name:         "haiku paraphrase match, small request",
+			model:        llmclient.ModelParaphraseMatch,
+			inputTokens:  1000,
+			outputTokens: 500,
+			// (1000/1e6)*1.00 + (500/1e6)*5.00 = 0.001 + 0.0025 = 0.0035
+			wantUSD: 0.0035,
 		},
 		{
 			name:         "zero tokens costs zero",

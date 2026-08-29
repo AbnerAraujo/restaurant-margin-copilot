@@ -5,21 +5,42 @@ import (
 	"fmt"
 )
 
-// Model IDs this project has decided on (constitution v1.1.0, CLAUDE.md,
-// research.md): Claude Haiku 4.5 for the cheap ambiguity-classification
-// gate, Claude Sonnet 5 for narrating an already-computed result. Neither
-// step needs frontier reasoning, so Opus/Fable are deliberately not used
-// here — see research.md's "LLM vendor and model split" for the rationale.
+// Model IDs this project uses (constitution v1.1.0, CLAUDE.md, research.md).
 //
-// ModelExplanation is also the model internal/ambiguity's second pass uses
-// to rewrite a hard-case clarifying-question or refusal-reason draft into
-// better prose (see gate.go's package doc) — reusing this same constant
-// rather than adding a second one priced identically, since pricePerMTok
-// below is keyed by model string and a second constant equal to the same
-// string would be a duplicate map key.
+// ModelAmbiguityGate was Claude Haiku 4.5 for the original 14-day take-home
+// fixture — a cheap classification task that didn't need frontier
+// reasoning at that scale. It was moved to Claude Sonnet 5 on 2026-08-29
+// after a real, reproducible bug: once the live dataset grew to a
+// multi-year range (backend/cmd/gendata's 730-day synthetic history, on
+// top of the fixture), Haiku's classification calls repeatedly
+// misclassified a fully-in-range, explicitly-dated question ("July 2026",
+// inside a 2024-08-01..2026-08-14 window) as unanswerable — a real date-
+// comparison failure across a year boundary, not a prompt-wording issue
+// (three separate prompt fixes were tried and verified NOT to resolve it;
+// swapping the same call to Sonnet resolved it on the first try). This is
+// "the cheapest model that clears the bar" applied honestly: Haiku no
+// longer clears the bar for this task at this data scale, so it is no
+// longer the model used for it, even though the cost roughly doubles for
+// every classification call (a fully refusal-correct classifier being
+// worth more than the second and third fractions of a cent it costs).
+//
+// ModelExplanation narrates an already-computed result — reusing the same
+// constant here (both now "claude-sonnet-5") rather than adding a second
+// one priced identically, since pricePerMTok below is keyed by model
+// string and a second constant equal to the same string would be a
+// duplicate map key.
+//
+// ModelParaphraseMatch (internal/paraphrase) stays on Claude Haiku 4.5,
+// deliberately NOT swept along with the ambiguity gate above: it was a
+// separate constant sharing ModelAmbiguityGate's value only incidentally
+// before this change, and its task (recognizing a same-meaning reworded
+// question against a short, bounded candidate list) has no evidence of the
+// date-comparison failure that moved the gate — moving it too would be an
+// unvalidated cost increase for a problem never actually observed there.
 const (
-	ModelAmbiguityGate = "claude-haiku-4-5"
-	ModelExplanation   = "claude-sonnet-5"
+	ModelAmbiguityGate   = "claude-sonnet-5"
+	ModelExplanation     = "claude-sonnet-5"
+	ModelParaphraseMatch = "claude-haiku-4-5"
 )
 
 // ErrUnknownModel is returned by EstimateCostUSD for any model this project
@@ -30,13 +51,17 @@ var ErrUnknownModel = errors.New("llmclient: unknown model for cost estimation")
 
 // pricePerMTok holds the per-model USD price per million tokens this
 // project priced against (Anthropic first-party API rates, documented in
-// research.md at the time the model choices were made).
+// research.md at the time the model choices were made). ModelAmbiguityGate
+// and ModelExplanation share one entry since both are now "claude-sonnet-5"
+// — see the doc comment above for why the gate moved off Haiku 4.5's
+// $1/$5-per-MTok pricing. ModelParaphraseMatch keeps that original Haiku
+// pricing, since it stayed on Haiku.
 var pricePerMTok = map[string]struct {
 	InputUSDPerMTok  float64
 	OutputUSDPerMTok float64
 }{
-	ModelAmbiguityGate: {InputUSDPerMTok: 1.00, OutputUSDPerMTok: 5.00},
-	ModelExplanation:   {InputUSDPerMTok: 2.00, OutputUSDPerMTok: 10.00},
+	ModelExplanation:     {InputUSDPerMTok: 2.00, OutputUSDPerMTok: 10.00},
+	ModelParaphraseMatch: {InputUSDPerMTok: 1.00, OutputUSDPerMTok: 5.00},
 }
 
 // EstimateCostUSD computes the deterministic USD cost of one model call from

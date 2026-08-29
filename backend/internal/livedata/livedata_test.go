@@ -53,8 +53,25 @@ func TestEnsureSeededNeverModifiesFixtures(t *testing.T) {
 }
 
 // TestEnsureSeededCopiesEveryFixtureCSV proves the seed actually landed —
-// Dir contains the same set of CSVs FixturesDir does, with identical content.
+// Dir contains the same set of CSVs FixturesDir does, with identical
+// content — on a genuinely fresh (not-yet-existing) Dir, which is
+// EnsureSeeded's only real seeding path (it is a no-op once Dir exists at
+// all, per its own doc comment: "already seeded (or already has real
+// uploaded data in it)").
+//
+// This developer machine's Dir is NOT that fresh-clone case: it holds a
+// deliberate, real, expensive-to-regenerate 2-year synthetic dataset
+// (backend/cmd/gendata), a legitimate later use of this same directory
+// that this test predates. Running this assertion against that real
+// content would either report a false failure (content differs from the
+// fixture, which is correct and intended) or, worse, invite "fix" by
+// deleting real data. withFreshDir below preserves whatever is really
+// there — moving it aside before the test's own fresh-Dir scenario runs,
+// restoring it after, regardless of outcome — so this test still proves
+// the real fresh-clone behavior without touching this machine's actual
+// live data.
 func TestEnsureSeededCopiesEveryFixtureCSV(t *testing.T) {
+	withFreshDir(t)
 	require.NoError(t, EnsureSeeded())
 
 	fixtureHashes, err := hashDirCSVs(FixturesDir)
@@ -89,4 +106,35 @@ func hashDirCSVs(dir string) (map[string]string, error) {
 func sha256Hex(content []byte) string {
 	sum := sha256.Sum256(content)
 	return hex.EncodeToString(sum[:])
+}
+
+// withFreshDir makes Dir genuinely not-exist for the duration of the
+// calling test, then restores whatever was really there — real data on
+// this machine, nothing on a fresh clone — via t.Cleanup, regardless of
+// how the test finishes. Dir itself is fixed and non-injectable by this
+// package's own design (never request- or environment-derived), so a test
+// needing a truly fresh Dir must move the real one aside rather than
+// pointing EnsureSeeded at some other path.
+func withFreshDir(t *testing.T) {
+	t.Helper()
+
+	if _, err := os.Stat(Dir); err != nil {
+		if os.IsNotExist(err) {
+			// Already fresh — nothing to preserve, nothing to restore.
+			t.Cleanup(func() { _ = os.RemoveAll(Dir) })
+			return
+		}
+		require.NoError(t, err)
+	}
+
+	backup := Dir + ".test-backup"
+	require.NoError(t, os.RemoveAll(backup))
+	require.NoError(t, os.Rename(Dir, backup))
+
+	t.Cleanup(func() {
+		_ = os.RemoveAll(Dir)
+		if err := os.Rename(backup, Dir); err != nil {
+			t.Errorf("withFreshDir: FAILED to restore real content back to %s from %s: %v — check that path by hand", Dir, backup, err)
+		}
+	})
 }

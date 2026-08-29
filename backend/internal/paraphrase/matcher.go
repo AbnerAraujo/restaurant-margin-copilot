@@ -1,9 +1,13 @@
 // Package paraphrase implements the second-tier answer-cache match
 // specs/004-semantic-cache adds in front of internal/answercache's
 // exact-match lookup: on an exact-match miss against a non-empty cache, one
-// bounded Claude Haiku 4.5 call — the same model and shared llmclient used
-// for internal/ambiguity's gate — checks whether the new question means the
-// same thing as one of the most-recently-cached questions.
+// bounded Claude Haiku 4.5 call (llmclient.ModelParaphraseMatch — the same
+// shared llmclient used everywhere in this project, but its own model
+// constant, deliberately kept on Haiku even after internal/ambiguity's gate
+// moved to Sonnet 5 on 2026-08-29 for an unrelated, gate-specific
+// date-comparison bug — see llmclient/cost.go's doc comment) checks whether
+// the new question means the same thing as one of the most-recently-cached
+// questions.
 //
 // Why a model call and not embeddings (plan.md's "Decision"): Anthropic has
 // no first-party embeddings endpoint, and this project's constitution
@@ -128,7 +132,7 @@ func (m *Matcher) Classify(ctx context.Context, newQuestion string, candidates [
 	}
 
 	resp, err := m.client.CreateMessage(ctx, llmclient.MessageRequest{
-		Model:     llmclient.ModelAmbiguityGate,
+		Model:     llmclient.ModelParaphraseMatch,
 		System:    systemPrompt,
 		MaxTokens: MaxOutputTokens,
 		Messages: []anthropic.MessageParam{
@@ -139,7 +143,7 @@ func (m *Matcher) Classify(ctx context.Context, newQuestion string, candidates [
 		return nil, fmt.Errorf("paraphrase: classify: %w", err)
 	}
 
-	cost, err := resp.EstimatedCostUSD(llmclient.ModelAmbiguityGate)
+	cost, err := resp.EstimatedCostUSD(llmclient.ModelParaphraseMatch)
 	if err != nil {
 		return nil, fmt.Errorf("paraphrase: %w", err)
 	}

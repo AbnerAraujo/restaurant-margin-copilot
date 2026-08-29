@@ -148,6 +148,31 @@ func TestParseWriterResponse_RejectsMalformedJSON(t *testing.T) {
 	require.Contains(t, err.Error(), "not valid JSON")
 }
 
+// TestSpannedYears_* is a pure unit test over the fix for a real bug found
+// live: once the data window grew from 14 days (all in 2026) to a
+// multi-year range, Haiku's own classification drafts were observed
+// mis-stating the range entirely — mid-generation collapsing back to a
+// short, single-year window it wasn't actually given. Stating the exact
+// years spanned as a computed fact in the prompt (rather than requiring
+// the model to infer "how many years does this cover" itself) is the fix;
+// this test is the one part of that fix pure Go can verify without an API
+// call — the wording, not the model's resulting behavior.
+func TestSpannedYears_SingleYear(t *testing.T) {
+	require.Equal(t, "2026", spannedYears("2026-08-01", "2026-08-14"))
+}
+
+func TestSpannedYears_TwoYears(t *testing.T) {
+	require.Equal(t, "2025 and 2026", spannedYears("2025-08-15", "2026-08-14"))
+}
+
+func TestSpannedYears_ThreeYears(t *testing.T) {
+	require.Equal(t, "2024, 2025, and 2026", spannedYears("2024-08-01", "2026-08-14"))
+}
+
+func TestSpannedYears_DegradesGracefullyOnUnparsableInput(t *testing.T) {
+	require.Equal(t, "the years covered by that range", spannedYears("not-a-date", "2026-08-14"))
+}
+
 // TestComposeAnswerFollowUp_* are pure unit tests over the ANSWER-side
 // follow-up composition (the counterpart to ask_clarification_test.go's
 // TestComposeFollowUpIsDeterministicAndInertodWithoutContext, which covers

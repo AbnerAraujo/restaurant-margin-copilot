@@ -2,12 +2,22 @@
 // Principle II require: before any MCP tool call is made, classify the
 // incoming question as answerable, ambiguous (needs either a clarifying
 // question or an explicitly stated assumption), or unanswerable given the
-// data this product actually has. It uses Claude Haiku 4.5 — a cheap
-// classification task, not one that needs frontier reasoning
-// (constitution v1.1.0, research.md's model-split rationale).
+// data this product actually has.
 //
-// Two passes, not one model doing both jobs: classification is ALWAYS one
-// Haiku call, exactly as before — an answerable question still costs
+// It used Claude Haiku 4.5 originally — a cheap classification task, not
+// one that needs frontier reasoning at the scale of the 14-day take-home
+// fixture (constitution v1.1.0, research.md's model-split rationale). It
+// now uses Claude Sonnet 5 (llmclient.ModelAmbiguityGate), moved there
+// 2026-08-29 after Haiku was caught, live and reproducibly, misclassifying
+// a fully in-range dated question as unanswerable once the real dataset
+// grew to a multi-year span — see llmclient/cost.go's doc comment for the
+// full account. "The cheapest model that clears the bar" now means Sonnet
+// for this step, not Haiku, because Haiku stopped clearing the bar at this
+// data scale.
+//
+// Two passes, not one model doing both jobs, even though both now happen
+// to run on the same underlying model: classification is ALWAYS one
+// classification-pass call, exactly as before — an answerable question still costs
 // exactly what it cost before this file changed. But when that
 // classification is "ambiguous" (and the gate chose to ask rather than
 // assume) or "unanswerable", the message the user actually reads was, until
@@ -50,6 +60,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/anthropics/anthropic-sdk-go"
 
@@ -273,6 +284,16 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 		return decision, nil
 	}
 
+	// Same discipline as writeBetterText: a max_tokens stop is a hard
+	// failure regardless of whether the truncated text happens to parse as
+	// valid JSON — the API's own stop_reason is the only reliable
+	// truncation signal, and this path has no partial-Decision fallback to
+	// offer (see internal/httpapi's own comment on this: a Classify error
+	// always returns (nil, err), never a partial result).
+	if resp.StopReason == anthropic.StopReasonMaxTokens {
+		return nil, fmt.Errorf("ambiguity: classify: response was truncated at the %d-token cap before finishing (stop_reason=max_tokens)", MaxOutputTokens)
+	}
+
 	parsed, err := parseGateResponse(resp.Text)
 	if err != nil {
 		return nil, fmt.Errorf("ambiguity: %w", err)
@@ -364,8 +385,14 @@ type writerResponse struct {
 
 // MaxWriterOutputTokens bounds the writing pass's reply — one rewritten
 // clarifying question (plus a short options list) or one rewritten refusal
-// reason, never open-ended prose.
-const MaxWriterOutputTokens = 512
+// reason, never open-ended prose. Raised from the original 512 after a
+// real truncation was observed live once the data window grew from 14
+// days to over 700 (a multi-year date-range refusal needed more reasoning
+// room than a short-window one did) — 768 is still a hard, deliberate cap
+// for a single rewritten sentence, not a loosening into open-ended prose.
+// A response that still hits this cap is now caught explicitly by the
+// stop_reason check in writeBetterText, never silently trusted.
+const MaxWriterOutputTokens = 768
 
 // writeBetterText asks Claude Sonnet 5 to rewrite ONE already-decided
 // clarifying-question or refusal-reason into a more specific, more helpful
@@ -411,6 +438,23 @@ func (g *Gate) writeBetterText(ctx context.Context, resolvedQuestion string, res
 
 	if resp.Refused {
 		return nil, call, nil
+	}
+
+	// A max_tokens stop is treated as a hard failure, never handed to
+	// parseWriterResponse at all — even if extractJSONObject's naive
+	// first-'{'-to-last-'}' scan happens to find something that unmarshals
+	// cleanly, a response Anthropic itself cut off mid-generation cannot be
+	// trusted: the model may have been mid-way through unrelated reasoning
+	// text before ever reaching its real answer, and a stray brace pair in
+	// that text can extract as syntactically valid but semantically
+	// garbled JSON (observed live: a truncated response's leftover
+	// reasoning — "which is before 2024-08-01 is impossible; re-reading:
+	// ..." — landed directly in a refusal_reason shown to the user). This
+	// is the one failure mode extractJSONObject's own scan cannot detect
+	// from the text alone, since the API's own stop_reason is the only
+	// reliable signal that the model never finished.
+	if resp.StopReason == anthropic.StopReasonMaxTokens {
+		return nil, call, fmt.Errorf("writing pass: response was truncated at the %d-token cap before finishing (stop_reason=max_tokens) — never trusting a cut-off reply, however it happens to parse", MaxWriterOutputTokens)
 	}
 
 	writer, err := parseWriterResponse(resp.Text)
@@ -649,14 +693,15 @@ const systemPromptTemplate = `You are the ambiguity/answerability gate for a res
 
 Data actually available to this product (nothing else exists — do not assume any other data source, platform, supplier, or time period is present):
 - A single independent restaurant/bar, single currency, single time zone.
-- Daily reconciled margin data (gross sales by source, commissions, refunds, input costs, computed margin, discrepancy flags) for the fixed period %[1]s through %[2]s inclusive. A handful of days in that window are deliberately messy (a duplicate order, a refund crossing into a later week, one day with zero delivery-platform data) but every day in the window has SOME reconciled data.
+- Daily reconciled margin data (gross sales by source, commissions, refunds, input costs, computed margin, discrepancy flags) for the fixed period %[1]s through %[2]s inclusive, spanning calendar year(s) %[3]s — this window may span anywhere from a couple of weeks to multiple years; do not assume it is short, and do not silently substitute a different, shorter-sounding range from memory. Some days in that window carry discrepancy flags (a duplicate order, a refund crossing into a later week, an anomaly threshold breach) but every day in the window has SOME reconciled data.
 - Promotion/ad-spend campaigns on two delivery platforms (iFood, Just Eat Takeaway) within that same period, with computed ROI where the incremental revenue can be attributed, and explicitly "cannot attribute" for at least one campaign.
 - Nothing before %[1]s or after %[2]s exists. No other restaurant, location, supplier, platform, or currency exists.
 
 Date grounding — read this before classifying any question that mentions a date:
 - This product's only notion of "now"/"today" is %[2]s, the last date it has any data for. Never use the real-world current calendar date for that purpose — you do not know it reliably, and guessing at it (including inventing a plausible-sounding year) is exactly the failure this rule exists to prevent.
 - Relative language — "today", "yesterday", "this week", "last week", "the weekend" — MUST be resolved as an offset from %[2]s, not from the real world's current date. E.g. "this week" is a trailing window ending %[2]s; "last week" is the 7 days before that.
-- A date given without a year (e.g. "August 3rd", "the 2nd", "Aug 1") MUST be assumed to fall in the one year this data actually spans (between %[1]s and %[2]s) — resolve it to that year directly. Do not ask a clarifying question about the year, and never state or imply a different year (e.g. the real-world current year, or any other guess) anywhere in "reason", "clarifying_question", or "assumption_stated".
+- A date given without a year (e.g. "August 3rd", "the 2nd", "Aug 1") MUST be resolved against %[2]s (this product's "today") — assume the most recent occurrence of that month/day at or before %[2]s, since that is what "today" and recent relative language ("this week", "last week") already anchor to elsewhere in this prompt. Do not ask a clarifying question about the year, and never state or imply the real-world current year.
+- Before concluding a fully-dated question (one that already names a year) falls outside %[1]s..%[2]s, do the actual comparison explicitly and carefully: a later calendar year is always a later date regardless of month (e.g. any month in 2026 is after any month in 2024) — a date is out of range only if it is truly earlier than %[1]s or truly later than %[2]s once compared this way, never assumed from a superficial reading.
 - Only classify a dated question as "unanswerable" for being outside the range if, once resolved per the rule above, the date still plainly falls outside %[1]s..%[2]s (e.g. a full date that explicitly names a different year, or a month/day that cannot exist within this window at all).
 
 Campaign/promotion references — read this before classifying any question that names a specific campaign or promotion:
@@ -701,5 +746,39 @@ Leave clarifying_question/assumption_stated/reason as empty strings ("") and cla
 // a prompt the model can't use sensibly, surfaced immediately by every live
 // call failing classification, not a silent wrong answer.
 func buildSystemPrompt(dataStart, dataEnd string) string {
-	return fmt.Sprintf(systemPromptTemplate, dataStart, dataEnd)
+	return fmt.Sprintf(systemPromptTemplate, dataStart, dataEnd, spannedYears(dataStart, dataEnd))
+}
+
+// spannedYears renders the real calendar year(s) dataStart..dataEnd covers
+// as an explicit, already-computed fact ("2024, 2025, and 2026", or just
+// "2026" for a single-year range) — a real bug this fixes directly: once
+// the data window grew from 14 days (all in one calendar year) to over 700
+// days spanning three, Haiku's own classification drafts were observed
+// live mis-stating the range entirely (defaulting back to a short,
+// single-year window it wasn't actually given), i.e. inferring "how many
+// years does this span" was itself an unreliable step for a cheap
+// classification model to take silently. Stating the span as a fact here
+// removes that inference step rather than asking the prompt to word it
+// more persuasively. dataStart/dataEnd are already validated YYYY-MM-DD by
+// the caller (internal/storage.LoadDataDateRange); a parse failure here
+// degrades to omitting the fact rather than panicking, since this is a
+// clarity aid, not the correctness boundary itself (Rules elsewhere in
+// this prompt still require the model to reason from %[1]s/%[2]s directly).
+func spannedYears(dataStart, dataEnd string) string {
+	start, err1 := time.Parse("2006-01-02", dataStart)
+	end, err2 := time.Parse("2006-01-02", dataEnd)
+	if err1 != nil || err2 != nil || end.Year() < start.Year() {
+		return "the years covered by that range"
+	}
+	if start.Year() == end.Year() {
+		return fmt.Sprintf("%d", start.Year())
+	}
+	years := make([]string, 0, end.Year()-start.Year()+1)
+	for y := start.Year(); y <= end.Year(); y++ {
+		years = append(years, fmt.Sprintf("%d", y))
+	}
+	if len(years) == 2 {
+		return years[0] + " and " + years[1]
+	}
+	return strings.Join(years[:len(years)-1], ", ") + ", and " + years[len(years)-1]
 }
