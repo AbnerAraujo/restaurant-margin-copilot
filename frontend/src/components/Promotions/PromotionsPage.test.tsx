@@ -1,7 +1,19 @@
 import { render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PromotionsPage from './PromotionsPage'
+
+// PromotionsPage now calls useNavigate() (spec 008 FR-001, chart click-to-ask
+// navigates to /ask) — every render needs a Router ancestor, the same fix
+// PointsCard.test.tsx already applied for its own <Link>.
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <PromotionsPage />
+    </MemoryRouter>,
+  )
+}
 
 const PROMOTIONS_RESPONSE = {
   promotions: [
@@ -50,7 +62,7 @@ describe('PromotionsPage', () => {
 
   it('fetches the real promotions endpoint rather than rendering hardcoded campaigns', async () => {
     stubFetch(PROMOTIONS_RESPONSE)
-    render(<PromotionsPage />)
+    renderPage()
 
     // The chart's x-axis label and its underlying table both name the
     // campaign, and the table now opens by default on this route, so this
@@ -63,7 +75,7 @@ describe('PromotionsPage', () => {
 
   it('renders a campaign with no attributable revenue as refused, never as $0', async () => {
     stubFetch(PROMOTIONS_RESPONSE)
-    render(<PromotionsPage />)
+    renderPage()
 
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
     expect(
@@ -80,7 +92,7 @@ describe('PromotionsPage', () => {
 
   it('shows the backend net figure without recomputing it on the client', async () => {
     stubFetch(PROMOTIONS_RESPONSE)
-    render(<PromotionsPage />)
+    renderPage()
 
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
     // The table opens by default on this route now, so there is nothing to
@@ -122,7 +134,7 @@ describe('PromotionsPage', () => {
         },
       ],
     })
-    render(<PromotionsPage />)
+    renderPage()
 
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
 
@@ -158,7 +170,7 @@ describe('PromotionsPage', () => {
         text: async () => 'query_failed',
       }),
     )
-    render(<PromotionsPage />)
+    renderPage()
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/couldn't load campaigns/i)
@@ -167,7 +179,7 @@ describe('PromotionsPage', () => {
 
   it('says plainly when no promotions have been ingested yet', async () => {
     stubFetch({ promotions: [] })
-    render(<PromotionsPage />)
+    renderPage()
 
     expect(
       await screen.findByText(/no promotion records on file yet/i),
@@ -193,7 +205,7 @@ describe('PromotionsPage', () => {
         },
       ],
     })
-    render(<PromotionsPage />)
+    renderPage()
 
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
 
@@ -238,7 +250,7 @@ describe('PromotionsPage', () => {
         },
       ],
     })
-    render(<PromotionsPage />)
+    renderPage()
 
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
 

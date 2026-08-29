@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
+import {
+  ASK_PAGE_PATH,
+  buildPromoRoiFollowUpQuestion,
+  type AskPageNavigationState,
+  type PromoRoiDataPointClick,
+} from '@/components/Charts/chartFollowUpQuestion'
 import PromoRoiChart, {
   type PromotionRoiDatum,
 } from '@/components/Charts/PromoRoiChart'
@@ -99,6 +106,19 @@ function toChartDatum(promotion: PromotionApi): PromotionRoiDatum {
  * renders as an explicit unattributable/refused state, never a $0 bar.
  */
 export default function PromotionsPage() {
+  const navigate = useNavigate()
+  // Spec 008 FR-001: `/promotions` and `/ask` are separate routes with no
+  // shared chat context, so a chart click navigates to `/ask` carrying the
+  // built question as router state (see chartFollowUpQuestion.ts's doc
+  // comment, and ClosePage.tsx for the identical pattern).
+  function handleChartDataPointClick(point: PromoRoiDataPointClick) {
+    navigate(ASK_PAGE_PATH, {
+      state: {
+        autoSubmitQuestion: buildPromoRoiFollowUpQuestion(point),
+      } satisfies AskPageNavigationState,
+    })
+  }
+
   const [promotions, setPromotions] = useState<PromotionApi[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -256,6 +276,7 @@ export default function PromotionsPage() {
           // which is what keeps one campaign from having two on-screen
           // renderings that could drift.
           defaultTableOpen
+          onDataPointClick={handleChartDataPointClick}
         />
       ) : null}
 

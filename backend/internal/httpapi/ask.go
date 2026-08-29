@@ -170,6 +170,44 @@ type AskResponse struct {
 	// on every answer") reflects this session's real spend rather than a
 	// hard-coded placeholder figure.
 	Interactions []CostInteraction `json:"interactions,omitempty"`
+	// ToolCalls is spec 008 FR-003's "show your work": the exact MCP tool
+	// name(s) explain actually invoked and their raw, already-returned JSON
+	// result(s) — surfacing data this response already carries internally
+	// (result.ToolInvocations), never a new tool call or a re-computation.
+	// `omitempty` keeps this out of every response by default; populated
+	// ONLY when Status is "answered", the same scoping SuggestedFollowUps
+	// already uses, since a refusal/clarification never reached a tool.
+	ToolCalls []ToolCallView `json:"tool_calls,omitempty"`
+}
+
+// ToolCallView is one real MCP tool invocation's name and raw JSON result,
+// exactly as explain.ToolInvocation already recorded it — a read-only view
+// for FR-003's "show your work", not a new data path (Constitution
+// Principle IV: this is provenance already computed, just not yet surfaced
+// in the response body).
+type ToolCallView struct {
+	Name       string          `json:"name"`
+	ResultJSON json.RawMessage `json:"result_json"`
+}
+
+// toToolCallViews maps explain.ToolInvocation's raw JSON strings into
+// ToolCallView's json.RawMessage so the client receives real, embedded JSON
+// (not a JSON-encoded string it would have to parse twice). A tool result
+// that somehow isn't valid JSON is skipped rather than breaking the whole
+// response — "show your work" degrading to showing less work is acceptable;
+// a broken /api/ask response is not.
+func toToolCallViews(invocations []explain.ToolInvocation) []ToolCallView {
+	if len(invocations) == 0 {
+		return nil
+	}
+	views := make([]ToolCallView, 0, len(invocations))
+	for _, inv := range invocations {
+		if !json.Valid([]byte(inv.ResultJSON)) {
+			continue
+		}
+		views = append(views, ToolCallView{Name: inv.Name, ResultJSON: json.RawMessage(inv.ResultJSON)})
+	}
+	return views
 }
 
 // CostInteraction is one model call's real, measured cost — mirrors the
@@ -507,6 +545,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			Visualization:      deriveVisualization(result.ToolInvocations),
 			SuggestedFollowUps: deriveFollowUpSuggestions(result.ToolInvocations, req.Question, deps.DataStart, deps.DataEnd),
 			Interactions:       []CostInteraction{gateInteraction, explainInteraction},
+			ToolCalls:          toToolCallViews(result.ToolInvocations),
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated

@@ -1,9 +1,16 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, CalendarRange } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 import BadgeDisplay, {
   type ReconciliationBadge,
 } from '@/components/Badges/BadgeDisplay'
+import {
+  ASK_PAGE_PATH,
+  buildMarginTrendFollowUpQuestion,
+  type AskPageNavigationState,
+  type MarginTrendDataPointClick,
+} from '@/components/Charts/chartFollowUpQuestion'
 import MarginTrendChart, {
   type DailyMarginDatum,
 } from '@/components/Charts/MarginTrendChart'
@@ -279,6 +286,18 @@ function buildQuery(
  * picker lets the owner look at any other day, or any period, on demand.
  */
 export default function ClosePage() {
+  const navigate = useNavigate()
+  // Spec 008 FR-001: `/close` and `/ask` are separate routes with no shared
+  // chat context, so a chart click navigates to `/ask` carrying the built
+  // question as router state (see chartFollowUpQuestion.ts's doc comment).
+  function handleChartDataPointClick(point: MarginTrendDataPointClick) {
+    navigate(ASK_PAGE_PATH, {
+      state: {
+        autoSubmitQuestion: buildMarginTrendFollowUpQuestion(point),
+      } satisfies AskPageNavigationState,
+    })
+  }
+
   const [viewMode, setViewMode] = useState<ViewMode>('latest')
   const [selectedDate, setSelectedDate] = useState('')
   const [rangeStart, setRangeStart] = useState('')
@@ -583,6 +602,7 @@ export default function ClosePage() {
             <MarginTrendChart
               data={toChartData(days, data.start, data.end)}
               sourceRefs={toPeriodProvenanceRefs(days, data.start, data.end)}
+              onDataPointClick={handleChartDataPointClick}
             />
 
             {/* Gross sales by source: values printed exactly as the API sent
@@ -677,6 +697,7 @@ export default function ClosePage() {
             <MarginTrendChart
               data={toChartData(days, data.start, data.end)}
               sourceRefs={toPeriodProvenanceRefs(days, data.start, data.end)}
+              onDataPointClick={handleChartDataPointClick}
             />
 
             <Panel className="p-5">

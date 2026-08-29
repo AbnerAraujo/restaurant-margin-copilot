@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import MarginTrendChart, {
   DEFAULT_DAILY_MARGIN,
@@ -157,5 +157,58 @@ describe('MarginTrendChart', () => {
     expect(table).toHaveTextContent(MISSING_MARGIN_REASON)
     expect(table).toHaveTextContent('+$375.82')
     expect(table).toHaveTextContent('−$227.09')
+  })
+
+  // Spec 008 FR-001 — chart click-to-ask.
+
+  it('calls onDataPointClick with the real, unbucketed date when a bar is clicked', async () => {
+    const user = userEvent.setup()
+    const onDataPointClick = vi.fn()
+    render(<MarginTrendChart onDataPointClick={onDataPointClick} />)
+
+    await user.click(screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ }))
+
+    expect(onDataPointClick).toHaveBeenCalledTimes(1)
+    expect(onDataPointClick).toHaveBeenCalledWith({
+      date: '2026-08-07',
+      rangeEndDate: '2026-08-07',
+    })
+  })
+
+  it('calls onDataPointClick with the bucketed date range when a bucketed bar is clicked', async () => {
+    const user = userEvent.setup()
+    const onDataPointClick = vi.fn()
+    render(
+      <MarginTrendChart
+        data={buildLongPeriod(744)}
+        onDataPointClick={onDataPointClick}
+      />,
+    )
+
+    const bars = screen.getAllByRole('button', { name: /: [+−]\$/ })
+    await user.click(bars[0])
+
+    expect(onDataPointClick).toHaveBeenCalledTimes(1)
+    const point = onDataPointClick.mock.calls[0][0]
+    expect(point.date).not.toBe(point.rangeEndDate)
+  })
+
+  it('activates onDataPointClick via keyboard (Enter), matching the bar\'s own role="button"', async () => {
+    const user = userEvent.setup()
+    const onDataPointClick = vi.fn()
+    render(<MarginTrendChart onDataPointClick={onDataPointClick} />)
+
+    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ })
+    bar.focus()
+    await user.keyboard('{Enter}')
+
+    expect(onDataPointClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no click affordance in the accessible name when onDataPointClick is not provided', () => {
+    render(<MarginTrendChart />)
+
+    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ })
+    expect(bar).not.toHaveAccessibleName(/ask about this/i)
   })
 })

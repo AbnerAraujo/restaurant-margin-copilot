@@ -260,3 +260,60 @@ func TestFinalizeSuggestionsDedupesAndCapsAtThree(t *testing.T) {
 		}
 	}
 }
+
+// TestDeriveFollowUpSuggestionsIncludesFlagBasedFollowUpWhenDiscrepancyFlagsPresent
+// covers spec 008 FR-002: a get_daily_summary result carrying a real
+// discrepancy flag must offer a "why is this different from usual?"
+// suggestion, grounded in that real flagged date, competing for one of the
+// existing MaxFollowUpSuggestions slots rather than being added on top.
+func TestDeriveFollowUpSuggestionsIncludesFlagBasedFollowUpWhenDiscrepancyFlagsPresent(t *testing.T) {
+	got := deriveFollowUpSuggestions(
+		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug08JSONFixture)},
+		"",
+		testDataStart, testDataEnd,
+	)
+	if len(got) > MaxFollowUpSuggestions {
+		t.Fatalf("got %d suggestions, want at most %d", len(got), MaxFollowUpSuggestions)
+	}
+	joined := strings.Join(got, " | ")
+	if !strings.Contains(joined, "Why is 2026-08-08 different from usual?") {
+		t.Errorf("expected a flag-based follow-up naming the real flagged date 2026-08-08, got %v", got)
+	}
+}
+
+// TestDeriveFollowUpSuggestionsOmitsFlagBasedFollowUpWhenNoFlags covers
+// spec 008 FR-002's acceptance scenario 4: a clean day (no discrepancy
+// flags) must never manufacture a flag-based question.
+func TestDeriveFollowUpSuggestionsOmitsFlagBasedFollowUpWhenNoFlags(t *testing.T) {
+	got := deriveFollowUpSuggestions(
+		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONFixture)},
+		"",
+		testDataStart, testDataEnd,
+	)
+	joined := strings.Join(got, " | ")
+	if strings.Contains(joined, "different from usual") {
+		t.Errorf("expected no flag-based follow-up for a clean day (no discrepancy_flags), got %v", got)
+	}
+}
+
+// TestFlagBasedFollowUpUsesLatestFlaggedDateAcrossMultipleResults proves the
+// same "latest wins" convention dailySummaryFollowUps already uses when
+// several get_daily_summary calls happened in one interaction (e.g. a
+// multi-day chart) and more than one carries a flag.
+func TestFlagBasedFollowUpUsesLatestFlaggedDateAcrossMultipleResults(t *testing.T) {
+	earlierFlagged := `{"date":"2026-08-03","discrepancy_flags":[{"type":"commission_mismatch","detail":"stated 8.10, recomputed 8.35"}]}`
+	got := flagBasedFollowUp([]string{dailySummaryAug08JSONFixture, earlierFlagged})
+	want := "Why is 2026-08-08 different from usual?"
+	if got != want {
+		t.Errorf("flagBasedFollowUp() = %q, want %q", got, want)
+	}
+}
+
+// TestFlagBasedFollowUpEmptyOnNoResults proves the zero-invocation case
+// returns "" (never a placeholder), matching this file's own "empty slice,
+// never nil-treated-specially" discipline.
+func TestFlagBasedFollowUpEmptyOnNoResults(t *testing.T) {
+	if got := flagBasedFollowUp(nil); got != "" {
+		t.Errorf("flagBasedFollowUp(nil) = %q, want empty", got)
+	}
+}

@@ -1364,4 +1364,21 @@ components:
           type: array
           items: { $ref: "#/components/schemas/CostInteraction" }
           description: One entry per model call that actually ran this request. Empty when served from an exact-match cache hit.
+        tool_calls:
+          type: array
+          items: { $ref: "#/components/schemas/ToolCallView" }
+          description: >-
+            "Show your work" (spec 008 FR-003): the exact MCP tool name(s)
+            invoked while answering, and the raw JSON result(s) already
+            returned internally for this response — no new tool call, no
+            re-computation. Populated only when status=answered; empty or
+            absent whenever no tool ran (a refusal or clarification never
+            reaches one).
       required: [status]
+
+    ToolCallView:
+      type: object
+      properties:
+        name: { type: string, description: "The exact MCP tool name invoked, e.g. get_daily_summary." }
+        result_json: { description: "The tool's raw JSON result, embedded verbatim (not double-encoded as a string)." }
+      required: [name, result_json]

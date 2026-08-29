@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import PromoRoiChart, {
   DEFAULT_PROMOTION_ROI,
@@ -192,5 +192,46 @@ describe('PromoRoiChart', () => {
     expect(rows).toHaveLength(DEFAULT_PROMOTION_ROI.length + 1)
     expect(table).toHaveTextContent('Refused — cannot attribute (FR-013)')
     expect(table).not.toHaveTextContent('$0.00')
+  })
+
+  // Spec 008 FR-001 — chart click-to-ask.
+
+  it('calls onDataPointClick with the real campaign id and name when a bar is clicked', async () => {
+    const user = userEvent.setup()
+    const onDataPointClick = vi.fn()
+    render(<PromoRoiChart onDataPointClick={onDataPointClick} />)
+
+    await user.click(
+      screen.getByRole('button', { name: /In-App Boost.*net \+\$34\.00/ }),
+    )
+
+    expect(onDataPointClick).toHaveBeenCalledTimes(1)
+    expect(onDataPointClick).toHaveBeenCalledWith({
+      campaignId: 'IFOOD-CAMP-BOOST01',
+      campaignName: 'In-App Boost — Weekday Lunch',
+    })
+  })
+
+  it('activates onDataPointClick via keyboard (Space), matching the bar\'s own role="button"', async () => {
+    const user = userEvent.setup()
+    const onDataPointClick = vi.fn()
+    render(<PromoRoiChart onDataPointClick={onDataPointClick} />)
+
+    const bar = screen.getByRole('button', {
+      name: /In-App Boost.*net \+\$34\.00/,
+    })
+    bar.focus()
+    await user.keyboard(' ')
+
+    expect(onDataPointClick).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders no click affordance in the accessible name when onDataPointClick is not provided', () => {
+    render(<PromoRoiChart />)
+
+    const bar = screen.getByRole('button', {
+      name: /In-App Boost.*net \+\$34\.00/,
+    })
+    expect(bar).not.toHaveAccessibleName(/ask about this/i)
   })
 })

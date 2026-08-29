@@ -50,6 +50,7 @@ import (
 	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 )
 
 // MaxFollowUpSuggestions caps how many follow-up chips ever render under one
@@ -94,7 +95,58 @@ func deriveFollowUpSuggestions(invocations []explain.ToolInvocation, askedQuesti
 		raw = dailySummaryFollowUps(byTool["get_daily_summary"], bounds)
 	}
 
+	// Flag-based follow-up (spec 008 FR-002): additive, not another switch
+	// case — a get_daily_summary call can accompany ANY primary tool (e.g.
+	// supporting context for a platform-comparison question), and a real
+	// discrepancy flag on that day is worth surfacing regardless of which
+	// tool the answer was primarily about. Prepended, not appended: it
+	// competes for a slot the same way every other candidate does (FR-002
+	// says "counted toward the cap, not in addition to it"), but a flag is
+	// a proactive, time-sensitive signal worth prioritizing over one more
+	// generic date-range follow-up when the cap would otherwise be reached
+	// by the primary tool's own candidates alone.
+	if flag := flagBasedFollowUp(byTool["get_daily_summary"]); flag != "" {
+		raw = append([]string{flag}, raw...)
+	}
+
 	return finalizeSuggestions(raw, askedQuestion)
+}
+
+// discrepancyFlagsJSON captures just the date and discrepancy_flags fields
+// of DailySummaryResult (mcptools/reconciliation_tools.go) — this file's
+// own dailySummaryJSON view (visualization.go) has no such field (its bar/
+// pie chart has no use for it), so a flag-aware follow-up needs its own
+// narrower parse struct, matching the platformComparisonPeriodJSON pattern
+// below.
+type discrepancyFlagsJSON struct {
+	Date             string                      `json:"date"`
+	DiscrepancyFlags []reconcile.DiscrepancyFlag `json:"discrepancy_flags"`
+}
+
+// flagBasedFollowUp offers a single "why is this different from usual?"
+// suggestion whenever at least one get_daily_summary result in this
+// interaction carries a real discrepancy flag — grounded in the latest such
+// flagged date, never a placeholder. Returns "" (not offered, per spec 008's
+// acceptance scenario 4) when no get_daily_summary result ran or none of
+// them carry a flag: a clean day is a real, good answer, not something to
+// manufacture a question about.
+func flagBasedFollowUp(dailySummaryResults []string) string {
+	var flaggedDates []time.Time
+	for _, raw := range dailySummaryResults {
+		var parsed discrepancyFlagsJSON
+		if err := json.Unmarshal([]byte(raw), &parsed); err != nil || len(parsed.DiscrepancyFlags) == 0 {
+			continue
+		}
+		if d, ok := parseSuggestionDate(parsed.Date); ok {
+			flaggedDates = append(flaggedDates, d)
+		}
+	}
+	if len(flaggedDates) == 0 {
+		return ""
+	}
+	sort.Slice(flaggedDates, func(i, j int) bool { return flaggedDates[i].Before(flaggedDates[j]) })
+	latest := flaggedDates[len(flaggedDates)-1]
+	return fmt.Sprintf("Why is %s different from usual?", formatSuggestionDate(latest))
 }
 
 // --- get_daily_summary ---------------------------------------------------
