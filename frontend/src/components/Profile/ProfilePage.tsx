@@ -49,8 +49,25 @@ const EMPTY_FORM: ProfileFormState = {
   description: '',
 }
 
+// isNetworkFailure reports whether `caught` is the raw error `fetch()`
+// itself throws when the request never reached a server at all — DNS
+// failure, connection refused, or (as QA found for PUT /api/profile) a
+// blocked CORS preflight. Browsers disagree on the wording ("Failed to
+// fetch" in Chrome, "NetworkError when attempting to fetch resource" in
+// Firefox, "Load failed" in Safari) and none of them explain why, so this
+// checks the type fetch() actually throws (a TypeError, distinct from the
+// `ApiError`/`Error` that getJson/putJson construct from a real HTTP
+// response) rather than matching message text, which would silently stop
+// working on a browser that phrases it differently.
+function isNetworkFailure(caught: unknown): boolean {
+  return caught instanceof TypeError
+}
+
 function errorMessage(caught: unknown): string {
   if (caught instanceof ApiError) return caught.message
+  if (isNetworkFailure(caught)) {
+    return "We couldn't reach the server to save your changes. Check your connection and try again."
+  }
   if (caught instanceof Error) return caught.message
   return String(caught)
 }
@@ -296,6 +313,8 @@ export default function ProfilePage() {
                   placeholder="e.g. Trattoria Bellavista"
                   value={form.name}
                   onChange={(event) => updateField('name', event.target.value)}
+                  required
+                  aria-required="true"
                 />
               </div>
 

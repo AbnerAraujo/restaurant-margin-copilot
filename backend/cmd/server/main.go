@@ -197,7 +197,18 @@ func withDevCORS(next http.Handler) http.Handler {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		// Every method any route on this mux actually accepts: GET (most
+		// read endpoints), POST (ask, business-insight, usage,
+		// client-errors, cost-sheet preview/commit, promotions create),
+		// PUT (GET/PUT /api/profile — see httpapi.HandleProfile), and
+		// OPTIONS for the preflight itself. No route uses DELETE or PATCH;
+		// when one does, add it here too, since a missing method here
+		// fails silently in the browser (a blocked CORS preflight, not a
+		// visible 405) while a direct curl/Postman request to the same
+		// handler succeeds — that gap is exactly what let PUT
+		// /api/profile ship broken from the real frontend despite the
+		// handler itself working.
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
