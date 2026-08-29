@@ -393,4 +393,88 @@ describe('PromotionsPage', () => {
       screen.queryByText(/needs a decision/i),
     ).not.toBeInTheDocument()
   })
+
+  it('narrows the table to campaigns matching the search box, by campaign ID', async () => {
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('IFOOD-CAMP-WEEKEND')).toBeInTheDocument()
+
+    await userEvent.type(
+      screen.getByLabelText('Search campaigns'),
+      'BOOST01',
+    )
+
+    expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+    expect(
+      within(table).queryByText('IFOOD-CAMP-WEEKEND'),
+    ).not.toBeInTheDocument()
+    // The header count and platform aggregates are unaffected by the grid
+    // filter — they stay honest totals of every campaign on file.
+    expect(screen.getByText('2 campaigns')).toBeInTheDocument()
+  })
+
+  it('narrows the table by platform, and shows a way back to the full list', async () => {
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-A',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '150.00',
+          roi: '50.00',
+          flagged_negative: false,
+          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 10 }],
+        },
+      ],
+    })
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    const table = screen.getByRole('table')
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('Filter by platform'),
+      'Just Eat Takeaway',
+    )
+
+    expect(within(table).getByText('JET-CAMP-A')).toBeInTheDocument()
+    expect(
+      within(table).queryByText('IFOOD-CAMP-BOOST01'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('1 of 3 campaigns shown'),
+    ).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+
+    expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+    expect(within(table).getByText('JET-CAMP-A')).toBeInTheDocument()
+  })
+
+  it('shows a reassuring, actionable empty state when filters match nothing', async () => {
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    await userEvent.type(
+      screen.getByLabelText('Search campaigns'),
+      'no-such-campaign',
+    )
+
+    expect(
+      screen.getByText('No campaigns match these filters.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('table')).not.toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getAllByRole('button', { name: /clear filters/i })[0],
+    )
+    expect(await screen.findByRole('table')).toBeInTheDocument()
+  })
 })

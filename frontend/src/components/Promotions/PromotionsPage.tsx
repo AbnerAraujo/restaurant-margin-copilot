@@ -22,9 +22,17 @@ import PromoRoiChart, {
 import LogReplacementForm from '@/components/Promotions/LogReplacementForm'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { Button } from '@/components/ui/button'
+import {
+  FilterBar,
+  FilterChip,
+  FilterEmptyState,
+  FilterSearchInput,
+  FilterSelect,
+} from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
@@ -128,6 +136,16 @@ function sortPromotionsByRoi(
     return direction === 'asc' ? diff : -diff
   })
   return [...attributed, ...unattributed]
+}
+
+type RoiSign = 'profitable' | 'lost' | 'unattributable'
+
+/** The ROI-sign filter chip's dimension value for one campaign — the same
+ * three-way split the header chips (`negativeCount`/`unattributableCount`)
+ * already summarize, just per-row instead of counted. */
+function roiSign(promotion: PromotionApi): RoiSign {
+  if (promotion.roi === null) return 'unattributable'
+  return Number(promotion.roi) < 0 ? 'lost' : 'profitable'
 }
 
 function collapseRefs(
@@ -278,12 +296,29 @@ export default function PromotionsPage() {
     () => aggregateRoiByPlatform(promotions ?? []),
     [promotions],
   )
+
+  // The grid/chart filter (ux-writing + dataviz skills): scopes only the
+  // table/chart below, never the header chips or the platform-aggregate
+  // stats above, which stay honest totals of every campaign on file
+  // regardless of what the owner is currently browsing.
+  const campaignFilter = useTableFilter({
+    rows: promotions ?? [],
+    getSearchableText: (promotion) => [promotion.campaign_id, promotion.platform],
+    dimensions: useMemo(
+      () => [
+        { key: 'platform', getValue: (promotion: PromotionApi) => promotion.platform },
+        { key: 'roiSign', getValue: (promotion: PromotionApi) => roiSign(promotion) },
+      ],
+      [],
+    ),
+  })
+
   const displayedPromotions = useMemo(() => {
     if (!promotions) return promotions
     return roiSortDirection
-      ? sortPromotionsByRoi(promotions, roiSortDirection)
-      : promotions
-  }, [promotions, roiSortDirection])
+      ? sortPromotionsByRoi(campaignFilter.filteredRows, roiSortDirection)
+      : campaignFilter.filteredRows
+  }, [promotions, roiSortDirection, campaignFilter.filteredRows])
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -432,6 +467,80 @@ export default function PromotionsPage() {
               Lowest first
             </Button>
           </div>
+
+          {/* The grid filter: search by campaign ID, plus platform and
+              ROI-sign dimensions — scopes only the chart/table rendered
+              below (dataviz skill: one row, above the content it scopes). */}
+          <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+            <FilterBar
+              isFiltered={campaignFilter.isFiltered}
+              onClear={campaignFilter.clearFilters}
+              resultSummary={
+                campaignFilter.isFiltered
+                  ? `${campaignFilter.visibleCount} of ${campaignFilter.totalCount} campaigns shown`
+                  : undefined
+              }
+            >
+              <FilterSearchInput
+                id="promotions-search"
+                label="Search campaigns"
+                value={campaignFilter.searchQuery}
+                onChange={campaignFilter.setSearchQuery}
+                placeholder="Search by campaign ID"
+              />
+              <FilterSelect
+                id="promotions-platform-filter"
+                label="Filter by platform"
+                value={campaignFilter.filterValues.platform ?? null}
+                onChange={(value) => campaignFilter.setFilterValue('platform', value)}
+                options={campaignFilter.dimensionOptions.platform ?? []}
+                allLabel="All platforms"
+              />
+              <div
+                role="group"
+                aria-label="Filter by ROI"
+                className="flex items-center gap-1.5"
+              >
+                <FilterChip
+                  pressed={campaignFilter.filterValues.roiSign === 'profitable'}
+                  onClick={() =>
+                    campaignFilter.setFilterValue(
+                      'roiSign',
+                      campaignFilter.filterValues.roiSign === 'profitable'
+                        ? null
+                        : 'profitable',
+                    )
+                  }
+                >
+                  Profitable
+                </FilterChip>
+                <FilterChip
+                  pressed={campaignFilter.filterValues.roiSign === 'lost'}
+                  onClick={() =>
+                    campaignFilter.setFilterValue(
+                      'roiSign',
+                      campaignFilter.filterValues.roiSign === 'lost' ? null : 'lost',
+                    )
+                  }
+                >
+                  Lost money
+                </FilterChip>
+                <FilterChip
+                  pressed={campaignFilter.filterValues.roiSign === 'unattributable'}
+                  onClick={() =>
+                    campaignFilter.setFilterValue(
+                      'roiSign',
+                      campaignFilter.filterValues.roiSign === 'unattributable'
+                        ? null
+                        : 'unattributable',
+                    )
+                  }
+                >
+                  Unattributable
+                </FilterChip>
+              </div>
+            </FilterBar>
+          </div>
         </Panel>
       ) : null}
 
@@ -451,6 +560,18 @@ export default function PromotionsPage() {
             <StatSkeleton />
             <StatSkeleton />
           </StatGroup>
+        </Panel>
+      ) : null}
+
+      {/* Filtered to nothing: there IS data, the filter just doesn't match
+          any of it — distinct from the "no promotions ingested" empty state
+          above. */}
+      {promotions && promotions.length > 0 && displayedPromotions?.length === 0 ? (
+        <Panel>
+          <FilterEmptyState
+            label="No campaigns match these filters."
+            onClear={campaignFilter.clearFilters}
+          />
         </Panel>
       ) : null}
 
