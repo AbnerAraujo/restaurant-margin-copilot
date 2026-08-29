@@ -74,8 +74,20 @@ import (
 var ErrEmptyQuestion = errors.New("ambiguity: question is empty")
 
 // MaxOutputTokens bounds the gate's response — it produces a small fixed
-// JSON object (see systemPrompt), never free-form prose.
-const MaxOutputTokens = 512
+// JSON object (see systemPrompt), never free-form prose. Raised from the
+// original 512 after a real live truncation on a genuinely complex,
+// multi-part question ("what day of the month has the highest expenses,
+// and what revenue would keep that day profitable?") — the classification
+// pass needs room to reason about compound questions just as much as the
+// writer pass already got more room for reasoning about a wide,
+// multi-year date range (see MaxWriterOutputTokens's own doc comment,
+// which fixed the identical symptom in the OTHER call this package makes
+// but was never applied here too — this was that same fix's missing half).
+// 768 matches the writer pass's already-validated cap for consistency,
+// still a hard, deliberate limit, not a loosening into open-ended prose —
+// a response that still hits it is caught explicitly by the stop_reason
+// check in Classify, never silently trusted.
+const MaxOutputTokens = 768
 
 // Decision is the gate's classification of one question, plus the
 // token/cost/latency figures the caller (internal/httpapi) hands straight
