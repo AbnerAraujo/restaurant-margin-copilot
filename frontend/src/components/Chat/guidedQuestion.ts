@@ -152,6 +152,80 @@ export function isChronologicalRange(range: Partial<DateRange>): range is DateRa
   return range.start <= range.end
 }
 
+/**
+ * The real, known data window every date picker is bounded to
+ * (`useDataCoverage`, threaded through as `QuestionComposerProps.minDate` /
+ * `maxDate`). `null`/`undefined` means "no known bound on this side" — the
+ * composer itself has no opinion on what counts as too early or too late;
+ * that judgment belongs entirely to the live coverage data.
+ */
+export interface DateBounds {
+  minDate?: string | null
+  maxDate?: string | null
+}
+
+/**
+ * True when `value` falls within `bounds`, treating a missing bound as no
+ * restriction on that side. Plain ISO-8601 string comparison is sufficient
+ * and exact here — the same trick `isChronologicalRange` already relies on —
+ * because every date on the wire is a fixed-width "YYYY-MM-DD".
+ */
+export function isDateWithinBounds(value: IsoDate, bounds?: DateBounds): boolean {
+  if (!value) return false
+  if (bounds?.minDate && value < bounds.minDate) return false
+  if (bounds?.maxDate && value > bounds.maxDate) return false
+  return true
+}
+
+const MONTH_ABBREVIATIONS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+/**
+ * "2026-08-14" -> "Aug 14, 2026". Formatted by hand, deliberately never
+ * routed through `Date`/`toLocaleDateString`: those interpret an ISO date as
+ * UTC midnight and then render it in the browser's local zone, which can
+ * silently shift the displayed day by one for anyone west of UTC — exactly
+ * the kind of subtly-wrong date this composer exists to prevent, so it must
+ * not appear in the composer's own error copy.
+ */
+export function formatDisplayDate(iso: IsoDate): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!match) return iso
+  const [, year, month, day] = match
+  const label = MONTH_ABBREVIATIONS[Number(month) - 1]
+  if (!label) return iso
+  return `${label} ${Number(day)}, ${year}`
+}
+
+/**
+ * The inline copy for a date outside `bounds` — `null` while `value` is
+ * empty (nothing to flag yet; `required` already covers "not filled in") or
+ * already in range. Named after what's wrong and states the fix in the same
+ * breath (ux-writing's what→how, dropping "why" since "outside our data"
+ * is self-evident from the stated range) — never a bare "Invalid date".
+ */
+export function dateRangeErrorMessage(value: IsoDate, bounds?: DateBounds): string | null {
+  if (!value || isDateWithinBounds(value, bounds)) return null
+  const { minDate, maxDate } = bounds ?? {}
+  if (minDate && maxDate) {
+    return `Choose a date between ${formatDisplayDate(minDate)} and ${formatDisplayDate(maxDate)}.`
+  }
+  if (maxDate) return `Choose a date on or before ${formatDisplayDate(maxDate)}.`
+  if (minDate) return `Choose a date on or after ${formatDisplayDate(minDate)}.`
+  return null
+}
+
+/** `isChronologicalRange`, extended to also require both ends fall within `bounds`. */
+function isValidRange(range: Partial<DateRange>, bounds?: DateBounds): range is DateRange {
+  return (
+    isChronologicalRange(range) &&
+    isDateWithinBounds(range.start, bounds) &&
+    isDateWithinBounds(range.end, bounds)
+  )
+}
+
 function platformLabel(value: string): string {
   return KNOWN_PLATFORMS.find((p) => p.value === value)?.label ?? value
 }
@@ -220,35 +294,44 @@ export interface GuidedDraft {
 
 /**
  * Converts the free-form step-2 draft into a strict, composable
- * `GuidedParams` — or `null` while it's still incomplete. This is the single
- * source of truth for "is this category's form filled in well enough to
- * move on", so the Continue button's disabled state and the question
- * actually composed can never disagree with each other.
+ * `GuidedParams` — or `null` while it's still incomplete OR while any date it
+ * carries falls outside `bounds` (the real, live data window). This is the
+ * single source of truth for "is this category's form filled in well enough
+ * to move on", so the Continue button's disabled state, the question
+ * actually composed, and an out-of-range date genuinely blocking
+ * progression can never disagree with each other — a date the backend
+ * cannot answer for must never make it past this function, category by
+ * category, exactly like an incomplete or backwards one already can't.
  */
 export function toGuidedParams(
   category: GuidedCategoryId,
   draft: GuidedDraft,
+  bounds?: DateBounds,
 ): GuidedParams | null {
   switch (category) {
     case 'daily_summary':
-      return draft.date ? { category, date: draft.date } : null
+      return draft.date && isDateWithinBounds(draft.date, bounds)
+        ? { category, date: draft.date }
+        : null
 
     case 'margin_delta':
-      return isChronologicalRange(draft.periodA ?? {}) && isChronologicalRange(draft.periodB ?? {})
+      return isValidRange(draft.periodA ?? {}, bounds) && isValidRange(draft.periodB ?? {}, bounds)
         ? { category, periodA: draft.periodA as DateRange, periodB: draft.periodB as DateRange }
         : null
 
     case 'discrepancies':
       if (draft.scope === 'period') {
-        return isChronologicalRange(draft.period ?? {})
+        return isValidRange(draft.period ?? {}, bounds)
           ? { category, scope: 'period', period: draft.period as DateRange }
           : null
       }
-      return draft.date ? { category, scope: 'single_date', date: draft.date } : null
+      return draft.date && isDateWithinBounds(draft.date, bounds)
+        ? { category, scope: 'single_date', date: draft.date }
+        : null
 
     case 'promotion_roi':
       if (draft.mode === 'platform_period') {
-        return draft.platform && isChronologicalRange(draft.period ?? {})
+        return draft.platform && isValidRange(draft.period ?? {}, bounds)
           ? {
               category,
               mode: 'platform_period',
@@ -257,6 +340,9 @@ export function toGuidedParams(
             }
           : null
       }
+      // A campaign id names a real, already-known campaign (fetched live —
+      // see fetchKnownCampaigns) rather than a picked date, so `bounds`
+      // simply doesn't apply to this branch.
       return draft.campaignId
         ? { category, mode: 'campaign', campaignId: draft.campaignId }
         : null
@@ -265,7 +351,7 @@ export function toGuidedParams(
     case 'platform_economics':
     case 'period_totals':
     case 'expense_pattern_by_day':
-      return isChronologicalRange(draft.period ?? {})
+      return isValidRange(draft.period ?? {}, bounds)
         ? { category, period: draft.period as DateRange }
         : null
   }
