@@ -38,20 +38,27 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
-    asChild?: boolean
-  }) {
+// forwardRef (not a plain function component): a caller wrapping a Button in
+// `<TooltipTrigger asChild>` (ui/tooltip.tsx) needs Radix to attach a real
+// DOM ref here to position the tooltip against — a non-forwarding component
+// silently drops that ref, which is exactly the kind of thing that looks
+// fine until the tooltip fails to anchor. ChatPanel.tsx's icon-only composer
+// buttons are the first callers to rely on this.
+const Button = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<"button"> &
+    VariantProps<typeof buttonVariants> & {
+      asChild?: boolean
+    }
+>(function Button(
+  { className, variant = "default", size = "default", asChild = false, ...props },
+  ref
+) {
   const Comp = asChild ? Slot.Root : "button"
 
   return (
     <Comp
+      ref={ref}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -59,6 +66,6 @@ function Button({
       {...props}
     />
   )
-}
+})
 
 export { Button, buttonVariants }
