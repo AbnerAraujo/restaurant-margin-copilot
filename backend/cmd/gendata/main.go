@@ -45,6 +45,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -256,7 +257,20 @@ func monthlyRegimes() map[string]monthRegime {
 // month doesn't depend on how a per-day probability happened to land.
 func forcedShockDays(regimes map[string]monthRegime, rng *rand.Rand) (dates map[string]int, err error) {
 	dates = make(map[string]int)
-	for monthKey, r := range regimes {
+	// Iterate in sorted key order, not Go's randomized map iteration order:
+	// each month's rng.Perm call consumes a different slice of the SHARED
+	// rng stream depending on iteration order, so an unsorted range here
+	// would silently break the "same seed, same dataset, every regen"
+	// guarantee this file has documented since its first version — a real
+	// bug caught by literally re-running gendata twice and diffing the
+	// monthly verification output.
+	monthKeys := make([]string, 0, len(regimes))
+	for k := range regimes {
+		monthKeys = append(monthKeys, k)
+	}
+	slices.Sort(monthKeys)
+	for _, monthKey := range monthKeys {
+		r := regimes[monthKey]
 		monthStart, parseErr := time.Parse("2006-01", monthKey)
 		if parseErr != nil {
 			return nil, fmt.Errorf("gendata: invalid regime month key %q: %w", monthKey, parseErr)
