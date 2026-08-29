@@ -788,10 +788,10 @@ function ClarificationBubble({
 }) {
   return (
     <li className="flex items-start gap-2">
-      <ChatAvatar role="assistant" tone="warning" />
-      <div className="max-w-[85%] space-y-2.5 rounded-2xl rounded-tl-sm border border-warning/25 bg-warning/10 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-warning-text">
-          <CircleHelp className="size-3.5" aria-hidden="true" />
+      <ChatAvatar role="assistant" />
+      <div className="max-w-[85%] space-y-2.5 rounded-2xl rounded-tl-sm border border-border bg-card px-4 py-3">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <CircleHelp className="size-3.5 text-muted-foreground" aria-hidden="true" />
           Let me make sure I've got this right
         </p>
         <p className="text-sm leading-relaxed text-foreground">
@@ -827,7 +827,7 @@ function RefusalBubble({
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" tone="refusal" />
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-primary/25 bg-primary/5 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-primary">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-primary">
           <Compass className="size-3.5" aria-hidden="true" />
           I&apos;ll help you find what you need
         </p>
@@ -872,8 +872,8 @@ function ErrorBubble({
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" tone="warning" />
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-border bg-muted/50 px-4 py-3">
-        <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          <PlugZap className="size-3.5" aria-hidden="true" />
+        <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <PlugZap className="size-3.5 text-muted-foreground" aria-hidden="true" />
           I couldn&apos;t reach your data just now
         </p>
         <p className="text-sm leading-relaxed text-foreground">

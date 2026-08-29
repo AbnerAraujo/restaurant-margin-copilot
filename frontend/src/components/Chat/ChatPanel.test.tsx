@@ -250,8 +250,12 @@ describe('ChatPanel', () => {
       .getByText(/let me make sure/i)
       .closest('div')
 
+    // Clarification moved off an amber "warning" treatment (a routine
+    // question, not a caution) onto the same calm, neutral card an
+    // ordinary answer uses — refusal keeps its distinct primary-brand
+    // tint, so the two still read as visually different from each other.
     expect(refusalBanner?.className).toContain('border-primary/25')
-    expect(clarificationBanner?.className).toContain('border-warning/25')
+    expect(clarificationBanner?.className).toContain('border-border')
     expect(refusalBanner?.className).not.toBe(clarificationBanner?.className)
   })
 
