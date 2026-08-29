@@ -1801,3 +1801,116 @@ month (margin total $79,827.72, provenance-cited), with the gate's call
 carrying the precomputed `"July 2026": IN RANGE` verdict. Structurally
 guaranteed in tests, not just observed: a counting-fake LLM client asserts
 the out-of-range path makes **zero** model invocations.
+
+## 2026-08-29 — Competitive landscape: the chat layer became table stakes; the refusal bar is still unclaimed
+
+Researched from public materials on 2026-08-29, applying this document's
+tagging convention. The most important finding is one that argues *against*
+this product's laziest pitch: it is no longer true (if it ever was) that
+incumbents are "dashboard-only and we add chat." Over roughly the last
+fifteen months, every serious player in restaurant back-office shipped a
+conversational AI layer. The honest differentiation therefore cannot be the
+chat box — it has to be the seam this product sits on and the trust
+discipline it measures.
+
+### Category 1 — Restaurant back-office platforms (deep on costs, chat now included)
+
+- **[Sourced]** **MarginEdge** — invoice processing / AP automation / food
+  cost. Announced an expanded AI suite (sales forecasting, recipe building,
+  invoice automation) on Aug 7, 2025 (Business Wire), added a built-in
+  conversational assistant, "Tom the Tomato," that investigates cost
+  overruns and explains sales changes over MarginEdge's own data, and
+  raised an $80M Series D on Aug 11, 2026 (GlobeNewswire) explicitly to
+  fund "AI-native" back-office products.
+- **[Sourced]** **Restaurant365** — accounting/inventory/workforce suite.
+  Announced "R365 AI" on May 12, 2026 (PR Newswire): natural-language
+  dashboard prompting, "Auto Answers" Q&A over dashboard data, an "AI
+  Advisor" agent. **Checked directly against the launch release**: it
+  contains no mention of accuracy safeguards, hallucination prevention, or
+  the assistant declining to answer — and no delivery-platform commission
+  reconciliation.
+- **[Sourced]** **Apicbase** (European BOH platform) — launched "Apicbase
+  AI" and, notably, an **MCP server** so operators can query live Apicbase
+  data from Claude, ChatGPT, or Copilot (get.apicbase.com/mcp). The same
+  integration pattern this product is built on, shipped by an incumbent —
+  further evidence the pattern itself is not a moat.
+- **Craftable** — same category (F&B procurement/inventory/cost
+  management). No conversational-layer or reconciliation-discipline claims
+  found in the materials reviewed; recorded as an absence in this review,
+  not as a fact about the product.
+
+### Category 2 — POS incumbent: Toast
+
+**[Sourced]** Toast's "Toast IQ" (known to early users as "Sous Chef") is a
+conversational assistant drawing on real-time and historical data across
+~148,000 Toast locations (Business Wire, June 10, 2026; Toast newsroom).
+It answers questions about sales, labor, menus, and guests — inside the
+Toast platform. **[Assumption]** Its structural center of gravity is the
+Toast side of the business: nothing in its public materials describes
+reconciling a rival delivery platform's netted payout against POS and cost
+data, which is precisely the seam this product's daily close owns.
+
+### Category 3 — Delivery platforms' own merchant portals
+
+**[Sourced]** Each portal documents itself as single-platform: DoorDash's
+help center scopes the Merchant Portal to DoorDash-channel data
+(Marketplace, its Online Ordering product, Drive); Uber Eats Manager's
+analytics cover Uber Eats sales and customer insights; iFood's Portal do
+Parceiro and Just Eat Takeaway's partner hub are likewise their own-side
+views. Each platform sees only its own side of the transaction, so
+none of these portals can reconcile *across* platforms or against the
+owner's POS and input costs — that is definitional, not a feature gap a
+release could close. **[Assumption]** And no single platform is the
+natural owner of a cross-platform audit of its own commissions; a
+platform-neutral steward is structurally better placed — which is the
+sharpest, most durable gap in this landscape. (Prosus, owning more than
+one side via iFood and JET, is unusually positioned to fund exactly that
+steward — the Product D argument, restated from the landscape side.)
+
+### Category 4 — The closest overlap: delivery-reconciliation specialists
+
+This is the honest "someone does do this" entry, named rather than omitted:
+
+- **[Sourced]** **Loop AI** (tryloop.ai) — "delivery intelligence":
+  ingests third-party-delivery, POS, payout, and bank data to reconcile
+  transactions, dispute chargebacks, automate bookkeeping. $6M seed,
+  March 2024 (Restaurant Business, Restaurant Technology News). Cited
+  customers are multi-unit brands: Dave's Hot Chicken, Freddy's,
+  Craveworthy.
+- **[Sourced]** **Voosh.ai** — finance reconciliation and dispute
+  automation across DoorDash, Uber Eats, Grubhub, ezCater; its flagship
+  reconciliation case study is a 6-location Burger King franchisee.
+- **[Assumption]** Both are built around the US big-three delivery rails
+  and marketed to multi-unit operators; the single-location independent on
+  iFood/JET rails — this product's target customer and Prosus's actual
+  distribution — is not their published center. That is a judgment from
+  their own public positioning, not a verified limitation.
+
+### The baseline that actually competes: spreadsheets
+
+**[Sourced]** 7shifts' 2025 tech-stack survey of 500+ restaurant
+professionals places about half of restaurants in the early, manual stages
+of tech adoption, with roughly 3 in 10 effectively running on paper. The
+~12 h/week of manual reconciliation already cited under "The user problem,
+grounded" stands as the real incumbent for this product's target customer
+— not any vendor above.
+
+### What this means for positioning — a different bet, stated honestly
+
+1. **"We have a chat layer" is retired as a differentiator.** The category
+   converged on conversational AI in 2025–26. This *validates* H3's
+   inherited question-box bet — and simultaneously eliminates it as a
+   moat.
+2. **The defensible position is a combination no reviewed player claims:**
+   (a) the cross-platform payout seam, for the independent owner, on
+   rails Prosus already operates; and (b) trust as a measured, engineered
+   property — arithmetic no model ever produces, per-number provenance,
+   a refusal bar evaluated at 5/5, per-question cost on screen.
+3. **What is *not* claimed:** none of this asserts competitors'
+   assistants hallucinate or that this product "beats" their breadth — it
+   doesn't have their breadth, and their accuracy was not tested here. The
+   checkable claim is narrower: none of the reviewed launch materials
+   advertise a refuse-rather-than-guess discipline, and this product
+   measures one. Incumbents bet on coverage; this bets that at 3–5% net
+   margin, one confidently wrong number costs the owner more than a
+   hundred honest refusals.

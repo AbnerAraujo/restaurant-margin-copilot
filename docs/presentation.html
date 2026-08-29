@@ -444,12 +444,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 2 · Agenda -->
-<div class="slide" data-notes="Six chapters: the strategy and why Prosus should fund it, the product with its shipped gamification, a live demo, the architecture that keeps models away from arithmetic, the measured evidence, and how it was actually built — including what went wrong.">
+<div class="slide" data-notes="Six chapters: the strategy and why Prosus should fund it, the product with its shipped gamification and where it sits in the real competitive landscape, a live demo, the architecture that keeps models away from arithmetic, the measured evidence, and how it was actually built — including what went wrong.">
   <div class="a tag">Agenda</div>
   <h2 class="a lg">Six chapters, all with receipts</h2>
   <div class="toc">
     <div class="a toc-item"><div class="toc-n">01</div><div><div class="toc-t">Strategy</div><div class="toc-s">Problem &middot; vision &middot; five products scored &middot; KRs &middot; hypotheses</div></div></div>
-    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; live demo setup</div></div></div>
+    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo</div></div></div>
     <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters &middot; the platform comparator</div></div></div>
     <div class="a toc-item"><div class="toc-n">04</div><div><div class="toc-t">Evidence</div><div class="toc-s">Evaluation harness &middot; token discipline</div></div></div>
     <div class="a toc-item"><div class="toc-n">05</div><div><div class="toc-t">Rigor</div><div class="toc-s">DoR &middot; PRD &middot; RFC &middot; user stories &middot; what's left</div></div></div>
@@ -611,6 +611,40 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <div class="stat-trend" style="margin-top:12px">A pure function of earned badges &mdash; no mutable balance to drift. Go decides; the model only narrates.</div>
     </div>
   </div>
+</div>
+
+<!-- 8b · Competitive landscape -->
+<div class="slide wide" data-notes="Positioning check before the demo, researched 2026-08-29 from public materials — every claim dated and cited in product-strategy.md. The finding that kills the lazy pitch comes first: incumbents are not dashboard-only anymore. MarginEdge shipped an expanded AI suite (Business Wire, Aug 7 2025), a conversational assistant named Tom the Tomato, and an $80M Series D for the AI back-office (GlobeNewswire, Aug 11 2026). Restaurant365 launched R365 AI with Auto Answers on May 12 2026 — and its launch release, checked directly, says nothing about accuracy safeguards or declining to answer. Toast IQ, Sous Chef to its early users, answers questions across roughly 148,000 Toast locations (Business Wire, June 10 2026) — on the Toast side of the business. Apicbase even shipped an MCP server, the exact integration pattern used here. So the chat box is table stakes. What stays open: each delivery portal documents itself as own-channel data, so none can reconcile across platforms or against POS and costs — that gap is definitional, not a missing feature. The closest overlap, Loop AI and Voosh, really does reconcile delivery payouts — for US multi-unit brands on DoorDash, Uber Eats and Grubhub rails, not the independent on iFood or JET, and as dashboards and automation rather than refusal-disciplined Q&A; that scoping is judgment from their own positioning, labeled an assumption. What none of the reviewed launches advertise is a refuse-rather-than-guess bar. That is the bet — not breadth parity, and no claim that their assistants hallucinate: their accuracy was not tested here. The real baseline for this customer is still the spreadsheet. Segue: the refusal none of them advertise is the one you are about to watch, live, in Act 3.">
+  <div class="a tag">Competitive landscape &middot; researched 2026-08-29</div>
+  <h2 class="a md">The chat layer is now table stakes &mdash; the refusal bar is still unclaimed</h2>
+  <table class="a data-table" style="max-width:1240px;margin-top:14px">
+    <tr><th style="width:21%">Who</th><th style="width:37%">Their move, 2025&ndash;26</th><th>The seam left open</th></tr>
+    <tr>
+      <td><b>Back-office platforms</b><div style="font-size:11px;color:var(--text-tertiary);font-family:var(--mono);margin-top:3px">MarginEdge &middot; Restaurant365 &middot; Apicbase</div></td>
+      <td>All conversational now &mdash; "Tom the Tomato" (2026), R365 AI "Auto Answers" (May 2026), even an Apicbase MCP server <span class="tagchip sourced">Sourced</span></td>
+      <td>Invoice- and P&amp;L-deep on their own data &mdash; not the cross-platform payout seam, and no launch advertises a refusal bar</td>
+    </tr>
+    <tr>
+      <td><b>POS incumbent</b><div style="font-size:11px;color:var(--text-tertiary);font-family:var(--mono);margin-top:3px">Toast IQ, n&eacute;e "Sous Chef"</div></td>
+      <td>Conversational assistant over ~148,000 Toast locations (June 2026) <span class="tagchip sourced">Sourced</span></td>
+      <td>Sees the Toast side of the business &mdash; a rival platform's netted payout is exactly the blind spot</td>
+    </tr>
+    <tr>
+      <td><b>Platform portals</b><div style="font-size:11px;color:var(--text-tertiary);font-family:var(--mono);margin-top:3px">iFood &middot; Uber Eats &middot; DoorDash &middot; JET</div></td>
+      <td>Rich merchant analytics, each documented as own-channel data only <span class="tagchip sourced">Sourced</span></td>
+      <td>Each sees only its own side of the transaction &mdash; structurally unable to reconcile across platforms, or against POS and costs</td>
+    </tr>
+    <tr>
+      <td><b>Closest overlap</b><div style="font-size:11px;color:var(--text-tertiary);font-family:var(--mono);margin-top:3px">Loop AI &middot; Voosh</div></td>
+      <td>Real cross-platform payout reconciliation &mdash; Loop raised a $6M seed, 2024 <span class="tagchip sourced">Sourced</span></td>
+      <td>US big-three rails, multi-unit brands, dashboard-first &mdash; not the independent on iFood/JET <span class="tagchip assumption">Assumption</span></td>
+    </tr>
+  </table>
+  <div class="a okr-banner" style="margin-top:16px">
+    <div class="okr-label">The different bet &mdash; not feature parity</div>
+    <div class="okr-obj">They bet on breadth. This bets that at 3&ndash;5% net margin, trust is the product: no model ever produces a number, every figure carries provenance, and the refusal bar is measured &mdash; 5/5, live in Act 3, next.</div>
+  </div>
+  <p class="a body" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">Honest reading: the category's convergence on chat validates H3's inherited question-box bet &mdash; and retires "we have a chat layer" as a differentiator. Their accuracy was not tested here; the checkable claim is only that no reviewed launch advertises refuse-rather-than-guess. Full citations: docs/product-strategy.md, 2026-08-29 entry. The real baseline for this customer is still the spreadsheet.</p>
 </div>
 
 <!-- 9 · Demo -->
