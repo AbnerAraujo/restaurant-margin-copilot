@@ -1,15 +1,29 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 → 1.1.0
+- Version change: 1.1.0 → 1.2.0
 - Modified principles: none renamed/removed
-- Modified sections: Technology & Scope Constraints — LLM vendor changed from
-  OpenAI API to Anthropic API (Claude Haiku 4.5 for the ambiguity gate, Claude
-  Sonnet 5 for explanation), reflecting the builder's existing Anthropic
-  subscription/API account rather than a separate OpenAI account.
+- Modified sections: Technology & Scope Constraints — the ambiguity gate
+  moved from Claude Haiku 4.5 to Claude Sonnet 5 on 2026-08-29. Real,
+  reproducible cause: once the live dataset grew to a multi-year range
+  (backend/cmd/gendata's synthetic history on top of the fixture), Haiku's
+  classification calls repeatedly misclassified fully in-range, explicitly
+  dated questions as unanswerable — a genuine date-comparison failure across
+  a year boundary, not a prompt-wording issue (three prompt-only fixes were
+  tried and verified not to resolve it; swapping the same call to Sonnet
+  fixed it immediately). Claude Haiku 4.5 is retained for the narrower
+  paraphrase-match cache classifier (`internal/paraphrase`), which showed no
+  evidence of the same failure. Full rationale: `internal/llmclient/cost.go`.
 - Added sections: none
 - Removed sections: none
 - Templates requiring updates: none pending.
 - Follow-up TODOs: none.
+
+Prior report (1.1.0, superseded above):
+- Version change: 1.0.0 → 1.1.0
+- Modified sections: Technology & Scope Constraints — LLM vendor changed from
+  OpenAI API to Anthropic API (Claude Haiku 4.5 for the ambiguity gate, Claude
+  Sonnet 5 for explanation), reflecting the builder's existing Anthropic
+  subscription/API account rather than a separate OpenAI account.
 
 Prior report (1.0.0, superseded above):
 - Version change: (none) → 1.0.0
@@ -80,8 +94,14 @@ Stack: Go (backend, reconciliation engine, MCP tool layer via
 (frontend), Anthropic API (direct calls via the official Go SDK, no agent
 framework — LangChain-style orchestration is explicitly rejected in favor of
 defined tools called directly). Model choice per step is deliberate: Claude
-Haiku 4.5 for the ambiguity gate, Claude Sonnet 5 for explanation — chosen
-against a real pricing/capability comparison, not defaulted. This is a
+Sonnet 5 for the ambiguity gate and for explanation, Claude Haiku 4.5 for the
+narrower paraphrase-match cache classifier — chosen against a real
+pricing/capability comparison, not defaulted. The gate itself started on
+Haiku 4.5 and moved to Sonnet 5 on 2026-08-29 after Haiku proved unreliable
+at multi-year date comparison once the live dataset grew past a single year
+(`internal/llmclient/cost.go` documents the full rationale) — "cheapest
+model that clears the bar" is only honest if the bar is re-checked as the
+data the system reasons over changes. This is a
 single-tenant prototype demonstrating judgment, not
 production infrastructure: no Kubernetes, no multi-tenant concerns, no
 deployment pipeline are in scope. The interview this project is built for is
@@ -114,4 +134,4 @@ fixes), and an updated Sync Impact Report at the top of this file. Any
 above MUST be revised before implementation proceeds — complexity or
 convenience is not sufficient justification to override a principle.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-27
+**Version**: 1.2.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-29

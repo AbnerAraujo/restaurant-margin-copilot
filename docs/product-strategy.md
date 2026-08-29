@@ -1600,3 +1600,77 @@ balance and badge counts both scale correctly against the larger dataset
 resolved date-grounding range extends correctly to 2028-08-13 after a
 clean restart — confirmed via direct curl calls against the running
 server, not assumed from the ingest log alone.
+
+## 2026-08-29 — What a real 2-year dataset actually stress-tested
+
+The entry above verified the 730-day dataset loaded and reconciled cleanly.
+It did not verify the dataset was *dated correctly relative to the real
+world*, and it did not stress-test the model layer against a multi-year
+question. Both gaps turned out to hide real bugs, caught directly from a
+user report rather than from the eval harness (which never asks a
+multi-year-spanning date question, since the 14-day fixture has no reason
+to).
+
+**Bug 1 — the dataset was dated into the future.** `startDate` was set to
+the day *after* the fixture window ends (2026-08-15), so the 730-day run
+landed at 2026-08-15 through 2028-08-13 — confirmed live in the entry
+above, and wrong: 2028 is more than a year past the real calendar date this
+project is being built on. Any chat answer narrating "today" or a recent
+period against that data was implicitly claiming to be from the future.
+Fixed by moving `startDate` back two full years (2024-08-01 → 2026-07-31),
+so the synthetic history is the two years *leading up to* the fixture
+rather than the two years after it. The app's effective "today" is driven
+by the fixture's own max date (2026-08-14) and was unaffected either way —
+this was a bug in what the synthetic history claimed about itself, not in
+what the running app claims about the present.
+
+**Bug 2 — Claude Haiku 4.5 could not reliably compare dates across a
+multi-year range.** Once the dataset spanned 2024-2026, a real user
+question ("What was our margin for July 2026?" — fully inside the data
+window) came back refused as unanswerable. Diagnosis ruled out the
+obvious suspects in order: not a caching issue (reproduced after a full
+cache clear), not a truncation issue *for this question specifically*
+(though a related truncation bug was found and fixed along the way — see
+below), and not fixable by prompt wording — three separate rewrites of the
+gate's system prompt (restating the window as multi-year rather than "a
+handful of days," adding an explicit year-comparison instruction, and
+computing the spanned years as an explicit fact rather than asking the
+model to infer them) all failed to resolve it, with `question_interaction`
+logs showing Haiku's own uncached draft still getting the comparison
+wrong, on one attempt confidently stating the wrong date range entirely.
+The decisive test was an A/B swap: temporarily pointing the same
+classification call at Claude Sonnet 5 with no other change fixed it on
+the first try. That result is honest about a real limit of the cheaper
+model, not a prompt-engineering failure on this project's part, and it was
+made permanent rather than left as a workaround — `ModelAmbiguityGate` now
+points at Sonnet 5, with the historical Haiku 4.5 choice and the reason it
+changed documented directly in `internal/llmclient/cost.go`, the
+constitution amended (1.1.0 → 1.2.0) to record it, and every doc that
+named "Haiku 4.5" as the gate's model updated to match. The
+paraphrase-match cache classifier (`internal/paraphrase`) was deliberately
+*not* swept along — it showed no evidence of the same failure, so it kept
+its own cost and got a dedicated `ModelParaphraseMatch` constant instead of
+silently riding along on an unvalidated cost increase.
+
+**Bug 3 — a truncated model reply could leak as a wrong answer.** Found
+while investigating Bug 2: the writer pass (the second, conditional Sonnet
+call that rewrites a clarifying question or refusal into cleaner prose)
+could hit its exact output-token cap, and the code parsed whatever JSON-
+shaped text came back without checking whether the response had actually
+finished. A cut-off reply that still happened to look like valid JSON was
+treated as a real answer — the actual failure mode here was garbled,
+truncated reasoning text leaking into a refusal reason shown to the user.
+Fixed by checking the Anthropic SDK's own `StopReason == MaxTokens` signal
+explicitly in both the gate's classification call and the writer pass,
+before any parsing happens — a truncated reply is now an unconditional
+hard failure regardless of whether it parses — and by raising the writer's
+token cap from 512 to 768 as a safety margin.
+
+**Why this is recorded as three bugs and not one.** They compounded (the
+truncation bug made Bug 2 harder to diagnose at first, since an early
+truncated reply looked like a different, unrelated failure), but each has
+an independent root cause and an independent fix, and conflating them
+would have hidden that the multi-year date-comparison failure is a real,
+permanent model-capability limit — not something a better prompt or a
+bigger token budget was ever going to solve. Constitution Principle V asks
+for failures to be named, not smoothed over; this entry is that.

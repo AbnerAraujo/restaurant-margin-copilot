@@ -21,7 +21,7 @@ maps to a real test file and a real acceptance scenario already defined in
 | Blocker | Unblocks | Then run |
 |---|---|---|
 | Start Docker Desktop, `docker compose up -d` | Postgres-backed storage tests, T006 migrations, T038 full quickstart | `migrate -path backend/migrations -database "$DATABASE_URL" up`, then `go test ./internal/storage/...` |
-| Set `ANTHROPIC_API_KEY` (Console API account, not Claude Pro/Max) | Live ambiguity gate (Haiku 4.5) and explain (Sonnet 5) calls, T034 eval harness | `promptfoo eval -c evaluation/promptfoo/accuracy.yaml` (and consistency.yaml, refusal.yaml) |
+| Set `ANTHROPIC_API_KEY` (Console API account, not Claude Pro/Max) | Live ambiguity gate (Sonnet 5) and explain (Sonnet 5) calls, T034 eval harness | `promptfoo eval -c evaluation/promptfoo/accuracy.yaml` (and consistency.yaml, refusal.yaml) |
 
 ## Acceptance scenarios to manually re-check against spec.md
 

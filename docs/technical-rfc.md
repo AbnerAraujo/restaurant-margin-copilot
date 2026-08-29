@@ -25,7 +25,7 @@ Product requirements: `docs/prd.md`. Full spec: `specs/001-margin-reconciliation
 
 ### Stack
 
-Go 1.27 (backend), PostgreSQL (storage), React + TypeScript (frontend), Anthropic API via `anthropic-sdk-go` (Claude Haiku 4.5 for the ambiguity gate, Claude Sonnet 5 for explanation), `mark3labs/mcp-go` (MCP tool layer, in-process), `sqlc` + `pgx/v5` + `golang-migrate` (typed Postgres access), `promptfoo` (evaluation harness). Full rationale and alternatives evaluated for each: `research.md`.
+Go 1.27 (backend), PostgreSQL (storage), React + TypeScript (frontend), Anthropic API via `anthropic-sdk-go` (Claude Sonnet 5 for the ambiguity gate and explanation, Claude Haiku 4.5 for the paraphrase-match cache classifier — the gate itself moved from Haiku 4.5 to Sonnet 5 on 2026-08-29 after a multi-year date-comparison bug, see `internal/llmclient/cost.go`), `mark3labs/mcp-go` (MCP tool layer, in-process), `sqlc` + `pgx/v5` + `golang-migrate` (typed Postgres access), `promptfoo` (evaluation harness). Full rationale and alternatives evaluated for each: `research.md`.
 
 ### Module architecture — ports & adapters
 
@@ -38,7 +38,7 @@ internal/ingest, cmd/server  ──▶  internal/reconcile (pure domain core, ze
                                         ▼
                                  internal/mcptools (typed tool port) ◀── Principle III boundary ──▶
                                                                           internal/explain (Sonnet 5)
-                                                                          internal/ambiguity (Haiku 4.5, no data access at all)
+                                                                          internal/ambiguity (Sonnet 5 gate, Haiku 4.5 paraphrase match, no data access at all)
                                         both log to → internal/instrumentation
 ```
 

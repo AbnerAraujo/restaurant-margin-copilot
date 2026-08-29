@@ -195,7 +195,7 @@ boundary this architecture's Go/model split is designed to contain.
 
 - **Backend**: Go, `sqlc` + `pgx/v5` + `golang-migrate` over PostgreSQL, fixed-point cents arithmetic — no floats near money
 - **MCP layer**: `mark3labs/mcp-go`, a fixed set of typed tools, no open SQL
-- **Model**: Anthropic API direct (no agent framework) — Claude Haiku 4.5 for cheap classification (ambiguity gate, paraphrase matching), Claude Sonnet 5 for narration and harder judgment calls
+- **Model**: Anthropic API direct (no agent framework) — Claude Sonnet 5 for the ambiguity gate and narration, Claude Haiku 4.5 for the paraphrase-match cache classifier. The gate moved from Haiku 4.5 to Sonnet 5 on 2026-08-29 after Haiku proved unreliable at multi-year date comparison once the live dataset grew past a single year (see `internal/llmclient/cost.go`)
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui, installable as a PWA (`vite-plugin-pwa`)
 - **Evaluation**: `promptfoo` harness, real numbers above
 - **Docs/skills**: built with GitHub Spec Kit (SDD), and Claude Code skills for data visualization, presentation design, and UX review

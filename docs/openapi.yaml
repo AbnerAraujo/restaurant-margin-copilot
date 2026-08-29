@@ -17,8 +17,9 @@ info:
     Every endpoint except `POST /api/ask` is **pure deterministic REST**:
     plain reads or writes against Postgres-persisted reconciliation output,
     with no model anywhere in the request path. `POST /api/ask` is the one
-    endpoint that calls an LLM (Claude Haiku 4.5 for an ambiguity gate,
-    Claude Sonnet 5 to narrate an already-computed number) — and even there,
+    endpoint that calls an LLM (Claude Sonnet 5 for an ambiguity gate,
+    Claude Sonnet 5 to narrate an already-computed number, Claude Haiku 4.5
+    for the paraphrase-match cache classifier) — and even there,
     the model never computes a figure; it only classifies the question and
     narrates a result the Go reconciliation engine already produced.
 
@@ -739,7 +740,9 @@ paths:
            exact-match *miss* against a non-empty cache: a small, real,
            billed Claude Haiku 4.5 call checks whether this question means
            the same thing as a recently-cached one, worded differently.
-        3. **Ambiguity gate** (Claude Haiku 4.5, `internal/ambiguity`) —
+        3. **Ambiguity gate** (Claude Sonnet 5 as of 2026-08-29 — moved off
+           Haiku 4.5 after a multi-year date-comparison bug; see
+           `internal/llmclient/cost.go` — `internal/ambiguity`) —
            classifies the (resolved) question as `answerable`,
            `ambiguous`, or `unanswerable` *before* any expensive reasoning
            runs. `status` in the response is exactly one of `"answered"`,

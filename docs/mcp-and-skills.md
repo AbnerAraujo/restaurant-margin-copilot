@@ -398,9 +398,10 @@ methodology, built with the skill-creator plugin and validated by its own
 moves this codebase actually implements — not abstract advice invented
 for the skill:
 
-1. **Classify before you answer, cheaply** — the Haiku 4.5 ambiguity gate
-   running before any tool-calling loop, on narrow input, fixed output
-   shape.
+1. **Classify before you answer, cheaply** — the ambiguity gate (Sonnet 5
+   as of 2026-08-29, moved off Haiku 4.5 after a multi-year date-comparison
+   bug; see `internal/llmclient/cost.go`) running before any tool-calling
+   loop, on narrow input, fixed output shape.
 2. **Never fabricate — refuse with a specific, honest reason** — the
    `no_data`/`insufficient_data`/`invalid_input` typed errors this
    document's Section 1 documents at the tool level.

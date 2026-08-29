@@ -16,7 +16,10 @@ first and most important design decision in the project.
 
 ## Where AI is actually used, and why each use is load-bearing
 
-**1. The ambiguity gate** (Claude Haiku 4.5) — deciding whether a question
+**1. The ambiguity gate** (Claude Sonnet 5 — moved from Haiku 4.5 on
+2026-08-29 after Haiku proved unreliable at multi-year date comparison once
+the live dataset grew past a single year; see `internal/llmclient/cost.go`)
+— deciding whether a question
 like "how was the weekend?" is answerable as-is, or ambiguous (does it
 include Friday?), or references data that doesn't exist. This is a genuine
 natural-language-understanding problem: you cannot regex your way to

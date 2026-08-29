@@ -7,7 +7,8 @@
 # See evaluation/golden/accuracy.yaml for the golden-answer record.
 #
 # Target: the live backend's POST /api/ask (real Anthropic API calls
-# through the Haiku 4.5 ambiguity gate + Sonnet 5 explain step — no
+# through the Sonnet 5 ambiguity gate + Sonnet 5 explain step — the gate
+# moved off Haiku 4.5 on 2026-08-29, see internal/llmclient/cost.go — no
 # mocking). Start the server first:
 #   go run ./cmd/server -serve :8092   (from backend/)
 #

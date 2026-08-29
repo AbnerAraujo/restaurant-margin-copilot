@@ -64,7 +64,7 @@ Full list with acceptance criteria: `specs/001-margin-reconciliation-qa/spec.md`
 
 ## 5. Technical Considerations
 
-See the companion Technical RFC (`docs/technical-rfc.md`) for architecture, data model, and the ports-and-adapters module design. Summary: Go backend (deterministic core + MCP tool layer), PostgreSQL, React frontend, Anthropic API (Claude Haiku 4.5 gate, Sonnet 5 explain) — no agent framework.
+See the companion Technical RFC (`docs/technical-rfc.md`) for architecture, data model, and the ports-and-adapters module design. Summary: Go backend (deterministic core + MCP tool layer), PostgreSQL, React frontend, Anthropic API (Claude Sonnet 5 gate and explain, Claude Haiku 4.5 for paraphrase-match caching) — no agent framework.
 
 ## 6. Go-to-Market
 

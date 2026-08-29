@@ -6,7 +6,8 @@
 # Questions quoted verbatim from docs/live-integration-test-scenarios.md.
 #
 # Target: same live backend as accuracy.yaml (POST /api/ask, real API
-# calls through the Haiku 4.5 ambiguity gate, no mocking).
+# calls through the Sonnet 5 ambiguity gate — moved off Haiku 4.5 on
+# 2026-08-29, see internal/llmclient/cost.go — no mocking).
 
 description: "Refusal correctness: 5 unanswerable/ambiguous questions"
 

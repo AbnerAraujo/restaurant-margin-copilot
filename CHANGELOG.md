@@ -5,10 +5,57 @@ spirit of [Keep a Changelog](https://keepachangelog.com/), adapted for how this
 project actually shipped: a single continuous take-home build across two real
 dates, not versioned releases. Entries are grouped by date and then by
 milestone, reverse-chronological. Every entry below is derived from this
-repo's own `git log` (141 commits, 2026-08-27 through 2026-08-28) — nothing
+repo's own `git log` (146 commits, 2026-08-27 through 2026-08-29) — nothing
 here is invented, and honest bugs/regressions are named, not smoothed over,
 matching this project's own stated documentation discipline (Constitution
 Principle V: report what happened, including failures).
+
+---
+
+## 2026-08-29 — A critical, multi-year data-scale bug hunt
+
+Extending the live dataset from the 14-day fixture to a 730-day synthetic
+history (`backend/cmd/gendata`) surfaced real bugs the original build never
+had reason to trigger. 5 commits.
+
+- **Fixed** a genuine Claude Haiku 4.5 reasoning limit: the ambiguity gate
+  repeatedly misclassified fully in-range, explicitly dated questions (e.g.
+  "July 2026" inside a `2024-08-01..2026-08-14` window) as unanswerable once
+  the data spanned multiple calendar years. Three prompt-only fixes were
+  tried and verified NOT to resolve it; an A/B test swapping the same call
+  to Claude Sonnet 5 fixed it on the first try. `ModelAmbiguityGate` moved
+  to Sonnet 5 permanently — Claude Haiku 4.5 stays on the narrower
+  paraphrase-match cache classifier (`ModelParaphraseMatch`, new constant),
+  which showed no evidence of the same bug. Constitution amended to 1.2.0 to
+  record the change.
+- **Fixed** a related, compounding bug in the same code path: the writer
+  pass's output-token truncation wasn't detected before its (incomplete)
+  JSON was parsed, letting garbled cut-off text leak into user-facing
+  refusal reasons. Both `Classify` and `writeBetterText` now check
+  `StopReason == MaxTokens` explicitly and treat any truncation as a hard
+  failure, regardless of whether the cut-off text happens to parse; the
+  writer's token cap was also raised 512→768 as a safety margin.
+  `internal/livedata`'s test suite, previously untested against a
+  real-sized live dataset, was hardened with a `withFreshDir` helper so its
+  own tests can no longer operate destructively on this machine's real
+  synthetic data.
+- **Fixed** a critical data-integrity bug: `cmd/gendata`'s `startDate` was
+  set one day after the fixture window ends, generating synthetic history
+  through 2028-08-13 — over a year into the real-world future relative to
+  the interview date. Moved `startDate` back two years so the generated
+  history ends the day before the fixture begins, landing entirely in the
+  past.
+- **Fixed** Close/Promotions charts, which were built and tested against
+  the ~14-day fixture and broke silently at 745 days of real data:
+  fixed-pixel-per-bar SVG layouts either compressed into unreadable slivers
+  or overflowed their containers. Both charts now compute a dynamic width
+  and bucket/thin their labels based on the actual data volume; the Close
+  page's per-day discrepancy badges collapse into a single "×N" summary
+  that expands on click instead of repeating once per flagged day.
+- **Added** a Help page (`/help`) with four content sections — what the app
+  does, what you can ask it, how to use it, and why it sometimes refuses —
+  reusing the chat's own example-question and capability-summary constants
+  rather than retyping them.
 
 ---
 

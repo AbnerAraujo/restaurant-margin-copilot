@@ -40,9 +40,12 @@ This split must be documented and easy to point at in a demo.
   shown).
 - **LLM:** Anthropic API, called directly with the MCP tool definitions — no
   agent framework. Model choice per step is a documented decision: **Claude
-  Haiku 4.5** for the ambiguity gate (cheap classification task), **Claude
-  Sonnet 5** for the explanation step (narrates an already-computed number —
-  doesn't need frontier reasoning, so no Opus/Fable here).
+  Sonnet 5** for the ambiguity gate and the explanation step, **Claude
+  Haiku 4.5** for the paraphrase-match cache classifier. The gate started on
+  Haiku 4.5 (cheap classification task) and moved to Sonnet 5 on 2026-08-29
+  after Haiku repeatedly misclassified in-range questions once the live
+  dataset grew past a single year — see `internal/llmclient/cost.go`'s doc
+  comment for the full rationale.
 
 ## Pre-processing gate before execution
 Before anything runs, evaluate the question in isolation:
