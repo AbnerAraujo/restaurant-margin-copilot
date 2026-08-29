@@ -75,6 +75,26 @@ const (
 	anomalyDayChance   = 0.035 // ~26 days over 2 years get a genuine spike/dip
 	duplicateOrderRate = 0.004 // ~a handful of duplicate rows total
 
+	// Independent cost-side shocks — the mechanism that actually produces a
+	// real net-loss day. Before this, COGS was purely `windowGross *
+	// cogsShareOfGross`: input costs always scaled WITH that window's own
+	// revenue, so margin as a fraction of gross stayed ~constant (~62%,
+	// see the package doc) no matter how revenue itself moved. A real
+	// restaurant's costs don't just track revenue — a walk-in cooler dies,
+	// a produce delivery spoils and has to be re-bought at rush pricing, a
+	// supplier hikes prices during a regional shortage — and those land on
+	// ONE specific day, independent of that day's own sales. lossyDayChance
+	// = 6% is deliberately a real, noticeable rate (~44 days over 2 years,
+	// roughly 1-2 a month) rather than a token one-off: common enough that
+	// an owner would recognize it as "yeah, that happens sometimes," rare
+	// enough that it never threatens the overall growth story being told.
+	lossyDayChance = 0.06
+	// Sized relative to THAT DAY's own gross (not the multi-day COGS
+	// window), so it reliably exceeds a typical day's ~62%-of-gross margin
+	// cushion regardless of where in the growth curve the day falls.
+	lossyDayShockMin = 0.75
+	lossyDayShockMax = 1.40
+
 	promoEveryDays = 30 // roughly one campaign a month
 	promoPositiveP = 0.65
 	randSeed       = 20260815 // deterministic — same seed, same dataset, every regen
@@ -117,7 +137,7 @@ func main() {
 	if err := writePOSCSV(filepath.Join(*outDir, "pos_export.csv"), days, rng); err != nil {
 		fail(err)
 	}
-	if err := writeCostSheetCSV(filepath.Join(*outDir, "supplier_cost_sheet.csv"), days); err != nil {
+	if err := writeCostSheetCSV(filepath.Join(*outDir, "supplier_cost_sheet.csv"), days, rng); err != nil {
 		fail(err)
 	}
 	if err := writePromoCSV(filepath.Join(*outDir, "promotion_ad_spend_export.csv"), promos); err != nil {
@@ -173,6 +193,7 @@ type dayPlan struct {
 	ifoodGross    float64
 	jetGross      float64
 	anomaly       bool
+	costShock     float64 // >0 on a lossyDayChance day; see writeCostSheetCSV
 }
 
 func planDay(date time.Time, targetMonthly float64, rng *rand.Rand) dayPlan {
@@ -192,6 +213,11 @@ func planDay(date time.Time, targetMonthly float64, rng *rand.Rand) dayPlan {
 
 	gross := baseDaily * mult * noise
 
+	var costShock float64
+	if rng.Float64() < lossyDayChance {
+		costShock = gross * (lossyDayShockMin + rng.Float64()*(lossyDayShockMax-lossyDayShockMin))
+	}
+
 	return dayPlan{
 		date:          date,
 		targetMonthly: targetMonthly,
@@ -200,6 +226,7 @@ func planDay(date time.Time, targetMonthly float64, rng *rand.Rand) dayPlan {
 		ifoodGross:    gross * ifoodShare,
 		jetGross:      gross * jetShare,
 		anomaly:       anomaly,
+		costShock:     costShock,
 	}
 }
 
@@ -387,7 +414,23 @@ func writePOSCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	return nil
 }
 
-func writeCostSheetCSV(path string, days []dayPlan) error {
+// costShockCauses are the one-off, revenue-independent events real
+// restaurants actually incur — varied across shock days so the CSV doesn't
+// read as one repeated fabricated line item. Each is a real cost category
+// this dataset already uses (produce/protein) plus a new "equipment"
+// category for the two that aren't food-cost overruns at all.
+var costShockCauses = []struct {
+	supplier string
+	category string
+	note     string
+}{
+	{"Frostbyte Refrigeration Repair", "equipment", "Walk-in cooler compressor failure — emergency repair before spoilage"},
+	{"Fresh Fields Produce Co.", "produce", "Spoiled delivery discarded; emergency same-day reorder at rush pricing"},
+	{"Coastal Meat & Poultry", "protein", "Regional shortage price spike; emergency restock to cover service"},
+	{"CityWide Plumbing & Repair", "equipment", "Grease trap backup — emergency plumbing repair"},
+}
+
+func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	f, w, err := newWriter(path)
 	if err != nil {
 		return err
@@ -450,6 +493,28 @@ func writeCostSheetCSV(path string, days []dayPlan) error {
 			}
 			invoiceID++
 		}
+	}
+
+	// Cost shocks (lossyDayChance): a standalone invoice dated on the exact
+	// day it hit, separate from the regular category cadence above, so it
+	// reads as the one-off event it is rather than an inflated regular
+	// delivery.
+	for _, d := range days {
+		if d.costShock <= 0 {
+			continue
+		}
+		cause := costShockCauses[rng.Intn(len(costShockCauses))]
+		if err := w.Write([]string{
+			fmt.Sprintf("INV-%d", invoiceID),
+			d.date.Format("2006-01-02"),
+			cause.supplier,
+			cause.category,
+			money(d.costShock),
+			cause.note,
+		}); err != nil {
+			return err
+		}
+		invoiceID++
 	}
 	return nil
 }
