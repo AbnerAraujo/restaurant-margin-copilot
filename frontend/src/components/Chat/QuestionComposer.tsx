@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowLeft, Sparkles, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -9,6 +10,7 @@ import {
   GUIDED_CATEGORIES,
   KNOWN_PLATFORMS,
   composeGuidedQuestion,
+  dateRangeErrorMessage,
   toGuidedParams,
   type DateRange,
   type GuidedCampaign,
@@ -28,6 +30,27 @@ import {
 // flow can never compose a question the backend will just refuse for naming
 // a capability that doesn't exist.
 // ---------------------------------------------------------------------------
+
+/**
+ * Every element type a Tab key press can land the browser's focus on.
+ * Deliberately excludes anything with `tabindex="-1"` — the dialog's own
+ * root is focusable via `.focus()` for the initial "focus lands somewhere
+ * sensible on open" behavior, but is never meant to be a Tab *stop* once
+ * inside it, so it's excluded here on purpose rather than by omission.
+ */
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',')
+
+/** Every focusable element currently inside `container`, in DOM/tab order. */
+function getFocusableElements(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+}
 
 interface PromotionsApiResponse {
   promotions: { campaign_id: string; platform: string }[]
@@ -98,6 +121,15 @@ function DateField({
   minDate?: string
   maxDate?: string
 }) {
+  // The `min`/`max` attributes below get the browser's own date picker UI
+  // and its `validity.rangeOverflow`/`rangeUnderflow` right for free, but
+  // that validity state is never surfaced to the user by the native
+  // control on its own — a date outside it still lands in `value`
+  // unchanged. This is the actual gate: a plain string comparison (see
+  // `dateRangeErrorMessage`) that both drives this visible error AND, via
+  // `toGuidedParams`, decides whether Continue may be pressed at all.
+  const errorId = `${id}-error`
+  const error = dateRangeErrorMessage(value, { minDate, maxDate })
   return (
     <div className="flex flex-col gap-1.5">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
@@ -108,8 +140,15 @@ function DateField({
         value={value}
         min={minDate}
         max={maxDate}
+        aria-invalid={error ? true : undefined}
+        aria-describedby={error ? errorId : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
+      {error ? (
+        <p id={errorId} role="alert" className="text-xs text-destructive-text">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -245,6 +284,14 @@ export default function QuestionComposer({
   const dialogRef = React.useRef<HTMLDivElement>(null)
   const titleId = React.useId()
 
+  // A stable target to portal the dialog into, created once and never
+  // recreated across re-renders. The dialog renders into this node rather
+  // than inline in the tree so it ends up a sibling of the rest of the app
+  // under `document.body` — see the effect below for why that placement is
+  // what makes the "mark everything else `inert`" half of this dialog's
+  // focus containment possible at all.
+  const [portalNode] = React.useState(() => document.createElement('div'))
+
   // Every open starts a fresh walk through the steps — a half-built question
   // from a previous, abandoned attempt should never resurface silently.
   React.useEffect(() => {
@@ -255,9 +302,75 @@ export default function QuestionComposer({
     setQuestionText('')
   }, [open])
 
+  // `role="dialog"` + `aria-modal="true"` is a promise that nothing outside
+  // this dialog is reachable while it's open. Two things keep that promise:
+  // mounting the dialog under a node appended directly to `document.body`
+  // (so it sits beside the rest of the app, not inside it), and marking
+  // every OTHER top-level child of `document.body` `inert` for as long as
+  // the dialog is open — which drops the sidebar nav, the fullscreen
+  // toggle, and the cost pill from both the tab order and assistive tech's
+  // view of the page, without the visual disruption `display:none` would
+  // cause. Everything is restored, element by element, exactly as found —
+  // and focus returns to whatever opened the composer — on close.
   React.useEffect(() => {
-    if (open) dialogRef.current?.focus()
-  }, [open])
+    if (!open) return
+    const previouslyFocused = document.activeElement as HTMLElement | null
+
+    document.body.appendChild(portalNode)
+    const outsideElements = Array.from(document.body.children).filter(
+      (element) => element !== portalNode,
+    ) as HTMLElement[]
+    // Set via the `inert` attribute directly, not the `.inert` IDL property:
+    // the attribute is what the HTML spec's inert algorithm actually keys
+    // off of (the property setter is just a reflection of it), so this gets
+    // identical real-browser behavior while staying observable in
+    // environments — jsdom included — that don't implement that reflection.
+    const previouslyInert = outsideElements.map((element) => element.hasAttribute('inert'))
+    outsideElements.forEach((element) => {
+      element.setAttribute('inert', '')
+    })
+
+    dialogRef.current?.focus()
+
+    return () => {
+      outsideElements.forEach((element, index) => {
+        if (previouslyInert[index]) {
+          element.setAttribute('inert', '')
+        } else {
+          element.removeAttribute('inert')
+        }
+      })
+      portalNode.parentNode?.removeChild(portalNode)
+      previouslyFocused?.focus?.()
+    }
+  }, [open, portalNode])
+
+  /** Tab/Shift+Tab cycling, scoped to the dialog's own focusable elements. */
+  function trapTabKey(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== 'Tab') return
+    const container = dialogRef.current
+    if (!container) return
+
+    const focusable = getFocusableElements(container)
+    if (focusable.length === 0) {
+      event.preventDefault()
+      return
+    }
+
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const activeIndex = focusable.indexOf(document.activeElement as HTMLElement)
+
+    if (event.shiftKey) {
+      if (activeIndex <= 0) {
+        event.preventDefault()
+        last.focus()
+      }
+    } else if (activeIndex === -1 || activeIndex === focusable.length - 1) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
 
   const loadCampaigns = React.useCallback(() => {
     setCampaignsLoading(true)
@@ -292,7 +405,9 @@ export default function QuestionComposer({
   if (!open) return null
 
   const category = GUIDED_CATEGORIES.find((c) => c.id === categoryId) ?? null
-  const params = categoryId ? toGuidedParams(categoryId, draft) : null
+  const params = categoryId
+    ? toGuidedParams(categoryId, draft, { minDate, maxDate })
+    : null
 
   function selectCategory(id: GuidedCategoryId) {
     setCategoryId(id)
@@ -312,11 +427,15 @@ export default function QuestionComposer({
     onAsk(trimmed)
   }
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
       onKeyDown={(event) => {
-        if (event.key === 'Escape') onClose()
+        if (event.key === 'Escape') {
+          onClose()
+          return
+        }
+        trapTabKey(event)
       }}
     >
       <div
@@ -586,6 +705,7 @@ export default function QuestionComposer({
           </div>
         ) : null}
       </div>
-    </div>
+    </div>,
+    portalNode,
   )
 }

@@ -4,7 +4,10 @@ import {
   GUIDED_CATEGORIES,
   KNOWN_PLATFORMS,
   composeGuidedQuestion,
+  dateRangeErrorMessage,
+  formatDisplayDate,
   isChronologicalRange,
+  isDateWithinBounds,
   toGuidedParams,
   type GuidedDraft,
 } from './guidedQuestion'
@@ -47,7 +50,104 @@ describe('isChronologicalRange', () => {
   })
 })
 
+describe('formatDisplayDate', () => {
+  it('formats an ISO date as a short, human month name', () => {
+    expect(formatDisplayDate('2026-08-14')).toBe('Aug 14, 2026')
+    expect(formatDisplayDate('2024-08-01')).toBe('Aug 1, 2024')
+  })
+})
+
+describe('isDateWithinBounds', () => {
+  const bounds = { minDate: '2024-08-01', maxDate: '2026-08-14' }
+
+  it('accepts a date on or within the bounds', () => {
+    expect(isDateWithinBounds('2024-08-01', bounds)).toBe(true)
+    expect(isDateWithinBounds('2025-01-05', bounds)).toBe(true)
+    expect(isDateWithinBounds('2026-08-14', bounds)).toBe(true)
+  })
+
+  it('rejects a date on either side of the bounds', () => {
+    expect(isDateWithinBounds('2024-07-31', bounds)).toBe(false)
+    expect(isDateWithinBounds('2027-01-05', bounds)).toBe(false)
+  })
+
+  it('treats a missing bound as no restriction on that side', () => {
+    expect(isDateWithinBounds('2099-01-01', { minDate: '2024-08-01' })).toBe(true)
+    expect(isDateWithinBounds('1999-01-01', { maxDate: '2026-08-14' })).toBe(true)
+    expect(isDateWithinBounds('2027-01-05')).toBe(true)
+  })
+})
+
+describe('dateRangeErrorMessage', () => {
+  const bounds = { minDate: '2024-08-01', maxDate: '2026-08-14' }
+
+  it('is null for an in-range or empty value', () => {
+    expect(dateRangeErrorMessage('2026-08-14', bounds)).toBeNull()
+    expect(dateRangeErrorMessage('', bounds)).toBeNull()
+  })
+
+  it('names the real known range for a date past the end, never a bare "Invalid date"', () => {
+    expect(dateRangeErrorMessage('2027-01-05', bounds)).toBe(
+      'Choose a date between Aug 1, 2024 and Aug 14, 2026.',
+    )
+  })
+
+  it('names the real known range for a date before the start', () => {
+    expect(dateRangeErrorMessage('2020-01-01', bounds)).toBe(
+      'Choose a date between Aug 1, 2024 and Aug 14, 2026.',
+    )
+  })
+
+  it('states only the bound that actually exists when the other side is unbounded', () => {
+    expect(dateRangeErrorMessage('2027-01-05', { maxDate: '2026-08-14' })).toBe(
+      'Choose a date on or before Aug 14, 2026.',
+    )
+    expect(dateRangeErrorMessage('2020-01-01', { minDate: '2024-08-01' })).toBe(
+      'Choose a date on or after Aug 1, 2024.',
+    )
+  })
+})
+
 describe('toGuidedParams', () => {
+  const bounds = { minDate: '2024-08-01', maxDate: '2026-08-14' }
+
+  it('blocks an out-of-range single date for daily_summary, even though it is otherwise well-formed', () => {
+    expect(
+      toGuidedParams('daily_summary', { date: '2027-01-05' }, bounds),
+    ).toBeNull()
+    expect(
+      toGuidedParams('daily_summary', { date: '2026-08-14' }, bounds),
+    ).toEqual({ category: 'daily_summary', date: '2026-08-14' })
+  })
+
+  it('blocks an out-of-range period for a period-only category (period_totals)', () => {
+    expect(
+      toGuidedParams(
+        'period_totals',
+        { period: { start: '2026-08-01', end: '2027-01-05' } },
+        bounds,
+      ),
+    ).toBeNull()
+    expect(
+      toGuidedParams(
+        'period_totals',
+        { period: { start: '2026-08-01', end: '2026-08-14' } },
+        bounds,
+      ),
+    ).toEqual({
+      category: 'period_totals',
+      period: { start: '2026-08-01', end: '2026-08-14' },
+    })
+  })
+
+  it('is unrestricted when no bounds are given, preserving prior behavior', () => {
+    expect(toGuidedParams('daily_summary', { date: '2027-01-05' })).toEqual({
+      category: 'daily_summary',
+      date: '2027-01-05',
+    })
+  })
+
+
   it('returns null while a single-date category is incomplete, then the params once filled', () => {
     expect(toGuidedParams('daily_summary', {})).toBeNull()
     expect(toGuidedParams('daily_summary', { date: '2026-08-07' })).toEqual({
