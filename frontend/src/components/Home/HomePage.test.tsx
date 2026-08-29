@@ -300,4 +300,14 @@ describe('HomePage', () => {
     expect(within(glance).getByText('last 12 days')).toBeInTheDocument()
     expect(within(glance).queryByText(/last 90 days/)).not.toBeInTheDocument()
   })
+
+  it('offers a discoverable explanation of "Status" on the Recent closes table, not a bare unexplained label', async () => {
+    stubFetchByUrl(consecutiveDays(5))
+    renderHomePageWithRoutes()
+
+    await screen.findByText('Recent closes')
+    expect(
+      screen.getByRole('button', { name: 'What does "Status" mean?' }),
+    ).toBeInTheDocument()
+  })
 })

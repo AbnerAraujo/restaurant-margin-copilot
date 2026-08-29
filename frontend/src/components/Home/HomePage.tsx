@@ -4,6 +4,7 @@ import {
   CalendarCheck,
   CalendarClock,
   Coins,
+  Info,
   Megaphone,
   MessagesSquare,
   Minus,
@@ -26,6 +27,7 @@ import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getJson } from '@/lib/api'
 import { cn } from '@/lib/utils'
 
@@ -461,7 +463,28 @@ export default function HomePage() {
                     scope="col"
                     className="px-5 py-2.5 text-micro font-medium uppercase tracking-wider text-muted-foreground"
                   >
-                    Status
+                    <span className="inline-flex items-center gap-1.5">
+                      Status
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            aria-label='What does "Status" mean?'
+                          >
+                            <Info className="size-3" aria-hidden="true" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          A flag means the reconciliation engine caught
+                          something worth a second look on that day — a
+                          duplicate order, a refund, or a number outside the
+                          usual range. It&apos;s already been caught and
+                          accounted for, not an open problem waiting on you.
+                          Clean means no flags fired.
+                        </TooltipContent>
+                      </Tooltip>
+                    </span>
                   </th>
                   <th
                     scope="col"
