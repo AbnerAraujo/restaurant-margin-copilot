@@ -707,6 +707,55 @@ describe('ChatPanel', () => {
     expect(screen.getByText(/saved \$0\.005/)).toBeInTheDocument()
   })
 
+  // --- Guided question composer entry point -------------------------------
+
+  it('opens the guided composer from its entry point and hands off the composed question to the normal ask flow', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-guided',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    await user.click(screen.getByRole('button', { name: /build a question/i }))
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+
+    await user.click(within(dialog).getByText('Check a single day'))
+    await user.type(within(dialog).getByLabelText('Date'), '2026-08-07')
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
+
+    expect(within(dialog).getByLabelText('Your question')).toHaveValue(
+      'How did we do on 2026-08-07?',
+    )
+    await user.click(within(dialog).getByRole('button', { name: /ask this question/i }))
+
+    // The dialog closes and the question goes through the exact same
+    // resolveAnswer path as a typed question — no parallel submission path.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByText('How did we do on 2026-08-07?')).toBeInTheDocument()
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'How did we do on 2026-08-07?',
+      expect.any(Array),
+      undefined,
+      undefined,
+    )
+    expect(
+      await screen.findByText('Margin on 2026-08-07 was $375.82.'),
+    ).toBeInTheDocument()
+  })
+
   it('keeps the scroll area able to shrink below its content height', () => {
     // Regression guard for the measured layout defect: a `flex-1` column
     // child's automatic minimum size is its CONTENT height, so without
