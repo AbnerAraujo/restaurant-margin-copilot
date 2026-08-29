@@ -15,6 +15,7 @@ import {
   Compass,
   SquarePen,
   User,
+  Wand2,
   Wrench,
   X,
   Zap,
@@ -57,6 +58,7 @@ import {
 import AnswerVisualizationView from '@/components/Charts/AnswerVisualizationView'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import { useDataCoverage } from '@/lib/useDataCoverage'
+import QuestionComposer from '@/components/Chat/QuestionComposer'
 
 // ---------------------------------------------------------------------------
 // Types — shaped to line up with QuestionInteraction in data-model.md and the
@@ -1041,6 +1043,7 @@ export default function ChatPanel({
   const [isPinnedToBottom, setIsPinnedToBottom] = React.useState(true)
   const pinnedRef = React.useRef(true)
   const [ideasOpen, setIdeasOpen] = React.useState(false)
+  const [composerOpen, setComposerOpen] = React.useState(false)
   const listRef = React.useRef<HTMLOListElement>(null)
   const composerHintId = React.useId()
   const [historyOpen, setHistoryOpen] = React.useState(false)
@@ -1554,6 +1557,25 @@ export default function ChatPanel({
             </div>
           ) : null}
 
+          {/* Entry point for the guided question composer — walks an owner
+              who doesn't know what to ask through the 8 real, answerable
+              categories step by step, then hands the assembled question off
+              to this exact same composer/submit path (onAsk below). It
+              supplements the free-text input and the example-question
+              chips above; it never replaces either. */}
+          <div className="pointer-events-auto mb-1.5 flex items-center">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setComposerOpen(true)}
+            >
+              <Wand2 className="size-3.5" aria-hidden="true" />
+              Build a question
+            </Button>
+          </div>
+
           <form
             onSubmit={handleSubmit}
             className="pointer-events-auto flex items-end gap-2 rounded-2xl border border-border
@@ -1627,6 +1649,17 @@ export default function ChatPanel({
           </p>
         </div>
       </div>
+
+      <QuestionComposer
+        open={composerOpen}
+        onClose={() => setComposerOpen(false)}
+        onAsk={(question) => {
+          setComposerOpen(false)
+          void submitQuestion(question)
+        }}
+        minDate={coverage.start}
+        maxDate={coverage.end}
+      />
     </section>
   )
 }
