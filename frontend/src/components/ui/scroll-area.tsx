@@ -28,7 +28,16 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
         ref={viewportRef}
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        // overscroll-behavior: contain — without it, a wheel/trackpad
+        // gesture that reaches the top or bottom of THIS viewport can chain
+        // into the nearest scrollable ancestor (main's own overflow-y-auto)
+        // instead of stopping, which on a trackpad's momentum scrolling
+        // reads as "the chat's internal scroll doesn't work" even though
+        // the viewport itself is scrolling correctly underneath — reported
+        // live, not reproducible via synthetic wheel events (which don't
+        // carry momentum), so this is the real, known fix for the class of
+        // bug that symptom describes rather than a confirmed root cause.
+        className="size-full overscroll-contain rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
