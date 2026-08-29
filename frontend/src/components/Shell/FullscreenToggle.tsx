@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
 import { Maximize, Minimize } from 'lucide-react'
+
+import { useFullscreen } from '@/lib/useFullscreen'
 
 /**
  * A real, working fullscreen toggle — not automatic on launch, because no
@@ -9,27 +10,13 @@ import { Maximize, Minimize } from 'lucide-react'
  * viewport with no browser/window chrome at all, same as the presentation
  * deck's own "F" fullscreen affordance — this is that same real OS-level
  * fullscreen, not a CSS trick.
+ *
+ * The state + toggle logic itself lives in `useFullscreen` (`lib/`) so the
+ * Settings page's labeled "Full screen" control drives this exact same
+ * browser state rather than a second, disconnected implementation.
  */
 export default function FullscreenToggle() {
-  const [isFullscreen, setIsFullscreen] = useState(
-    () => document.fullscreenElement !== null,
-  )
-
-  useEffect(() => {
-    function handleChange() {
-      setIsFullscreen(document.fullscreenElement !== null)
-    }
-    document.addEventListener('fullscreenchange', handleChange)
-    return () => document.removeEventListener('fullscreenchange', handleChange)
-  }, [])
-
-  function toggle() {
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => undefined)
-    } else {
-      document.documentElement.requestFullscreen().catch(() => undefined)
-    }
-  }
+  const { isFullscreen, toggle } = useFullscreen()
 
   return (
     <button

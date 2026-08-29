@@ -5,6 +5,7 @@ import {
   Megaphone,
   MessagesSquare,
   Scale,
+  Settings,
   UploadCloud,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -34,6 +35,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/promotions', label: 'Promotions', icon: Megaphone },
   { to: '/platforms', label: 'Platforms', icon: Scale },
   { to: '/points', label: 'Points', icon: Coins },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 const INACTIVE_LINK_CLASSES =
