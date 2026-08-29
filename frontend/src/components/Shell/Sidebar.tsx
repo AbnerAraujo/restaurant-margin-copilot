@@ -110,7 +110,7 @@ export function MobileNavBar() {
   return (
     <nav
       aria-label="Primary navigation"
-      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 px-3 py-2 lg:hidden"
+      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 py-2 pl-3 pr-16 lg:hidden"
     >
       <Logo variant="icon" size={28} doorAnimation="once" />
       {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { forwardRef, useId, useState } from 'react'
 import { ChevronUp } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -74,8 +74,20 @@ function sumCostUsd(costsUsd: number[]): number {
  * pill (never a hero element, per design-tokens.md §4) showing session cost
  * at a glance, with tokens/latency detail available on demand without
  * competing for attention with the day's margin figure.
+ *
+ * Forwards a ref to its own root (rather than a plain function component)
+ * so `AppShell` can measure this element's REAL rendered height — which
+ * changes a lot between collapsed (~40px pill) and expanded (~180px pill +
+ * detail box) — and reserve exactly that much clearance at the bottom of
+ * the routed content instead of guessing a fixed number. See AppShell's own
+ * doc comment on `costPanelHeight` for why this is a genuine layout fix (QA
+ * found the expanded detail box sitting on top of the `/ask` composer's
+ * Send button) and not just cosmetic.
  */
-function CostPanel({ interactions, className }: CostPanelProps) {
+const CostPanel = forwardRef<HTMLDivElement, CostPanelProps>(function CostPanel(
+  { interactions, className },
+  ref,
+) {
   const [open, setOpen] = useState(false)
   const detailId = useId()
 
@@ -90,6 +102,7 @@ function CostPanel({ interactions, className }: CostPanelProps) {
 
   return (
     <div
+      ref={ref}
       className={cn(
         'fixed bottom-4 right-4 z-20 flex flex-col items-end gap-1.5',
         className,
@@ -146,6 +159,6 @@ function CostPanel({ interactions, className }: CostPanelProps) {
       </button>
     </div>
   )
-}
+})
 
 export default CostPanel

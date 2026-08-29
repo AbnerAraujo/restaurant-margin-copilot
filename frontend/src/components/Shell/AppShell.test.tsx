@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
 
@@ -47,5 +48,39 @@ describe('AppShell scroll-to-top on navigation', () => {
     })
 
     expect(main?.scrollTop).toBe(0)
+  })
+})
+
+// WCAG 2.4.1 (Bypass Blocks): every route puts the sidebar's ~10 nav links
+// ahead of the actual page content in tab order. This proves the skip link
+// is real (reachable in one Tab, targets a genuine element) rather than
+// just visually present — the thing an owner tabbing through the app would
+// actually rely on.
+describe('AppShell skip-to-content link', () => {
+  it('is the very first focusable element, reachable in a single Tab', async () => {
+    const user = userEvent.setup()
+    renderShellAt('/')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    await user.tab()
+
+    const skipLink = screen.getByRole('link', { name: /skip to main content/i })
+    expect(document.activeElement).toBe(skipLink)
+  })
+
+  it('points at the id of <main>, the routed content region', async () => {
+    renderShellAt('/')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    const main = document.querySelector('main')
+    expect(main).toHaveAttribute('id', 'main-content')
+    expect(screen.getByRole('link', { name: /skip to main content/i })).toHaveAttribute(
+      'href',
+      '#main-content',
+    )
   })
 })
