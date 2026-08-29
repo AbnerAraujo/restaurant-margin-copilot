@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Outlet, useOutletContext } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Outlet, useLocation, useOutletContext } from 'react-router-dom'
 
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
 import FullscreenToggle from '@/components/Shell/FullscreenToggle'
@@ -34,6 +34,22 @@ export function useShellOutletContext() {
  */
 export default function AppShell() {
   const [interactions, setInteractions] = useState<CostInteraction[]>([])
+  const mainRef = useRef<HTMLElement>(null)
+  const { pathname } = useLocation()
+
+  // Reported live: opening a new page kept whatever scroll position was
+  // left on the PREVIOUS page instead of starting at the top. React
+  // Router's own <ScrollRestoration> doesn't fit here — it manages
+  // `window.scrollTo`, but this shell's `<html>`/`<body>`/`window` never
+  // scroll at all (see the h-screen/overflow-hidden comment below); `<main>`
+  // is the one real scroll container, so this resets ITS scrollTop instead,
+  // once per route change. A plain assignment, not smooth-scroll: a fresh
+  // page should just start at the top, not visibly animate there.
+  useEffect(() => {
+    if (mainRef.current) {
+      mainRef.current.scrollTop = 0
+    }
+  }, [pathname])
 
   const logInteractions = (newInteractions: CostInteraction[]) => {
     setInteractions((previous) => [...previous, ...newInteractions])
@@ -85,7 +101,10 @@ export default function AppShell() {
       <Sidebar />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <MobileNavBar />
-        <main className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          ref={mainRef}
+          className="min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-6 lg:px-8"
+        >
           <Outlet context={{ interactions, logInteractions } satisfies ShellOutletContext} />
         </main>
       </div>
