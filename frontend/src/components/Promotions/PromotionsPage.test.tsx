@@ -350,6 +350,57 @@ describe('PromotionsPage', () => {
     expect(lowestFirst[2]).toContain('IFOOD-CAMP-WEEKEND')
   })
 
+  it('passes every fetched campaign through to the chart with no silent cap, at the real 2-year dataset\'s scale (30+ campaigns, realistic-length ids)', async () => {
+    // Reported live against backend/data/live/ (2024-08-01–2026-07-31, a
+    // realistic promo cadence): 30 campaigns on file. Guards the whole
+    // fetch -> displayedPromotions -> toChartDatum -> PromoRoiChart pipeline
+    // against a silent truncation ANYWHERE along it — this test intentionally
+    // uses real-length campaign ids (not the short "CAMP-N" synthetic ones
+    // PromoRoiChart.test.tsx's own large-N tests use), since a truncation OR
+    // a rendering/clipping bug at this scale specifically involves id length,
+    // not just count.
+    const manyCampaigns = Array.from({ length: 30 }, (_, i) => ({
+      platform: i % 2 === 0 ? 'iFood' : 'Just Eat Takeaway',
+      campaign_id: `${i % 2 === 0 ? 'IFOOD' : 'JET'}-CAMP-${String(i + 1).padStart(3, '0')}`,
+      period: { start: '2024-08-01', end: '2024-08-08' },
+      spend: '100.00',
+      attributed_incremental_orders: 5,
+      attributed_incremental_revenue: '120.00',
+      roi: String(i - 15),
+      flagged_negative: i - 15 < 0,
+      source_row_refs: [
+        { file: 'delivery_platform_export.csv', row: i + 2 },
+      ],
+    }))
+    stubFetch({ promotions: manyCampaigns })
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-001')
+
+    // The header chip counts every fetched record, not a capped subset.
+    expect(screen.getByText('30 campaigns')).toBeInTheDocument()
+
+    // Every campaign reaches the chart as a real, focusable bar target —
+    // nothing dropped between the fetch and the chart.
+    const bars = screen.getAllByRole('button', { name: /: net /i })
+    expect(bars).toHaveLength(30)
+    for (const campaign of manyCampaigns) {
+      expect(
+        screen.getByRole('button', {
+          name: new RegExp(`^${campaign.campaign_id}:`),
+        }),
+      ).toBeInTheDocument()
+    }
+
+    // And every campaign is in the underlying table too (table opens by
+    // default on this route) — the chart and the table read one list, not
+    // two independently-capped ones.
+    const table = screen.getByRole('table')
+    for (const campaign of manyCampaigns) {
+      expect(within(table).getByText(campaign.campaign_id)).toBeInTheDocument()
+    }
+  })
+
   it('does not mark a flagged campaign as needing action once another campaign replaces it', async () => {
     stubFetch({
       promotions: [

@@ -344,6 +344,97 @@ describe('PromoRoiChart', () => {
     expect(viewBoxWidth).toBeGreaterThan(600)
   })
 
+  it('anchors the first and last axis tick label inward from the plot edge instead of centering a long campaign id past it', () => {
+    // Reported live at real scale: the LAST tick's label sat only
+    // MARGIN.right (16px) from the chart's own right edge — nowhere near
+    // half of a real id's rendered width ("JET-CAMP-NEWMENU") — and the
+    // SVG's default overflow:hidden clipped it mid-word ("JET-CAMP-NEWM").
+    // The large-N tests above never hit this: their synthetic
+    // "CAMP-0".."CAMP-28" ids are short enough to never reach an edge.
+    // Only the two edge campaigns get a real-length id here — every other
+    // candidate tick stays short so this test isolates edge-anchoring from
+    // the separate overlap/collision behavior covered by the next test.
+    const longIdCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 29 },
+      (_, i) => ({
+        campaignId:
+          i === 0
+            ? 'IFOOD-CAMP-BOOST01'
+            : i === 28
+              ? 'JET-CAMP-NEWMENU'
+              : `C${i}`,
+        campaignName: 'x',
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: 100 + i,
+        net: i - 14,
+        sourceRefs: [],
+      }),
+    )
+
+    const { container } = render(<PromoRoiChart data={longIdCampaigns} />)
+    const svg = container.querySelector('svg')
+    const chartWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
+    const leftEdge = 48 // MARGIN.left
+    const rightEdge = chartWidth - 16 // MARGIN.right
+
+    const firstTick = screen.getByText('IFOOD-CAMP-BOOST01')
+    expect(firstTick).toHaveAttribute('text-anchor', 'start')
+    expect(Number(firstTick.getAttribute('x'))).toBeCloseTo(leftEdge)
+
+    const lastTick = screen.getByText('JET-CAMP-NEWMENU')
+    expect(lastTick).toHaveAttribute('text-anchor', 'end')
+    expect(Number(lastTick.getAttribute('x'))).toBeCloseTo(rightEdge)
+  })
+
+  it('drops an axis tick label rather than let it overlap its neighbor, when real-length campaign ids are too wide for the tickLabelStep gap', () => {
+    // Reported live immediately after the edge-anchor fix above: pinning
+    // the last tick fully on-canvas then visually overlapped the tick
+    // immediately before it — tickLabelStep spaces candidate ticks assuming
+    // short labels fit the gap between them, which a real ~20-25 char
+    // campaign id does not at MIN_SLOT_WIDTH.
+    const longIdCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 29 },
+      (_, i) => ({
+        campaignId:
+          i % 4 === 0 ? `PLATFORM-CAMP-LONGNAME-${i}` : `CAMP-${i}`,
+        campaignName: 'x',
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: 100 + i,
+        net: i - 14,
+        sourceRefs: [],
+      }),
+    )
+
+    render(<PromoRoiChart data={longIdCampaigns} />)
+
+    // tickLabelStep = ceil(29/8) = 4, so the naive candidate set is indices
+    // 0,4,8,...,28, every one given a deliberately long id here. If all 8
+    // still rendered full-length, the uniform 4-slot gap between them
+    // (112px at MIN_SLOT_WIDTH) would have to hold a ~140px label — it
+    // can't, so at least one candidate must be dropped for overlap...
+    const candidateIds = [0, 4, 8, 12, 16, 20, 24, 28].map(
+      (i) => `PLATFORM-CAMP-LONGNAME-${i}`,
+    )
+    const renderedCount = candidateIds.filter((id) =>
+      screen.queryByText(id),
+    ).length
+    expect(renderedCount).toBeLessThan(candidateIds.length)
+
+    // ...but the LAST one — the newest campaign, and the one this bug was
+    // specifically reported against, not an arbitrary middle one — always
+    // survives the drop.
+    expect(screen.getByText('PLATFORM-CAMP-LONGNAME-28')).toBeInTheDocument()
+
+    // Every campaign is still a real, focusable, hoverable bar regardless
+    // of whether its id happens to be one of the dropped axis ticks —
+    // dropping a LABEL is never dropping the campaign itself.
+    expect(screen.getAllByRole('button', { name: /: net /i })).toHaveLength(
+      29,
+    )
+  })
+
   it('names the x-axis explicitly ("Campaigns"), the same way the y-axis names itself ("Net (USD)")', () => {
     render(<PromoRoiChart />)
 
