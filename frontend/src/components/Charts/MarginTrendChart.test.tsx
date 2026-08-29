@@ -240,4 +240,148 @@ describe('MarginTrendChart', () => {
     const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ })
     expect(bar).not.toHaveAccessibleName(/ask about this/i)
   })
+
+  // Reported live: any window wide enough to include days from BOTH the
+  // 730-day synthetic live dataset (thousand-dollar days) and the 14-day
+  // hand-authored fixture (ten/hundred-dollar days) renders a real, jarring
+  // magnitude cliff exactly at the boundary — the fixture's own bars flatten
+  // to a near-invisible sliver beside towering live bars, right at the
+  // "today" edge of the chart a reader looks at first. A dashed boundary +
+  // labels make that cliff read as "two honest datasets," not "broken data."
+  describe('dataset boundary (live-scale history vs. the eval fixture)', () => {
+    /** 10 live-scale days (2026-07-20..29, thousand-dollar margins) followed
+     *  by the real fixture's own first 8 days (2026-08-01..08) — a period
+     *  that genuinely crosses FIXTURE_WINDOW_START. */
+    function buildCrossingPeriod(): DailyMarginDatum[] {
+      const liveScaleDays: DailyMarginDatum[] = Array.from(
+        { length: 10 },
+        (_, i) => {
+          const date = new Date(Date.UTC(2026, 6, 20))
+          date.setUTCDate(date.getUTCDate() + i)
+          return { date: date.toISOString().slice(0, 10), margin: 2000 + i * 10 }
+        },
+      )
+      return [...liveScaleDays, ...DEFAULT_DAILY_MARGIN.slice(0, 8)]
+    }
+
+    it('draws a dashed boundary line and labels both sides when the period crosses from live-scale history into the fixture', () => {
+      const { container } = render(
+        <MarginTrendChart data={buildCrossingPeriod()} />,
+      )
+
+      const dashedLines = [...container.querySelectorAll('line')].filter(
+        (line) => line.getAttribute('stroke-dasharray') === '4 3',
+      )
+      expect(dashedLines).toHaveLength(1)
+      expect(screen.getByText(/2-yr synthetic history/i)).toBeInTheDocument()
+      expect(screen.getByText(/eval fixture window/i)).toBeInTheDocument()
+    })
+
+    it('names the crossing in the chart\'s own aria-label, not just visually', () => {
+      render(<MarginTrendChart data={buildCrossingPeriod()} />)
+
+      const chartGroup = screen.getByRole('group', {
+        name: /bar chart of daily reconciled margin/i,
+      })
+      expect(chartGroup.getAttribute('aria-label')).toMatch(
+        /eval fixture window/i,
+      )
+    })
+
+    it('draws no boundary when the whole period is on one side of it (the default 14-day fixture)', () => {
+      render(<MarginTrendChart />)
+
+      expect(
+        screen.queryByText(/2-yr synthetic history/i),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/eval fixture window/i),
+      ).not.toBeInTheDocument()
+    })
+
+    it('draws no boundary for a period entirely inside the live-scale history (nothing to cross)', () => {
+      const allLiveScale: DailyMarginDatum[] = Array.from(
+        { length: 10 },
+        (_, i) => {
+          const date = new Date(Date.UTC(2026, 6, 1))
+          date.setUTCDate(date.getUTCDate() + i)
+          return { date: date.toISOString().slice(0, 10), margin: 2000 + i }
+        },
+      )
+      render(<MarginTrendChart data={allLiveScale} />)
+
+      expect(
+        screen.queryByText(/2-yr synthetic history/i),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByText(/eval fixture window/i),
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  // Reported live: the chart's overflow-x-auto wrapper defaulted to showing
+  // its LEFT edge (the oldest history) on mount — the opposite of the
+  // natural mental model for "Today's Close" (care about now first, dig
+  // into history on purpose).
+  describe('mounts scrolled to the right edge (today), not the oldest history', () => {
+    it('sets the scroll container\'s scrollLeft to its full scrollWidth after render', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container } = render(
+        <MarginTrendChart data={buildLongPeriod(744)} />,
+      )
+
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      scrollWidthSpy.mockRestore()
+    })
+
+    it('does not fight a reader\'s manual scroll on a re-render of the SAME period (only a new array reference)', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const period = buildLongPeriod(744)
+      const { container, rerender } = render(<MarginTrendChart data={period} />)
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      // The reader scrolls back to look at older history.
+      scrollContainer.scrollLeft = 0
+
+      // A fresh array with the exact same dates/values — e.g. a parent
+      // re-rendering for an unrelated reason and recomputing the same
+      // period. This must NOT yank the reader back to the right.
+      rerender(<MarginTrendChart data={[...period]} />)
+      expect(scrollContainer.scrollLeft).toBe(0)
+
+      scrollWidthSpy.mockRestore()
+    })
+
+    it('DOES re-scroll to the right when a genuinely new period loads', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container, rerender } = render(
+        <MarginTrendChart data={buildLongPeriod(744)} />,
+      )
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      scrollContainer.scrollLeft = 0
+
+      rerender(<MarginTrendChart data={DEFAULT_DAILY_MARGIN} />)
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      scrollWidthSpy.mockRestore()
+    })
+  })
 })
