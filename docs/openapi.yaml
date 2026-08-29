@@ -757,6 +757,11 @@ paths:
         the clarifying question asked, so the instrumentation log records
         exactly what the user typed rather than a synthesized sentence.
 
+        `previous_exchange` does the same for a follow-up to a real ANSWER
+        ("and the day before?", "why?") — one hop only, never an
+        accumulating transcript. A request carries at most one of
+        `pending_clarification` / `previous_exchange`.
+
         `interactions` reports the real, just-measured cost of every model
         call that actually ran this request (empty when serving from an
         exact-content cache hit — see `cache`). Every model interaction is
@@ -779,6 +784,13 @@ paths:
                   pending_clarification:
                     original_question: "how was the weekend?"
                     clarifying_question: "Which weekend do you mean — August 10-11, or August 12-13 (the most recent one)?"
+              answerFollowUp:
+                summary: A bare follow-up to a real answer, not a clarification reply
+                value:
+                  question: "and the day before?"
+                  previous_exchange:
+                    question: "What was our margin on August 9th 2026?"
+                    answer_text: "On August 9, 2026, your margin was -$70.58 — meaning you operated at a loss that day."
       responses:
         "200":
           description: |
@@ -809,6 +821,8 @@ paths:
                         - { label: iFood, value: 55.25, display: "$55.25" }
                         - { label: Just Eat Takeaway, value: 65.25, display: "$65.25" }
                         - { label: In-house POS, value: 195, display: "$195.00" }
+                    suggested_followups:
+                      - "Were there any discrepancies on 2026-08-03?"
                     interactions:
                       - { model_used: claude-haiku-4-5, input_tokens: 1784, output_tokens: 40, estimated_cost_usd: 0.001984, latency_ms: 1180 }
                       - { model_used: claude-sonnet-5, input_tokens: 7852, output_tokens: 203, estimated_cost_usd: 0.017734, latency_ms: 5809 }
@@ -1205,11 +1219,29 @@ components:
         clarifying_question: { type: string }
       required: [original_question, clarifying_question]
 
+    PreviousExchange:
+      type: object
+      description: >-
+        Set when `question` may be a follow-up to a real ANSWER (not a
+        clarifying question) the previous request returned — "and the day
+        before?", "why?". Composed server-side (ambiguity.ComposeAnswerFollowUp)
+        into the text actually classified, narrated, and used as the answer-
+        cache key, so a bare follow-up never collides with a different prior
+        exchange's cache entry. Deliberately one hop only: exactly the
+        immediately preceding question and answer, never an accumulating
+        transcript. Mutually exclusive with `pending_clarification` — a
+        request carries at most one of the two.
+      properties:
+        question: { type: string, description: "The user's previous question, verbatim." }
+        answer_text: { type: string, description: "The previous answer_text this endpoint returned for that question." }
+      required: [question, answer_text]
+
     AskRequest:
       type: object
       properties:
         question: { type: string, example: "what was margin on 2026-08-03?" }
         pending_clarification: { $ref: "#/components/schemas/PendingClarification" }
+        previous_exchange: { $ref: "#/components/schemas/PreviousExchange" }
       required: [question]
 
     CostInteraction:
@@ -1297,6 +1329,15 @@ components:
         assumption_stated: { type: string, description: "Populated only when the gate resolved an ambiguous question by stating an assumption instead of asking." }
         refusal_reason: { type: string, description: "Populated only when status=refused." }
         visualization: { $ref: "#/components/schemas/Visualization" }
+        suggested_followups:
+          type: array
+          items: { type: string }
+          description: >-
+            0-3 natural-language next questions, generated deterministically
+            in Go (httpapi.deriveFollowUpSuggestions) from the real tool
+            invocation and arguments that grounded this answer — never a
+            second model call. Populated only when status=answered; empty or
+            absent is a normal, honest outcome when nothing sensible applies.
         cache: { $ref: "#/components/schemas/CacheInfo" }
         interactions:
           type: array
