@@ -170,6 +170,103 @@ type AskResponse struct {
 	// on every answer") reflects this session's real spend rather than a
 	// hard-coded placeholder figure.
 	Interactions []CostInteraction `json:"interactions,omitempty"`
+	// ToolCalls is spec 008 FR-003's "show your work": the exact MCP tool
+	// name(s) explain actually invoked and their raw, already-returned JSON
+	// result(s) — surfacing data this response already carries internally
+	// (result.ToolInvocations), never a new tool call or a re-computation.
+	// `omitempty` keeps this out of every response by default; populated
+	// ONLY when Status is "answered", the same scoping SuggestedFollowUps
+	// already uses, since a refusal/clarification never reached a tool.
+	ToolCalls []ToolCallView `json:"tool_calls,omitempty"`
+	// ResolvedPeriod is spec 008 FR-004's "the answered question's actual
+	// resolved dates" — the real [start, end] this answer was grounded in,
+	// extracted from whichever period-shaped tool actually ran
+	// (get_period_totals's flat start/end, or get_daily_summary's single
+	// date treated as start==end). Present only for period/daily-summary
+	// questions, so the client can derive a "Compare to last period"
+	// question from real resolved dates rather than re-parsing the
+	// original question text (spec.md's own stated edge case).
+	ResolvedPeriod *ResolvedPeriodView `json:"resolved_period,omitempty"`
+}
+
+// ResolvedPeriodView is the real date range Go already resolved for this
+// answer — see deriveResolvedPeriod.
+type ResolvedPeriodView struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// ToolCallView is one real MCP tool invocation's name and raw JSON result,
+// exactly as explain.ToolInvocation already recorded it — a read-only view
+// for FR-003's "show your work", not a new data path (Constitution
+// Principle IV: this is provenance already computed, just not yet surfaced
+// in the response body).
+type ToolCallView struct {
+	Name       string          `json:"name"`
+	ResultJSON json.RawMessage `json:"result_json"`
+}
+
+// toToolCallViews maps explain.ToolInvocation's raw JSON strings into
+// ToolCallView's json.RawMessage so the client receives real, embedded JSON
+// (not a JSON-encoded string it would have to parse twice). A tool result
+// that somehow isn't valid JSON is skipped rather than breaking the whole
+// response — "show your work" degrading to showing less work is acceptable;
+// a broken /api/ask response is not.
+func toToolCallViews(invocations []explain.ToolInvocation) []ToolCallView {
+	if len(invocations) == 0 {
+		return nil
+	}
+	views := make([]ToolCallView, 0, len(invocations))
+	for _, inv := range invocations {
+		if !json.Valid([]byte(inv.ResultJSON)) {
+			continue
+		}
+		views = append(views, ToolCallView{Name: inv.Name, ResultJSON: json.RawMessage(inv.ResultJSON)})
+	}
+	return views
+}
+
+// resolvedPeriodJSON is the minimal shape shared by get_period_totals
+// (flat start/end) and get_daily_summary (a single date) — used only to
+// extract the real, deterministic date range Go already resolved for this
+// answer. Deliberately its own narrow parse struct rather than widening
+// periodJSON/dailySummaryJSON (visualization.go), matching this package's
+// existing convention (see suggestions.go's discrepancyFlagsJSON and
+// platformComparisonPeriodJSON) of parsing only the field a given caller
+// actually needs out of a tool's raw JSON, rather than growing a shared
+// type for one new consumer.
+type resolvedPeriodJSON struct {
+	Start string `json:"start"`
+	End   string `json:"end"`
+	Date  string `json:"date"`
+}
+
+// deriveResolvedPeriod extracts the real [start, end] this answer was
+// grounded in, from whichever period-shaped tool actually ran. Scoped
+// deliberately to get_period_totals and get_daily_summary only — spec 008
+// FR-004's "Compare to last period" applies to "an answered period-totals
+// or daily-summary question", and no other tool result carries a top-level
+// date/period field worth extracting here (list_discrepancies' shape, for
+// example, has no such field at all). Returns nil when neither tool ran,
+// or when the JSON that did come back doesn't parse — never a guessed or
+// partial period.
+func deriveResolvedPeriod(invocations []explain.ToolInvocation) *ResolvedPeriodView {
+	for _, inv := range invocations {
+		if inv.Name != "get_period_totals" && inv.Name != "get_daily_summary" {
+			continue
+		}
+		var parsed resolvedPeriodJSON
+		if err := json.Unmarshal([]byte(inv.ResultJSON), &parsed); err != nil {
+			continue
+		}
+		if parsed.Start != "" && parsed.End != "" {
+			return &ResolvedPeriodView{Start: parsed.Start, End: parsed.End}
+		}
+		if parsed.Date != "" {
+			return &ResolvedPeriodView{Start: parsed.Date, End: parsed.Date}
+		}
+	}
+	return nil
 }
 
 // CostInteraction is one model call's real, measured cost — mirrors the
@@ -507,6 +604,8 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			Visualization:      deriveVisualization(result.ToolInvocations),
 			SuggestedFollowUps: deriveFollowUpSuggestions(result.ToolInvocations, req.Question, deps.DataStart, deps.DataEnd),
 			Interactions:       []CostInteraction{gateInteraction, explainInteraction},
+			ToolCalls:          toToolCallViews(result.ToolInvocations),
+			ResolvedPeriod:     deriveResolvedPeriod(result.ToolInvocations),
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated

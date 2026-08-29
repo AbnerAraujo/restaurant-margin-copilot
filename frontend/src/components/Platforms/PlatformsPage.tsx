@@ -3,6 +3,9 @@ import { CalendarRange, Percent } from 'lucide-react'
 
 import CategoryBarChart from '@/components/Charts/CategoryBarChart'
 import DataGrid from '@/components/Charts/DataGrid'
+import EffectiveRateTrendChart, {
+  type EffectiveRateTrendPeriod,
+} from '@/components/Charts/EffectiveRateTrendChart'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
 
@@ -37,6 +40,32 @@ interface PlatformComparisonApi {
   period: { start: string; end: string }
   days_included: number
   platforms: PlatformEconomicsApi[]
+}
+
+interface PlatformsTrendPeriodApi {
+  month: string
+  result: PlatformComparisonApi
+}
+
+interface PlatformsTrendApi {
+  periods: PlatformsTrendPeriodApi[]
+}
+
+/**
+ * Maps GET /api/platforms/trend's period-wrapped shape into
+ * EffectiveRateTrendChart's flatter props shape — the chart component
+ * itself has no knowledge of this endpoint's wrapping, only of "a month and
+ * the platforms in it" (spec 008 FR-007).
+ */
+function toTrendPeriods(periods: PlatformsTrendPeriodApi[]): EffectiveRateTrendPeriod[] {
+  return periods.map((p) => ({
+    month: p.month,
+    platforms: p.result.platforms.map((platform) => ({
+      source: platform.source,
+      display_name: platform.display_name,
+      effective_rate: platform.effective_rate,
+    })),
+  }))
 }
 
 function formatUsd(decimal: string): string {
@@ -96,6 +125,11 @@ function toTableRows(platforms: PlatformEconomicsApi[]): string[][] {
 export default function PlatformsPage() {
   const [data, setData] = useState<PlatformComparisonApi | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // A SEPARATE fetch and its own null state (spec 008 FR-007) — the trend
+  // endpoint can legitimately return fewer than 2 real months (a fresh
+  // dataset), which must omit the chart entirely rather than block or
+  // degrade the page's main comparison above, which never depends on it.
+  const [trendPeriods, setTrendPeriods] = useState<EffectiveRateTrendPeriod[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -108,6 +142,20 @@ export default function PlatformsPage() {
           setError(caught instanceof Error ? caught.message : String(caught))
         }
       })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    getJson<PlatformsTrendApi>('/api/platforms/trend')
+      .then((response) => {
+        if (!cancelled) setTrendPeriods(toTrendPeriods(response.periods))
+      })
+      // A failed trend fetch never blocks the main comparison above —
+      // the chart section simply stays omitted (FR-013).
+      .catch(() => undefined)
     return () => {
       cancelled = true
     }
@@ -168,6 +216,22 @@ export default function PlatformsPage() {
             rows={toTableRows(data.platforms)}
             sourceTool="compare_platform_economics"
           />
+
+          {/* Effective-rate trend (spec 008 FR-007) — a separate panel,
+              omitted entirely (never a placeholder or a single-point chart)
+              when fewer than 2 real trailing months exist, per
+              EffectiveRateTrendChart's own FR-013 discipline. */}
+          {trendPeriods && trendPeriods.length >= 2 ? (
+            <Panel aria-label="Effective rate trend" className="p-5 sm:p-6">
+              <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                Effective rate over time
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Has the nominal-vs-real commission gap moved across the trailing months?
+              </p>
+              <EffectiveRateTrendChart periods={trendPeriods} className="mt-4" />
+            </Panel>
+          ) : null}
         </>
       ) : null}
     </PageContainer>

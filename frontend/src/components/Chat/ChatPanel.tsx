@@ -2,6 +2,7 @@ import * as React from 'react'
 import {
   ArrowDown,
   Bookmark,
+  Braces,
   CalendarRange,
   FileText,
   History,
@@ -43,6 +44,7 @@ import {
   type ThreadStore,
 } from '@/lib/chatStorage'
 import AnswerText from '@/components/Chat/AnswerText'
+import { buildCompareToLastPeriodQuestion } from '@/components/Chat/comparePeriod'
 import SuggestionChips from '@/components/Chat/SuggestionChips'
 import {
   CAPABILITY_SUMMARY,
@@ -148,7 +150,35 @@ export interface AnswerChatMessage {
    * for a tool result with nothing sensible to suggest from.
    */
   followUps?: string[]
+  /**
+   * Spec 008 FR-003 ("show your work"): the exact MCP tool name(s) invoked
+   * and the raw JSON result(s) already returned in this same response
+   * (`AskResponse.tool_calls`) — pure transparency into data this answer
+   * already carried internally, never a new tool call or a re-computation.
+   * Omitted (or empty) whenever no tool ran.
+   */
+  toolCalls?: ChatToolCall[]
+  /**
+   * Spec 008 FR-004 ("Compare to last period"): the real [start, end] this
+   * answer was grounded in (`AskResponse.resolved_period`), present only
+   * for a period-totals/daily-summary question. Used to derive the prior
+   * period client-side and offer a one-tap comparison — never re-parsed
+   * from the original question text, per spec.md's own stated edge case.
+   */
+  resolvedPeriod?: ChatResolvedPeriod
   askedAt: string
+}
+
+/** Mirrors `httpapi.ResolvedPeriodView`'s wire shape. */
+export interface ChatResolvedPeriod {
+  start: string
+  end: string
+}
+
+/** One real MCP tool invocation, mirroring `httpapi.ToolCallView`'s wire shape. */
+export interface ChatToolCall {
+  name: string
+  result_json: unknown
 }
 
 export interface ClarificationChatMessage {
@@ -229,6 +259,16 @@ export interface ChatPanelProps {
    * and for any embedding that shouldn't touch a shared browser key.
    */
   persistConversation?: boolean
+  /**
+   * Submits this question exactly once, as soon as the panel mounts — spec
+   * 008 FR-001's chart click-to-ask: `/close` and `/promotions` are separate
+   * routes from `/ask` (no shared chat context exists to call across pages),
+   * so a chart click navigates here with the built question as router state
+   * (see AskPage) instead. Re-fires only if this prop changes to a NEW,
+   * different question while already mounted — never twice for the same one
+   * (e.g. a duplicate navigation with identical state).
+   */
+  autoSubmitQuestion?: string
   className?: string
 }
 
@@ -571,6 +611,74 @@ function UserBubble({ message }: { message: UserChatMessage }) {
  * The narration text is passed through untouched. Nothing here summarises,
  * shortens, or re-states it, and no figure on screen is computed in this file.
  */
+/**
+ * Spec 008 FR-003's "show your work" — modeled directly on ProvenanceTag's
+ * own toggle-button-plus-panel pattern (a real, expandable disclosure, not
+ * an HTML `<details>` element, so its open/close state and focus behavior
+ * match every other expandable affordance in this app). Renders the exact
+ * tool name(s) and raw JSON already present in `AnswerChatMessage.toolCalls`
+ * — no new fetch, no re-computation, pure transparency into data this
+ * response already carried.
+ */
+function ShowYourWorkPanel({ toolCalls }: { toolCalls: ChatToolCall[] }) {
+  const [open, setOpen] = React.useState(false)
+  const panelId = React.useId()
+
+  if (toolCalls.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={panelId}
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
+      >
+        <Braces className="size-3" aria-hidden="true" />
+        {open ? 'Hide' : 'Show'} your work
+      </button>
+
+      {open ? (
+        <div
+          id={panelId}
+          role="group"
+          aria-label="Tool calls behind this answer"
+          className="mt-1.5 max-h-64 overflow-y-auto rounded-md border border-border bg-popover p-2.5"
+        >
+          <div className="mb-1.5 flex items-center justify-between gap-4">
+            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Tool call{toolCalls.length > 1 ? 's' : ''}
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Dismiss tool call detail"
+              className="rounded-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          </div>
+          <ul className="space-y-2.5">
+            {toolCalls.map((call, index) => (
+              <li key={`${call.name}-${index}`} className="text-xs">
+                <p className="font-mono font-medium text-popover-foreground">
+                  {call.name}
+                </p>
+                <pre className="mt-1 overflow-x-auto whitespace-pre-wrap break-all rounded bg-muted/60 p-2 font-mono text-[10.5px] leading-relaxed text-muted-foreground">
+                  {JSON.stringify(call.result_json, null, 2)}
+                </pre>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function AnswerBubble({
   message,
   onSuggestionSelect,
@@ -581,6 +689,8 @@ function AnswerBubble({
   const tool = message.visualization?.source_tool
   const sourceCount = message.provenance.length
   const followUps = message.followUps ?? []
+  const toolCalls = message.toolCalls ?? []
+  const resolvedPeriod = message.resolvedPeriod
 
   return (
     <li className="flex items-start gap-2">
@@ -616,12 +726,31 @@ function AnswerBubble({
 
         <AnswerText text={message.text} />
 
+        {resolvedPeriod ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => onSuggestionSelect(buildCompareToLastPeriodQuestion(resolvedPeriod))}
+          >
+            <CalendarRange className="size-3.5" />
+            Compare to last period
+          </Button>
+        ) : null}
+
         {message.provenance.length > 0 || message.cache ? (
           <div className="space-y-1.5 border-t border-border pt-2.5">
             {message.provenance.length > 0 ? (
               <ProvenanceTag refs={message.provenance} />
             ) : null}
             {message.cache ? <CacheBadge cache={message.cache} /> : null}
+          </div>
+        ) : null}
+
+        {toolCalls.length > 0 ? (
+          <div className="border-t border-border pt-2.5">
+            <ShowYourWorkPanel toolCalls={toolCalls} />
           </div>
         ) : null}
 
@@ -838,6 +967,7 @@ export default function ChatPanel({
   resolveAnswer,
   suggestions = DEFAULT_SUGGESTIONS,
   persistConversation = false,
+  autoSubmitQuestion,
   className,
 }: ChatPanelProps) {
   // Restored synchronously in the initializer, not in an effect: mounting
@@ -1071,6 +1201,21 @@ export default function ChatPanel({
     },
     [isPending, messages, resolveAnswer],
   )
+
+  // Kept in a ref, not a `submitQuestion` dependency below: submitQuestion's
+  // own identity changes on every `isPending`/`messages` change, and this
+  // effect must fire exactly once per distinct `autoSubmitQuestion` value,
+  // never once per keystroke-adjacent re-render.
+  const submitQuestionRef = React.useRef(submitQuestion)
+  submitQuestionRef.current = submitQuestion
+  const lastAutoSubmittedRef = React.useRef<string | null>(null)
+  React.useEffect(() => {
+    if (!autoSubmitQuestion || lastAutoSubmittedRef.current === autoSubmitQuestion) {
+      return
+    }
+    lastAutoSubmittedRef.current = autoSubmitQuestion
+    void submitQuestionRef.current(autoSubmitQuestion)
+  }, [autoSubmitQuestion])
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()

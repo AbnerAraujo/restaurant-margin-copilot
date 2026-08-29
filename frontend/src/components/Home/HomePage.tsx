@@ -2,14 +2,25 @@ import { useEffect, useState } from 'react'
 import {
   ArrowRight,
   CalendarCheck,
+  CalendarClock,
   Coins,
   Megaphone,
   MessagesSquare,
+  Minus,
   ShieldCheck,
+  TrendingDown,
+  TrendingUp,
   type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
+import {
+  deriveBiggestWinCatch,
+  deriveMarginTrend,
+  type DaySummaryApi,
+  type MarginTrend,
+} from '@/components/Home/homeInsights'
+import { deriveYearOverYear } from '@/components/Home/yearOverYear'
 import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
@@ -24,12 +35,6 @@ import { cn } from '@/lib/utils'
  * away on `/close` rather than being duplicated here.
  */
 const RECENT_CLOSE_ROWS = 7
-
-interface DaySummaryApi {
-  date: string
-  margin: string
-  discrepancy_flags: { type: string; detail: string }[]
-}
 
 interface ReconciliationApiResponse {
   start: string
@@ -129,6 +134,41 @@ function TilePoints({ tile }: { tile: CapabilityTile }) {
   )
 }
 
+const TREND_ICON: Record<MarginTrend['direction'], LucideIcon> = {
+  up: TrendingUp,
+  down: TrendingDown,
+  flat: Minus,
+}
+
+const TREND_TONE_CLASS: Record<MarginTrend['direction'], string> = {
+  up: 'text-success-text',
+  down: 'text-destructive-text',
+  flat: 'text-muted-foreground',
+}
+
+/**
+ * A real, computed up/down/flat indicator against the previous reconciled
+ * day (spec 008 FR-008) — rendered in `Stat`'s `footer` slot rather than by
+ * extending the shared `Stat` component itself, since this is the only
+ * place on the app that currently needs a per-value trend glyph.
+ */
+function TrendIndicator({ trend }: { trend: MarginTrend }) {
+  const Icon = TREND_ICON[trend.direction]
+  const sign = trend.deltaUsd > 0 ? '+' : trend.deltaUsd < 0 ? '−' : ''
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 text-xs font-medium',
+        TREND_TONE_CLASS[trend.direction],
+      )}
+    >
+      <Icon className="size-3.5 shrink-0" aria-hidden="true" />
+      {sign}
+      {formatUsd(String(Math.abs(trend.deltaUsd)))} vs {trend.comparisonDate}
+    </span>
+  )
+}
+
 /**
  * `/` — the owner's entry point.
  *
@@ -165,10 +205,13 @@ export default function HomePage() {
     }
   }, [])
 
-  const days = reconciliation?.days ?? []
+  const days: DaySummaryApi[] = reconciliation?.days ?? []
   const latest = days[days.length - 1]
   const flaggedDays = days.filter((day) => day.discrepancy_flags.length > 0)
   const margin = latest ? Number(latest.margin) : 0
+  const marginTrend = deriveMarginTrend(days)
+  const biggestWinCatch = deriveBiggestWinCatch(days)
+  const yearOverYear = deriveYearOverYear(days)
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -193,6 +236,9 @@ export default function HomePage() {
               size="lg"
               tone={margin < 0 ? 'negative' : 'positive'}
               caption={latest.date}
+              footer={
+                marginTrend ? <TrendIndicator trend={marginTrend} /> : null
+              }
             />
             <Stat
               label="Days reconciled"
@@ -238,6 +284,78 @@ export default function HomePage() {
           </StatGroup>
         )}
       </Panel>
+
+      {/* "Biggest win / biggest catch" — steward-style proactive insight
+          (spec 008 FR-009), computed client-side from the same `days` array
+          the strip above already has. Honestly scoped to however many of
+          the trailing 7 reconciled days actually exist (deriveBiggestWinCatch
+          never pads a missing day), and omitted entirely below 2 real days
+          (FR-013) — never a placeholder or a degenerate single-day card. */}
+      {biggestWinCatch ? (
+        <Panel aria-label="Biggest win and catch this week" className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            {biggestWinCatch.windowDays < 7
+              ? `This week so far (${biggestWinCatch.windowDays} day${
+                  biggestWinCatch.windowDays === 1 ? '' : 's'
+                } reconciled)`
+              : 'This week'}
+          </h2>
+          <StatGroup className="mt-3">
+            <Stat
+              label="Biggest win"
+              value={formatUsd(biggestWinCatch.bestDay.margin)}
+              tone="positive"
+              icon={TrendingUp}
+              caption={biggestWinCatch.bestDay.date}
+            />
+            <Stat
+              label="Biggest catch"
+              value={formatUsd(biggestWinCatch.worstDay.margin)}
+              tone={
+                Number(biggestWinCatch.worstDay.margin) < 0
+                  ? 'negative'
+                  : 'neutral'
+              }
+              icon={TrendingDown}
+              caption={biggestWinCatch.worstDay.date}
+            />
+          </StatGroup>
+        </Panel>
+      ) : null}
+
+      {/* Year-over-year (spec 008 FR-006), computed client-side from the
+          same `days` array — no new fetch, no new backend endpoint. Shown
+          ONLY when the exact same calendar days one year earlier are all
+          present in the data (deriveYearOverYear's own strict, honest
+          "equal length" requirement); omitted entirely otherwise (FR-013),
+          never a partial or estimated year-over-year figure. */}
+      {yearOverYear ? (
+        <Panel aria-label="Year over year" className="p-5 sm:p-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            vs. {yearOverYear.label} last year
+          </h2>
+          <StatGroup className="mt-3">
+            <Stat
+              label={`${yearOverYear.label}, this year`}
+              value={formatUsd(String(yearOverYear.thisPeriodUsd))}
+              icon={CalendarClock}
+              tone={yearOverYear.thisPeriodUsd < 0 ? 'negative' : 'positive'}
+            />
+            <Stat
+              label={`${yearOverYear.label}, last year`}
+              value={formatUsd(String(yearOverYear.priorYearUsd))}
+              icon={CalendarClock}
+              tone={yearOverYear.priorYearUsd < 0 ? 'negative' : 'neutral'}
+            />
+            <Stat
+              label="Change"
+              value={`${yearOverYear.deltaUsd >= 0 ? '+' : ''}${formatUsd(String(yearOverYear.deltaUsd))}`}
+              tone={yearOverYear.deltaUsd < 0 ? 'negative' : 'positive'}
+              icon={yearOverYear.deltaUsd < 0 ? TrendingDown : TrendingUp}
+            />
+          </StatGroup>
+        </Panel>
+      ) : null}
 
       {/* Points summary. A dedicated section rather than folding this into
           the "At a glance" stat above — that stat answers "how many", this

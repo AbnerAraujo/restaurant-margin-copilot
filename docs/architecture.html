@@ -1064,7 +1064,7 @@
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, the Platforms page, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation, GET /api/promotions and GET /api/platforms; and GET /api/badges. Third layer: a single PostgreSQL database holding six tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache, answer_cache_hit and usage_event. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
+        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, the Platforms page, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation, GET /api/promotions, GET /api/platforms and GET /api/platforms/trend; and GET /api/badges. Third layer: a single PostgreSQL database holding six tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache, answer_cache_hit and usage_event. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
           <defs>
             <marker id="aArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1100,7 +1100,7 @@
 
           <rect x="450" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="474" y="222" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/reconciliation</text>
-          <text x="474" y="240" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/promotions &middot; /api/platforms</text>
+          <text x="474" y="240" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/promotions &middot; /api/platforms(+trend)</text>
           <text x="474" y="266" font-size="11" fill="currentColor">No model. Returns internal/mcptools&rsquo; own</text>
           <text x="474" y="283" font-size="11" fill="currentColor">result shapes &mdash; one rendering, so nothing drifts.</text>
 
@@ -1142,7 +1142,7 @@
           <text x="464" y="688" font-size="11.5" fill="currentColor">CLI &mdash; there is no scheduler in this build.</text>
         </svg>
         </div>
-        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code>, <code>GET /api/promotions</code> and <code>GET /api/platforms</code> deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day (or the same platform) cannot drift apart, because there is only one of them.</figcaption>
+        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code>, <code>GET /api/promotions</code>, <code>GET /api/platforms</code> and <code>GET /api/platforms/trend</code> (the Platforms page's effective-rate history, added alongside the others in the 2026-08-29 dashboard-intelligence batch) deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day (or the same platform) cannot drift apart, because there is only one of them.</figcaption>
       </figure>
     </section>
 

@@ -151,6 +151,13 @@ export interface PromoRoiChartProps {
    * default everywhere.
    */
   defaultTableOpen?: boolean
+  /**
+   * Spec 008 FR-001: called with the campaign of whichever bar the owner
+   * clicked or activated via keyboard, so the caller can turn it into a
+   * real follow-up question. Omitted entirely (no click affordance beyond
+   * the existing hover/focus tooltip) when not provided.
+   */
+  onDataPointClick?: (point: { campaignId: string; campaignName: string }) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +313,7 @@ function PromoRoiChart({
   data = DEFAULT_PROMOTION_ROI,
   className,
   defaultTableOpen = false,
+  onDataPointClick,
 }: PromoRoiChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(defaultTableOpen)
@@ -416,16 +424,37 @@ function PromoRoiChart({
               ? `${datum.campaignName}: unattributable, ROI refused — no incremental orders on file`
               : `${datum.campaignName}: net ${formatSignedUsd(datum.net as number)}`
 
+            const handleActivate = onDataPointClick
+              ? () =>
+                  onDataPointClick({
+                    campaignId: datum.campaignId,
+                    campaignName: datum.campaignName,
+                  })
+              : undefined
+
             return (
               <g
                 key={datum.campaignId}
                 tabIndex={0}
                 role="button"
-                aria-label={focusLabel}
+                aria-label={
+                  handleActivate ? `${focusLabel}. Ask about this.` : focusLabel
+                }
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
+                onClick={handleActivate}
+                onKeyDown={
+                  handleActivate
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handleActivate()
+                        }
+                      }
+                    : undefined
+                }
                 className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 <rect

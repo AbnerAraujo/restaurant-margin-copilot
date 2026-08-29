@@ -1,4 +1,5 @@
 import { useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 
 import type { ChatMessage } from '@/components/Chat/ChatPanel'
 import ChatPanel, {
@@ -8,17 +9,19 @@ import ChatPanel, {
   type PreviousExchange,
 } from '@/components/Chat/ChatPanel'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
+import type { AskPageNavigationState } from '@/components/Charts/chartFollowUpQuestion'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { postJson } from '@/lib/api'
 import { useShellOutletContext } from '@/components/Shell/AppShell'
 
 // ---------------------------------------------------------------------------
 // Live wiring to POST /api/ask (httpapi.HandleAsk) — the real two-step
-// architecture in CLAUDE.md: every question first runs the Claude Haiku 4.5
-// ambiguity gate; only a question that clears it goes on to the Claude
-// Sonnet 5 explanation step. The backend returns one CostInteraction per
-// model call that actually ran, so the cost panel reflects this session's
-// real measured spend, never a placeholder figure.
+// architecture in CLAUDE.md: every question first runs the Claude Sonnet 5
+// ambiguity gate (moved off Haiku 4.5 on 2026-08-29, see
+// internal/llmclient/cost.go); only a question that clears it goes on to
+// the Claude Sonnet 5 explanation step. The backend returns one
+// CostInteraction per model call that actually ran, so the cost panel
+// reflects this session's real measured spend, never a placeholder figure.
 //
 // The request goes through `postJson` from `lib/api` — the same helper every
 // other page uses — rather than a page-local `fetch`, so this page honors
@@ -61,6 +64,22 @@ interface AskApiResponse {
     estimated_cost_usd: number
     latency_ms: number
   }[]
+  /**
+   * Spec 008 FR-003 ("show your work"): the exact MCP tool name(s) and raw
+   * JSON result(s) already computed for this answer
+   * (`httpapi.AskResponse.tool_calls`), present only when `status` is
+   * "answered". Passed straight through to `AnswerChatMessage.toolCalls` —
+   * this page never re-fetches or reformats the underlying data.
+   */
+  tool_calls?: { name: string; result_json: unknown }[]
+  /**
+   * Spec 008 FR-004 ("Compare to last period"): the real [start, end] this
+   * answer was grounded in (`httpapi.AskResponse.resolved_period`), present
+   * only for a period-totals/daily-summary question. Passed straight
+   * through to `AnswerChatMessage.resolvedPeriod` — this page never
+   * re-derives it from the original question text.
+   */
+  resolved_period?: { start: string; end: string }
 }
 
 /**
@@ -104,6 +123,14 @@ function nextMessageId(prefix: string): string {
  */
 export default function AskPage() {
   const { logInteractions } = useShellOutletContext()
+  // Spec 008 FR-001: a chart click on `/close` or `/promotions` navigates
+  // here with the built follow-up question as router state (no shared chat
+  // context exists across those separate routes) — read once per navigation,
+  // never persisted, so a plain visit to `/ask` never carries a stale
+  // question from browser history.
+  const location = useLocation()
+  const autoSubmitQuestion = (location.state as AskPageNavigationState | null)
+    ?.autoSubmitQuestion
 
   const resolveAnswer = useCallback(
     async (
@@ -175,6 +202,8 @@ export default function AskPage() {
         provenance: (data.provenance_refs ?? []).map(parseProvenanceRef),
         visualization: data.visualization,
         followUps: data.suggested_followups,
+        toolCalls: data.tool_calls,
+        resolvedPeriod: data.resolved_period,
         cache: data.cache,
         askedAt,
       }
@@ -195,6 +224,7 @@ export default function AskPage() {
       // The live surface remembers the thread across reloads and keeps a
       // short history of previous ones (localStorage — see lib/chatStorage).
       persistConversation
+      autoSubmitQuestion={autoSubmitQuestion}
       className="max-w-none"
     />
   )

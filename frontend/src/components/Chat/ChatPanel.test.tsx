@@ -745,4 +745,250 @@ describe('ChatPanel', () => {
     expect(resolveAnswer).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('Answer after enter.')).toBeInTheDocument()
   })
+
+  // Spec 008 US1 — flag-based follow-up chips, show-your-work, and chart
+  // click-to-ask (via autoSubmitQuestion).
+
+  it('renders a flag-based "why is this different?" follow-up exactly like any other suggestion', async () => {
+    // ChatPanel itself never special-cases a flag-based suggestion — the
+    // backend (suggestions.go's flagBasedFollowUp) is the only place that
+    // decides one belongs in the list. This test proves the panel renders
+    // that exact real-world wording correctly as a normal chip, never
+    // dropping or garbling it.
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-flag-followup',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-08 was $152.50.',
+        provenance: [],
+        followUps: ['Why is 2026-08-08 different from usual?'],
+        askedAt: '2026-08-27T11:10:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-08 was $152.50.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(
+      within(bubble).getByRole('button', {
+        name: /why is 2026-08-08 different from usual\?/i,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows "show your work" collapsed by default, then reveals the real tool name and JSON on click', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-show-your-work',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        toolCalls: [
+          {
+            name: 'get_daily_summary',
+            result_json: { date: '2026-08-07', margin: '375.82' },
+          },
+        ],
+        askedAt: '2026-08-27T11:15:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-07?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-07 was $375.82.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    // Collapsed by default: the raw JSON is not on screen until asked for.
+    expect(within(bubble).queryByText(/get_daily_summary/)).not.toBeInTheDocument()
+
+    const toggle = within(bubble).getByRole('button', { name: /show your work/i })
+    await user.click(toggle)
+
+    expect(within(bubble).getByText('get_daily_summary')).toBeInTheDocument()
+    expect(within(bubble).getByText(/"margin": "375\.82"/)).toBeInTheDocument()
+  })
+
+  it('renders no "show your work" affordance when an answer carries no tool calls', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-tool-calls',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-08 was $152.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:20:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-08 was $152.50.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(
+      within(bubble).queryByRole('button', { name: /show your work/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('offers "Compare to last period" on an answer with a resolved period, and submits the real derived comparison question', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValueOnce({
+        id: 'test-answer-resolved-period',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Your margin for August 2026 was $8,214.50.',
+        provenance: [],
+        resolvedPeriod: { start: '2026-08-01', end: '2026-08-31' },
+        askedAt: '2026-08-27T11:25:00Z',
+      })
+      .mockResolvedValueOnce({
+        id: 'test-answer-comparison',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'July 2026 was $7,900.00 — August was up $314.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:25:05Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'What was our margin for August 2026?{Enter}')
+
+    const answer = await screen.findByText('Your margin for August 2026 was $8,214.50.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    const compareButton = within(bubble).getByRole('button', { name: /compare to last period/i })
+    await user.click(compareButton)
+
+    await screen.findByText('July 2026 was $7,900.00 — August was up $314.50.')
+
+    // The real, calendar-aware derived comparison question — the immediately
+    // preceding calendar month, not a fixed 30-day shift — submitted through
+    // the SAME resolveAnswer path as any typed question (no bypass).
+    expect(resolveAnswer).toHaveBeenCalledTimes(2)
+    expect(resolveAnswer.mock.calls[1][0]).toBe(
+      'What was our margin for 2026-08-01 through 2026-08-31, compared to 2026-07-01 through 2026-07-31?',
+    )
+  })
+
+  it('renders no "Compare to last period" button when an answer carries no resolved period', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-resolved-period',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-08 was $152.50.',
+        provenance: [],
+        askedAt: '2026-08-27T11:30:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-08 was $152.50.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(
+      within(bubble).queryByRole('button', { name: /compare to last period/i }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('auto-submits a chart click-to-ask question exactly once on mount', async () => {
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-auto-submit',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'What happened on 2026-08-07 was a strong lunch rush.',
+        provenance: [],
+        askedAt: '2026-08-27T11:25:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        autoSubmitQuestion="What happened on 2026-08-07?"
+      />,
+    )
+
+    expect(resolveAnswer).toHaveBeenCalledTimes(1)
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'What happened on 2026-08-07?',
+      expect.any(Array),
+      undefined,
+      undefined,
+    )
+    expect(
+      await screen.findByText(
+        'What happened on 2026-08-07 was a strong lunch rush.',
+      ),
+    ).toBeInTheDocument()
+    // The literal question the chart click built is shown as the user's own
+    // message, exactly like a typed question — never hidden or summarized.
+    expect(
+      screen.getByText('What happened on 2026-08-07?'),
+    ).toBeInTheDocument()
+  })
 })

@@ -117,6 +117,12 @@ func main() {
 		// computation a chat answer about the same period would (see
 		// httpapi.HandlePlatformComparison's doc comment).
 		mux.HandleFunc("/api/platforms", httpapi.HandlePlatformComparison(store))
+		// GET /api/platforms/trend: spec 008 FR-007's effective-rate trend —
+		// the trailing calendar months of the same compare_platform_economics
+		// computation above, computed server-side (see
+		// httpapi.HandlePlatformsTrend's doc comment for why this is a new
+		// small aggregation rather than several sequential frontend calls).
+		mux.HandleFunc("/api/platforms/trend", httpapi.HandlePlatformsTrend(store))
 		// POST /api/usage: the real app-open ping backing Engagement badges
 		// (spec 002-badge-expansion). No model involved, same as every other
 		// endpoint registered directly here rather than through
@@ -143,7 +149,7 @@ func main() {
 		}
 		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, and POST /api/ask on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

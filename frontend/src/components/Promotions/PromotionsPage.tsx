@@ -1,14 +1,30 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  AlertTriangle,
+  ArrowDownNarrowWide,
+  ArrowUpNarrowWide,
+  Megaphone,
+  ShieldAlert,
+  TrendingDown,
+} from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
+import {
+  ASK_PAGE_PATH,
+  buildPromoRoiFollowUpQuestion,
+  type AskPageNavigationState,
+  type PromoRoiDataPointClick,
+} from '@/components/Charts/chartFollowUpQuestion'
 import PromoRoiChart, {
   type PromotionRoiDatum,
 } from '@/components/Charts/PromoRoiChart'
 import LogReplacementForm from '@/components/Promotions/LogReplacementForm'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
+import { Button } from '@/components/ui/button'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
-import { StatGroup, StatSkeleton } from '@/components/ui/stat'
+import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 // ---------------------------------------------------------------------------
 // Live wiring to GET /api/promotions (backend internal/httpapi/data.go),
@@ -39,10 +55,74 @@ interface PromotionApi {
    * claim, the flagged campaign it names. */
   origin?: string
   replaces_campaign_id?: string | null
+  /** "money" or "points" (spec 007's points-payment feature). Absent on
+   * records ingested before that feature shipped — never assume "money". */
+  payment_method?: string
+  /** Only meaningful when `payment_method === 'points'`. */
+  points_spent?: number
 }
 
 interface PromotionsApiResponse {
   promotions: PromotionApi[]
+}
+
+type RoiSortDirection = 'desc' | 'asc'
+
+function formatSignedUsd(value: number): string {
+  const magnitude = Math.abs(value).toLocaleString('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return value < 0 ? `−${magnitude}` : `+${magnitude}`
+}
+
+/**
+ * Spec 008 FR-011: a platform's aggregate is the sum of only its
+ * REAL, attributed campaigns' ROI — a platform with campaigns on file but
+ * none attributed yet gets `sumRoi: null` (renders as "Not available" via
+ * `Stat`), never a fabricated $0. Order follows first appearance in
+ * `promotions`, which is itself the API's own order — no extra sort here.
+ */
+function aggregateRoiByPlatform(
+  promotions: PromotionApi[],
+): { platform: string; sumRoi: number | null }[] {
+  const platforms = [...new Set(promotions.map((promotion) => promotion.platform))]
+  return platforms.map((platform) => {
+    const attributed = promotions.filter(
+      (promotion) => promotion.platform === platform && promotion.roi !== null,
+    )
+    if (attributed.length === 0) return { platform, sumRoi: null }
+    const sumRoi = attributed.reduce(
+      (sum, promotion) => sum + Number(promotion.roi),
+      0,
+    )
+    return { platform, sumRoi }
+  })
+}
+
+/**
+ * Spec 008 FR-012. Deliberately NOT a single comparator with a `-Infinity`
+ * sort key for null `roi` (tasks.md's first-pass suggestion) — a shared
+ * comparator puts nulls at opposite ends depending on `direction` (first
+ * when ascending, last when descending), which is "consistent" only within
+ * one direction, not the "sorted consistently to one end" FR-012 actually
+ * asks for. Instead: sort only the real, attributed campaigns by `direction`,
+ * then always append the unattributable/not-yet-attributed ones after —
+ * they stay at the same end regardless of which direction the owner picks.
+ */
+function sortPromotionsByRoi(
+  promotions: PromotionApi[],
+  direction: RoiSortDirection,
+): PromotionApi[] {
+  const attributed = promotions.filter((promotion) => promotion.roi !== null)
+  const unattributed = promotions.filter((promotion) => promotion.roi === null)
+  attributed.sort((a, b) => {
+    const diff = Number(a.roi) - Number(b.roi)
+    return direction === 'asc' ? diff : -diff
+  })
+  return [...attributed, ...unattributed]
 }
 
 function collapseRefs(
@@ -99,8 +179,25 @@ function toChartDatum(promotion: PromotionApi): PromotionRoiDatum {
  * renders as an explicit unattributable/refused state, never a $0 bar.
  */
 export default function PromotionsPage() {
+  const navigate = useNavigate()
+  // Spec 008 FR-001: `/promotions` and `/ask` are separate routes with no
+  // shared chat context, so a chart click navigates to `/ask` carrying the
+  // built question as router state (see chartFollowUpQuestion.ts's doc
+  // comment, and ClosePage.tsx for the identical pattern).
+  function handleChartDataPointClick(point: PromoRoiDataPointClick) {
+    navigate(ASK_PAGE_PATH, {
+      state: {
+        autoSubmitQuestion: buildPromoRoiFollowUpQuestion(point),
+      } satisfies AskPageNavigationState,
+    })
+  }
+
   const [promotions, setPromotions] = useState<PromotionApi[] | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // null = the API's own order (default); set only once the owner explicitly
+  // asks to sort (FR-012) — never sorted implicitly on load.
+  const [roiSortDirection, setRoiSortDirection] =
+    useState<RoiSortDirection | null>(null)
 
   const loadPromotions = useCallback(() => {
     return getJson<PromotionsApiResponse>('/api/promotions')
@@ -149,6 +246,33 @@ export default function PromotionsPage() {
       platform: promotion.platform,
     }))
 
+  // Steward-style proactive insight (spec 008 FR-010): a flagged campaign
+  // "needs action" only until some OTHER campaign's replaces_campaign_id
+  // names it — at that point the owner has already acted, and re-flagging
+  // it would be nagging about a closed loop. Pure frontend derivation over
+  // data already fetched; no backend change.
+  const needsActionCampaigns = (promotions ?? []).filter(
+    (promotion) =>
+      promotion.flagged_negative &&
+      !(promotions ?? []).some(
+        (other) => other.replaces_campaign_id === promotion.campaign_id,
+      ),
+  )
+
+  // Spec 008 FR-011: aggregate ROI per platform, real attributed campaigns
+  // only. Spec 008 FR-012: sort toggle over the same list the chart/table
+  // render, so "the list" (spec.md's wording) means one ordering, not two.
+  const platformAggregates = useMemo(
+    () => aggregateRoiByPlatform(promotions ?? []),
+    [promotions],
+  )
+  const displayedPromotions = useMemo(() => {
+    if (!promotions) return promotions
+    return roiSortDirection
+      ? sortPromotionsByRoi(promotions, roiSortDirection)
+      : promotions
+  }, [promotions, roiSortDirection])
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -180,6 +304,100 @@ export default function PromotionsPage() {
         </Panel>
       ) : null}
 
+      {/* Steward-style proactive insight (spec 008 FR-010) — surfaced above
+          the chart, without the owner having to ask, so an un-replaced
+          losing campaign is never just one row among many. */}
+      {needsActionCampaigns.length > 0 ? (
+        <Panel
+          role="status"
+          className="flex flex-col gap-2 border-warning/25 bg-warning/10 p-4 sm:p-5"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning-text">
+            <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+            {needsActionCampaigns.length === 1
+              ? '1 campaign needs a decision'
+              : `${needsActionCampaigns.length} campaigns need a decision`}
+          </div>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {needsActionCampaigns.map((promotion) => (
+              <li
+                key={promotion.campaign_id}
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5"
+              >
+                <span className="font-medium text-foreground">
+                  {promotion.campaign_id}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {promotion.platform} · lost money, not yet replaced
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      ) : null}
+
+      {!error && promotions && promotions.length > 0 ? (
+        <Panel className="flex flex-col gap-4 p-5 sm:p-6">
+          {/* Spec 008 FR-011: how each platform is doing IN AGGREGATE, not
+              just per-campaign — a platform with campaigns on file but none
+              attributed yet shows "Not available" via `Stat`, never a
+              fabricated $0. */}
+          <StatGroup>
+            {platformAggregates.map(({ platform, sumRoi }) => (
+              <Stat
+                key={platform}
+                label={`${platform} ROI`}
+                value={sumRoi === null ? null : formatSignedUsd(sumRoi)}
+                tone={
+                  sumRoi === null ? 'neutral' : sumRoi < 0 ? 'negative' : 'positive'
+                }
+                tooltip={`Sum of ROI across ${platform}'s attributed campaigns — unattributable or not-yet-attributed campaigns are excluded, never counted as zero.`}
+              />
+            ))}
+          </StatGroup>
+
+          {/* Spec 008 FR-012: sort toggle over the same list the chart/table
+              below render — one ordering, not two. Unattributable/not-yet-
+              attributed campaigns stay at the end in EITHER direction; see
+              sortPromotionsByRoi's doc comment for why. */}
+          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            <span className="text-xs font-medium text-muted-foreground">
+              Sort by ROI:
+            </span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-pressed={roiSortDirection === 'desc'}
+              className={cn(roiSortDirection === 'desc' && 'bg-accent')}
+              onClick={() =>
+                setRoiSortDirection((current) =>
+                  current === 'desc' ? null : 'desc',
+                )
+              }
+            >
+              <ArrowDownNarrowWide aria-hidden="true" />
+              Highest first
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-pressed={roiSortDirection === 'asc'}
+              className={cn(roiSortDirection === 'asc' && 'bg-accent')}
+              onClick={() =>
+                setRoiSortDirection((current) =>
+                  current === 'asc' ? null : 'asc',
+                )
+              }
+            >
+              <ArrowUpNarrowWide aria-hidden="true" />
+              Lowest first
+            </Button>
+          </div>
+        </Panel>
+      ) : null}
+
       {!error && promotions?.length === 0 ? (
         <Panel className="p-4 text-sm text-muted-foreground">
           No promotion records on file yet. Run{' '}
@@ -199,9 +417,9 @@ export default function PromotionsPage() {
         </Panel>
       ) : null}
 
-      {promotions && promotions.length > 0 ? (
+      {displayedPromotions && displayedPromotions.length > 0 ? (
         <PromoRoiChart
-          data={promotions.map(toChartDatum)}
+          data={displayedPromotions.map(toChartDatum)}
           // Spend and attributed incremental revenue were already in the API
           // response and in this chart's own table, but that table sat behind
           // a "View as table" toggle. The reader could see that LUNCHFIX lost
@@ -211,6 +429,7 @@ export default function PromotionsPage() {
           // which is what keeps one campaign from having two on-screen
           // renderings that could drift.
           defaultTableOpen
+          onDataPointClick={handleChartDataPointClick}
         />
       ) : null}
 

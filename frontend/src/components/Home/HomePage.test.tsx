@@ -23,6 +23,43 @@ function renderHomePageWithRoutes() {
   )
 }
 
+const EMPTY_BADGES_RESPONSE = { badges: [], points: { total: 0, breakdown: [] } }
+
+/**
+ * Routes by URL so a test can supply real `/api/reconciliation` days
+ * (for the trend-arrow/biggest-win-catch assertions) alongside the
+ * `/api/badges` response every render of `HomePage` needs regardless —
+ * a single flat mock would silently hand the badges body to both calls.
+ */
+function stubFetchByUrl(reconciliationDays: unknown[]) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/api/reconciliation')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            start: reconciliationDays[0]
+              ? (reconciliationDays[0] as { date: string }).date
+              : '',
+            end: reconciliationDays[reconciliationDays.length - 1]
+              ? (reconciliationDays[reconciliationDays.length - 1] as {
+                  date: string
+                }).date
+              : '',
+            days: reconciliationDays,
+          }),
+        })
+      }
+      return Promise.resolve({ ok: true, json: async () => EMPTY_BADGES_RESPONSE })
+    }),
+  )
+}
+
+function day(date: string, margin: string) {
+  return { date, margin, discrepancy_flags: [] }
+}
+
 describe('HomePage', () => {
   // HomePage now mounts PointsCard, which fetches GET /api/badges. Stubbed
   // so these navigation assertions don't depend on a live backend; the card's
@@ -152,5 +189,72 @@ describe('HomePage', () => {
     expect(within(askTile).getByText(/^5 pts earned$/)).toBeInTheDocument()
     // Promotions earns growth + campaign_creation (15 + 30 = 45).
     expect(within(promoTile).getByText(/^45 pts earned$/)).toBeInTheDocument()
+  })
+
+  it('shows a real trend indicator against the previous reconciled day (spec 008 FR-008)', async () => {
+    stubFetchByUrl([day('2026-08-13', '100.00'), day('2026-08-14', '150.00')])
+    renderHomePageWithRoutes()
+
+    expect(await screen.findByText(/\+\$50\.00 vs 2026-08-13/)).toBeInTheDocument()
+  })
+
+  it('omits the trend indicator with fewer than 2 reconciled days, never a placeholder (FR-013)', async () => {
+    stubFetchByUrl([day('2026-08-14', '100.00')])
+    renderHomePageWithRoutes()
+
+    await screen.findAllByText('2026-08-14')
+    expect(screen.queryByText(/vs 2026-08-13/)).not.toBeInTheDocument()
+  })
+
+  it('shows a "Biggest win / biggest catch" card scoped to the trailing 7 reconciled days (spec 008 FR-009)', async () => {
+    stubFetchByUrl([
+      day('2026-08-10', '50.00'),
+      day('2026-08-11', '-30.00'),
+      day('2026-08-12', '200.00'),
+      day('2026-08-13', '10.00'),
+      day('2026-08-14', '75.00'),
+    ])
+    renderHomePageWithRoutes()
+
+    const panel = await screen.findByRole('region', {
+      name: 'Biggest win and catch this week',
+    })
+    expect(within(panel).getByText('$200.00')).toBeInTheDocument()
+    expect(within(panel).getByText('-$30.00')).toBeInTheDocument()
+    // Fewer than 7 real days behind it — scoped honestly, not padded.
+    expect(within(panel).getByText(/5 days reconciled/)).toBeInTheDocument()
+  })
+
+  it('omits the "Biggest win / biggest catch" card with fewer than 2 reconciled days (FR-013)', async () => {
+    stubFetchByUrl([day('2026-08-14', '100.00')])
+    renderHomePageWithRoutes()
+
+    await screen.findAllByText('2026-08-14')
+    expect(
+      screen.queryByRole('region', { name: 'Biggest win and catch this week' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows a real year-over-year tile when the exact same calendar days one year earlier exist (spec 008 FR-006)', async () => {
+    stubFetchByUrl([
+      day('2025-08-01', '100.00'),
+      day('2025-08-02', '120.00'),
+      day('2026-08-01', '150.00'),
+      day('2026-08-02', '130.00'),
+    ])
+    renderHomePageWithRoutes()
+
+    const panel = await screen.findByRole('region', { name: 'Year over year' })
+    expect(within(panel).getByText('$280.00')).toBeInTheDocument() // this year: 150+130
+    expect(within(panel).getByText('$220.00')).toBeInTheDocument() // last year: 100+120
+    expect(within(panel).getByText('+$60.00')).toBeInTheDocument()
+  })
+
+  it('omits the year-over-year tile with no matching prior-year data, never a partial or fabricated figure (FR-013)', async () => {
+    stubFetchByUrl([day('2026-08-01', '100.00'), day('2026-08-02', '130.00')])
+    renderHomePageWithRoutes()
+
+    await screen.findAllByText('2026-08-02')
+    expect(screen.queryByRole('region', { name: 'Year over year' })).not.toBeInTheDocument()
   })
 })

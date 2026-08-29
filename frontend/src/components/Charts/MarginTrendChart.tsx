@@ -61,6 +61,15 @@ export interface MarginTrendChartProps {
   data?: DailyMarginDatum[]
   sourceRefs?: SourceRowRef[]
   className?: string
+  /**
+   * Spec 008 FR-001: called with the real date (or bucketed date range) of
+   * whichever bar the owner clicked or activated via keyboard, so the caller
+   * can turn it into a real follow-up question. Omitted entirely (no click
+   * affordance beyond the existing hover/focus tooltip) when not provided —
+   * this chart also renders inside a chat answer bubble, where "click a bar
+   * to ask about it" would be a confusing action mid-conversation.
+   */
+  onDataPointClick?: (point: { date: string; rangeEndDate: string }) => void
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +300,7 @@ function MarginTrendChart({
   data = DEFAULT_DAILY_MARGIN,
   sourceRefs = DEFAULT_SOURCE_REFS,
   className,
+  onDataPointClick,
 }: MarginTrendChartProps) {
   const hatchPatternId = useId()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
@@ -462,16 +472,37 @@ function MarginTrendChart({
                     : ''
                 }`
 
+            const handleActivate = onDataPointClick
+              ? () =>
+                  onDataPointClick({
+                    date: datum.date,
+                    rangeEndDate: datum.rangeEndDate,
+                  })
+              : undefined
+
             return (
               <g
                 key={datum.date}
                 tabIndex={0}
                 role="button"
-                aria-label={focusLabel}
+                aria-label={
+                  handleActivate ? `${focusLabel}. Ask about this.` : focusLabel
+                }
                 onMouseEnter={() => setHoveredIndex(index)}
                 onMouseLeave={() => setHoveredIndex(null)}
                 onFocus={() => setHoveredIndex(index)}
                 onBlur={() => setHoveredIndex(null)}
+                onClick={handleActivate}
+                onKeyDown={
+                  handleActivate
+                    ? (event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          handleActivate()
+                        }
+                      }
+                    : undefined
+                }
                 className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
               >
                 {/* Larger, invisible hit target than the painted bar */}

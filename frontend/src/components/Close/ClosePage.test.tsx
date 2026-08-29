@@ -1,7 +1,18 @@
 import { render, screen, within } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ClosePage from './ClosePage'
+
+// ClosePage now calls useNavigate() (spec 008 FR-001, chart click-to-ask
+// navigates to /ask) — every render needs a Router ancestor.
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <ClosePage />
+    </MemoryRouter>,
+  )
+}
 
 /** Two real `/api/reconciliation` days, with 2026-08-02 deliberately absent. */
 const RECONCILIATION_RESPONSE = {
@@ -60,7 +71,7 @@ describe('ClosePage', () => {
 
   it('fetches the real reconciliation endpoint rather than rendering hardcoded figures', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
-    render(<ClosePage />)
+    renderPage()
 
     await screen.findByText('-$120.26')
     expect(fetch).toHaveBeenCalledWith(
@@ -70,7 +81,7 @@ describe('ClosePage', () => {
 
   it('summarises the LATEST reconciled day, with its own badge and provenance', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
-    render(<ClosePage />)
+    renderPage()
 
     const summary = await screen.findByRole('region', {
       name: /latest reconciled day/i,
@@ -93,7 +104,7 @@ describe('ClosePage', () => {
 
   it('draws a calendar day the backend omitted as an explicit gap, never a $0 bar', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
-    render(<ClosePage />)
+    renderPage()
 
     await screen.findByRole('region', { name: /latest reconciled day/i })
     // 2026-08-02 is inside the served period but absent from `days`.
@@ -114,7 +125,7 @@ describe('ClosePage', () => {
         text: async () => 'query_failed',
       }),
     )
-    render(<ClosePage />)
+    renderPage()
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/couldn't load reconciled days/i)
@@ -123,7 +134,7 @@ describe('ClosePage', () => {
 
   it('says plainly when nothing has been ingested yet', async () => {
     stubFetch({ start: '', end: '', days: [] })
-    render(<ClosePage />)
+    renderPage()
 
     expect(
       await screen.findByText(/no reconciled days on file yet/i),
