@@ -354,6 +354,14 @@ where `AssistantChatMessage` is a closed union of four `kind`s:
 - `AnswerChatMessage` — carries `provenance: SourceRowRef[]` and an optional
   `visualization` (the chart/table/grid form the *backend* chose from which
   MCP tool ran — never a second model call, never a client-side decision).
+  Also carries an optional `followUps?: string[]` — 0-3 next-question
+  strings the backend generates deterministically in Go
+  (`httpapi.deriveFollowUpSuggestions`, keyed on the real tool invocation
+  that grounded this answer) and `AnswerBubble` renders as `SuggestionChips`
+  after the provenance/cache line, wired to the same `submitQuestion` every
+  other suggestion source already uses. Shipped to close a real gap: every
+  successful answer used to end in a blank composer, since `SuggestionChips`
+  previously rendered only in the empty state and inside a refusal.
 - `ClarificationChatMessage` — carries `options?: string[]` for one-tap
   quick replies.
 - `RefusalChatMessage` — carries `missing: string[]`.
