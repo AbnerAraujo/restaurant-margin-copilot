@@ -13,7 +13,6 @@ import {
   Lightbulb,
   Send,
   Compass,
-  ShieldAlert,
   SquarePen,
   User,
   Wrench,
@@ -898,10 +897,8 @@ function ErrorBubble({
 
 /**
  * Empty conversation state. Nielsen #6 (recognition over recall) and #1
- * (visibility of system status): says what this surface can answer, and
- * states plainly that it will refuse rather than guess — the product's own
- * contract, surfaced before the first question rather than discovered on a
- * refusal.
+ * (visibility of system status): says what this surface can answer, before
+ * the first question is asked.
  */
 function EmptyState({
   suggestions,
@@ -916,15 +913,12 @@ function EmptyState({
         <p className="text-sm font-medium text-foreground">
           Ask anything about your reconciled numbers.
         </p>
-        {/* The three contract facts that used to run as one 45-word paragraph.
-            As chips they are scannable, and each is a claim the reader can
-            check against what the app then does. */}
+        {/* These chips used to run as one longer paragraph. As chips they
+            are scannable, and each is a claim the reader can check against
+            what the app then does. */}
         <div className="flex flex-wrap items-center gap-1.5">
           <Chip icon={CalendarRange}>{COVERAGE_PERIOD}</Chip>
           <Chip icon={FileText}>Source rows on every figure</Chip>
-          <Chip icon={ShieldAlert} tone="warning">
-            Refuses rather than guesses
-          </Chip>
         </div>
         <p className="max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
           {CAPABILITY_SUMMARY}
