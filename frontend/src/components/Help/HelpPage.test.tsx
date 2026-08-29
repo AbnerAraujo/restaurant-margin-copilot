@@ -2,11 +2,18 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  buildCapabilitySummary,
-  EXAMPLE_QUESTIONS,
-} from '@/components/Chat/exampleQuestions'
+import { buildCapabilitySummary } from '@/components/Chat/exampleQuestions'
+import { GUIDED_CATEGORIES } from '@/components/Chat/guidedQuestion'
+import { routes } from '@/router'
 import HelpPage from './HelpPage'
+
+// The authoritative list of real page paths, derived from the same route
+// table the app itself renders from — never hand-copied — so this test can
+// never drift the way HelpPage.tsx itself once did. `/help` is excluded: the
+// Help page doesn't walk through a link to itself.
+const REAL_PAGE_PATHS = (routes[0].children ?? [])
+  .map((route) => (route.index ? '/' : `/${route.path}`))
+  .filter((path) => path !== '/help')
 
 const COVERAGE_RESPONSE = { start: '2024-08-01', end: '2026-08-14', days: [] }
 
@@ -73,35 +80,42 @@ describe('HelpPage', () => {
     expect(screen.getByText(coveragePeriod)).toBeInTheDocument()
   })
 
-  it('lists every example question and its answering tool, so it can never drift from the chat surface', () => {
+  it('lists every real MCP tool as a category, deriving the count from the same list rather than a hardcoded number', () => {
     renderHelpPage()
 
-    for (const question of EXAMPLE_QUESTIONS) {
-      expect(
-        screen.getByText(`“${question.text}”`),
-      ).toBeInTheDocument()
-      expect(screen.getByText(question.tool)).toBeInTheDocument()
+    // Guards the exact bug this test replaces: HelpPage used to hardcode
+    // "seven" tools and render from a second, staler list that never
+    // learned about an eighth tool. Asserting against GUIDED_CATEGORIES
+    // itself means this test cannot go stale the same way — it fails the
+    // moment HelpPage's rendering falls out of sync with the composer's
+    // own tool list, whatever its length turns out to be.
+    for (const category of GUIDED_CATEGORIES) {
+      expect(screen.getByText(category.label)).toBeInTheDocument()
+      expect(screen.getByText(category.description)).toBeInTheDocument()
+      expect(screen.getByText(category.tool)).toBeInTheDocument()
     }
+    expect(
+      screen.getByText(
+        new RegExp(`these ${GUIDED_CATEGORIES.length} tools are the complete`, 'i'),
+      ),
+    ).toBeInTheDocument()
   })
 
-  it('links to every real page it walks through', () => {
+  it('renders a real icon for every tool, with no undefined-icon crash even if a tool is unmapped', () => {
+    // Regression guard for the failure mode the QA pass flagged: adding an
+    // 8th tool without a matching icon-map entry used to be able to crash
+    // this page on an undefined component lookup. Rendering at all (no
+    // throw) plus one icon per category is the proof.
     renderHelpPage()
 
-    expect(screen.getByRole('link', { name: /home/i })).toHaveAttribute('href', '/')
-    expect(screen.getByRole('link', { name: /^ask/i })).toHaveAttribute('href', '/ask')
-    expect(screen.getByRole('link', { name: /^promotions/i })).toHaveAttribute(
-      'href',
-      '/promotions',
-    )
-    expect(screen.getByRole('link', { name: /^points/i })).toHaveAttribute('href', '/points')
-    expect(screen.getByRole('link', { name: /^platforms/i })).toHaveAttribute(
-      'href',
-      '/platforms',
-    )
-    expect(screen.getByRole('link', { name: /upload costs/i })).toHaveAttribute(
-      'href',
-      '/upload',
-    )
+    expect(screen.getAllByText(/^answered by/i)).toHaveLength(GUIDED_CATEGORIES.length)
+  })
+
+  it('links to every real page it walks through, and no page that no longer exists', () => {
+    renderHelpPage()
+
+    const renderedHrefs = screen.getAllByRole('link').map((link) => link.getAttribute('href'))
+    expect(new Set(renderedHrefs)).toEqual(new Set(REAL_PAGE_PATHS))
   })
 
   it('describes the real points-payment option on Promotions', () => {

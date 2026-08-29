@@ -1,6 +1,8 @@
 import {
   ArrowLeftRight,
   CalendarCheck,
+  CalendarClock,
+  CalendarDays,
   CalendarRange,
   Coins,
   FileWarning,
@@ -8,19 +10,18 @@ import {
   Megaphone,
   MessagesSquare,
   Scale,
+  Settings as SettingsIcon,
   ShieldAlert,
   ShieldCheck,
+  Store,
   TrendingDown,
   UploadCloud,
   type LucideIcon,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 
-import {
-  buildCapabilitySummary,
-  EXAMPLE_QUESTIONS,
-  type ExampleQuestion,
-} from '@/components/Chat/exampleQuestions'
+import { buildCapabilitySummary } from '@/components/Chat/exampleQuestions'
+import { GUIDED_CATEGORIES } from '@/components/Chat/guidedQuestion'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
 import { useDataCoverage } from '@/lib/useDataCoverage'
 
@@ -29,15 +30,17 @@ import { useDataCoverage } from '@/lib/useDataCoverage'
  *
  * Every claim here is sourced from something that already exists elsewhere
  * in the codebase, not written fresh: the "what you can ask" list imports
- * `EXAMPLE_QUESTIONS`/`CAPABILITY_SUMMARY` from `Chat/exampleQuestions.ts`
- * (the same single source of truth the chat surface itself renders from,
- * per that file's own doc comment — a model was deliberately never asked to
- * describe its own capabilities, since that's a hallucination surface), the
- * "how to use it" walkthrough describes only real, routed pages, and the
- * refusal-discipline section restates CLAUDE.md's own hard limit rather than
- * inventing new language for it. There is no support/contact mechanism, no
- * screenshot, and no video here — this is a no-auth, single-owner prototype
- * (see `SettingsPage.tsx`) with nowhere for a support request to go.
+ * `GUIDED_CATEGORIES` from `Chat/guidedQuestion.ts` — the same place the
+ * guided question composer names the app's complete, current set of MCP
+ * tools in plain language, so this page's tool count and list can never
+ * drift from what the composer actually offers (a model was deliberately
+ * never asked to describe its own capabilities, since that's a
+ * hallucination surface) — the "how to use it" walkthrough describes every
+ * real, routed page in `router.tsx`, and the refusal-discipline section
+ * restates CLAUDE.md's own hard limit rather than inventing new language for
+ * it. There is no support/contact mechanism, no screenshot, and no video
+ * here — this is a no-auth, single-owner prototype (see `SettingsPage.tsx`)
+ * with nowhere for a support request to go.
  */
 export default function HelpPage() {
   return (
@@ -133,11 +136,20 @@ function BenefitItem({
   )
 }
 
-/** One icon per MCP tool, reused from the same visual language other pages
- * already use for these exact concepts (daily close, week-over-week,
+/**
+ * One icon per known MCP tool, reused from the same visual language other
+ * pages already use for these exact concepts (daily close, week-over-week,
  * discrepancies, campaign ROI, negative-ROI campaigns, platform comparison,
- * period totals) — chosen for consistency, not invented fresh here. */
-const TOOL_ICON: Record<ExampleQuestion['tool'], LucideIcon> = {
+ * period totals, day-of-month cost pattern) — chosen for consistency, not
+ * invented fresh here.
+ *
+ * Deliberately a plain `Record<string, LucideIcon>`, not keyed by a closed
+ * union: `getToolIcon` below falls back to a generic icon for any tool this
+ * map hasn't caught up with yet, so a new MCP tool can never make this page
+ * throw on an undefined icon lookup — it can only render slightly less
+ * specifically until someone adds its entry here.
+ */
+const TOOL_ICON: Record<string, LucideIcon> = {
   get_daily_summary: CalendarCheck,
   get_margin_delta: ArrowLeftRight,
   list_discrepancies: ShieldAlert,
@@ -145,16 +157,27 @@ const TOOL_ICON: Record<ExampleQuestion['tool'], LucideIcon> = {
   list_negative_roi_promotions: TrendingDown,
   compare_platform_economics: Scale,
   get_period_totals: CalendarRange,
+  get_expense_pattern_by_day_of_month: CalendarClock,
+}
+
+function getToolIcon(tool: string): LucideIcon {
+  return TOOL_ICON[tool] ?? HelpCircle
 }
 
 /**
- * Section 2 — pulled directly from `EXAMPLE_QUESTIONS`/`buildCapabilitySummary`,
- * the exact source the chat surface (`ChatPanel.tsx`) renders its own
- * suggestion chips and capability blurb from. Adding an eighth MCP tool and
- * its example question there updates this page automatically — nothing
- * here is a hand-typed second copy of that list. The coverage range itself
- * comes from `useDataCoverage` (a live fetch), not a hardcoded date string —
- * see that hook's doc comment for why this page used to go stale.
+ * Section 2 — the tool identity, count, label, and description all come
+ * from `GUIDED_CATEGORIES` (`Chat/guidedQuestion.ts`), the one place the
+ * guided question composer names the app's complete, current set of MCP
+ * tools in plain language. Reusing it here — rather than counting or
+ * hand-copying a second list — is what let this page silently go stale
+ * across an entire MCP tool addition: the old version rendered from
+ * `EXAMPLE_QUESTIONS`, a hand-maintained illustrative-question list that
+ * itself was never updated for the eighth tool. `GUIDED_CATEGORIES` cannot
+ * omit a tool the same way, since the guided composer would be unusable for
+ * that tool if it did. The capability summary sentence and coverage range
+ * still come from `buildCapabilitySummary`/`useDataCoverage` (a live fetch),
+ * not a hardcoded date string — see that hook's doc comment for why this
+ * page used to go stale on dates too.
  */
 function WhatYouCanAskPanel() {
   const coverage = useDataCoverage()
@@ -174,23 +197,21 @@ function WhatYouCanAskPanel() {
         ) : null}
       </div>
       <ul className="divide-y divide-border border-t border-border">
-        {EXAMPLE_QUESTIONS.map((question) => {
-          const Icon = TOOL_ICON[question.tool]
+        {GUIDED_CATEGORIES.map((category) => {
+          const Icon = getToolIcon(category.tool)
           return (
-            <li key={question.text} className="flex items-start gap-3 px-5 py-4 sm:px-6">
+            <li key={category.id} className="flex items-start gap-3 px-5 py-4 sm:px-6">
               <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
                 <Icon className="size-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground">
-                  &ldquo;{question.text}&rdquo;
+                <p className="text-sm font-medium text-foreground">{category.label}</p>
+                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                  {category.description}
                 </p>
-                <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  <Chip tone="brand">{question.topic}</Chip>
-                  <span>
-                    answered by{' '}
-                    <span className="font-mono text-xs">{question.tool}</span>
-                  </span>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  answered by{' '}
+                  <span className="font-mono text-xs">{category.tool}</span>
                 </p>
               </div>
             </li>
@@ -198,10 +219,10 @@ function WhatYouCanAskPanel() {
         })}
       </ul>
       <p className="border-t border-border p-5 text-xs leading-relaxed text-muted-foreground sm:px-6">
-        These seven tools are the complete, fixed set of things this system
-        can compute — there is no open-ended chat behind them. A question
-        outside this list, or outside the data on file, gets a refusal
-        instead of a guess (see below).
+        These {GUIDED_CATEGORIES.length} tools are the complete, fixed set of
+        things this system can compute — there is no open-ended chat behind
+        them. A question outside this list, or outside the data on file, gets
+        a refusal instead of a guess (see below).
       </p>
     </Panel>
   )
@@ -223,11 +244,18 @@ const PAGE_WALKTHROUGHS: PageWalkthrough[] = [
       "Today's numbers at a glance: the latest reconciled margin, how many days are reconciled, how many carried a flag, and your Steward points total — all read live, nothing placeholder.",
   },
   {
+    to: '/close',
+    icon: CalendarDays,
+    title: "Today's Close",
+    description:
+      'Pick any single date or date range and see that period reconciled in full — margin, sales, and costs, with a day-by-day margin trend chart behind Home’s recent-closes list.',
+  },
+  {
     to: '/ask',
     icon: MessagesSquare,
     title: 'Ask',
     description:
-      'A chat for the questions listed above, in your own words. Every answer is grounded in one of the seven typed tools and carries the source rows behind its numbers, or it refuses and says why.',
+      'A chat for the questions listed above, in your own words. Every answer is grounded in one of the typed tools listed above and carries the source rows behind its numbers, or it refuses and says why.',
   },
   {
     to: '/promotions',
@@ -257,11 +285,31 @@ const PAGE_WALKTHROUGHS: PageWalkthrough[] = [
     description:
       'Upload a corrected or new supplier cost sheet, preview every row before anything is saved, and see the exact before/after margin effect once committed.',
   },
+  {
+    to: '/profile',
+    icon: Store,
+    title: 'Profile',
+    description:
+      "Your restaurant's own name, address, contact details, description, and photo — saved to the backend and shown wherever the app identifies your business.",
+  },
+  {
+    to: '/settings',
+    icon: SettingsIcon,
+    title: 'Settings',
+    description:
+      'Display preferences local to this browser only — full screen and light/dark/system theme — plus links to the write-up and architecture docs. Nothing here is stored server-side.',
+  },
 ]
 
 /**
- * Section 3 — a short walkthrough of the real, routed pages, each linking
- * to the page it describes.
+ * Section 3 — a short walkthrough of every real, routed page (`router.tsx`'s
+ * `routes` array is the authoritative list — this is a hand-written
+ * one-liner per page, not generated, since that list has no per-page
+ * description to reuse), each linking to the page it describes. `/help`
+ * itself is the only route deliberately left out, since a page never links
+ * to itself here. Keep this array in sync whenever a page is added, renamed,
+ * or removed in `router.tsx` — `HelpPage.test.tsx` asserts the two lists
+ * agree.
  */
 function HowToUseItPanel() {
   return (
