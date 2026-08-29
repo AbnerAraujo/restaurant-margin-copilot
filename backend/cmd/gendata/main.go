@@ -7,14 +7,28 @@
 // The growth story: gross revenue grows on an S-curve (faster in the first
 // year, decelerating in the second — a real small-restaurant ramp, not
 // flat compound growth) from a modest single-location starting point to a
-// scale that produces roughly $20,000/month in this product's own margin
-// metric (gross sales minus commissions minus refunds minus input costs —
-// NOT full net profit after labor/rent/overhead, which this product never
-// computes at all). At the cost ratios used here (roughly 62% of gross
-// revenue survives as margin), that endpoint is reached at approximately
-// $32,000-34,000/month gross revenue — a modest, realistic figure for one
-// location, not the $250k+/month a literal bottom-line-profit reading of
-// "$20k/month profit" would imply for a single restaurant.
+// scale that averages roughly $40,000/month, across the full 24 months, in
+// this product's own margin metric (gross sales minus commissions minus
+// refunds minus input costs — NOT full net profit after labor/rent/
+// overhead, which this product never computes at all, and NOT a literal
+// reading of "3-9% net margin on revenue" either: at that ratio, $40k/month
+// would imply $450k-$1.3M/month of revenue, absurd for one location. The
+// $40,000/month figure is the user's own stated target for THIS metric,
+// not derived from restaurant-industry margin research — that research
+// (see the ledger above buildMonthRegimes, below) informs the SHAPE of the
+// dataset's volatility (how often, and why, a month misses), not this
+// dollar figure.
+//
+// 2026-08-29: revised so a believable minority of the 24 months land net-
+// negative overall, driven by real, sustained causes (a January seasonal
+// slump, a supplier-shortage cost-of-goods spike, a refund/discrepancy
+// cluster) rather than the previous model's only mechanism — an
+// independent per-day cost-shock chance (lossyDayChance) — which reliably
+// produced net-loss DAYS but let almost every MONTH average out positive,
+// since ~1-2 bad days a month get absorbed by ~28 good ones. See
+// buildMonthRegimes for the new month-level mechanism and its
+// Sourced/Assumption ledger, and docs/product-strategy.md's 2026-08-29
+// entry for the fuller research writeup.
 //
 // Output: the same four CSVs internal/ingest already parses
 // (delivery_platform_export.csv, pos_export.csv, supplier_cost_sheet.csv,
@@ -31,6 +45,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -40,8 +55,16 @@ const (
 	numDays = 730
 
 	// Gross revenue growth curve (logistic S-curve), in dollars/month.
-	startMonthlyGross = 14000.0
-	endMonthlyGross   = 33500.0
+	// Raised from the previous $14,000 -> $33,500 range (which targeted
+	// $20k/month margin) to reach the new $40k/month margin target once
+	// the monthRegime deficits below are averaged in — see
+	// printMonthlyVerification's output for the actual realized 24-month
+	// average ($40,016/month at these two constants, across 6 regime
+	// months), which is what this was empirically tuned against, not
+	// solved for algebraically. Re-tuned 2026-08-29 when a 6th regime
+	// month (2025-08, see monthlyRegimes) was added.
+	startMonthlyGross = 34400.0
+	endMonthlyGross   = 124700.0
 	// midpointMonth/steepness shape the S-curve: faster growth in year 1,
 	// decelerating in year 2, per real small-restaurant ramp patterns
 	// (not sustained flat compound growth, which would be implausible).
@@ -110,6 +133,190 @@ const (
 // stay in the past relative to both the fixture and the real calendar.
 var startDate = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
 
+// --- monthly regimes -----------------------------------------------------
+//
+// Research ledger for this block (tagged per this project's established
+// Sourced/Assumption/Hypothesis convention — see docs/product-strategy.md
+// line 5 and its 2026-08-29 dated entry for the full writeup):
+//
+//   - [Sourced] Independent-restaurant net margins commonly run 3-9% of
+//     revenue, skewing toward the low end for full-service independents
+//     (VantaInsights' 2026 restaurant-benchmarks synthesis, drawing on
+//     Census CBP/BLS/Fed/SEC-informed industry data). Toast/VantaInsights'
+//     2026 figures put only ~42% of U.S. restaurants profitable in 2024;
+//     Restaurant365's 2026 State of the Restaurant Industry survey puts 45%
+//     of operators UNPROFITABLE in 2025. A large minority of the real
+//     industry runs at an annual loss — this fictional restaurant is
+//     modeled as one of the healthier operators overall (it averages a
+//     positive $40k/month), but "almost never a bad month" was never a
+//     realistic reading of that backdrop.
+//   - [Sourced] The NPD Group's Seasonality Index for Total Restaurant
+//     Traffic: January traffic runs ~6% below the average month and ~11%
+//     below the June peak, 2013-2019. Individual, single-location
+//     restaurants are reported to see steeper slow-period drops - "as much
+//     as 30%" in trade coverage (a softer, less rigorous source than NPD's
+//     index, cited here only to bound the plausible range, not as a hard
+//     number).
+//   - [Sourced] JPMorgan Chase Institute's small-business cash-flow
+//     research finds that for restaurants specifically, EXPENSES are more
+//     volatile than revenues, unlike most other small-business sectors —
+//     a cost-side shock, not a demand dip, is the more common driver of a
+//     genuinely bad stretch. That finding directly shapes the mechanism
+//     below: because every cost this product's margin metric counts
+//     (COGS/commission/refunds - no rent or labor, see the package doc)
+//     scales proportionally with revenue, a demand dip ALONE cannot
+//     mathematically flip a month's margin negative here — it takes a
+//     cost-side shock landing on top of it, exactly as JPMorgan's finding
+//     would predict. That's why seasonalSlump below pairs a demand dip
+//     with an elevated run of cost-shock days rather than relying on the
+//     revenue dip by itself.
+//   - [Sourced] Wholesale egg prices ran roughly 70% above year-earlier
+//     levels in January 2023 (CPI data via FoodNavigator-USA), driven by
+//     avian flu — a real, large, sustained single-category input-cost
+//     spike, used here only as a scale/shape reference for how severe a
+//     genuine "supplier shortage" event can get, not a literal
+//     re-creation of the egg market.
+//   - [Sourced, trade-press tier] Multiple commercial-refrigeration/HVAC
+//     service sources (Culinary Depot, B&J Refrigeration, RepairPros,
+//     rentcoolcubes.com — service-industry trade coverage, not a formal
+//     research report, hence the lower confidence tag) converge on the
+//     same mechanism: summer heat waves push walk-in cooler compressors to
+//     run continuously instead of cycling, and dirty condenser coils plus
+//     AC-driven voltage sag on the hottest afternoons make mid-summer the
+//     highest-failure-rate season for commercial refrigeration. [Sourced,
+//     authoritative] The FDA's food-safety "danger zone" rule: perishable
+//     food held between 40-140F becomes unsafe within 2 hours generally,
+//     within 1 hour if the ambient temperature is above 90F — the reason a
+//     summer compressor failure turns into discarded inventory so much
+//     faster than the same failure in a cooler month. Together these
+//     support a heat-wave equipment-failure regime for a summer month as a
+//     real, findable cause, not an invented one — see 2025-08 below.
+//   - [Assumption] Everything about WHICH months carry a regime, how many
+//     of a regime month's days get forced into an oversized cost shock,
+//     and the exact demand-dip/refund-rate multipliers, is this project's
+//     own reasoned judgment, not an independently sourced number — no
+//     source available here quantifies "restaurant-months net-loss
+//     frequency" or "August cost-shock-day frequency" precisely enough to
+//     cite. It was tuned so that: (a) a real, named cause (never an
+//     unexplained random dip) drives every regime month, (b) the healthy
+//     majority of months still carry the ~$40k/month growth story, and
+//     (c) the specific regime months actually land net-negative once
+//     generated — checked empirically via printMonthlyVerification, not
+//     just assumed from the inputs.
+//
+// Six of the 24 months carry a regime — a "believable minority" per the
+// task brief, not a routine occurrence:
+//
+//   - 2025-01 and 2026-01 ("seasonalSlump"): the recurring January slump,
+//     paired here with a plausible concurrent cost pressure — winter cold
+//     snaps are widely reported to stress refrigeration/heating equipment
+//     (reusing this file's existing "equipment" costShockCauses entries)
+//     — rather than trying to make a pure demand dip carry the whole
+//     story, which the proportional-cost math above rules out.
+//   - 2025-04 and 2026-04 ("supplierShortage"): a sustained regional
+//     protein/produce shortage forcing weeks of emergency same-day
+//     re-sourcing at rush pricing (the egg/avian-flu event above is this
+//     scenario's real-world shape reference) — a pure cost-side event,
+//     demand unaffected, per the JPMorgan finding.
+//   - 2025-08 ("heatWave"): added 2026-08-29, after a live-usage report
+//     that August specifically — the one full historical August in the
+//     live dataset, and so the exact comparator any "this August vs. last
+//     August" chat question would use — had never gotten a regime. August
+//     sits in the middle of this dataset's summer upswing (a strong month
+//     on either side), so a demand-side "slow season" story doesn't fit;
+//     a heat-wave-driven walk-in cooler failure does, per the trade-press
+//     sources above, and — like supplierShortage — is a pure cost-side
+//     event with demand left unaffected, consistent with the JPMorgan
+//     expense-volatility finding.
+//   - 2025-10 ("refundCluster"): a food-safety complaint wave driving a
+//     spike in the refund rate on top of a smaller run of cost-shock days
+//     — modeling "a cluster of refunds/discrepancies" as its own distinct
+//     cause, per the task brief, rather than folding it into a cost-shock
+//     month's story.
+type regimeKind int
+
+const (
+	regimeSeasonalSlump regimeKind = iota
+	regimeSupplierShortage
+	regimeRefundCluster
+	regimeHeatWave
+)
+
+type monthRegime struct {
+	kind       regimeKind
+	label      string // short human-readable cause, echoed into cost-sheet invoice notes
+	demandMult float64
+	// shockDayCount days within this calendar month are deterministically
+	// forced into an oversized cost-shock (same lossyDayShockMin/Max
+	// magnitude range as the ordinary daily mechanic, just applied to a
+	// specific, tuned COUNT of days rather than left to a per-day dice
+	// roll) — chosen so the month's aggregate margin reliably lands
+	// negative regardless of which specific days a plain probability
+	// would have picked.
+	shockDayCount int
+	// causeIdx pins every forced-shock invoice in this regime month to the
+	// SAME costShockCauses entry, so the month tells one coherent story
+	// ("the cooler kept failing all January") instead of reading as
+	// unrelated random one-offs.
+	causeIdx int
+	// refundRateMult multiplies refundRatePerOrder for delivery orders
+	// placed in this month (1.0 = unchanged).
+	refundRateMult float64
+	// refundNote overrides the generic "Customer dispute" refund note for
+	// this month, when non-empty.
+	refundNote string
+}
+
+func monthlyRegimes() map[string]monthRegime {
+	return map[string]monthRegime{
+		"2025-01": {kind: regimeSeasonalSlump, label: "January seasonal slump + cold-snap equipment strain", demandMult: 0.80, shockDayCount: 21, causeIdx: 0, refundRateMult: 1.0},
+		"2025-04": {kind: regimeSupplierShortage, label: "Regional protein shortage — emergency re-sourcing", demandMult: 1.0, shockDayCount: 19, causeIdx: 2, refundRateMult: 1.0},
+		"2025-08": {kind: regimeHeatWave, label: "Summer heat wave — walk-in cooler compressor failure", demandMult: 1.0, shockDayCount: 21, causeIdx: 4, refundRateMult: 1.0},
+		"2025-10": {kind: regimeRefundCluster, label: "Food-safety complaint wave", demandMult: 1.0, shockDayCount: 17, causeIdx: 1, refundRateMult: 18.0, refundNote: "Batch of undercooked orders reported; refunds issued after a food-safety review."},
+		"2026-01": {kind: regimeSeasonalSlump, label: "January seasonal slump + cold-snap equipment strain", demandMult: 0.80, shockDayCount: 21, causeIdx: 3, refundRateMult: 1.0},
+		"2026-04": {kind: regimeSupplierShortage, label: "Regional produce shortage — emergency re-sourcing", demandMult: 1.0, shockDayCount: 19, causeIdx: 1, refundRateMult: 1.0},
+	}
+}
+
+// forcedShockDays deterministically picks, for each regime month, exactly
+// shockDayCount distinct dates within that calendar month to force into an
+// oversized cost shock (see monthRegime.shockDayCount) — a random SUBSET
+// of days, via rng.Perm, so the CSV doesn't read as a suspiciously uniform
+// pattern, but a fixed COUNT, so the regime's aggregate effect on the
+// month doesn't depend on how a per-day probability happened to land.
+func forcedShockDays(regimes map[string]monthRegime, rng *rand.Rand) (dates map[string]int, err error) {
+	dates = make(map[string]int)
+	// Iterate in sorted key order, not Go's randomized map iteration order:
+	// each month's rng.Perm call consumes a different slice of the SHARED
+	// rng stream depending on iteration order, so an unsorted range here
+	// would silently break the "same seed, same dataset, every regen"
+	// guarantee this file has documented since its first version — a real
+	// bug caught by literally re-running gendata twice and diffing the
+	// monthly verification output.
+	monthKeys := make([]string, 0, len(regimes))
+	for k := range regimes {
+		monthKeys = append(monthKeys, k)
+	}
+	slices.Sort(monthKeys)
+	for _, monthKey := range monthKeys {
+		r := regimes[monthKey]
+		monthStart, parseErr := time.Parse("2006-01", monthKey)
+		if parseErr != nil {
+			return nil, fmt.Errorf("gendata: invalid regime month key %q: %w", monthKey, parseErr)
+		}
+		daysInMonth := monthStart.AddDate(0, 1, 0).Add(-24 * time.Hour).Day()
+		if r.shockDayCount > daysInMonth {
+			return nil, fmt.Errorf("gendata: regime %q wants %d shock days but %s only has %d", monthKey, r.shockDayCount, monthKey, daysInMonth)
+		}
+		perm := rng.Perm(daysInMonth)
+		for _, dayIdx := range perm[:r.shockDayCount] {
+			d := monthStart.AddDate(0, 0, dayIdx)
+			dates[d.Format("2006-01-02")] = r.causeIdx
+		}
+	}
+	return dates, nil
+}
+
 func main() {
 	outDir := flag.String("out", "data/live", "output directory for the generated CSVs (relative to backend/)")
 	flag.Parse()
@@ -121,12 +328,18 @@ func main() {
 		os.Exit(1)
 	}
 
+	regimes := monthlyRegimes()
+	forcedShock, err := forcedShockDays(regimes, rng)
+	if err != nil {
+		fail(err)
+	}
+
 	days := make([]dayPlan, numDays)
 	for i := range days {
 		date := startDate.AddDate(0, 0, i)
 		monthIdx := float64(i) / 30.44
 		targetMonthly := logisticGross(monthIdx)
-		days[i] = planDay(date, targetMonthly, rng)
+		days[i] = planDay(date, targetMonthly, regimes, forcedShock, rng)
 	}
 
 	promos := buildPromotions(days, rng)
@@ -148,6 +361,68 @@ func main() {
 	fmt.Printf("generated %d days: %s ($%.0f/mo gross) -> %s ($%.0f/mo gross)\n",
 		numDays, first.date.Format("2006-01-02"), first.targetMonthly,
 		last.date.Format("2006-01-02"), last.targetMonthly)
+
+	printMonthlyVerification(days, regimes)
+}
+
+// printMonthlyVerification recomputes each calendar month's approximate
+// margin directly from the same dayPlan values the CSV writers used (gross
+// minus commission minus refund minus COGS minus cost shocks, at the same
+// ratios writeCostSheetCSV and writeDeliveryCSV apply) and prints a
+// month-by-month table plus a summary line — so a monthly net-loss claim
+// for this dataset is something this tool itself reports, not something
+// asserted only in a doc comment. This is an approximation (it doesn't
+// replay the exact per-order rounding the CSV writers do), good enough for
+// a sanity check; the authoritative numbers come from the app's own
+// reconciliation engine against the actually-written CSVs.
+func printMonthlyVerification(days []dayPlan, regimes map[string]monthRegime) {
+	type monthTotal struct {
+		gross, margin float64
+		regimeLabel   string
+	}
+	totals := map[string]*monthTotal{}
+	var order []string
+	blendedCommissionRate := ifoodShare*ifoodCommissionPct/100 + jetShare*jetCommissionPct/100
+	deliveryRefundRate := (ifoodShare + jetShare) * refundRatePerOrder
+
+	for _, d := range days {
+		monthKey := d.date.Format("2006-01")
+		mt, ok := totals[monthKey]
+		if !ok {
+			mt = &monthTotal{}
+			if r, hasRegime := regimes[monthKey]; hasRegime {
+				mt.regimeLabel = r.label
+			}
+			totals[monthKey] = mt
+			order = append(order, monthKey)
+		}
+		refundMult := 1.0
+		if r, hasRegime := regimes[monthKey]; hasRegime {
+			refundMult = r.refundRateMult
+		}
+		commission := d.grossTotal * blendedCommissionRate
+		refund := d.grossTotal * deliveryRefundRate * refundMult
+		cogs := d.grossTotal * cogsShareOfGross
+		margin := d.grossTotal - commission - refund - cogs - d.costShock
+		mt.gross += d.grossTotal
+		mt.margin += margin
+	}
+
+	fmt.Println("\nmonth       gross        margin      regime")
+	var sumMargin float64
+	lossMonths := 0
+	for _, k := range order {
+		mt := totals[k]
+		sumMargin += mt.margin
+		mark := ""
+		if mt.margin < 0 {
+			lossMonths++
+			mark = "  <-- NET LOSS"
+		}
+		fmt.Printf("%s  $%9.0f  $%9.0f  %s%s\n", k, mt.gross, mt.margin, mt.regimeLabel, mark)
+	}
+	fmt.Printf("\n%d of %d months net-negative; 24-month average margin $%.0f/month\n",
+		lossMonths, len(order), sumMargin/float64(len(order)))
 }
 
 func fail(err error) {
@@ -186,17 +461,20 @@ func weekdayMultiplier(d time.Weekday) float64 {
 }
 
 type dayPlan struct {
-	date          time.Time
-	targetMonthly float64
-	grossTotal    float64
-	posGross      float64
-	ifoodGross    float64
-	jetGross      float64
-	anomaly       bool
-	costShock     float64 // >0 on a lossyDayChance day; see writeCostSheetCSV
+	date           time.Time
+	targetMonthly  float64
+	grossTotal     float64
+	posGross       float64
+	ifoodGross     float64
+	jetGross       float64
+	anomaly        bool
+	costShock      float64 // >0 on a lossyDayChance day OR a forced regime shock day; see writeCostSheetCSV
+	regimeCauseIdx int     // >=0 when costShock came from a forced regime day (monthRegime.causeIdx); -1 otherwise, meaning "pick a random cause" (the pre-existing daily mechanic)
+	refundRateMult float64 // multiplies refundRatePerOrder for this day's delivery orders; 1.0 outside a refundCluster month
+	refundNote     string  // overrides the generic refund note when set (refundCluster months)
 }
 
-func planDay(date time.Time, targetMonthly float64, rng *rand.Rand) dayPlan {
+func planDay(date time.Time, targetMonthly float64, regimes map[string]monthRegime, forcedShock map[string]int, rng *rand.Rand) dayPlan {
 	daysInMonth := 30.44
 	baseDaily := targetMonthly / daysInMonth
 	mult := weekdayMultiplier(date.Weekday())
@@ -211,22 +489,38 @@ func planDay(date time.Time, targetMonthly float64, rng *rand.Rand) dayPlan {
 		}
 	}
 
-	gross := baseDaily * mult * noise
+	monthKey := date.Format("2006-01")
+	demandMult, refundRateMult, refundNote := 1.0, 1.0, ""
+	if r, ok := regimes[monthKey]; ok {
+		demandMult = r.demandMult
+		refundRateMult = r.refundRateMult
+		refundNote = r.refundNote
+	}
+
+	gross := baseDaily * mult * noise * demandMult
 
 	var costShock float64
-	if rng.Float64() < lossyDayChance {
+	regimeCauseIdx := -1
+	dateKey := date.Format("2006-01-02")
+	if causeIdx, forced := forcedShock[dateKey]; forced {
+		costShock = gross * (lossyDayShockMin + rng.Float64()*(lossyDayShockMax-lossyDayShockMin))
+		regimeCauseIdx = causeIdx
+	} else if rng.Float64() < lossyDayChance {
 		costShock = gross * (lossyDayShockMin + rng.Float64()*(lossyDayShockMax-lossyDayShockMin))
 	}
 
 	return dayPlan{
-		date:          date,
-		targetMonthly: targetMonthly,
-		grossTotal:    gross,
-		posGross:      gross * posShare,
-		ifoodGross:    gross * ifoodShare,
-		jetGross:      gross * jetShare,
-		anomaly:       anomaly,
-		costShock:     costShock,
+		date:           date,
+		targetMonthly:  targetMonthly,
+		grossTotal:     gross,
+		posGross:       gross * posShare,
+		ifoodGross:     gross * ifoodShare,
+		jetGross:       gross * jetShare,
+		anomaly:        anomaly,
+		costShock:      costShock,
+		regimeCauseIdx: regimeCauseIdx,
+		refundRateMult: refundRateMult,
+		refundNote:     refundNote,
 	}
 }
 
@@ -362,14 +656,23 @@ func writeDeliveryCSV(path string, days []dayPlan, promos []promo, rng *rand.Ran
 					}
 				}
 
-				// A real refund, sparingly.
-				if rng.Float64() < refundRatePerOrder {
+				// A real refund, sparingly — except during a refundCluster
+				// month (d.refundRateMult > 1.0), where a food-safety
+				// complaint wave drives the rate up sharply and every
+				// refund in that window carries d.refundNote instead of
+				// the generic dispute note, so the cluster reads as one
+				// coherent incident rather than unrelated one-offs.
+				note := "Customer dispute; refund settled after the original order date."
+				if d.refundNote != "" {
+					note = d.refundNote
+				}
+				if rng.Float64() < refundRatePerOrder*d.refundRateMult {
 					refundDate := d.date.AddDate(0, 0, 1+rng.Intn(6))
 					if err := w.Write([]string{
 						source.name, orderID, d.date.Format("2006-01-02"), randomTime(rng),
 						money(-subtotal), fmt.Sprintf("%.0f", source.rate), money(-commission), money(-net),
 						"refunded", refundDate.Format("2006-01-02"), "",
-						"Customer dispute; refund settled after the original order date.",
+						note,
 					}); err != nil {
 						return err
 					}
@@ -428,7 +731,20 @@ var costShockCauses = []struct {
 	{"Fresh Fields Produce Co.", "produce", "Spoiled delivery discarded; emergency same-day reorder at rush pricing"},
 	{"Coastal Meat & Poultry", "protein", "Regional shortage price spike; emergency restock to cover service"},
 	{"CityWide Plumbing & Repair", "equipment", "Grease trap backup — emergency plumbing repair"},
+	{"Frostbyte Refrigeration Repair", "equipment", "Heat-wave compressor overload — walk-in ran warm for hours; spoiled stock discarded and re-bought same-day at rush pricing"},
 }
+
+// generalCostShockCauses is the pool an ORDINARY lossyDayChance day picks
+// its cause from at random. It deliberately excludes costShockCauses[4]
+// (the heat-wave entry, added for the 2025-08 regime): that cause only
+// makes narrative sense in summer, and a plain random pick over the WHOLE
+// costShockCauses slice would let it land on an unrelated December or
+// April day too — a real bug this file had briefly, caught by reading the
+// generated supplier_cost_sheet.csv and noticing a "heat wave" invoice
+// dated in December. Season-pinned causes stay reachable only through a
+// forced regime day's own causeIdx (see writeCostSheetCSV), never through
+// this random pool.
+var generalCostShockCauses = costShockCauses[:4]
 
 func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	f, w, err := newWriter(path)
@@ -495,15 +811,21 @@ func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 		}
 	}
 
-	// Cost shocks (lossyDayChance): a standalone invoice dated on the exact
-	// day it hit, separate from the regular category cadence above, so it
-	// reads as the one-off event it is rather than an inflated regular
-	// delivery.
+	// Cost shocks: a standalone invoice dated on the exact day it hit,
+	// separate from the regular category cadence above, so it reads as
+	// the one-off event it is rather than an inflated regular delivery.
+	// Ordinary lossyDayChance days (regimeCauseIdx == -1) pick a random
+	// cause, same as before; a forced regime shock day (regimeCauseIdx
+	// >= 0, see monthRegime) is pinned to that regime's own cause so the
+	// whole month's invoices tell one coherent story.
 	for _, d := range days {
 		if d.costShock <= 0 {
 			continue
 		}
-		cause := costShockCauses[rng.Intn(len(costShockCauses))]
+		cause := generalCostShockCauses[rng.Intn(len(generalCostShockCauses))]
+		if d.regimeCauseIdx >= 0 {
+			cause = costShockCauses[d.regimeCauseIdx]
+		}
 		if err := w.Write([]string{
 			fmt.Sprintf("INV-%d", invoiceID),
 			d.date.Format("2006-01-02"),
