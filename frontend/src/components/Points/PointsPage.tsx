@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import {
   BadgeCheck,
   CalendarCheck,
+  Coins,
   Rocket,
   ShieldCheck,
   TrendingUp,
@@ -8,9 +10,72 @@ import {
 } from 'lucide-react'
 
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
+import { getJson } from '@/lib/api'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
 import { usePoints, type BadgeCode } from './usePoints'
+
+// ---------------------------------------------------------------------------
+// Spec 008 FR-014: a real redemption history, reading GET /api/promotions —
+// the same endpoint PromotionsPage already reads, filtered here to
+// payment_method === 'points'. Fetched from THIS page, not PointsCard: that
+// component is reused on Home, Settings, and LogReplacementForm, and none of
+// those surfaces need a promotions fetch on every mount.
+// ---------------------------------------------------------------------------
+
+interface RedeemedPromotionApi {
+  campaign_id: string
+  platform: string
+  period: { start: string }
+  payment_method?: string
+  points_spent?: number
+}
+
+interface PromotionsApiResponse {
+  promotions: RedeemedPromotionApi[]
+}
+
+/** Newest first. `period.start` is the closest real date this API carries to
+ * "when the redemption happened" — there is no separate redeemed_at
+ * timestamp — so it doubles as both the display date and the sort key. */
+function sortRedemptionsNewestFirst(
+  promotions: RedeemedPromotionApi[],
+): RedeemedPromotionApi[] {
+  return [...promotions].sort((a, b) =>
+    b.period.start.localeCompare(a.period.start),
+  )
+}
+
+function useRedemptionHistory() {
+  const [promotions, setPromotions] = useState<RedeemedPromotionApi[] | null>(
+    null,
+  )
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    getJson<PromotionsApiResponse>('/api/promotions')
+      .then((response) => {
+        if (!cancelled) setPromotions(response.promotions)
+      })
+      .catch((caught: unknown) => {
+        if (!cancelled) {
+          setError(caught instanceof Error ? caught.message : String(caught))
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const redemptions = promotions
+    ? sortRedemptionsNewestFirst(
+        promotions.filter((promotion) => promotion.payment_method === 'points'),
+      )
+    : null
+
+  return { redemptions, error }
+}
 
 /**
  * `/points` — the full Steward Points surface, reachable from the sidebar so
@@ -24,6 +89,7 @@ import { usePoints, type BadgeCode } from './usePoints'
  */
 export default function PointsPage() {
   const { data } = usePoints()
+  const { redemptions, error: redemptionsError } = useRedemptionHistory()
   const breakdown = data?.points.breakdown ?? []
 
   const earnedFor = (code: BadgeCode) =>
@@ -183,6 +249,62 @@ export default function PointsPage() {
             </tbody>
           </table>
         </div>
+      </Panel>
+
+      {/* Spec 008 FR-014: every points-paid promotion, traceable from this
+          page alone — no need to cross-reference Promotions (SC-005). */}
+      <Panel aria-label="Points redemption history" className="overflow-hidden">
+        <div className="border-b border-border p-5 sm:px-6">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">
+            Redemption history
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Every promotion paid for with points instead of cash.
+          </p>
+        </div>
+
+        {redemptionsError ? (
+          <p className="p-5 text-sm text-muted-foreground sm:px-6">
+            I couldn&apos;t reach your data just now, so there is no history
+            to show:{' '}
+            <span className="font-mono text-xs">{redemptionsError}</span>
+          </p>
+        ) : redemptions === null ? (
+          <div className="flex flex-col gap-2 p-5 sm:px-6" aria-hidden="true">
+            <div className="h-4 w-3/4 rounded-sm bg-muted" />
+            <div className="h-4 w-1/2 rounded-sm bg-muted" />
+          </div>
+        ) : redemptions.length === 0 ? (
+          <p className="p-5 text-sm text-muted-foreground sm:px-6">
+            No points redemptions yet. Pay for a promotion&apos;s spend with
+            points on the Promotions page and it will appear here.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border">
+            {redemptions.map((redemption) => (
+              <li
+                key={`${redemption.campaign_id}-${redemption.period.start}`}
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-5 py-3 sm:px-6"
+              >
+                <div className="flex items-center gap-2">
+                  <Coins
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                  <span className="text-sm font-medium text-foreground">
+                    {redemption.campaign_id}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {redemption.platform} · {redemption.period.start}
+                  </span>
+                </div>
+                <span className="text-sm font-semibold tabular-nums text-foreground">
+                  −{(redemption.points_spent ?? 0).toLocaleString('en-US')} pts
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </Panel>
     </PageContainer>
   )

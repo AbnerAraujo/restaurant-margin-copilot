@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -213,6 +214,97 @@ describe('PromotionsPage', () => {
     expect(
       within(screen.getByRole('status')).getByText('JET-CAMP-LOSER'),
     ).toBeInTheDocument()
+  })
+
+  it('shows the real sum of each platform\'s attributed ROI, excluding unattributable campaigns (spec 008 FR-011)', async () => {
+    stubFetch({
+      promotions: [
+        // iFood: 34.00 (attributed) + unattributable (excluded) = 34.00, not 34.00-averaged-with-zero.
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-A',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '150.00',
+          roi: '50.00',
+          flagged_negative: false,
+          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 10 }],
+        },
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-B',
+          period: { start: '2026-08-08', end: '2026-08-14' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '20.00',
+          roi: '-80.00',
+          flagged_negative: true,
+          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 11 }],
+        },
+      ],
+    })
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    // Both the aggregate stat AND the chart/table render "+$34.00" — scope
+    // to the aggregate Stat's own container (its dt/dd share one parent) so
+    // this asserts the aggregate specifically, not a coincidental match
+    // against a per-campaign figure elsewhere on the page.
+    const ifoodStat = screen.getByText('iFood ROI').closest('div') as HTMLElement
+    expect(within(ifoodStat).getByText('+$34.00')).toBeInTheDocument()
+
+    // Just Eat Takeaway: 50.00 + (-80.00) = -30.00.
+    const jetStat = screen
+      .getByText('Just Eat Takeaway ROI')
+      .closest('div') as HTMLElement
+    expect(within(jetStat).getByText('−$30.00')).toBeInTheDocument()
+  })
+
+  it('sorts the campaign list by ROI, keeping unattributable campaigns at the same end in either direction (spec 008 FR-012)', async () => {
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions, // BOOST01: roi 34.00; WEEKEND: roi null
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-WORST',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '20.00',
+          roi: '-80.00',
+          flagged_negative: true,
+          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 12 }],
+        },
+      ],
+    })
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    const table = screen.getByRole('table')
+    const campaignOrder = () =>
+      within(table)
+        .getAllByRole('row')
+        .slice(1) // drop the header row
+        .map((row) => row.textContent ?? '')
+
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /highest first/i }))
+    const highestFirst = campaignOrder()
+    expect(highestFirst[0]).toContain('IFOOD-CAMP-BOOST01') // 34.00
+    expect(highestFirst[1]).toContain('JET-CAMP-WORST') // -80.00
+    expect(highestFirst[2]).toContain('IFOOD-CAMP-WEEKEND') // null, still last
+
+    await user.click(screen.getByRole('button', { name: /lowest first/i }))
+    const lowestFirst = campaignOrder()
+    expect(lowestFirst[0]).toContain('JET-CAMP-WORST') // -80.00
+    expect(lowestFirst[1]).toContain('IFOOD-CAMP-BOOST01') // 34.00
+    // Unattributable stays LAST in both directions — never jumps to the
+    // top just because the direction flipped.
+    expect(lowestFirst[2]).toContain('IFOOD-CAMP-WEEKEND')
   })
 
   it('does not mark a flagged campaign as needing action once another campaign replaces it', async () => {
