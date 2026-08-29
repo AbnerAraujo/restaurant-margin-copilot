@@ -1382,3 +1382,103 @@ adapters, new steward-warmth, new roadmap, and closing slides, confirming
 every number renders correctly and no layout regressed. `README.md`'s own
 slide-count and cumulative-spend lines were updated to match (23→25 slides,
 $3.35→$3.56).
+
+## 2026-08-28 — Dry-run feedback: a real narrative restructure, four parallel agents, one Fable-drafted storytelling spec
+
+A real dry run in front of an audience surfaced a materially different class
+of feedback than the previous pass's factual staleness: the deck's *story*
+had problems the numbers alone couldn't fix — a generic-feeling problem
+statement, an OKR the audience never saw assembled, a Key Result that
+visually cherry-picked its best sub-metric, an unsupported Hypotheses slide,
+and a self-imposed "$5 spend cap" narrative device the user wanted removed
+entirely, from documentation as well as (a check confirmed) nonexistent
+code. Given the scope, four agents ran in parallel rather than sequentially:
+
+1. **Fable — narrative restructuring spec** for the Problem/Vision/OKR/
+   Hypotheses arc (not final copy — a slide-by-slide implementation spec).
+2. **A research agent** (general-purpose, WebSearch) sourcing real,
+   attributable restaurant-industry data for the Hypotheses slide's H2
+   urgency argument. It explicitly refused to force a fit: it found and
+   flagged as **unusable** two widely-repeated but unsourceable claims (a
+   Brazil-specific "35-45% of food-service businesses close within 5 years"
+   figure, and a UK "60% fail in year one" claim that traces to the
+   debunked US myth relabeled) rather than presenting either as real. What
+   it did verify and use: restaurants hold a **median of 16 days of cash
+   buffer**, the thinnest of any small-business sector studied, vs. 27 days
+   median across all small businesses (JPMorgan Chase Institute, *Cash is
+   King: Flows, Balances, and Buffer Days*, September 2016 — an analysis of
+   470M+ transactions across 597,000 small businesses). Also verified: 35%
+   of 11,000+ audited restaurant invoices across 400 restaurants had at
+   least one overcharge (Consolidated Concepts, 2015, via FSR Magazine) —
+   used on the Problem slide, not H2, since it's about invoice errors, not
+   cash-flow timing.
+3. **Fable — architecture roadmap design** for a real, previously-missing
+   objective the user named directly: getting sales data from the iFood and
+   Just Eat Takeaway APIs instead of manual CSV export. Unified with the
+   existing cost-sheet roadmap into one "closing the manual-file gap"
+   architecture direction, staged the same way (near-term/medium-term/
+   stretch), with its own named risk (a platform's real-time order feed and
+   its end-of-period payout statement routinely disagree for days — a day
+   without settled data is flagged provisional, never estimated).
+4. **A fork audit** of the entire 25-slide deck for duplicate/disconnected
+   numbers, which found real defects beyond what the user had already named:
+   KR1's card visually led with its best sub-metric (100% refusal
+   correctness) while burying its worst (40% strict consistency) one line
+   below in the same card — a real cherry-picking pattern, not just
+   "duplication"; a stale `.costfill{width:31.4%}` CSS default (the old
+   $1.57 spend figure) sitting unused in the base stylesheet, invisible only
+   because every real usage overrode it inline — a live landmine for the
+   next person who edits that CSS without knowing; and the Problem slide's
+   "all sourced" tag was contradicted by its own cards — two of four had no
+   citation anywhere.
+
+**What changed, concretely:**
+- **Problem slide**: dropped the false "all sourced" tag; each stat card
+  now carries an honest `Sourced`/`Estimate` chip. Replaced the uncited
+  "Manual work 12h/wk" card (folded into the subhead) with the new sourced
+  35% invoice-overcharge stat.
+- **OKR unified onto one slide**: the Objective ("Grow revenue without
+  eroding margin") moved off the Vision slide's buried subtitle line into
+  its own banner directly above the four KR cards, on a slide retitled "The
+  OKR." KR1 now shows only its committed target/result (5/5 refusal
+  correctness) as the headline, with accuracy/consistency moved to a
+  visually distinct "Disclosed, not committed" sub-row.
+- **13/15 accuracy de-duplicated**: the Evaluation slide stays the one place
+  it's explained in full; the Closing slide dropped it as a headline stat
+  entirely (replaced with Refusals 5/5, Live points, Interactions, Build
+  spend), keeping only a small non-headline caption pointing back to where
+  it was already explained.
+- **Hypotheses slide redesigned** from five bare tagged one-liners into a
+  claim+evidence ledger: H1 points to the real 5/5 refusal-correctness
+  result; H2 carries the new sourced cash-buffer statistic; H3/H4 get
+  honest "gap disclosed" framing instead of silence; H5 points forward to
+  the Roadmap slide instead of duplicating it.
+- **The $5 cap removed** from `README.md`, `docs/technical-rfc.md`,
+  `docs/dor.md`, and every slide (Token Discipline's whole cost-track/
+  checkpoint/ceiling visual deleted along with its dead CSS; KR4 and the
+  RFC's model-cost table reworded to measure against KR4's own $0.05/
+  interaction bar instead of a larger budget). Historical, dated build-log
+  entries in this same file that recorded the cap as a real, contemporaneous
+  operational decision were deliberately left untouched — this document's
+  own standing discipline is "kept as it happened, not reconstructed," and
+  a self-imposed pacing constraint that genuinely existed at the time is
+  real history, not a narrative device to scrub.
+- **Roadmap slide unified**: retitled "Closing every manual-file gap left
+  in the pipeline," now covers both the cost-sheet phases and the new
+  direct-platform-API-feed objective as one strategic move, closing with
+  "why Prosus" reasoning that spans both (it sits on both sides of the
+  invoice AND owns iFood).
+- **`docs/architecture.html`** gained a new roadmap section, `.roadmap`-
+  styled to match its one existing roadmap block, placed directly after the
+  reconciliation-pipeline diagram it extends.
+- **A new closing-adjacent slide, "The 7 tools and the skills, by name"**,
+  and a matching `README.md` section — every MCP tool and every Claude Code
+  skill actually used, named individually rather than left to a generic
+  "AI helped build this" claim. Includes `inspired-product` (Marty Cagan's
+  *Inspired*/*Empowered* framework), invoked in this same session to ground
+  the OKR/opportunity-assessment restructuring above.
+
+Verified via a full headless-browser navigation sweep (26 slides now, zero
+console errors) and direct screenshots of every changed slide before
+republishing both `docs/presentation.html` and `docs/architecture.html`.
+`README.md`'s slide count updated again (25→26).

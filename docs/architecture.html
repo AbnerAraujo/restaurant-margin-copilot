@@ -966,6 +966,14 @@
         <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic &mdash; code, no model, ground truth</span>
         <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit &mdash; refuses rather than guesses</span>
       </div>
+
+      <div class="roadmap" style="margin-top:26px;">
+        <p class="eyebrow">Where stage 1 would have to go &mdash; not built</p>
+        <h3>Closing the manual-file gap: direct platform feeds, not just direct upload</h3>
+        <p>All three of stage 1's sources arrive as files today &mdash; a delivery-platform export, a POS export, a supplier cost sheet &mdash; and spec 007 already replaced one manual step (a developer running <code>-ingest</code> from a terminal) with a web upload. The larger, still-unbuilt objective is replacing the human export step itself: a scheduled Go worker pulling each day's confirmed orders and settlement data directly from the <strong>iFood</strong> and <strong>Just Eat Takeaway merchant/partner APIs</strong>, normalizing the response into the exact typed record shape stage 2's parser already produces, and handing it to stage 3 completely unchanged. The API replaces file arrival, nothing downstream &mdash; Claude still never touches arithmetic, and Go still computes every margin. The supplier cost sheet gets the equivalent treatment from the other direction: invoice photo/PDF capture with Claude vision extracting into the same typed shape, then direct supplier feeds through Prosus's own merchant network. Both are one strategic move viewed from two sides: every number this pipeline consumes stops arriving as a manually produced file.</p>
+        <p><strong>Why this is roadmap, not backlog.</strong> iFood integration is comparatively warm &mdash; it operates a real merchant developer platform in Brazil, and inside Prosus this is an internal conversation rather than a cold partner ask. Just Eat Takeaway's merchant integrations run through an approved-partner program, so it follows rather than leads. Sequenced after the cost-sheet's OCR phase specifically because OCR is a capability this product controls end-to-end and can ship unilaterally; API access depends on a partner-approval process outside engineering's control.</p>
+        <p><strong>The honest risk, named rather than sold past:</strong> a platform's real-time order feed and its end-of-period payout statement &mdash; where actual commission, refunds, and adjustments land &mdash; routinely disagree for days. Per this system's own refuse-rather-than-guess discipline, a day whose settlement data hasn't arrived would be flagged <em>provisional</em>, never silently estimated. &ldquo;Automated&rdquo; would not mean &ldquo;instant.&rdquo;</p>
+      </div>
     </section>
 
     <section>

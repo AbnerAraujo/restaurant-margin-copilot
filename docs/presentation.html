@@ -129,8 +129,8 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
   @keyframes childIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
   .unit{opacity:0;transform:scale(.55);transition:opacity .35s ease-out,transform .35s cubic-bezier(.16,1,.3,1)}
   .slide.active .unit{opacity:1;transform:scale(1)}
-  .costfill,.mbfill{transform-origin:left center;transform:scaleX(0);transition:transform .9s cubic-bezier(.16,1,.3,1) .35s}
-  .slide.active .costfill,.slide.active .mbfill{transform:scaleX(1)}
+  .mbfill{transform-origin:left center;transform:scaleX(0);transition:transform .9s cubic-bezier(.16,1,.3,1) .35s}
+  .slide.active .mbfill{transform:scaleX(1)}
   .coverMark .doorL{transform-origin:left center;animation:swingL 2.4s ease-out .3s both}
   .coverMark .doorR{transform-origin:right center;animation:swingR 2.4s ease-out .3s both}
 }
@@ -227,6 +227,7 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .data-table tr:last-child td{border-bottom:none}
 .data-table td.num-cell{font-family:var(--mono);font-weight:600;text-align:right;white-space:nowrap}
 .data-table td.c{text-align:center}
+.data-table td.mono{font-family:var(--mono)}
 .data-table tr.rowA td{background:var(--accent-light)}
 
 /* chips & tags */
@@ -250,6 +251,11 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .hyp{border:1px solid var(--border);border-radius:12px;padding:18px 20px;background:var(--surface);text-align:left}
 .hyp p{font-size:15px;margin-top:9px;color:var(--text-secondary);line-height:1.55}
 .hyp p b{color:var(--text-primary)}
+.hyp-evidence{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-tertiary);line-height:1.5}
+.hyp-evidence b{font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;display:block;margin-bottom:4px}
+.hyp-evidence.pass b{color:var(--positive)}
+.hyp-evidence.honest b{color:var(--chart-partial)}
+.hyp-evidence.roadmap b{color:var(--prob)}
 
 /* badges */
 .badgegrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;text-align:left}
@@ -268,6 +274,11 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .democard p{font-size:14px;color:var(--text-secondary);line-height:1.55}
 .democard .fig{font-family:var(--mono);font-size:14px;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:9px 12px;margin-top:14px;color:var(--text-primary)}
 .livenote{margin-top:22px;border-left:3px solid var(--negative);background:var(--negative-bg);border-radius:0 8px 8px 0;padding:12px 16px;font-size:14.5px;max-width:1000px;text-align:left;color:var(--text-primary)}
+.okr-banner{margin-top:18px;border:1.5px solid var(--accent);background:var(--accent-light);border-radius:10px;padding:14px 20px;max-width:1140px;text-align:left}
+.okr-banner .okr-label{font-family:var(--mono);font-size:11px;letter-spacing:.08em;color:var(--accent);text-transform:uppercase}
+.okr-banner .okr-obj{font-family:var(--serif);font-size:20px;font-weight:600;color:var(--text-primary);margin-top:3px}
+.kr-disclosed{margin-top:9px;padding-top:9px;border-top:1px dashed var(--border);font-size:11.5px;color:var(--text-tertiary)}
+.kr-disclosed b{color:var(--text-secondary);font-family:var(--mono);font-size:10px;letter-spacing:.04em;text-transform:uppercase;display:block;margin-bottom:3px}
 
 /* architecture figures */
 figure.arch{margin:0;width:100%}
@@ -305,11 +316,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 
 /* cost visuals */
 .costwrap{width:100%;max-width:900px;margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;text-align:left}
-.costtrack{position:relative;height:30px;border:1px solid var(--border);border-radius:6px;background:var(--bg);overflow:hidden;margin-top:6px}
-.costfill{position:absolute;inset:0 auto 0 0;width:31.4%;background:var(--accent);border-radius:5px 0 0 5px}
-.costtick{position:absolute;top:-4px;bottom:-4px;left:90%;width:2px;background:var(--negative)}
-.costlabels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--text-secondary);margin-top:7px}
-.minibars{display:flex;flex-direction:column;gap:8px;margin-top:14px}
+.minibars{display:flex;flex-direction:column;gap:8px;margin-top:0}
 .mbrow{display:grid;grid-template-columns:100px 1fr 150px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--text-secondary)}
 .mbtrack{height:14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;overflow:hidden}
 .mbfill{height:100%;background:var(--accent);border-radius:3px 0 0 3px}
@@ -359,7 +366,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   .slide{position:relative;opacity:1!important;pointer-events:auto;page-break-after:always;page-break-inside:avoid;min-height:100vh;display:flex!important}
   .slide .a{opacity:1!important;animation:none!important}
   .unit{opacity:1!important;transform:none!important}
-  .costfill,.mbfill{transform:none!important}
+  .mbfill{transform:none!important}
   @page{size:landscape;margin:0}
 }
 </style>
@@ -406,25 +413,25 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 3 · Problem -->
-<div class="slide" data-notes="The customer problem, stated plainly: an independent owner cannot tell, day to day, whether they made money — because reconciling POS, delivery-platform, and cost data by hand is this tedious, and platform commissions are deducted with no line-item breakdown to audit against. Every number here is sourced. That gap, discovered only at month-end, is what this product closes. Profitability stat scoped to LatAm and Europe, matching the platforms already in this deck (iFood/Brazil, Just Eat Takeaway/Europe): 41% of Brazilian bars/restaurants reported a profit in Abrasel's Pesquisa Nacional de Condições Econômicas, May 2025; one third of UK hospitality businesses were operating at a loss per the UKHospitality/BII/BBPA/Hospitality Ulster survey, also May 2025.">
+<div class="slide" data-notes="The customer problem, stated plainly: an independent owner cannot tell, day to day, whether they made money — because reconciling POS, delivery-platform, and cost data by hand is this tedious, and platform commissions are deducted with no line-item breakdown to audit against. Two of four cards are independently sourced; two are this project's own working estimate, labeled honestly rather than dressed up as external data. That gap, discovered only at month-end, is what this product closes. Profitability stat scoped to LatAm and Europe, matching the platforms already in this deck (iFood/Brazil, Just Eat Takeaway/Europe): 41% of Brazilian bars/restaurants reported a profit in Abrasel's Pesquisa Nacional de Condições Econômicas, May 2025; one third of UK hospitality businesses were operating at a loss per the UKHospitality/BII/BBPA/Hospitality Ulster survey, also May 2025. The 35% invoice-overcharge figure is from Consolidated Concepts' audit of 11,000+ restaurant invoices across 400 restaurants, reported via FSR Magazine, 2015 — dated, but the only real, attributable number found on billing-error frequency in this space.">
   <div class="num-bg">01</div>
-  <div class="a tag">The customer problem &middot; all sourced</div>
+  <div class="a tag">The customer problem</div>
   <h2 class="a lg">The owner can't tell, daily,<br>if today made money</h2>
-  <div class="a sub" style="font-family:var(--serif);font-style:italic;font-size:19px;max-width:780px">Independent restaurant/bar owner-operators &mdash; already juggling POS, delivery apps, and spreadsheets &mdash; can't see it, because reconciling them by hand is this tedious:</div>
+  <div class="a sub" style="font-family:var(--serif);font-style:italic;font-size:19px;max-width:820px">Independent restaurant/bar owner-operators &mdash; already juggling POS, delivery apps, and spreadsheets &mdash; can't see it, because reconciling them by hand is this tedious (~12 h/week of it, so tedious it happens at month-end, if at all):</div>
   <div class="a stat-cards">
-    <div class="stat-card"><div class="stat-label">Net margin</div><div class="stat-value">3&ndash;5%</div><div class="stat-trend">Only 41% of Brazilian restaurants profitable, a third of UK hospitality firms at a loss, in 2025 &mdash; no room to absorb a miscount</div></div>
-    <div class="stat-card"><div class="stat-label">Commissions</div><div class="stat-value">15&ndash;30%</div><div class="stat-trend">Deducted from payout with <span class="hi">no line-item breakdown</span> the owner can audit</div></div>
-    <div class="stat-card"><div class="stat-label">Manual work</div><div class="stat-value">12 h/wk</div><div class="stat-trend">So tedious it happens at month-end, if at all</div></div>
-    <div class="stat-card"><div class="stat-label">Silent loss</div><div class="stat-value">2&ndash;5%</div><div class="stat-trend warn">Of delivery revenue lost to discrepancies nobody catches in time</div></div>
+    <div class="stat-card"><div class="stat-label">Net margin <span class="tagchip sourced" style="margin-left:6px">Sourced</span></div><div class="stat-value">3&ndash;5%</div><div class="stat-trend">Only 41% of Brazilian restaurants profitable, a third of UK hospitality firms at a loss, in 2025 &mdash; no room to absorb a miscount</div></div>
+    <div class="stat-card"><div class="stat-label">Commissions <span class="tagchip assumption" style="margin-left:6px">Estimate</span></div><div class="stat-value">15&ndash;30%</div><div class="stat-trend">Deducted from payout with <span class="hi">no line-item breakdown</span> the owner can audit</div></div>
+    <div class="stat-card"><div class="stat-label">Invoice errors <span class="tagchip sourced" style="margin-left:6px">Sourced</span></div><div class="stat-value">35%</div><div class="stat-trend">Of audited restaurant invoices had <span class="hi">at least one overcharge</span> &mdash; the mess this product's reconciliation targets</div></div>
+    <div class="stat-card"><div class="stat-label">Silent loss <span class="tagchip assumption" style="margin-left:6px">Estimate</span></div><div class="stat-value">2&ndash;5%</div><div class="stat-trend warn">Of delivery revenue lost to discrepancies nobody catches in time</div></div>
   </div>
   <p class="a body">By the time the month closes and the shortfall shows up, <span class="hi">it's structurally too late to act on it</span>.</p>
 </div>
 
 <!-- 4 · Vision -->
-<div class="slide" data-notes="The vision, and the reason Prosus specifically should fund it: partner prosperity and platform prosperity move on the same curve. 724 thousand restaurants are already on Prosus rails — this launches inside ToqanClaw, not as a new product needing new distribution.">
+<div class="slide" data-notes="The vision, and the reason Prosus specifically should fund it: partner prosperity and platform prosperity move on the same curve. 724 thousand restaurants are already on Prosus rails — this launches inside ToqanClaw, not as a new product needing new distribution. The OKR this vision translates into is on the next-but-one slide, stated on its own rather than buried here.">
   <div class="a qm">&ldquo;</div>
   <div class="a qt">Give every owner a same-day, trustworthy answer to <strong>"did we make money today, and why."</strong></div>
-  <div class="a qt-attr">VISION &middot; OKR OBJECTIVE: GROW REVENUE WITHOUT ERODING MARGIN</div>
+  <div class="a qt-attr">VISION</div>
   <p class="a body" style="margin-top:26px"><span class="hi">Reason to Believe:</span> partner prosperity and platform prosperity move on the same curve &mdash; a partner that grows without eroding margin churns less and compounds into more durable GMV on Prosus's own platforms. <span class="data-num">~724,000+</span> restaurants already sit on Prosus rails <span class="tagchip sourced">Sourced</span></p>
 </div>
 
@@ -452,16 +459,21 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 6 · Key Results -->
-<div class="slide" data-notes="Four Key Results, each with an explicit, falsifiable target stated up front — not just a number floating with no bar to clear. KR1's target is honest measurement itself, per Constitution Principle V, since no percentage was pre-committed; KR2 through KR4 carry numeric bars, and every one is met. Every figure here is a real harness or instrumentation result.">
+<div class="slide" data-notes="The full OKR, together on one slide: the objective from the Vision slide, restated, immediately above the four Key Results it decomposes into. Each KR shows the target that was set BEFORE the build, the real result, and — for KR1 only — a visually separate 'disclosed, not committed' row so a reader never confuses honest extra disclosure (accuracy, consistency) with the one thing that was actually promised (refusal correctness).">
   <div class="num-bg">02</div>
-  <div class="a tag">Key Results</div>
-  <h2 class="a lg">Four KRs &mdash; a target set first, a result measured against it</h2>
-  <div class="a stat-cards">
+  <div class="a tag">The OKR</div>
+  <h2 class="a lg">One objective, four falsifiable results</h2>
+  <div class="a okr-banner">
+    <div class="okr-label">Objective</div>
+    <div class="okr-obj">Grow revenue without eroding margin</div>
+  </div>
+  <div class="a stat-cards" style="margin-top:20px">
     <div class="stat-card">
       <div class="stat-label">KR1 &middot; Trust</div>
-      <div class="stat-target">Target &mdash; <b>100% refusal correctness</b>; accuracy/consistency reported honestly, no % pre-set</div>
+      <div class="stat-target">Target &mdash; <b>100% refusal correctness</b></div>
       <div class="stat-value acc">5/5</div>
-      <div class="stat-trend up">Refusal correctness, 100% &mdash; plus 13/15 accuracy, 2/5 consistency (strict): <span class="hi">named, not hidden</span></div>
+      <div class="stat-trend up">Every unanswerable question correctly refused</div>
+      <div class="kr-disclosed"><b>Disclosed, not committed</b>Accuracy 13/15 &middot; consistency 2/5 strict &mdash; full breakdown on the Evaluation slide</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR2 &middot; Margin</div>
@@ -479,21 +491,21 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <div class="stat-label">KR4 &middot; Cost</div>
       <div class="stat-target">Target &mdash; <b>under $0.05</b> per interaction</div>
       <div class="stat-value acc">$0.015</div>
-      <div class="stat-trend up">Per question, instrumented log &mdash; ~30% of the ceiling</div>
+      <div class="stat-trend up">Per question, instrumented log &mdash; 3.3&times; under target</div>
     </div>
   </div>
 </div>
 
 <!-- 7 · Hypotheses -->
-<div class="slide" data-notes="Every claim in the strategy is tagged by where it came from — sourced, assumption, hypothesis, or explicitly simulated. H1 is the bet the whole architecture rides on, so it's the one the harness actually tests.">
+<div class="slide" data-notes="Every claim in the strategy is tagged by where it came from — sourced, assumption, hypothesis, or explicitly simulated — and now each one is wired to real evidence, an honest gap, or a forward pointer, rather than left as an unsupported one-liner. H1 is the bet the whole architecture rides on, so it's the one the harness actually tests. H2's urgency argument is grounded in a real, if dated, statistic: restaurants hold a median of just 16 days of cash buffer — the thinnest of any small-business sector studied — versus 27 days median across all small businesses (JPMorgan Chase Institute, 'Cash is King: Flows, Balances, and Buffer Days', September 2016, an analysis of 470M+ transactions across 597,000 small businesses).">
   <div class="a tag">Hypotheses</div>
-  <h2 class="a lg">Tagged, ranked by risk &mdash; one actually tested</h2>
+  <h2 class="a lg">Tagged by evidence &mdash; not just by risk</h2>
   <div class="a hypgrid">
-    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip tested">Tested here</span><p><b>H1</b> &mdash; owners trust a system that refuses or clarifies over one that always answers confidently. The core architectural bet &mdash; so it's the one tested.</p></div>
-    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span><p><b>H2</b> &mdash; daily reconciliation surfaces anomalies early enough to act mid-week, not at month-end.</p></div>
-    <div class="hyp"><span class="tagchip assumption">Assumption</span><p><b>H3</b> &mdash; a question box beats a dashboard (inherited from Toqan's Data Analyst experience, not re-validated).</p></div>
-    <div class="hyp"><span class="tagchip simulated">Simulated-as-Prosus</span><p><b>H4</b> &mdash; stand-in ToqanClaw usage data, used only to pick eval questions &mdash; never presented as real.</p></div>
-    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip">Roadmap</span><p><b>H5</b> &mdash; manual cost-sheet upload is a stopgap, not the end state. Owners would get more value from a system that helps control cost continuously &mdash; flagging supplier price creep and unusual invoice amounts as they land &mdash; than one that only recomputes margin after they remember to re-upload a spreadsheet.</p></div>
+    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip tested">Tested here</span><p><b>H1</b> &mdash; owners trust a system that refuses or clarifies over one that always answers confidently. The core architectural bet &mdash; so it's the one tested.</p><div class="hyp-evidence pass"><b>Supported</b>5/5 refusal correctness, measured (KR1) &mdash; not just claimed</div></div>
+    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span><p><b>H2</b> &mdash; daily reconciliation surfaces anomalies early enough to act mid-week, not at month-end.</p><div class="hyp-evidence honest"><b>Why days matter, sourced</b>Restaurants hold a median of <span class="hi">16 days</span> of cash buffer &mdash; the thinnest of any small-business sector studied, vs. 27 days median overall (JPMorgan Chase Institute, 2016). A month-end discovery already exceeds it.</div></div>
+    <div class="hyp"><span class="tagchip assumption">Assumption</span><p><b>H3</b> &mdash; a question box beats a dashboard (inherited from Toqan's Data Analyst experience, not re-validated).</p><div class="hyp-evidence honest"><b>Honest gap</b>Inherited, not re-tested in this build &mdash; named rather than quietly assumed</div></div>
+    <div class="hyp"><span class="tagchip simulated">Simulated-as-Prosus</span><p><b>H4</b> &mdash; stand-in ToqanClaw usage data, used only to pick eval questions &mdash; never presented as real.</p><div class="hyp-evidence honest"><b>Simulated, disclosed</b>Used only to select which questions to evaluate &mdash; never shown to a user as real usage</div></div>
+    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip">Roadmap</span><p><b>H5</b> &mdash; manual cost-sheet upload is a stopgap, not the end state. Owners would get more value from a system that helps control cost continuously &mdash; flagging supplier price creep and unusual invoice amounts as they land &mdash; than one that only recomputes margin after they remember to re-upload a spreadsheet.</p><div class="hyp-evidence roadmap"><b>&rarr; See the Roadmap slide</b>Staged plan: invoice capture, then direct supplier/platform feeds, then automated price-jump flags</div></div>
   </div>
 </div>
 
@@ -712,17 +724,15 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 14 · Token discipline -->
-<div class="slide" data-notes="Token discipline as a value: the whole build — 430 live interactions and counting — has spent about three dollars fifty-six of the five-dollar cap, tracked per-call in Postgres. Cost per question doubled after the grounding fixes; that trade-off is disclosed, not hidden.">
+<div class="slide" data-notes="Token discipline as a value: the whole build — 430 live interactions and counting — has spent $3.56, tracked per-call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Cost per question rose after the grounding fixes; that trade-off is disclosed, not hidden.">
   <div class="a tag">Token discipline</div>
-  <h2 class="a lg">Still under budget, after every real fix and test run</h2>
+  <h2 class="a lg">3.3&times; under the per-interaction cost target</h2>
   <div class="a stat-cards n3">
     <div class="stat-card"><div class="stat-label">Interactions</div><div class="stat-value">430</div><div class="stat-trend">Every live call instrumented in Postgres</div></div>
     <div class="stat-card"><div class="stat-label">Tracked spend</div><div class="stat-value acc">$3.56</div><div class="stat-trend">+ disclosed, unmeasured local test spend on top</div></div>
-    <div class="stat-card"><div class="stat-label">Per question</div><div class="stat-value">$0.015</div><div class="stat-trend">Final harness run average</div></div>
+    <div class="stat-card"><div class="stat-label">Per question</div><div class="stat-value acc">$0.015</div><div class="stat-trend">vs. KR4's $0.05 target &mdash; final harness run average</div></div>
   </div>
   <div class="a costwrap">
-    <div class="costtrack" role="img" aria-label="Total tracked spend $3.56 against a $5 cap with a $4.50 checkpoint"><div class="costfill" style="width:71.2%"></div><div class="costtick"></div></div>
-    <div class="costlabels"><span><b style="color:var(--accent)">$3.56 tracked</b></span><span>$4.50 checkpoint</span><span>$5.00 ceiling</span></div>
     <div class="minibars" role="img" aria-label="Cost per question roughly $0.008 before the fixes, roughly $0.015 after — the disclosed price of richer grounding prompts">
       <div class="mbrow"><span>before fixes</span><div class="mbtrack"><div class="mbfill" style="width:54%"></div></div><span class="mbv">~$0.008/question</span></div>
       <div class="mbrow"><span>after fixes</span><div class="mbtrack"><div class="mbfill" style="width:100%"></div></div><span class="mbv">~$0.015/question</span></div>
@@ -749,7 +759,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <div class="cmp-label">Still NOT ready &mdash; written down</div>
       <ul>
         <li>No real restaurant export files obtained yet</li>
-        <li>$5 live-API cap &mdash; harness must run as one monitored step</li>
+        <li>Live-API cost discipline &mdash; harness must run as one monitored step</li>
         <li><b>Verdict:</b> proceed &mdash; with live calls bounded tightly</li>
       </ul>
     </div>
@@ -805,7 +815,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         <path d="M 98 50 l 8 -7 M 98 50 l 10 2" stroke="var(--negative)" stroke-width="1.5" fill="none"/>
         <text x="220" y="20" text-anchor="middle" font-size="11" font-family="var(--mono)" fill="var(--negative)">nets back to the day the sale happened</text>
       </svg>
-      <p>Accrual, not cash: Aug 2 becomes $154.25 &minus; $34.50 = <b>$119.75</b>. A hard <b>$5 spend ceiling</b> with a $4.50 checkpoint bounded every live call.</p>
+      <p>Accrual, not cash: Aug 2 becomes $154.25 &minus; $34.50 = <b>$119.75</b>. Every live call's real cost is logged, per-call, in Postgres.</p>
     </div>
   </div>
 </div>
@@ -878,6 +888,38 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body"><span class="data-num">39/39</span> tasks &mdash; then specs 002&ndash;005 through the same pipeline. GitHub Spec Kit &middot; <span class="hi">30 Claude Code skills</span> &middot; promptfoo &middot; sqlc &middot; golang-migrate &mdash; and <span class="hi">no agent framework</span>, per the brief. The right model per step: Haiku where classification suffices, Sonnet where narration suffices, frontier models only where judgment demanded it.</p>
 </div>
 
+<!-- 20b · MCP tools and skills, named -->
+<div class="slide wide" data-notes="Every tool and skill named directly, so this isn't a vague 'AI helped build this' claim — each is a real, checkable line item: a typed MCP tool with a file path, or a Claude Code skill named in a real commit message. Full detail in docs/mcp-and-skills.md and README.md.">
+  <div class="a tag">Built with &mdash; named, not vague</div>
+  <h2 class="a lg">The 7 tools and the skills, by name</h2>
+  <div class="a cols2eq">
+    <div class="refundcard">
+      <h3>The 7 MCP tools &mdash; the model's entire reach</h3>
+      <table class="data-table" style="margin-top:8px;max-width:none">
+        <tr><th>Tool</th><th>Answers</th></tr>
+        <tr><td class="mono" style="font-size:12.5px">get_daily_summary</td><td style="font-size:12.5px">One day's full reconciliation</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">get_margin_delta</td><td style="font-size:12.5px">Margin delta, two periods</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">list_discrepancies</td><td style="font-size:12.5px">Flags for a date/period</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">get_promotion_roi</td><td style="font-size:12.5px">ROI for one campaign</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">list_negative_roi_promotions</td><td style="font-size:12.5px">Every losing campaign</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">compare_platform_economics</td><td style="font-size:12.5px">iFood vs. JET, side by side</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">get_period_totals</td><td style="font-size:12.5px">Period totals + best/worst day</td></tr>
+      </table>
+    </div>
+    <div class="refundcard">
+      <h3>Claude Code skills actually used</h3>
+      <p style="font-size:13.5px;line-height:1.65"><b>GitHub Spec Kit / SDD</b> &mdash; the whole constitution&rarr;specify&rarr;plan&rarr;tasks&rarr;analyze&rarr;implement flow, across 5 specs<br>
+      <b>dataviz</b> &mdash; chart-type and palette rules<br>
+      <b>design-review, redesign, apply-aesthetic, design-component</b> &mdash; the frontend revamp<br>
+      <b>make-slide</b> &mdash; this deck<br>
+      <b>ux-writing</b> &mdash; the chat's refusal/error copy, including the red&rarr;green retone<br>
+      <b>skill-creator</b> &mdash; built this project's own <b>question-recovery-design</b> and <b>proactive-guidance-design</b> skills<br>
+      <b>inspired-product</b> (Cagan's <i>Inspired</i>/<i>Empowered</i>) &mdash; the OKR/opportunity-assessment rigor behind this deck's own strategy slides</p>
+    </div>
+  </div>
+  <p class="a livenote">Full contracts and a fact-checked, commit-cited inventory: <code>specs/001-margin-reconciliation-qa/contracts/mcp-tools.md</code> and <code>docs/mcp-and-skills.md</code>.</p>
+</div>
+
 <!-- 21 · Mistakes -->
 <div class="slide wide" data-notes="Three real entries from the build's running mistakes log — kept as they happened, not reconstructed. The pattern: never trust a self-report, verify independently. That's the same principle the product itself is built on.">
   <div class="a tag">Where it went wrong &mdash; and how it was caught</div>
@@ -890,35 +932,35 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 22 · Roadmap: replacing the sheet -->
-<div class="slide wide" data-notes="Roadmap, not built: the supplier cost sheet is the one input the owner constructs by hand rather than receives — every other source arrives as a real file. Three staged phases, each with an honest limitation named rather than sold past. The closing line is the actual strategic reason Prosus, not a generic SaaS vendor, is positioned to pull this off.">
+<div class="slide wide" data-notes="Roadmap, not built: two manual-file gaps, one strategic move. The supplier cost sheet and the delivery-platform sales export are both files the owner or someone constructs by hand today — closing both is the same architectural direction, staged for feasibility. The closing line is the actual strategic reason Prosus, not a generic SaaS vendor, is positioned to pull this off.">
   <div class="a tag">Roadmap &middot; not yet built</div>
-  <h2 class="a lg">The one input the owner builds by hand &mdash; replacing the sheet</h2>
-  <p class="a body" style="max-width:920px;margin-top:2px">Platform and POS exports arrive as files the owner already receives. The supplier cost sheet is the one input they construct themselves, on an irregular supplier-driven cadence &mdash; the highest-effort, most error-prone link in the pipeline, and the highest-leverage one to cut.</p>
-  <div class="a cols3" style="margin-top:20px">
+  <h2 class="a lg">Closing every manual-file gap left in the pipeline</h2>
+  <p class="a body" style="max-width:1000px;margin-top:2px">The supplier cost sheet is the one input the owner constructs themselves, on an irregular cadence. Sales data has the same problem one step removed: someone still exports a CSV from iFood's and Just Eat Takeaway's merchant portals rather than the product pulling it directly.</p>
+  <div class="a cols3" style="margin-top:18px">
     <div class="democard">
-      <p class="actn">Near-term</p>
+      <p class="actn">Near-term &middot; cost side</p>
       <h3>Snap the Invoice</h3>
       <p>A photo or forwarded PDF, extracted by Claude vision into the exact typed CSV shape spec 007 already validates &mdash; the deterministic pipeline never changes, only the front door does. Confirmation stays mandatory; low-confidence fields are flagged, never guessed.</p>
       <p class="fig" style="font-family:var(--sans);font-size:12.5px">Real risk: thermal-paper and handwritten invoices from small suppliers will sometimes make confirming slower than re-keying.</p>
     </div>
     <div class="democard">
-      <p class="actn">Medium-term</p>
+      <p class="actn">Medium-term &middot; both sides</p>
       <h3>Prosus Rails First</h3>
-      <p>Structured invoice feeds direct from suppliers &mdash; starting inside Prosus's own merchant network, not the fragmented open market. An exact-schema feed relaxes confirmation to review-only. Needs Phase 1's field data first, and real BD cycles.</p>
-      <p class="fig" style="font-family:var(--sans);font-size:12.5px">Real risk: coverage stays partial for years &mdash; the long tail never integrates, so photo capture stays permanent, not a bridge.</p>
+      <p>Structured feeds direct from suppliers AND platforms &mdash; starting inside Prosus's own merchant network (iFood leads; it's an internal conversation there), not the fragmented open market. Needs Phase 1's field data first, and real BD/partner-approval cycles.</p>
+      <p class="fig" style="font-family:var(--sans);font-size:12.5px">Real risk: a platform's real-time order feed and its end-of-period payout statement routinely disagree for days &mdash; a day without settled data is flagged provisional, never estimated.</p>
     </div>
     <div class="democard">
-      <p class="actn">Stretch</p>
+      <p class="actn">Stretch &middot; cost side</p>
       <h3>Price Watch</h3>
       <p>The existing discrepancy-flag mechanism, extended: Go computes trailing per-supplier unit-cost baselines and flags a jump before it silently erodes margin. Sonnet only narrates the flag &mdash; worthless without Phases 1&ndash;2's data density.</p>
       <p class="fig" style="font-family:var(--sans);font-size:12.5px">Real risk: seasonal produce volatility creates false positives that teach the owner to ignore alerts.</p>
     </div>
   </div>
-  <p class="a livenote"><b>Why Prosus, not a generic SaaS vendor:</b> Prosus sits on both sides of the invoice &mdash; the supplier marketplace and 724K restaurants already on its rails &mdash; so it can standardize cost data at the rail level instead of supplier-by-supplier.</p>
+  <p class="a livenote"><b>One move, two sides:</b> every number the reconciliation engine consumes stops arriving as a manually produced file &mdash; costs via invoice capture and supplier feeds, sales via platform APIs &mdash; until the owner's only job is reading the answer. <b>Why Prosus, not a generic SaaS vendor:</b> it sits on both sides of the invoice AND owns iFood &mdash; standardizing at the rail level, not integration-by-integration.</p>
 </div>
 
 <!-- 23 · Closing -->
-<div class="slide" data-notes="Out of the red, in the green — daily. The numbers are real, the failures are disclosed, and the whole thing cost under four dollars to build against a five-dollar cap. Thank you — questions welcome.">
+<div class="slide" data-notes="Out of the red, in the green — daily. The numbers are real and the failures are disclosed — accuracy was explained in full two slides ago, so this slide states the committed KR (refusal correctness) as its headline rather than re-explaining a number the audience has already seen. Thank you — questions welcome.">
   <svg class="a coverMark" viewBox="0 0 100 100" style="width:130px;margin-bottom:22px" role="img" aria-label="My Business Steward mark">
     <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
     <line x1="20" y1="14" x2="20" y2="90" stroke="#5A6B5E" stroke-width="4"/>
@@ -929,12 +971,13 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </svg>
   <h2 class="a xl" style="font-size:52px">Out of the red, in the green &mdash; daily</h2>
   <div class="a stat-cards" style="max-width:900px">
-    <div class="stat-card"><div class="stat-label">Accuracy</div><div class="stat-value acc">13/15</div></div>
-    <div class="stat-card"><div class="stat-label">Refusals</div><div class="stat-value acc">5/5</div></div>
+    <div class="stat-card"><div class="stat-label">Refusals &middot; KR1</div><div class="stat-value acc">5/5</div></div>
     <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">200</div></div>
+    <div class="stat-card"><div class="stat-label">Interactions</div><div class="stat-value acc">430</div></div>
     <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$3.56</div></div>
   </div>
-  <div class="a sub" style="font-size:14px;margin-top:24px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
+  <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">13/15 accuracy, 2/5 strict consistency &mdash; named and explained earlier, not repeated here</p>
+  <div class="a sub" style="font-size:14px;margin-top:14px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
 </div>
 
 </div>

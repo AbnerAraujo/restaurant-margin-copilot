@@ -68,12 +68,9 @@ registrations, not a hand-maintained second copy.
 `registerReconciliationTools`, `registerPromoTools`,
 `registerPlatformComparisonTool`, `registerPeriodTools` — which together
 call `s.AddTool` seven times. Confirmed by reading each `register*`
-function directly, not `docs/architecture.html`'s prose, which still reads
-"Six defined, typed MCP tools, and nothing else" as of this writing — that
-HTML card has not been updated for `get_period_totals` yet, a disclosed
-inconsistency between the two documents rather than a silently-fixed one,
-since this document's own scope is `docs/mcp-and-skills.md` and
-`docs/technical-rfc.md`, not the HTML artifact:
+function directly. `docs/architecture.html` has since been corrected to
+match (it briefly read "Six defined, typed MCP tools" before
+`get_period_totals` was reflected there too):
 
 | # | Tool | File | Purpose | Refuses to do |
 |---|---|---|---|---|

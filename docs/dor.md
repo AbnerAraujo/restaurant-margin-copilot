@@ -44,7 +44,7 @@ Checked honestly against what's actually true right now, not what's aspirational
 
 ## Verdict
 
-All four original blockers are resolved. Ready to proceed through US2/US3/US4/Integration/Polish now, with one live operational constraint carried forward: bound real Anthropic API calls tightly (smoke-test first, full harness as one monitored run) to stay under the $5 ceiling.
+All four original blockers are resolved. Ready to proceed through US2/US3/US4/Integration/Polish now, with one live operational practice carried forward: bound real Anthropic API calls tightly (smoke-test first, full harness as one monitored run) and log every call's real, measured cost.
 
 ## DOR: Roadmap expansion (specs 002–005)
 

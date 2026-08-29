@@ -12,7 +12,7 @@ Built as a take-home prototype for a Prosus/Toqan Technical PM interview
 challenge. `CLAUDE.md` in this repo is the original brief and constitution the
 whole build follows.
 
-- **Live presentation** (25-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — also checked in at [`docs/presentation.html`](docs/presentation.html)
+- **Live presentation** (26-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — also checked in at [`docs/presentation.html`](docs/presentation.html)
 - **Live architecture diagram** (design system, reconciliation engine, full system): https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441 — also checked in at [`docs/architecture.html`](docs/architecture.html)
 - **Live API docs** (interactive Swagger UI, every backend endpoint): https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764 — spec checked in at [`docs/openapi.yaml`](docs/openapi.yaml)
 
@@ -118,7 +118,7 @@ root-cause analysis, and every before/after re-run.
 | Consistency (5 questions × 3 phrasings each) | 2/5 sets fully agree (promptfoo-strict); 3/5 agree in substance on manual read |
 | Refusal correctness (5 unanswerable questions) | 5/5 (100%) |
 | Cost per interaction | ~$0.015/question average |
-| Cumulative real API spend, this build | ~$3.56, against a self-imposed $5 cap |
+| Cumulative real API spend, this build | ~$3.56, logged per-call in Postgres |
 
 The deterministic reconciliation/ingestion/MCP-tool layer showed **zero
 defects** across the full run — every failure traced to the model layer's
@@ -133,6 +133,32 @@ boundary this architecture's Go/model split is designed to contain.
 - **Frontend**: React + TypeScript + Vite + Tailwind v4 + shadcn/ui
 - **Evaluation**: `promptfoo` harness, real numbers above
 - **Docs/skills**: built with GitHub Spec Kit (SDD), and Claude Code skills for data visualization, presentation design, and UX review
+
+## The 7 MCP tools and the Claude Code skills used to build this
+
+The model never has open SQL or a free-form computation tool — only these seven typed, read-only tools (`backend/internal/mcptools/`), each refusing rather than estimating when the data it needs isn't there:
+
+| Tool | Answers |
+|---|---|
+| `get_daily_summary` | One day's full reconciliation: sales by source, commissions, refunds, input costs, margin, flags |
+| `get_margin_delta` | Margin delta between two periods (e.g. week-over-week) |
+| `list_discrepancies` | Discrepancy flags for a date or period |
+| `get_promotion_roi` | ROI for one campaign, by id or fuzzy name |
+| `list_negative_roi_promotions` | Every campaign losing money in a period |
+| `compare_platform_economics` | iFood vs. Just Eat Takeaway commission/promo cost, side by side |
+| `get_period_totals` | A whole period's totals, averages, and best/worst day in one call |
+
+Full contracts (inputs, refusal conditions, provenance shape): [`specs/001-margin-reconciliation-qa/contracts/mcp-tools.md`](specs/001-margin-reconciliation-qa/contracts/mcp-tools.md); the fact-checked build-time inventory below is [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md).
+
+Claude Code skills actually used, by name (not a generic "AI helped" claim — each is named in a real commit message):
+
+- **GitHub Spec Kit / SDD** — the whole `constitution → specify → plan → tasks → analyze → implement` flow, all ten `speckit-*` commands, across the core spec and 4 follow-on specs
+- **`dataviz`** — chart-type selection and the categorical/sequential/diverging palette rules
+- **`design-review`, `redesign`, `apply-aesthetic`, `design-component`** — the frontend visual revamp
+- **`make-slide`** — this presentation deck
+- **`ux-writing`** — the chat's refusal, clarification, and error copy (including the later red→green retone)
+- **`skill-creator`** — used to build this project's own two skills: **`question-recovery-design`** (refusal/clarification UX, generalized from this codebase) and **`proactive-guidance-design`** (proactive capability surfacing and follow-up suggestions, its sibling)
+- **`inspired-product`** (Marty Cagan's *Inspired*/*Empowered* framework) — opportunity-assessment and OKR/vision rigor applied to this deck's own strategy slides
 
 ## Non-goals
 
