@@ -12,6 +12,31 @@
     <meta name="apple-mobile-web-app-title" content="Steward" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>My Business Steward</title>
+    <script>
+      // Sets the `.dark` class before the first paint, synchronously, so a
+      // returning dark-mode (or dark-system) visitor never sees a flash of
+      // the light theme while React boots. Mirrors `src/lib/theme.tsx`
+      // exactly — same storage key (`mbs.theme.preference.v1`), same
+      // system-preference fallback — because that module's own first
+      // `useEffect` re-running this logic a frame later is what would
+      // otherwise happen instead, after paint. Deliberately duplicated
+      // rather than imported: this has to run as plain, unbundled JS before
+      // any module script loads, and it is intentionally tiny and easy to
+      // eyeball against theme.tsx if the two ever need to change together.
+      ;(function () {
+        try {
+          var stored = window.localStorage.getItem('mbs.theme.preference.v1')
+          var isDark =
+            stored === 'dark' ||
+            ((stored === 'system' || stored === null) &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          if (isDark) document.documentElement.classList.add('dark')
+        } catch (e) {
+          // Storage unavailable (private mode, disabled) — fall through to
+          // the light default rather than block the page on a theme guess.
+        }
+      })()
+    </script>
   </head>
   <body>
     <div id="root"></div>
