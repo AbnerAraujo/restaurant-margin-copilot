@@ -1,5 +1,23 @@
 <!--
 Sync Impact Report
+- Version change: 1.2.0 → 1.2.1
+- Modified principles: none renamed/removed
+- Modified sections: Technology & Scope Constraints — correction to the
+  1.2.0 account of the 2026-08-29 gate model swap. The failing comparison
+  (an explicit "July 2026" against a known 2024-08-01..2026-08-14 window)
+  was date-range ARITHMETIC, which Principle I already assigned to Go, not
+  to any model; the swap treated a symptom. The durable fix is
+  `internal/ambiguity/daterange.go`'s deterministic pre-check (out-of-range
+  explicit dates refused before any model call; in-range verdicts handed to
+  the gate as precomputed fact). Sonnet 5 remains the gate's model for the
+  genuinely linguistic residual. `internal/llmclient/cost.go` carries the
+  same correction.
+- Added sections: none
+- Removed sections: none
+- Templates requiring updates: none pending.
+- Follow-up TODOs: none.
+
+Prior report (1.2.0, superseded above):
 - Version change: 1.1.0 → 1.2.0
 - Modified principles: none renamed/removed
 - Modified sections: Technology & Scope Constraints — the ambiguity gate
@@ -99,9 +117,15 @@ narrower paraphrase-match cache classifier — chosen against a real
 pricing/capability comparison, not defaulted. The gate itself started on
 Haiku 4.5 and moved to Sonnet 5 on 2026-08-29 after Haiku proved unreliable
 at multi-year date comparison once the live dataset grew past a single year
-(`internal/llmclient/cost.go` documents the full rationale) — "cheapest
-model that clears the bar" is only honest if the bar is re-checked as the
-data the system reasons over changes. This is a
+— and the corrected record (v1.2.1) is that this comparison was Principle I
+arithmetic all along: it now runs as a deterministic Go pre-check
+(`internal/ambiguity/daterange.go`) that refuses explicit out-of-range
+dates before any model call, with Sonnet 5 retained only for the genuinely
+linguistic residual of the gate's job (`internal/llmclient/cost.go`
+documents the full, corrected rationale). "Cheapest model that clears the
+bar" is only honest if the bar is re-checked as the data the system reasons
+over changes — and "no model at all" is the required choice wherever the
+bar turns out to be arithmetic. This is a
 single-tenant prototype demonstrating judgment, not
 production infrastructure: no Kubernetes, no multi-tenant concerns, no
 deployment pipeline are in scope. The interview this project is built for is
@@ -134,4 +158,4 @@ fixes), and an updated Sync Impact Report at the top of this file. Any
 above MUST be revised before implementation proceeds — complexity or
 convenience is not sufficient justification to override a principle.
 
-**Version**: 1.2.0 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-29
+**Version**: 1.2.1 | **Ratified**: 2026-08-27 | **Last Amended**: 2026-08-29

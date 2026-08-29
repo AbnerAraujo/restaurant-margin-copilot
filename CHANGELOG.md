@@ -12,6 +12,42 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-29 — Correction: date-range comparison was never the model's job
+
+A review of the model-swap entry below surfaced an architectural problem the
+swap had papered over, and this entry corrects the record rather than
+quietly rewording it (Constitution Principle V).
+
+- **Fixed** the actual root cause behind the "Haiku date-comparison bug"
+  recorded below. Comparing an explicit, parseable date ("July 2026",
+  "2026-08-05", a bare "2023") against the data's known min/max window is
+  date **arithmetic** — Constitution Principle I work that belongs in Go,
+  and the gate's own system prompt was instructing the model to "do the
+  actual comparison explicitly and carefully". The three failed prompt
+  fixes and the successful model swap were all attempts to make a model
+  better at arithmetic that should never have been delegated to any model.
+  A deterministic pre-check (`internal/ambiguity/daterange.go`) now parses
+  explicit date forms in Go and: refuses a question whose explicit dates
+  all fall outside the window **before any model call** (zero tokens, the
+  refusal worded deterministically from the real facts, instrumented
+  honestly as a no-model interaction); and, for explicit in-range dates,
+  hands the model each reference's already-computed verdict as settled
+  fact, so the model never re-derives range inclusion for a date Go could
+  parse. Verified live: "What was our margin in July 2023?" refuses in
+  ~9ms with zero tokens; "What was our margin for July 2026?" — the exact
+  question that triggered the incident below — answers correctly.
+- **Clarified** what the 2026-08-29 Sonnet swap actually bought: it stands,
+  but only for what is genuinely a language job — relative/vague/year-less
+  date resolution, date phrasings the conservative Go parser deliberately
+  doesn't attempt, and the answerable/ambiguous/unanswerable judgment
+  itself. The claim that the swap "fixed" the date-comparison bug is
+  withdrawn: it made a model more often right at arithmetic the
+  architecture says no model should perform. `internal/llmclient/cost.go`'s
+  doc comment — the account every other doc points to — carries the same
+  correction.
+
+---
+
 ## 2026-08-29 — A critical, multi-year data-scale bug hunt
 
 Extending the live dataset from the 14-day fixture to a 730-day synthetic
@@ -27,7 +63,10 @@ had reason to trigger. 5 commits.
   to Sonnet 5 permanently — Claude Haiku 4.5 stays on the narrower
   paraphrase-match cache classifier (`ModelParaphraseMatch`, new constant),
   which showed no evidence of the same bug. Constitution amended to 1.2.0 to
-  record the change.
+  record the change. *(Corrected by the entry above: the underlying date
+  comparison was arithmetic that should never have been a model's job; the
+  deterministic pre-check is the real fix, and the swap stands only for the
+  genuinely linguistic residual.)*
 - **Fixed** a related, compounding bug in the same code path: the writer
   pass's output-token truncation wasn't detected before its (incomplete)
   JSON was parsed, letting garbled cut-off text leak into user-facing

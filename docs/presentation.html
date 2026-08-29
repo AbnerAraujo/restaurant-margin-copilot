@@ -651,11 +651,11 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 10 · Architecture flow -->
-<div class="slide wide" data-notes="The one boundary that matters: every number is computed left of the gate, in Go against Postgres. The model only ever narrates a typed tool result — the dashed line is the line Claude never crosses.">
+<div class="slide wide" data-notes="The one boundary that matters: every number is computed left of the gate, in Go against Postgres. The model only ever narrates a typed tool result — the dashed line is the line Claude never crosses. New since the 08-29 incident: even the date-range check is deterministic now — an explicit out-of-range date is refused by Go before the gate's model ever runs, zero tokens. Range comparison is arithmetic; it was briefly the model's job, and that was wrong.">
   <div class="a tag">Architecture &middot; request flow</div>
   <h2 class="a md">No number the owner sees is ever produced by a model<a class="arch-link" href="https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441" target="_blank" rel="noopener noreferrer" onclick="openArchPopup(event, this.href)">Full detailed diagram &#8599;</a></h2>
   <figure class="a arch">
-    <svg viewBox="0 0 1220 620" role="img" aria-label="Daily ingestion runs in Go and writes to PostgreSQL; a user question passes through an ambiguity gate (Claude Sonnet 5) that either refuses/clarifies directly or forwards to the MCP tool layer, which reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, which answers the user.">
+    <svg viewBox="0 0 1220 620" role="img" aria-label="Daily ingestion runs in Go and writes to PostgreSQL; a user question first passes a deterministic Go date-range pre-check that refuses explicit out-of-range dates with zero model calls, then an ambiguity gate (Claude Sonnet 5) that either refuses/clarifies directly or forwards to the MCP tool layer, which reads PostgreSQL and returns typed results to the Claude Sonnet 5 explanation step, which answers the user.">
       <defs>
         <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
         <marker id="arrowDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/></marker>
@@ -679,23 +679,32 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <line x1="690" y1="160" x2="690" y2="378" stroke="var(--det)" stroke-width="1.5" stroke-dasharray="5 5" marker-end="url(#arrowDet)"/>
       <text x="705" y="255" font-size="11.5" fill="var(--det)">typed tool calls only —</text>
       <text x="705" y="271" font-size="11.5" fill="var(--det)">no open SQL, ever</text>
-      <rect x="30" y="380" width="150" height="70" rx="8" fill="var(--surface)" stroke="var(--border)"/>
-      <text x="105" y="420" text-anchor="middle" font-size="13" fill="currentColor">User question</text>
-      <polygon points="310,370 430,415 310,460 190,415" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
-      <text x="310" y="411" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
-      <text x="310" y="426" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
-      <text x="310" y="480" text-anchor="middle" font-size="10.5" fill="var(--text-secondary)">Claude Sonnet 5</text>
-      <line x1="180" y1="415" x2="192" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
-      <line x1="310" y1="460" x2="310" y2="518" stroke="var(--negative)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-      <text x="326" y="495" font-size="11" fill="var(--negative)">ambiguous /</text>
-      <text x="326" y="509" font-size="11" fill="var(--negative)">unanswerable</text>
-      <rect x="195" y="520" width="230" height="56" rx="8" fill="var(--negative-bg)" stroke="var(--negative)"/>
-      <text x="310" y="544" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
-      <text x="310" y="561" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
-      <polyline points="425,548 1115,548 1115,452" fill="none" stroke="var(--negative)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
-      <text x="770" y="538" text-anchor="middle" font-size="11" fill="var(--negative)">reaches the user directly — bypasses the model layer</text>
-      <line x1="430" y1="415" x2="608" y2="415" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
-      <text x="519" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
+      <rect x="25" y="380" width="95" height="70" rx="8" fill="var(--surface)" stroke="var(--border)"/>
+      <text x="72" y="407" text-anchor="middle" font-size="12.5" fill="currentColor">User</text>
+      <text x="72" y="424" text-anchor="middle" font-size="12.5" fill="currentColor">question</text>
+      <line x1="120" y1="415" x2="128" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <rect x="130" y="380" width="140" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+      <text x="200" y="407" text-anchor="middle" font-size="12" fill="currentColor">Date-range</text>
+      <text x="200" y="424" text-anchor="middle" font-size="12" fill="currentColor">pre-check (Go)</text>
+      <polyline points="160,450 160,548 280,548" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+      <text x="168" y="497" font-size="10.5" fill="var(--det)">out of range —</text>
+      <text x="168" y="511" font-size="10.5" fill="var(--det)">refused, 0 tokens</text>
+      <text x="172" y="470" font-size="10.5" fill="var(--det)">verdicts pass to the gate as fact</text>
+      <line x1="270" y1="415" x2="278" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <polygon points="400,370 520,415 400,460 280,415" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="400" y="411" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
+      <text x="400" y="426" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
+      <text x="400" y="480" text-anchor="middle" font-size="10.5" fill="var(--text-secondary)">Claude Sonnet 5</text>
+      <line x1="400" y1="460" x2="400" y2="518" stroke="var(--negative)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+      <text x="416" y="495" font-size="11" fill="var(--negative)">ambiguous /</text>
+      <text x="416" y="509" font-size="11" fill="var(--negative)">unanswerable</text>
+      <rect x="285" y="520" width="230" height="56" rx="8" fill="var(--negative-bg)" stroke="var(--negative)"/>
+      <text x="400" y="544" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
+      <text x="400" y="561" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
+      <polyline points="515,548 1115,548 1115,452" fill="none" stroke="var(--negative)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
+      <text x="815" y="538" text-anchor="middle" font-size="11" fill="var(--negative)">reaches the user directly — bypasses the model layer</text>
+      <line x1="520" y1="415" x2="608" y2="415" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
+      <text x="564" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
       <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
       <text x="690" y="410" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
       <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, 7 typed tools)</text>
@@ -870,7 +879,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 17 · RFC -->
-<div class="slide" data-notes="The engineering decisions: the cheapest model that holds the bar at each step — and no model at all where a number is computed. The gate itself moved from Haiku 4.5 to Sonnet 5 on 2026-08-29 after a real cross-year date-comparison bug at scale — three prompt-only fixes were tried and ruled out first, the model swap fixed it on the first try. The paraphrase-match cache stays on Haiku 4.5; it never showed the bug. Plus one worked design decision: refunds net to the day the sale happened, because a closed day must never be silently restated.">
+<div class="slide" data-notes="The engineering decisions: the cheapest model that holds the bar at each step — and no model at all where a number is computed. The honest story on the gate: on 2026-08-29 a cross-year date-comparison bug at scale was first answered with a model swap, Haiku 4.5 to Sonnet 5 — and a reviewer then correctly called that a papered-over Principle I violation, because comparing an explicit date against the known data window is arithmetic, not ambiguity judgment. The real fix is a deterministic Go pre-check that refuses out-of-range explicit dates before any model runs — zero tokens — and hands in-range verdicts to the gate as precomputed fact. The Sonnet swap stands only for the genuinely linguistic residual: vague and relative dates, and the classification judgment itself. The paraphrase-match cache stays on Haiku 4.5; it never showed the bug. Plus one worked design decision: refunds net to the day the sale happened, because a closed day must never be silently restated.">
   <div class="a tag">Technical RFC</div>
   <h2 class="a lg">The cheapest model that holds the bar &mdash; and none where it matters</h2>
   <div class="a cols2eq">
@@ -881,10 +890,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         <tr><td>Ambiguity gate</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Clarify/refuse wording <span style="color:var(--text-tertiary)">(conditional)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Explanation</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
-        <tr><td><b>Arithmetic, capability questions</b></td><td><b>&mdash; none &mdash;</b></td><td class="num-cell">$0</td></tr>
+        <tr><td><b>Arithmetic, capability questions, out-of-range dates</b></td><td><b>&mdash; none &mdash;</b></td><td class="num-cell">$0</td></tr>
       </table>
-      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 7 typed tools, <b>no agent framework</b>. "What do you do?" is pattern-matched and answered before either model runs &mdash; zero tokens.</p>
-      <p style="margin-top:6px;font-size:13px;color:var(--text-secondary)">The gate moved off Haiku 4.5 on 2026-08-29: a real cross-year date-comparison bug at scale, root-caused and fixed by swapping to Sonnet 5 after three prompt-only fixes were verified not to work. The paraphrase-match cache classifier stays on Haiku 4.5 &mdash; it never showed the bug.</p>
+      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 7 typed tools, <b>no agent framework</b>. "What do you do?" is pattern-matched &mdash; and an explicit date outside the data window is refused by a deterministic Go pre-check &mdash; before either model runs. Zero tokens, either way.</p>
+      <p style="margin-top:6px;font-size:13px;color:var(--text-secondary)">The gate moved off Haiku 4.5 on 2026-08-29 after a cross-year date-comparison bug at scale &mdash; and the honest postscript is that the swap treated a symptom: comparing an explicit date against a known window is <b>arithmetic</b>, so it was hoisted into Go entirely. Sonnet 5 stays for what is genuinely a language job &mdash; vague/relative dates and the classification itself. The paraphrase-match cache classifier stays on Haiku 4.5 &mdash; it never showed the bug.</p>
     </div>
     <div class="refundcard">
       <h3>A closed day never gets silently restated</h3>

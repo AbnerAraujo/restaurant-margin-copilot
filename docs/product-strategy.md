@@ -1675,6 +1675,14 @@ permanent model-capability limit — not something a better prompt or a
 bigger token budget was ever going to solve. Constitution Principle V asks
 for failures to be named, not smoothed over; this entry is that.
 
+*Correction, later the same day (see the "The model swap was itself
+papering over an architecture violation" entry below): Bug 2's diagnosis
+was honest but its conclusion was wrong-footed. The comparison Haiku kept
+failing was deterministic date arithmetic that Principle I says no model
+should have owned in the first place; the durable fix is a Go pre-check,
+not a smarter model. The Sonnet swap stands only for the genuinely
+linguistic residual of the gate's job.*
+
 ## 2026-08-29 — Spec 008 implementation: real decisions across 4 parallel stories
 
 Spec 008 (Dashboard & Chat Intelligence v2) was implemented the same night it was specified, across 4 independently-scoped P1 user stories, using two waves of parallel agents once file-ownership analysis confirmed which stories could run concurrently without touching the same file (US1+US3 in wave one; US2+US4 in wave two, each depending on a file its wave-one counterpart had already landed). This entry records the real engineering decisions made along the way — tasks.md described the *shape* of each feature; several of the specifics below were only resolved once an implementer actually read the current code.
@@ -1694,3 +1702,55 @@ Spec 008 (Dashboard & Chat Intelligence v2) was implemented the same night it wa
 **The suggested `-Infinity` sort-key convention for FR-012 was wrong, and the implementing agent caught it (User Story 4).** Tasks.md proposed giving unattributable/not-yet-attributed campaigns a single `-Infinity` sort key. Tested against the actual requirement — "sorted consistently to one end" — a single comparator value fails: it places those campaigns first when sorting ascending and last when sorting descending, which is the opposite of consistent. The real implementation (`sortPromotionsByRoi`) sorts only the attributed campaigns by the chosen direction, then always appends the unattributable ones after, in both directions — the requirement, read literally, demanded a two-part sort, not a magic sentinel value. Recorded here because it is a real correction to this project's own task list, not just to the code: a spec/plan/tasks pipeline is not infallible, and an implementer re-deriving a requirement from its acceptance criteria — rather than executing a suggested technique on faith — caught a real bug before it shipped.
 
 **A pre-existing, unrelated test broke as a side effect of an earlier fix, and was fixed here.** `TestHandlePlatformComparison_DefaultsToRealDataRangeAndMatchesFixtures` hardcoded "2026-08-01" as the database's default date range and, in the same test, asserted specific fixture gross-sales figures for that "default" call — both true only while the dev Postgres instance held solely the 14-day fixture. Once the 2024-08-01..2026-08-14 synthetic dataset (this session's own earlier fix) was loaded into the same database, the real default range legitimately changed, and continuing to hardcode the old value would have meant testing a fact about a specific day's database state rather than a fact about the product. Split into two tests: one deriving its expectation live via `storage.LoadDataDateRange` (so it survives future dataset regenerations), one passing the known 14-day period explicitly to verify the same independently-computed fixture figures the sibling `mcptools` test already proves at the tool layer. Found by the User Story 2 implementation agent as a side effect of its own live-backend verification, and fixed immediately rather than left for later — the same "don't let a real, cheap-to-fix bug ride along uninspected" discipline this project has applied throughout the night.
+
+## 2026-08-29 — The model swap was itself papering over an architecture violation
+
+**[Sourced]** A reviewer of this project's pitch asked the question the
+Bug 2 entry above should have asked itself: if the gate's job included
+deciding whether "July 2026" falls inside a `2024-08-01..2026-08-14`
+window, that decision is date-range **arithmetic** — and Constitution
+Principle I ("deterministic arithmetic, probabilistic narration") says no
+model may own arithmetic whose verdict the owner relies on. The code
+confirmed it: the gate's system prompt explicitly instructed the model,
+"Before concluding a fully-dated question … falls outside
+%[1]s..%[2]s, do the actual comparison explicitly and carefully." Three prompt rewrites and a
+model swap were, in hindsight, four attempts to make a probabilistic
+component better at a computation that `internal/storage.LoadDataDateRange`
+had already resolved deterministically at process start and that
+`time.Time` comparison decides exactly, every time, for free.
+
+**What changed.** `internal/ambiguity/daterange.go` now runs before any
+model call on every classification: a deliberately conservative Go parser
+extracts explicit, fully-specified date references (ISO dates, month-name
++ year with or without a day, numeric d/m/y-or-m/d/y with every
+calendar-valid reading kept, word-bounded bare years) from the user's own
+text. If **all** of them fall wholly outside the known window, the
+question is refused in Go — zero model calls, zero tokens, a refusal
+worded from the real facts, and instrumented honestly as
+`none (deterministic date-range pre-check)` rather than as a zero-token
+model call. If any are in range, the model still classifies (ambiguity
+judgment is legitimately its job) but receives every range verdict as
+precomputed fact it is forbidden to re-derive or contradict.
+
+**What stays with the model, and why that's the honest boundary.**
+Resolving "last month", "the weekend", or a year-less "August 3rd" against
+the data's own "today" is language understanding, not arithmetic — as is
+any date phrasing the conservative parser deliberately declines to guess
+at ("the seventh month of 2026"). The Sonnet 5 swap therefore stands, but
+its justification is corrected everywhere it was recorded: it bought
+better judgment on the genuinely linguistic residual; it did not — could
+not — "fix" a bug whose correct home was never a model. **[Assumption]**
+The parser's conservatism is the right trade: a date form it cannot
+recognize with certainty falls through to the model path (the pre-swap
+status quo), because a false deterministic refusal would be strictly worse
+than one more model classification.
+
+**Verified live** against the running backend and the real
+`2024-08-01..2026-08-14` dataset: "What was our margin in July 2023?"
+refused in ~9ms with an interactions row of literally zero tokens and
+$0.00; "What was our margin for July 2026?" — the exact question from the
+original incident — classified answerable and returned the reconciled
+month (margin total $79,827.72, provenance-cited), with the gate's call
+carrying the precomputed `"July 2026": IN RANGE` verdict. Structurally
+guaranteed in tests, not just observed: a counting-fake LLM client asserts
+the out-of-range path makes **zero** model invocations.
