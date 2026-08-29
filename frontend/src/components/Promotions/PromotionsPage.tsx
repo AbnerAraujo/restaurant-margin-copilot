@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
+import { AlertTriangle, Megaphone, ShieldAlert, TrendingDown } from 'lucide-react'
 
 import PromoRoiChart, {
   type PromotionRoiDatum,
@@ -149,6 +149,19 @@ export default function PromotionsPage() {
       platform: promotion.platform,
     }))
 
+  // Steward-style proactive insight (spec 008 FR-010): a flagged campaign
+  // "needs action" only until some OTHER campaign's replaces_campaign_id
+  // names it — at that point the owner has already acted, and re-flagging
+  // it would be nagging about a closed loop. Pure frontend derivation over
+  // data already fetched; no backend change.
+  const needsActionCampaigns = (promotions ?? []).filter(
+    (promotion) =>
+      promotion.flagged_negative &&
+      !(promotions ?? []).some(
+        (other) => other.replaces_campaign_id === promotion.campaign_id,
+      ),
+  )
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -177,6 +190,38 @@ export default function PromotionsPage() {
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
           Couldn&apos;t load campaigns from the backend, so there are no ROI
           figures to show: <span className="font-mono text-xs">{error}</span>
+        </Panel>
+      ) : null}
+
+      {/* Steward-style proactive insight (spec 008 FR-010) — surfaced above
+          the chart, without the owner having to ask, so an un-replaced
+          losing campaign is never just one row among many. */}
+      {needsActionCampaigns.length > 0 ? (
+        <Panel
+          role="status"
+          className="flex flex-col gap-2 border-warning/25 bg-warning/10 p-4 sm:p-5"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-warning-text">
+            <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+            {needsActionCampaigns.length === 1
+              ? '1 campaign needs a decision'
+              : `${needsActionCampaigns.length} campaigns need a decision`}
+          </div>
+          <ul className="flex flex-col gap-1.5 text-sm">
+            {needsActionCampaigns.map((promotion) => (
+              <li
+                key={promotion.campaign_id}
+                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5"
+              >
+                <span className="font-medium text-foreground">
+                  {promotion.campaign_id}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {promotion.platform} · lost money, not yet replaced
+                </span>
+              </li>
+            ))}
+          </ul>
         </Panel>
       ) : null}
 

@@ -173,4 +173,77 @@ describe('PromotionsPage', () => {
       await screen.findByText(/no promotion records on file yet/i),
     ).toBeInTheDocument()
   })
+
+  it('marks a flagged campaign with no replacement as needing action (spec 008 FR-010)', async () => {
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-LOSER',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '20.00',
+          roi: '-80.00',
+          flagged_negative: true,
+          source_row_refs: [
+            { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+          ],
+        },
+      ],
+    })
+    render(<PromotionsPage />)
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    expect(screen.getByText('1 campaign needs a decision')).toBeInTheDocument()
+    expect(
+      within(screen.getByRole('status')).getByText('JET-CAMP-LOSER'),
+    ).toBeInTheDocument()
+  })
+
+  it('does not mark a flagged campaign as needing action once another campaign replaces it', async () => {
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-LOSER',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '20.00',
+          roi: '-80.00',
+          flagged_negative: true,
+          source_row_refs: [
+            { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+          ],
+        },
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-REPLACEMENT',
+          period: { start: '2026-08-08', end: '2026-08-14' },
+          spend: '100.00',
+          attributed_incremental_orders: null,
+          attributed_incremental_revenue: null,
+          roi: null,
+          reason: 'not_yet_attributed',
+          flagged_negative: false,
+          origin: 'owner_created',
+          replaces_campaign_id: 'JET-CAMP-LOSER',
+          source_row_refs: [
+            { file: 'fixtures/promotion_ad_spend_export.csv', row: 8 },
+          ],
+        },
+      ],
+    })
+    render(<PromotionsPage />)
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    expect(
+      screen.queryByText(/needs a decision/i),
+    ).not.toBeInTheDocument()
+  })
 })
