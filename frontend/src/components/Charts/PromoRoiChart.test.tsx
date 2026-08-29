@@ -68,19 +68,20 @@ describe('PromoRoiChart', () => {
     expect(tooltip).toHaveTextContent('promotion_ad_spend_export.csv')
   })
 
-  it('cites the ad-spend export (not "no source") for the refused campaign, proving the refusal is about attribution', () => {
+  it('cites the ad-spend export (not "no source") for the refused campaign in the sources table column, proving the refusal is about attribution', async () => {
     render(<PromoRoiChart />)
 
-    const provenanceList = screen.getByRole('list', {
-      name: /per-campaign provenance/i,
-    })
-    const weekendItem = within(provenanceList)
-      .getAllByRole('listitem')
-      .find((item) => item.textContent?.includes('IFOOD-CAMP-WEEKEND'))
+    await userEvent.click(
+      screen.getByRole('button', { name: /view as table/i }),
+    )
 
-    expect(weekendItem).toBeDefined()
+    const table = screen.getByRole('table')
+    const weekendRow = within(table)
+      .getByText('IFOOD-CAMP-WEEKEND')
+      .closest('tr')
+    expect(weekendRow).not.toBeNull()
     expect(
-      within(weekendItem as HTMLElement).getByRole('button', {
+      within(weekendRow as HTMLElement).getByRole('button', {
         name: /promotion_ad_spend_export\.csv/,
       }),
     ).toBeInTheDocument()

@@ -359,7 +359,21 @@ function PromoRoiChart({
         </h2>
       </figcaption>
 
-      <div className="relative w-full overflow-x-auto">
+      {/* Two nested boxes, not one: the outer is the scroll VIEWPORT
+          (always the panel's own width), the inner is the scrollable
+          CONTENT sized to match the svg's own real width exactly. The
+          refusal-marker and hover-tooltip overlays below are positioned by
+          percentage against their nearest `relative` ancestor — if that
+          ancestor were the outer viewport (as it was before this fix),
+          those percentages would resolve against the wrong, narrower box
+          the moment a bar chart with 20+ campaigns grows past CHART_WIDTH
+          and starts scrolling, so every overlay would render squeezed
+          into the visible viewport instead of tracking its actual bar. */}
+      <div className="w-full overflow-x-auto">
+        <div
+          className="relative"
+          style={chartWidth > CHART_WIDTH ? { width: chartWidth } : undefined}
+        >
         <svg
           viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
@@ -593,6 +607,7 @@ function PromoRoiChart({
             </p>
           </div>
         ) : null}
+        </div>
       </div>
 
       {/* Legend — mandatory secondary encoding, same CVD reasoning as
@@ -618,27 +633,22 @@ function PromoRoiChart({
         </li>
       </ul>
 
-      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2.5">
-        <ul
-          aria-label="Per-campaign provenance"
-          className="flex flex-wrap gap-x-4 gap-y-1"
-        >
-          {data.map((datum) => (
-            <li key={datum.campaignId} className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">
-                {datum.campaignId}:
-              </span>
-              <ProvenanceTag refs={datum.sourceRefs} />
-            </li>
-          ))}
-        </ul>
+      {/* Per-campaign provenance used to render here unconditionally, one
+          "CampaignID: N sources" tag per campaign — fine at the original
+          4-campaign fixture, unreadable at 25-30 real campaigns (reported
+          live). Provenance is Constitution Principle IV, non-optional, but
+          "always visible" and "readable at real scale" turned out to
+          conflict — folded into the already-collapsed table below (a
+          Sources column) instead of a second, always-open rendering of the
+          same per-campaign list. */}
+      <div className="mt-3 flex items-center justify-end border-t border-border/60 pt-2.5">
         <button
           type="button"
           onClick={() => setTableOpen((wasOpen) => !wasOpen)}
           aria-expanded={tableOpen}
           className="shrink-0 text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
         >
-          {tableOpen ? 'Hide table' : 'View as table'}
+          {tableOpen ? 'Hide table' : 'View as table, with sources'}
         </button>
       </div>
 
@@ -662,6 +672,9 @@ function PromoRoiChart({
                 </th>
                 <th scope="col" className="py-1.5 pr-3 font-medium">
                   Net
+                </th>
+                <th scope="col" className="py-1.5 pr-3 font-medium">
+                  Sources
                 </th>
               </tr>
             </thead>
@@ -695,6 +708,9 @@ function PromoRoiChart({
                     {datum.net === null
                       ? 'Refused — cannot attribute (FR-013)'
                       : formatSignedUsd(datum.net)}
+                  </td>
+                  <td className="py-1.5 pr-3">
+                    <ProvenanceTag refs={datum.sourceRefs} />
                   </td>
                 </tr>
               ))}
