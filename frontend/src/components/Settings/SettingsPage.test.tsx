@@ -1,12 +1,29 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { THEME_STORAGE_KEY, ThemeProvider } from '@/lib/theme'
 import SettingsPage from './SettingsPage'
 
+// Every real render of this page sits under App's ThemeProvider; this
+// mirrors that so ThemeToggle's useTheme() call has the context it needs
+// instead of throwing "must be used within a ThemeProvider".
+function renderSettingsPage() {
+  return render(
+    <ThemeProvider>
+      <SettingsPage />
+    </ThemeProvider>,
+  )
+}
+
 describe('SettingsPage', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+    document.documentElement.classList.remove('dark')
+  })
+
   it('renders the page header and states plainly that nothing here is server-side config', () => {
-    render(<SettingsPage />)
+    renderSettingsPage()
 
     expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument()
     expect(screen.getByText('Single owner, no accounts')).toBeInTheDocument()
@@ -34,7 +51,7 @@ describe('SettingsPage', () => {
     document.documentElement.requestFullscreen = requestFullscreen
 
     const user = userEvent.setup()
-    render(<SettingsPage />)
+    renderSettingsPage()
 
     const button = screen.getByRole('button', { name: /enter full screen/i })
     expect(button).toHaveAttribute('aria-pressed', 'false')
@@ -48,7 +65,7 @@ describe('SettingsPage', () => {
   })
 
   it('links to the real, hosted docs named in the README rather than a fabricated version string', () => {
-    render(<SettingsPage />)
+    renderSettingsPage()
 
     expect(
       screen.getByRole('link', { name: /source \(github\)/i }),
@@ -74,7 +91,7 @@ describe('SettingsPage', () => {
   })
 
   it('names real, specific future capabilities as not built, never a fake toggle', () => {
-    render(<SettingsPage />)
+    renderSettingsPage()
 
     expect(screen.getByText('Not built')).toBeInTheDocument()
     expect(
@@ -83,10 +100,38 @@ describe('SettingsPage', () => {
     expect(
       screen.getByText(/per-restaurant data isolation/i),
     ).toBeInTheDocument()
-    // No dark-mode switch, notification preferences, or export button — none
-    // of those exist anywhere in this backend, so none should render here.
-    expect(screen.queryByText(/dark mode/i)).not.toBeInTheDocument()
+    // Notification preferences and an export button still don't exist
+    // anywhere in this backend, so neither should render here. Theme is
+    // deliberately NOT in this list any more — it is a real control now,
+    // asserted on its own below, not a stub this panel should disclaim.
     expect(screen.queryByRole('switch')).not.toBeInTheDocument()
     expect(screen.queryByText(/export/i)).not.toBeInTheDocument()
+  })
+
+  it('renders a real, working Light/Dark/System theme control', async () => {
+    const user = userEvent.setup()
+    renderSettingsPage()
+
+    const group = screen.getByRole('radiogroup', { name: 'Theme' })
+    const light = screen.getByRole('radio', { name: 'Light' })
+    const dark = screen.getByRole('radio', { name: 'Dark' })
+    const system = screen.getByRole('radio', { name: 'System' })
+    expect(group).toBeInTheDocument()
+    // Defaults to "system" (no stored preference in this browser yet).
+    expect(system).toHaveAttribute('aria-checked', 'true')
+    expect(light).toHaveAttribute('aria-checked', 'false')
+
+    await user.click(dark)
+
+    expect(dark).toHaveAttribute('aria-checked', 'true')
+    expect(system).toHaveAttribute('aria-checked', 'false')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark')
+
+    await user.click(light)
+
+    expect(light).toHaveAttribute('aria-checked', 'true')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe('light')
   })
 })

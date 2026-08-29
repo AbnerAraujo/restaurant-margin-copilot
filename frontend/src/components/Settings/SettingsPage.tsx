@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
 import { useFullscreen } from '@/lib/useFullscreen'
+import { ThemeToggle } from '@/components/Settings/ThemeToggle'
 
 /**
  * `/settings` — deliberately small.
@@ -20,9 +21,12 @@ import { useFullscreen } from '@/lib/useFullscreen'
  * non-goals; `docs/architecture.html`'s "Redundancy" section: "None. There
  * are no users, no sessions, no tenancy."). There is no server-side config
  * store and no `/api/settings` endpoint — nothing here posts anywhere. Every
- * control on this page is either a real browser-level toggle this app
- * already implements elsewhere (Full screen), or a link to a document that
- * actually exists and is actually hosted. The "Not built yet" panel at the
+ * control on this page is a real, working preference — Full screen (the
+ * OS-level Fullscreen API) and Theme (light/dark/system, persisted to this
+ * browser via `useTheme`/`ThemeProvider` in `@/lib/theme`, applied through
+ * the `.dark`-class tokens `index.css` already defines for the whole
+ * app) — or a link to a document that actually exists and is actually
+ * hosted. The "Not built yet" panel at the
  * bottom names real, specifically-scoped future work — not a padded list of
  * plausible-sounding toggles — matching the disclosure pattern
  * `PointsCard.tsx`'s "Live" panel replaced (see that file's history: an
@@ -66,12 +70,16 @@ export default function SettingsPage() {
             {isFullscreen ? 'Exit full screen' : 'Enter full screen'}
           </Button>
         </div>
-        <p className="mt-4 border-t border-border pt-4 text-xs leading-relaxed text-muted-foreground">
-          That is the one real display preference this app has. There is no
-          dark theme or accent-color option today — the interface ships in
-          exactly one light appearance, and this page will not claim
-          otherwise with a switch that does nothing.
-        </p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-foreground">Theme</p>
+            <p className="mt-0.5 max-w-prose-measure text-xs leading-relaxed text-muted-foreground">
+              Light, dark, or match your device. Saved to this browser only,
+              same as every other preference on this page.
+            </p>
+          </div>
+          <ThemeToggle />
+        </div>
       </Panel>
 
       <Panel aria-label="About this build" className="overflow-hidden">
