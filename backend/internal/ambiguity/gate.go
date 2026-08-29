@@ -83,11 +83,21 @@ var ErrEmptyQuestion = errors.New("ambiguity: question is empty")
 // multi-year date range (see MaxWriterOutputTokens's own doc comment,
 // which fixed the identical symptom in the OTHER call this package makes
 // but was never applied here too — this was that same fix's missing half).
-// 768 matches the writer pass's already-validated cap for consistency,
-// still a hard, deliberate limit, not a loosening into open-ended prose —
-// a response that still hits it is caught explicitly by the stop_reason
-// check in Classify, never silently trusted.
-const MaxOutputTokens = 768
+//
+// Raised again, from 768 to 1536, after a SECOND real live truncation on
+// a different question ("the single highest-expense calendar date
+// overall") — this one legitimately unanswerable (no tool ranks days by
+// total expenses, only by margin), and gateResponse's own RefusalReason
+// is composed inside this SAME call, not a separate one: for a genuinely
+// nuanced refusal, Claude has to both classify AND write a full,
+// specific explanation of what's missing and what it CAN offer instead,
+// inside one token budget — a heavier combined burden than the writer
+// pass's job of rewriting one already-decided sentence. 1536 gives real
+// headroom for that combined job, still a hard, deliberate limit, not a
+// loosening into open-ended prose — a response that still hits it is
+// caught explicitly by the stop_reason check in Classify, never silently
+// trusted.
+const MaxOutputTokens = 1536
 
 // Decision is the gate's classification of one question, plus the
 // token/cost/latency figures the caller (internal/httpapi) hands straight
