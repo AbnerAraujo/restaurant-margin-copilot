@@ -137,10 +137,16 @@ func splitSlashDate(s string) (a, b, year int, ok bool) {
 // to refuse rather than guess, and a wrong date silently shifting an order
 // to another day would be exactly the kind of confidently-wrong result that
 // principle exists to prevent.
+// Every error returned from here (and from parseSlashDate below) is always
+// caught by a caller in ingest.go/promo.go that immediately re-wraps it as
+// "ingest: <file> row <n>: <field>: %w" — so these messages carry no
+// "ingest: " prefix of their own. They used to, which produced a
+// double-prefixed "ingest: costs_bad.csv row 2: invoice_date: ingest:
+// unrecognized date format..." once the outer wrap was applied.
 func (res *dateFormatResolver) parse(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return time.Time{}, fmt.Errorf("ingest: empty date")
+		return time.Time{}, fmt.Errorf("empty date")
 	}
 
 	for _, layout := range []string{"2006-01-02", "2006/01/02"} {
@@ -155,14 +161,14 @@ func (res *dateFormatResolver) parse(s string) (time.Time, error) {
 		return time.Time{}, err
 	}
 
-	return time.Time{}, fmt.Errorf("ingest: unrecognized date format %q (expected YYYY-MM-DD or DD/MM/YYYY)", s)
+	return time.Time{}, fmt.Errorf("unrecognized date format %q (expected YYYY-MM-DD or DD/MM/YYYY)", s)
 }
 
 // errNotSlashDate is a sentinel meaning "not shaped like a slash date at
 // all" — distinct from a real parse/consistency error, so parse() can fall
 // through to its generic "unrecognized format" message instead of
 // surfacing an internal sentinel to the caller.
-var errNotSlashDate = fmt.Errorf("ingest: not a slash-separated date")
+var errNotSlashDate = fmt.Errorf("not a slash-separated date")
 
 func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 	a, b, year, ok := splitSlashDate(s)
@@ -186,24 +192,24 @@ func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 		// a can't be a month, so a is the day: DD/MM/YYYY, unambiguous.
 		if res.format != dateFormatUnestablished && res.format != dateFormatDMY {
 			return time.Time{}, fmt.Errorf(
-				"ingest: date %q is unambiguously DD/MM/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
+				"date %q is unambiguously DD/MM/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
 				s, res.format)
 		}
 		t, ok := tryDate(b, a)
 		if !ok {
-			return time.Time{}, fmt.Errorf("ingest: invalid date %q", s)
+			return time.Time{}, fmt.Errorf("invalid date %q", s)
 		}
 		return t, nil
 	case b > 12 && a <= 12:
 		// b can't be a month, so a is the month: MM/DD/YYYY, unambiguous.
 		if res.format != dateFormatUnestablished && res.format != dateFormatMDY {
 			return time.Time{}, fmt.Errorf(
-				"ingest: date %q is unambiguously MM/DD/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
+				"date %q is unambiguously MM/DD/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
 				s, res.format)
 		}
 		t, ok := tryDate(a, b)
 		if !ok {
-			return time.Time{}, fmt.Errorf("ingest: invalid date %q", s)
+			return time.Time{}, fmt.Errorf("invalid date %q", s)
 		}
 		return t, nil
 	default:
@@ -223,7 +229,7 @@ func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 			t, ok = tryDate(b, a)
 		}
 		if !ok {
-			return time.Time{}, fmt.Errorf("ingest: invalid date %q", s)
+			return time.Time{}, fmt.Errorf("invalid date %q", s)
 		}
 		return t, nil
 	}

@@ -48,10 +48,14 @@ func (h headerIndex) find(aliases ...string) int {
 // rather than silently returning -1 for the caller to mishandle — a missing
 // required column is exactly the kind of "data is incomplete" situation
 // Constitution Principle II says to refuse on, not guess through.
+//
+// No "ingest: " prefix here: every call site in ingest.go/promo.go
+// immediately re-wraps this as "ingest: <file>: %w", so a prefix here would
+// double up into "ingest: <file>: ingest: required column...".
 func (h headerIndex) require(field string, aliases ...string) (int, error) {
 	i := h.find(aliases...)
 	if i < 0 {
-		return -1, fmt.Errorf("ingest: required column %q not found (tried: %s)", field, strings.Join(aliases, ", "))
+		return -1, fmt.Errorf("required column %q not found (tried: %s)", field, strings.Join(aliases, ", "))
 	}
 	return i, nil
 }

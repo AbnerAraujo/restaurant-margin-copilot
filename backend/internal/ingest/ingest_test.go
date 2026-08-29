@@ -233,12 +233,32 @@ func TestParseDeliveryExport_MissingRequiredColumnErrors(t *testing.T) {
 	csvData := "platform,order_date,subtotal,commission_rate_pct,commission_amount,net_payout,status\niFood,2026-08-01,10.00,23,2.30,7.70,completed\n"
 	_, err := ParseDeliveryExport(strings.NewReader(csvData), "synthetic.csv")
 	require.Error(t, err, "missing order_id column must be a hard error, not a silently blank field")
+	require.Equal(t, 1, strings.Count(err.Error(), "ingest:"),
+		"the \"ingest:\" prefix must appear exactly once, not double-wrapped: %q", err.Error())
 }
 
 func TestParseDeliveryExport_UnrecognizedDateFormatErrors(t *testing.T) {
 	csvData := "platform,order_id,order_date,subtotal,commission_rate_pct,commission_amount,net_payout,status\niFood,ORD-1,Aug 1 2026,10.00,23,2.30,7.70,completed\n"
 	_, err := ParseDeliveryExport(strings.NewReader(csvData), "synthetic.csv")
 	require.Error(t, err, "an unrecognized date format must be a hard error, not a silent misparse")
+	require.Equal(t, 1, strings.Count(err.Error(), "ingest:"),
+		"the \"ingest:\" prefix must appear exactly once, not double-wrapped: %q", err.Error())
+}
+
+// Regression test for a reported defect: a bad cost-sheet date produced
+// "ingest: costs_bad.csv row 2: invoice_date: ingest: unrecognized date
+// format..." — "ingest:" appearing twice because date.go's own error
+// already carried the prefix before ParseCostSheet's row-level wrap added
+// it again. Covers ParseCostSheet specifically since that's the reported
+// call site, in addition to the ParseDeliveryExport coverage above.
+func TestParseCostSheet_UnrecognizedDateFormatIsNotDoublePrefixed(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,amount\nINV-1,not-a-date,Acme Foods,100.00\n"
+	_, err := ParseCostSheet(strings.NewReader(csvData), "costs_bad.csv")
+	require.Error(t, err)
+	require.Equal(t, 1, strings.Count(err.Error(), "ingest:"),
+		"the \"ingest:\" prefix must appear exactly once, not double-wrapped: %q", err.Error())
+	require.Contains(t, err.Error(), "costs_bad.csv row 2: invoice_date:")
+	require.Contains(t, err.Error(), "unrecognized date format")
 }
 
 func TestParsePOSExport_TableDriven(t *testing.T) {
