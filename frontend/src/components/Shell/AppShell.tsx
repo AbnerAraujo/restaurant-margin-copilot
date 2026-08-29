@@ -64,7 +64,22 @@ export default function AppShell() {
     // the chat was a fixed 36rem letterbox floating in a 982px viewport with
     // ~382px of dead space beneath it, so only about one and a half messages
     // were ever visible at once.
-    <div className="flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
+    //
+    // contain-layout: reported live as "the whole page scrolls wrongly, on
+    // top of main's own scroll" on a data-heavy page (29 real promotions).
+    // Root cause: this div's fixed-position children (FullscreenToggle,
+    // CostPanel, SplashScreen) have no containing block of their own, so
+    // they resolve against the true viewport/initial containing block —
+    // and a real Chromium quirk lets a deeply nested, dynamically-sized
+    // subtree (a long scrollable page with many rows) leak into how the
+    // browser computes THAT viewport-relative scrollable area, growing
+    // document.documentElement's own scrollHeight past main's intended
+    // single scroll region. `contain: layout` makes this div itself the
+    // containing block for those fixed descendants instead — a no-op
+    // visually, since this div already exactly IS the viewport box
+    // (h-screen, full width) — but stops the leak at its source rather
+    // than chasing it page by page.
+    <div className="contain-layout flex h-screen flex-col overflow-hidden bg-background lg:flex-row">
       <SplashScreen />
       <FullscreenToggle />
       <Sidebar />
