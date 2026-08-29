@@ -59,10 +59,12 @@ const (
 	// $20k/month margin) to reach the new $40k/month margin target once
 	// the monthRegime deficits below are averaged in — see
 	// printMonthlyVerification's output for the actual realized 24-month
-	// average ($39,966/month at these two constants), which is what this
-	// was empirically tuned against, not solved for algebraically.
-	startMonthlyGross = 31700.0
-	endMonthlyGross   = 115000.0
+	// average ($40,016/month at these two constants, across 6 regime
+	// months), which is what this was empirically tuned against, not
+	// solved for algebraically. Re-tuned 2026-08-29 when a 6th regime
+	// month (2025-08, see monthlyRegimes) was added.
+	startMonthlyGross = 34400.0
+	endMonthlyGross   = 124700.0
 	// midpointMonth/steepness shape the S-curve: faster growth in year 1,
 	// decelerating in year 2, per real small-restaurant ramp patterns
 	// (not sustained flat compound growth, which would be implausible).
@@ -174,20 +176,35 @@ var startDate = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
 //     spike, used here only as a scale/shape reference for how severe a
 //     genuine "supplier shortage" event can get, not a literal
 //     re-creation of the egg market.
-//   - [Assumption] Everything about WHICH five months carry a regime, how
-//     many of a regime month's days get forced into an oversized cost
-//     shock, and the exact demand-dip/refund-rate multipliers, is this
-//     project's own reasoned judgment, not an independently sourced
-//     number — no source available here quantifies "restaurant-months
-//     net-loss frequency" or "January cost-shock-day frequency" precisely
-//     enough to cite. It was tuned so that: (a) a real, named cause (never
-//     an unexplained random dip) drives every regime month, (b) the
-//     healthy majority of months still carry the $40k/month growth story,
-//     and (c) the specific regime months actually land net-negative once
-//     generated — checked empirically via verifyMonthlyTotals, not just
-//     assumed from the inputs.
+//   - [Sourced, trade-press tier] Multiple commercial-refrigeration/HVAC
+//     service sources (Culinary Depot, B&J Refrigeration, RepairPros,
+//     rentcoolcubes.com — service-industry trade coverage, not a formal
+//     research report, hence the lower confidence tag) converge on the
+//     same mechanism: summer heat waves push walk-in cooler compressors to
+//     run continuously instead of cycling, and dirty condenser coils plus
+//     AC-driven voltage sag on the hottest afternoons make mid-summer the
+//     highest-failure-rate season for commercial refrigeration. [Sourced,
+//     authoritative] The FDA's food-safety "danger zone" rule: perishable
+//     food held between 40-140F becomes unsafe within 2 hours generally,
+//     within 1 hour if the ambient temperature is above 90F — the reason a
+//     summer compressor failure turns into discarded inventory so much
+//     faster than the same failure in a cooler month. Together these
+//     support a heat-wave equipment-failure regime for a summer month as a
+//     real, findable cause, not an invented one — see 2025-08 below.
+//   - [Assumption] Everything about WHICH months carry a regime, how many
+//     of a regime month's days get forced into an oversized cost shock,
+//     and the exact demand-dip/refund-rate multipliers, is this project's
+//     own reasoned judgment, not an independently sourced number — no
+//     source available here quantifies "restaurant-months net-loss
+//     frequency" or "August cost-shock-day frequency" precisely enough to
+//     cite. It was tuned so that: (a) a real, named cause (never an
+//     unexplained random dip) drives every regime month, (b) the healthy
+//     majority of months still carry the ~$40k/month growth story, and
+//     (c) the specific regime months actually land net-negative once
+//     generated — checked empirically via printMonthlyVerification, not
+//     just assumed from the inputs.
 //
-// Five of the 24 months carry a regime — a "believable minority" per the
+// Six of the 24 months carry a regime — a "believable minority" per the
 // task brief, not a routine occurrence:
 //
 //   - 2025-01 and 2026-01 ("seasonalSlump"): the recurring January slump,
@@ -201,6 +218,16 @@ var startDate = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
 //     re-sourcing at rush pricing (the egg/avian-flu event above is this
 //     scenario's real-world shape reference) — a pure cost-side event,
 //     demand unaffected, per the JPMorgan finding.
+//   - 2025-08 ("heatWave"): added 2026-08-29, after a live-usage report
+//     that August specifically — the one full historical August in the
+//     live dataset, and so the exact comparator any "this August vs. last
+//     August" chat question would use — had never gotten a regime. August
+//     sits in the middle of this dataset's summer upswing (a strong month
+//     on either side), so a demand-side "slow season" story doesn't fit;
+//     a heat-wave-driven walk-in cooler failure does, per the trade-press
+//     sources above, and — like supplierShortage — is a pure cost-side
+//     event with demand left unaffected, consistent with the JPMorgan
+//     expense-volatility finding.
 //   - 2025-10 ("refundCluster"): a food-safety complaint wave driving a
 //     spike in the refund rate on top of a smaller run of cost-shock days
 //     — modeling "a cluster of refunds/discrepancies" as its own distinct
@@ -212,6 +239,7 @@ const (
 	regimeSeasonalSlump regimeKind = iota
 	regimeSupplierShortage
 	regimeRefundCluster
+	regimeHeatWave
 )
 
 type monthRegime struct {
@@ -243,6 +271,7 @@ func monthlyRegimes() map[string]monthRegime {
 	return map[string]monthRegime{
 		"2025-01": {kind: regimeSeasonalSlump, label: "January seasonal slump + cold-snap equipment strain", demandMult: 0.80, shockDayCount: 21, causeIdx: 0, refundRateMult: 1.0},
 		"2025-04": {kind: regimeSupplierShortage, label: "Regional protein shortage — emergency re-sourcing", demandMult: 1.0, shockDayCount: 19, causeIdx: 2, refundRateMult: 1.0},
+		"2025-08": {kind: regimeHeatWave, label: "Summer heat wave — walk-in cooler compressor failure", demandMult: 1.0, shockDayCount: 21, causeIdx: 4, refundRateMult: 1.0},
 		"2025-10": {kind: regimeRefundCluster, label: "Food-safety complaint wave", demandMult: 1.0, shockDayCount: 17, causeIdx: 1, refundRateMult: 18.0, refundNote: "Batch of undercooked orders reported; refunds issued after a food-safety review."},
 		"2026-01": {kind: regimeSeasonalSlump, label: "January seasonal slump + cold-snap equipment strain", demandMult: 0.80, shockDayCount: 21, causeIdx: 3, refundRateMult: 1.0},
 		"2026-04": {kind: regimeSupplierShortage, label: "Regional produce shortage — emergency re-sourcing", demandMult: 1.0, shockDayCount: 19, causeIdx: 1, refundRateMult: 1.0},
@@ -702,7 +731,20 @@ var costShockCauses = []struct {
 	{"Fresh Fields Produce Co.", "produce", "Spoiled delivery discarded; emergency same-day reorder at rush pricing"},
 	{"Coastal Meat & Poultry", "protein", "Regional shortage price spike; emergency restock to cover service"},
 	{"CityWide Plumbing & Repair", "equipment", "Grease trap backup — emergency plumbing repair"},
+	{"Frostbyte Refrigeration Repair", "equipment", "Heat-wave compressor overload — walk-in ran warm for hours; spoiled stock discarded and re-bought same-day at rush pricing"},
 }
+
+// generalCostShockCauses is the pool an ORDINARY lossyDayChance day picks
+// its cause from at random. It deliberately excludes costShockCauses[4]
+// (the heat-wave entry, added for the 2025-08 regime): that cause only
+// makes narrative sense in summer, and a plain random pick over the WHOLE
+// costShockCauses slice would let it land on an unrelated December or
+// April day too — a real bug this file had briefly, caught by reading the
+// generated supplier_cost_sheet.csv and noticing a "heat wave" invoice
+// dated in December. Season-pinned causes stay reachable only through a
+// forced regime day's own causeIdx (see writeCostSheetCSV), never through
+// this random pool.
+var generalCostShockCauses = costShockCauses[:4]
 
 func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	f, w, err := newWriter(path)
@@ -780,7 +822,7 @@ func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 		if d.costShock <= 0 {
 			continue
 		}
-		cause := costShockCauses[rng.Intn(len(costShockCauses))]
+		cause := generalCostShockCauses[rng.Intn(len(generalCostShockCauses))]
 		if d.regimeCauseIdx >= 0 {
 			cause = costShockCauses[d.regimeCauseIdx]
 		}
