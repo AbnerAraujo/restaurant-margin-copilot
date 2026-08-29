@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   BadgeCheck,
   CalendarCheck,
@@ -9,8 +9,15 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
+import {
+  FilterBar,
+  FilterEmptyState,
+  FilterSearchInput,
+  FilterSelect,
+} from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
+import { useTableFilter } from '@/lib/useTableFilter'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
 import { usePoints, type BadgeCode } from './usePoints'
@@ -91,6 +98,28 @@ export default function PointsPage() {
   const { data } = usePoints()
   const { redemptions, error: redemptionsError } = useRedemptionHistory()
   const breakdown = data?.points.breakdown ?? []
+
+  // The redemption-history grid filter (ux-writing + dataviz skills): a
+  // text search over the same fields the list already shows, plus a
+  // platform dropdown — the obvious categorical dimension here, since
+  // campaign ids in this history are already unique (a "campaign" filter
+  // would just duplicate the search box).
+  const redemptionFilter = useTableFilter({
+    rows: redemptions ?? [],
+    getSearchableText: (redemption) => [
+      redemption.campaign_id,
+      redemption.platform,
+    ],
+    dimensions: useMemo(
+      () => [
+        {
+          key: 'platform',
+          getValue: (redemption: RedeemedPromotionApi) => redemption.platform,
+        },
+      ],
+      [],
+    ),
+  })
 
   const earnedFor = (code: BadgeCode) =>
     breakdown.find((line) => line.code === code)
@@ -263,6 +292,36 @@ export default function PointsPage() {
           </p>
         </div>
 
+        {redemptions && redemptions.length > 0 ? (
+          <div className="border-b border-border p-5 sm:px-6">
+            <FilterBar
+              isFiltered={redemptionFilter.isFiltered}
+              onClear={redemptionFilter.clearFilters}
+              resultSummary={
+                redemptionFilter.isFiltered
+                  ? `${redemptionFilter.visibleCount} of ${redemptionFilter.totalCount} shown`
+                  : undefined
+              }
+            >
+              <FilterSearchInput
+                id="points-redemption-search"
+                label="Search redemption history"
+                value={redemptionFilter.searchQuery}
+                onChange={redemptionFilter.setSearchQuery}
+                placeholder="Search by campaign ID"
+              />
+              <FilterSelect
+                id="points-redemption-platform-filter"
+                label="Filter by platform"
+                value={redemptionFilter.filterValues.platform ?? null}
+                onChange={(value) => redemptionFilter.setFilterValue('platform', value)}
+                options={redemptionFilter.dimensionOptions.platform ?? []}
+                allLabel="All platforms"
+              />
+            </FilterBar>
+          </div>
+        ) : null}
+
         {redemptionsError ? (
           <p className="p-5 text-sm text-muted-foreground sm:px-6">
             I couldn&apos;t reach your data just now, so there is no history
@@ -279,9 +338,14 @@ export default function PointsPage() {
             No points redemptions yet. Pay for a promotion&apos;s spend with
             points on the Promotions page and it will appear here.
           </p>
+        ) : redemptionFilter.filteredRows.length === 0 ? (
+          <FilterEmptyState
+            label="No redemptions match these filters."
+            onClear={redemptionFilter.clearFilters}
+          />
         ) : (
           <ul className="divide-y divide-border">
-            {redemptions.map((redemption) => (
+            {redemptionFilter.filteredRows.map((redemption) => (
               <li
                 key={`${redemption.campaign_id}-${redemption.period.start}`}
                 className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-5 py-3 sm:px-6"

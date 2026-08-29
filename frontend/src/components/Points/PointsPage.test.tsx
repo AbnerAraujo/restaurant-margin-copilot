@@ -1,4 +1,5 @@
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -116,5 +117,68 @@ describe('PointsPage redemption history (spec 008 FR-014)', () => {
     expect(
       await screen.findByText(/no points redemptions yet/i),
     ).toBeInTheDocument()
+  })
+
+  it('narrows the redemption list to matches, and clears back to the full list', async () => {
+    stubFetch({
+      promotions: [
+        {
+          campaign_id: 'IFOOD-CAMP-EARLY',
+          platform: 'iFood',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          payment_method: 'points',
+          points_spent: 500,
+        },
+        {
+          campaign_id: 'JET-CAMP-LATE',
+          platform: 'Just Eat Takeaway',
+          period: { start: '2026-08-10', end: '2026-08-14' },
+          payment_method: 'points',
+          points_spent: 1200,
+        },
+      ],
+    })
+    renderPage()
+
+    const list = await screen.findByText('JET-CAMP-LATE')
+    const section = list.closest('ul') as HTMLElement
+    expect(within(section).getByText('IFOOD-CAMP-EARLY')).toBeInTheDocument()
+
+    await userEvent.selectOptions(
+      screen.getByLabelText('Filter by platform'),
+      'Just Eat Takeaway',
+    )
+
+    expect(screen.getByText('JET-CAMP-LATE')).toBeInTheDocument()
+    expect(screen.queryByText('IFOOD-CAMP-EARLY')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: /clear filters/i }))
+    expect(screen.getByText('IFOOD-CAMP-EARLY')).toBeInTheDocument()
+  })
+
+  it('shows a reassuring empty state — never a dead end — when the filter matches nothing', async () => {
+    stubFetch({
+      promotions: [
+        {
+          campaign_id: 'IFOOD-CAMP-EARLY',
+          platform: 'iFood',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          payment_method: 'points',
+          points_spent: 500,
+        },
+      ],
+    })
+    renderPage()
+
+    await screen.findByText('IFOOD-CAMP-EARLY')
+    await userEvent.type(
+      screen.getByLabelText('Search redemption history'),
+      'no-such-campaign',
+    )
+
+    expect(
+      screen.getByText('No redemptions match these filters.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('IFOOD-CAMP-EARLY')).not.toBeInTheDocument()
   })
 })
