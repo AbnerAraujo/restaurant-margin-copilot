@@ -1482,3 +1482,61 @@ Verified via a full headless-browser navigation sweep (26 slides now, zero
 console errors) and direct screenshots of every changed slide before
 republishing both `docs/presentation.html` and `docs/architecture.html`.
 `README.md`'s slide count updated again (25→26).
+
+## 2026-08-28 — Points-payment: fund a promotion's spend with Steward points
+
+A real feature, requested directly and built end to end: an owner can now
+pay a logged promotion's spend with earned Steward points instead of cash,
+at a fixed, disclosed rate of 10 cents per point (`badges.CentsPerPoint`).
+
+**The architectural tension, and how it was resolved.** `internal/badges`'
+own doc comment and this document's earlier "Badge system" section both
+state points are "a pure function of earned badges — no mutable balance to
+drift." A spendable balance is, definitionally, mutable. Resolved by keeping
+the EARNED side exactly as pure as before (`EvaluatePoints` still takes no
+storage argument and never will) and adding a second, equally real,
+equally persisted fact: `promotion_roi_record.points_spent`, summed across
+all time by a new query (`SumPointsSpentOnPromotions`). `Available` is
+`Total - Spent` — still a derived value computed fresh on every read from
+two real ledgers, never a counter written or decremented directly. The
+purity claim survives; it now rests on two sources instead of one.
+
+**Schema** (migration 000009): `payment_method` (`money`/`points`, default
+`money` — every pre-existing row) and `points_spent` on
+`promotion_roi_record`, with a CHECK constraint pairing them
+(`points_spent IS NOT NULL AND > 0` iff `payment_method = 'points'`) so the
+database itself rejects a row that claims points payment without a point
+count, or money payment with a stray point count.
+
+**Server-side verification, never trusted from the client** — the same
+discipline the FR-007 replaces-claim re-check already established: a
+`payment_method: "points"` request recomputes the real earned total (the
+exact same `badges.BuildResponse` call `GET /api/badges` makes, over the
+same all-time window) and the real spent total, live, at request time. A
+request needing more points than are available is refused with a named
+`insufficient_points` error (stating both figures) and nothing is
+persisted — proven by a live-Postgres test that submits an intentionally
+absurd spend and asserts a zero row count afterward.
+
+**Spend itself never changes based on how it was funded** — ROI math stays
+identical whether a campaign was paid in cash or points, since only the
+funding provenance is new, not the deterministic computation itself.
+
+**Frontend**: `PointsCard.tsx`'s "Not built yet" roadmap panel — a real,
+named panel this project deliberately wrote when redemption genuinely
+wasn't built — now says "Live" and links to where it actually happens,
+and its headline stat changed from a bare earned total to "Available to
+spend" (earned minus redeemed), since a spendable balance is the only
+honest number once spending is real. `LogReplacementForm.tsx` gained a
+Money/Points toggle with a live points-needed preview and a
+client-side pre-check that disables submission when the preview shows
+insufficient points — the server remains the actual authority either way.
+
+Verified live end-to-end via curl against the real database (a real $5.00
+campaign correctly cost 50 points, balance moved 200 → 150, confirmed via a
+fresh `GET /api/badges` read) before the test row was deleted, plus the
+real backend test suite (`go test ./...`, all green, including two new
+live-Postgres tests for the success and insufficient-balance paths) and the
+full frontend suite (148/148, `tsc -b --noEmit` clean). `docs/openapi.yaml`
+and the generated `docs/api.html` updated and republished to match the
+real new request/response shape.

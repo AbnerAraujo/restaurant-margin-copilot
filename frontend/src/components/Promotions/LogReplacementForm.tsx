@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
-import { AlertTriangle, CheckCircle2, Rocket } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Coins, Rocket } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Panel, PanelHeader } from '@/components/ui/page'
 import { ApiError, postJson } from '@/lib/api'
+import { usePoints } from '@/components/Points/usePoints'
+import { CENTS_PER_POINT } from '@/components/Points/pointValues'
 
 /**
  * The minimal shape spec 002-badge-expansion's User Story 3 needs (plan.md's
@@ -25,9 +27,12 @@ interface CreatePromotionResponseApi {
     replaces_campaign_id?: string | null
   }
   earned_campaign_creation_badge: boolean
+  points_balance_after?: number
 }
 
 const NO_REPLACEMENT = ''
+
+type PaymentMethod = 'money' | 'points'
 
 /**
  * "Log a replacement campaign" — the one net-new write surface this spec
@@ -55,13 +60,29 @@ export default function LogReplacementForm({
   const [periodEnd, setPeriodEnd] = useState('')
   const [spend, setSpend] = useState('')
   const [replaces, setReplaces] = useState(NO_REPLACEMENT)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('money')
 
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<{
     campaignId: string
     earnedBadge: boolean
+    pointsBalanceAfter?: number
   } | null>(null)
+
+  // Live balance, shared with PointsCard/PointsPage — refetched by
+  // `onCreated`'s parent reload after a points-paid submission, so this
+  // preview never drifts from what the balance actually is after spending.
+  const { data: pointsData } = usePoints()
+  const availablePoints = pointsData?.points?.available ?? 0
+
+  const spendNumberPreview = Number(spend)
+  const pointsNeededPreview =
+    Number.isFinite(spendNumberPreview) && spendNumberPreview > 0
+      ? Math.ceil((spendNumberPreview * 100) / CENTS_PER_POINT)
+      : 0
+  const insufficientPointsPreview =
+    paymentMethod === 'points' && pointsNeededPreview > availablePoints
 
   function resetFields() {
     setPlatform('')
@@ -70,6 +91,7 @@ export default function LogReplacementForm({
     setPeriodEnd('')
     setSpend('')
     setReplaces(NO_REPLACEMENT)
+    setPaymentMethod('money')
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -92,12 +114,14 @@ export default function LogReplacementForm({
           campaign_id: campaignId,
           period: { start: periodStart, end: periodEnd },
           spend: spendNumber.toFixed(2),
+          payment_method: paymentMethod,
           ...(replaces ? { replaces } : {}),
         },
       )
       setSuccess({
         campaignId: response.promotion.campaign_id,
         earnedBadge: response.earned_campaign_creation_badge,
+        pointsBalanceAfter: response.points_balance_after,
       })
       resetFields()
       onCreated()
@@ -123,7 +147,9 @@ export default function LogReplacementForm({
       <p className="mt-1 text-xs text-muted-foreground">
         A new promotion record, logged directly here — the same fields an
         ingested campaign carries. Mark it as replacing a flagged campaign
-        below and it earns a Campaign Launcher badge once submitted.
+        below and it earns a Campaign Launcher badge once submitted. Pay its
+        spend with your Steward points instead of cash if you have enough
+        available.
       </p>
 
       <form
@@ -200,6 +226,52 @@ export default function LogReplacementForm({
           />
         </div>
 
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <span className="text-xs font-medium text-foreground">Pay with</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div role="radiogroup" aria-label="Payment method" className="inline-flex overflow-hidden rounded-md border border-border">
+              <Button
+                type="button"
+                role="radio"
+                aria-checked={paymentMethod === 'money'}
+                variant={paymentMethod === 'money' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-none"
+                onClick={() => setPaymentMethod('money')}
+              >
+                Money
+              </Button>
+              <Button
+                type="button"
+                role="radio"
+                aria-checked={paymentMethod === 'points'}
+                variant={paymentMethod === 'points' ? 'default' : 'ghost'}
+                size="sm"
+                className="rounded-none"
+                onClick={() => setPaymentMethod('points')}
+              >
+                <Coins aria-hidden="true" />
+                Points
+              </Button>
+            </div>
+            {paymentMethod === 'points' ? (
+              <p
+                className={
+                  'text-xs ' +
+                  (insufficientPointsPreview ? 'text-destructive-text' : 'text-muted-foreground')
+                }
+              >
+                {pointsNeededPreview > 0
+                  ? `${pointsNeededPreview.toLocaleString('en-US')} points needed`
+                  : 'Enter a spend amount to see the points needed'}
+                {' · '}
+                {availablePoints.toLocaleString('en-US')} available
+                {insufficientPointsPreview ? ' — not enough to cover this' : ''}
+              </p>
+            ) : null}
+          </div>
+        </div>
+
         <div className="flex flex-col gap-1.5">
           <label htmlFor="lrf-replaces" className="text-xs font-medium text-foreground">
             Replacing a flagged campaign? (optional)
@@ -224,7 +296,7 @@ export default function LogReplacementForm({
         </div>
 
         <div className="sm:col-span-2 flex flex-wrap items-center gap-3 pt-1">
-          <Button type="submit" disabled={submitting}>
+          <Button type="submit" disabled={submitting || insufficientPointsPreview}>
             <Rocket aria-hidden="true" />
             {submitting ? 'Logging…' : 'Log promotion'}
           </Button>
@@ -240,6 +312,9 @@ export default function LogReplacementForm({
             <p className="flex items-center gap-1.5 text-xs text-success-text">
               <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
               Logged {success.campaignId}.{' '}
+              {success.pointsBalanceAfter !== undefined
+                ? `Paid with points — ${success.pointsBalanceAfter.toLocaleString('en-US')} left.`
+                : 'Paid with money.'}{' '}
               {success.earnedBadge
                 ? 'Campaign Launcher badge earned.'
                 : 'No replacement claimed, so no Campaign Launcher badge this time.'}

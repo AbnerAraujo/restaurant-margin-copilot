@@ -78,9 +78,11 @@ INSERT INTO promotion_roi_record (
     flagged_negative,
     source_row_refs,
     origin,
-    replaces_campaign_id
+    replaces_campaign_id,
+    payment_method,
+    points_spent
 ) VALUES (
-    $1, $2, $3, $4, false, $5, 'owner_created', $6
+    $1, $2, $3, $4, false, $5, 'owner_created', $6, $7, $8
 )
 RETURNING *;
 
@@ -92,3 +94,14 @@ RETURNING *;
 -- would hide campaigns rather than answer that question.
 SELECT * FROM promotion_roi_record
 ORDER BY period, campaign_id;
+
+-- name: SumPointsSpentOnPromotions :one
+-- The other half of a points BALANCE (internal/badges.EvaluatePoints only
+-- ever computes what's been EARNED): every point already committed to a
+-- promotion's spend, regardless of that promotion's own period, since a
+-- redeemed point stays spent forever, not just within one reporting window.
+-- COALESCE keeps a fresh instance with zero points-paid rows at a real 0,
+-- never NULL, so callers never special-case "no rows yet".
+SELECT COALESCE(SUM(points_spent), 0)::bigint AS total_points_spent
+FROM promotion_roi_record
+WHERE payment_method = 'points';

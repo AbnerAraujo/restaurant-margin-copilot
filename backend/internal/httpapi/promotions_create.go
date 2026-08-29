@@ -24,6 +24,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
@@ -49,6 +50,14 @@ type CreatePromotionRequest struct {
 	// FR-008: no claim, no Campaign-Creation badge, and no FR-007 check
 	// runs at all.
 	Replaces string `json:"replaces,omitempty"`
+	// PaymentMethod is "money" (default when omitted, matching every
+	// pre-existing record) or "points" — pay this campaign's spend from the
+	// owner's earned Steward points balance instead of cash. Verified
+	// server-side against the real, current earned-minus-spent balance
+	// (badges.EvaluatePoints minus storage.SumPointsSpentOnPromotions), the
+	// same "never trust the client's own math" discipline FR-007's
+	// replaces-claim re-check already applies a few lines below.
+	PaymentMethod string `json:"payment_method,omitempty"`
 }
 
 // Period is the {start, end} shape this request body uses — a local type
@@ -70,6 +79,12 @@ type Period struct {
 type CreatePromotionResponse struct {
 	Promotion           mcptools.PromotionRoiView `json:"promotion"`
 	EarnedCampaignBadge bool                      `json:"earned_campaign_creation_badge"`
+	// PointsBalanceAfter is the owner's real, current available points
+	// balance immediately after this request — populated only when
+	// PaymentMethod was "points", so the frontend can update its balance
+	// display without a second GET /api/badges round trip, the same
+	// convenience EarnedCampaignBadge already provides for the badge side.
+	PointsBalanceAfter *int `json:"points_balance_after,omitempty"`
 }
 
 // HandleCreatePromotion implements POST /api/promotions.
@@ -124,6 +139,71 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 			return
 		}
 
+		paymentMethod := strings.TrimSpace(req.PaymentMethod)
+		if paymentMethod == "" {
+			paymentMethod = reconcile.PaymentMethodMoney
+		}
+		if paymentMethod != reconcile.PaymentMethodMoney && paymentMethod != reconcile.PaymentMethodPoints {
+			writeJSONError(w, http.StatusBadRequest, "invalid_input",
+				fmt.Sprintf("payment_method %q must be %q or %q", paymentMethod, reconcile.PaymentMethodMoney, reconcile.PaymentMethodPoints))
+			return
+		}
+
+		var pointsSpentPtr *int
+		var pointsBalanceAfter *int
+		if paymentMethod == reconcile.PaymentMethodPoints {
+			// Never trust a client-supplied balance — recompute the real,
+			// current earned-minus-spent figure the exact same way
+			// GET /api/badges does, from live data, at the moment this
+			// request is being decided (the same discipline the FR-007
+			// replaces-claim re-check just below already applies).
+			pointsNeeded := badges.PointsNeededForSpend(spendCents)
+
+			// The same wide-open "everything persisted" range GET
+			// /api/badges defaults to (badges.parsePeriodQuery) when no
+			// start/end query parameter is given — Growth/Engagement/
+			// Campaign-Creation badges (and so the points they're worth)
+			// are always evaluated over ALL data regardless of any window,
+			// and a balance check here must see the exact same earned
+			// total that endpoint would report right now.
+			allTimeStart := time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC)
+			allTimeEnd := time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC)
+
+			allDays, err := storage.LoadDailyReconciliationsInPeriod(r.Context(), q, allTimeStart, allTimeEnd)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+			allPromotions, err := storage.LoadAllPromotionRoiRecords(r.Context(), q)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+			usageDays, err := storage.LoadDistinctUsageDays(r.Context(), q)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+			alreadySpent, err := storage.SumPointsSpentOnPromotions(r.Context(), q)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+
+			earned := badges.BuildResponse(allDays, allPromotions, usageDays).Points.Total
+			available := earned - alreadySpent
+			if pointsNeeded > available {
+				writeJSONError(w, http.StatusUnprocessableEntity, "insufficient_points",
+					fmt.Sprintf("this campaign needs %d points (at %d cents/point) to cover %s, but only %d points are available (%d earned, %d already redeemed) — refusing rather than partially funding it. Log it with payment_method \"money\" instead, or reduce spend.",
+						pointsNeeded, badges.CentsPerPoint, req.Spend, available, earned, alreadySpent))
+				return
+			}
+
+			pointsSpentPtr = &pointsNeeded
+			after := available - pointsNeeded
+			pointsBalanceAfter = &after
+		}
+
 		var replacesPtr *string
 		if replaces != "" {
 			// FR-007: refuse, rather than trust, an unverified "replaces"
@@ -150,6 +230,8 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 			PeriodEnd:          end,
 			SpendCents:         spendCents,
 			ReplacesCampaignID: replacesPtr,
+			PaymentMethod:      paymentMethod,
+			PointsSpent:        pointsSpentPtr,
 		})
 		if err != nil {
 			if isUniqueViolation(err) {
@@ -165,6 +247,7 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 		writeJSON(w, http.StatusCreated, CreatePromotionResponse{
 			Promotion:           view,
 			EarnedCampaignBadge: replacesPtr != nil,
+			PointsBalanceAfter:  pointsBalanceAfter,
 		})
 	}
 }

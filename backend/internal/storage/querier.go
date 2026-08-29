@@ -121,6 +121,13 @@ type Querier interface {
 	SumParaphraseMatchClassificationCost(ctx context.Context) (pgtype.Numeric, error)
 	// Total full-cycle spend paraphrase recognition has avoided so far.
 	SumParaphraseMatchCostAvoided(ctx context.Context) (pgtype.Numeric, error)
+	// The other half of a points BALANCE (internal/badges.EvaluatePoints only
+	// ever computes what's been EARNED): every point already committed to a
+	// promotion's spend, regardless of that promotion's own period, since a
+	// redeemed point stays spent forever, not just within one reporting window.
+	// COALESCE keeps a fresh instance with zero points-paid rows at a real 0,
+	// never NULL, so callers never special-case "no rows yet".
+	SumPointsSpentOnPromotions(ctx context.Context) (int64, error)
 	// Re-answering the same normalized question overwrites the entry rather than
 	// keeping the older one: the newer response was computed against whatever
 	// data is current, so it is the one worth serving next time.

@@ -147,10 +147,15 @@ func PromotionRoiRecordToDomain(row PromotionRoiRecord) (reconcile.PromotionRoiR
 		SourceRowRefs:   refs,
 		Origin:          row.Origin,
 		CreatedAt:       row.CreatedAt.Time,
+		PaymentMethod:   row.PaymentMethod,
 	}
 	if row.ReplacesCampaignID.Valid {
 		replaces := row.ReplacesCampaignID.String
 		rec.ReplacesCampaignID = &replaces
+	}
+	if row.PointsSpent.Valid {
+		n := int(row.PointsSpent.Int32)
+		rec.PointsSpent = &n
 	}
 	if row.AttributedIncrementalOrders.Valid {
 		n := int(row.AttributedIncrementalOrders.Int32)
@@ -299,6 +304,17 @@ type NewOwnerPromotion struct {
 	PeriodEnd          time.Time
 	SpendCents         int64
 	ReplacesCampaignID *string
+	// PaymentMethod is reconcile.PaymentMethodMoney or
+	// reconcile.PaymentMethodPoints. The caller (internal/httpapi) has
+	// already verified a points redemption against the real earned-minus-
+	// spent balance before constructing this — this type performs no
+	// balance check of its own, per this package's doc comment.
+	PaymentMethod string
+	// PointsSpent must be non-nil and positive iff PaymentMethod is
+	// reconcile.PaymentMethodPoints — the exact pairing the
+	// points_spent_matches_payment_method CHECK constraint enforces at the
+	// database layer too.
+	PointsSpent *int
 }
 
 // CreateOwnerPromotion inserts a new owner_created promotion_roi_record
@@ -309,6 +325,17 @@ type NewOwnerPromotion struct {
 // a real unique-violation error for the handler to render as a 409, not a
 // silent overwrite.
 func CreateOwnerPromotion(ctx context.Context, q Querier, p NewOwnerPromotion) (reconcile.PromotionRoiRecord, error) {
+	// A zero-value NewOwnerPromotion (every caller that predates the
+	// points-payment option, including this package's own tests) leaves
+	// PaymentMethod as "" — default it to money here, once, rather than
+	// requiring every caller to know about a field that didn't exist when
+	// they were written. Matches the column's own DEFAULT 'money' in the
+	// migration exactly.
+	paymentMethod := p.PaymentMethod
+	if paymentMethod == "" {
+		paymentMethod = reconcile.PaymentMethodMoney
+	}
+
 	refsJSON, err := marshalOrEmptyArray[reconcile.SourceRowRef](nil)
 	if err != nil {
 		return reconcile.PromotionRoiRecord{}, fmt.Errorf("storage: marshal source_row_refs: %w", err)
@@ -319,6 +346,11 @@ func CreateOwnerPromotion(ctx context.Context, q Querier, p NewOwnerPromotion) (
 		replaces = pgtype.Text{String: *p.ReplacesCampaignID, Valid: true}
 	}
 
+	var pointsSpent pgtype.Int4
+	if p.PointsSpent != nil {
+		pointsSpent = pgtype.Int4{Int32: int32(*p.PointsSpent), Valid: true}
+	}
+
 	row, err := q.CreateOwnerPromotion(ctx, CreateOwnerPromotionParams{
 		Platform:           p.Platform,
 		CampaignID:         p.CampaignID,
@@ -326,11 +358,26 @@ func CreateOwnerPromotion(ctx context.Context, q Querier, p NewOwnerPromotion) (
 		Spend:              centsToNumeric(p.SpendCents),
 		SourceRowRefs:      refsJSON,
 		ReplacesCampaignID: replaces,
+		PaymentMethod:      paymentMethod,
+		PointsSpent:        pointsSpent,
 	})
 	if err != nil {
 		return reconcile.PromotionRoiRecord{}, err
 	}
 	return PromotionRoiRecordToDomain(row)
+}
+
+// SumPointsSpentOnPromotions returns every Steward point already redeemed
+// against a promotion's spend, across all time — the other half of a real
+// points BALANCE, since internal/badges.EvaluatePoints only ever computes
+// what has been EARNED. A fresh instance with no points-paid promotions
+// returns 0, never an error.
+func SumPointsSpentOnPromotions(ctx context.Context, q Querier) (int, error) {
+	total, err := q.SumPointsSpentOnPromotions(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return int(total), nil
 }
 
 // LoadAllPromotionRoiRecords reads every persisted promotion record, in

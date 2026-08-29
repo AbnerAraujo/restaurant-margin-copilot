@@ -1,7 +1,18 @@
 import { render, screen } from '@testing-library/react'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PointsCard from './PointsCard'
+
+// PointsCard now links to /promotions (the real, shipped points-payment
+// redemption path) — it needs a Router in scope to render at all.
+function renderCard() {
+  return render(
+    <MemoryRouter>
+      <PointsCard />
+    </MemoryRouter>,
+  )
+}
 
 function stubBadgesResponse(body: unknown) {
   vi.stubGlobal(
@@ -49,11 +60,11 @@ describe('PointsCard', () => {
 
   it('renders the backend’s real derived total and the arithmetic behind it', async () => {
     stubBadgesResponse(EARNED_RESPONSE)
-    render(<PointsCard />)
+    renderCard()
 
     expect(
       await screen.findByRole('status', {
-        name: '45 Steward Points from 3 days already reconciled',
+        name: '45 Steward Points available to spend, out of 45 earned from 3 days already reconciled',
       }),
     ).toBeInTheDocument()
     // The breakdown moved from a run-on sentence per line ("2 × Clean Close —
@@ -69,31 +80,29 @@ describe('PointsCard', () => {
     expect(screen.getByText(/\+25/)).toBeInTheDocument()
   })
 
-  it('states plainly that redemption is not built, and offers nothing to click', async () => {
+  it('states plainly that redemption is live, and links to where it actually happens', async () => {
     stubBadgesResponse(EARNED_RESPONSE)
-    render(<PointsCard />)
+    renderCard()
 
     await screen.findByRole('status')
-    // The roadmap block now leads with a "Not built yet" chip rather than an
-    // uppercase sentence, but it must still say so before the reader reaches
-    // the prose.
-    expect(screen.getByText(/not built yet/i)).toBeInTheDocument()
+    // Redemption shipped (POST /api/promotions, payment_method: "points") —
+    // the roadmap block now says so and links to the real place it happens,
+    // rather than disclaiming it as not built.
+    expect(screen.getByText(/^live$/i)).toBeInTheDocument()
     expect(
-      screen.getByText(/no redemption flow in this prototype/i),
+      screen.getByText(/pay its spend in points instead of cash/i),
     ).toBeInTheDocument()
-    // No fake affordance: a disabled "Redeem" button would still imply the
-    // feature exists somewhere behind it.
-    expect(screen.queryByRole('button')).not.toBeInTheDocument()
-    expect(screen.queryByRole('link')).not.toBeInTheDocument()
+    const link = screen.getByRole('link', { name: /log a promotion with points/i })
+    expect(link).toHaveAttribute('href', '/promotions')
   })
 
   it('shows a real zero rather than a placeholder when nothing has been reconciled', async () => {
     stubBadgesResponse({ badges: [], points: { total: 0, breakdown: [] } })
-    render(<PointsCard />)
+    renderCard()
 
     expect(
       await screen.findByRole('status', {
-        name: '0 Steward Points from 0 days already reconciled',
+        name: '0 Steward Points available to spend, out of 0 earned from 0 days already reconciled',
       }),
     ).toBeInTheDocument()
     expect(screen.getByText(/no closes on file yet/i)).toBeInTheDocument()
@@ -120,15 +129,30 @@ describe('PointsCard', () => {
         ],
       },
     })
-    render(<PointsCard />)
+    renderCard()
 
     // 1 Reconciliation badge among the 3 total — "days reconciled" must read
     // 1, not 3, even though the total point balance (25) reflects all of them.
     expect(
       await screen.findByRole('status', {
-        name: '25 Steward Points from 1 day already reconciled',
+        name: '25 Steward Points available to spend, out of 25 earned from 1 day already reconciled',
       }),
     ).toBeInTheDocument()
+  })
+
+  it('shows the available balance after redemption, not the bare earned total', async () => {
+    stubBadgesResponse({
+      badges: EARNED_RESPONSE.badges,
+      points: { total: 45, breakdown: EARNED_RESPONSE.points.breakdown, spent: 10, available: 35 },
+    })
+    renderCard()
+
+    expect(
+      await screen.findByRole('status', {
+        name: '35 Steward Points available to spend, out of 45 earned from 3 days already reconciled',
+      }),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/45 earned . 10 redeemed/i)).toBeInTheDocument()
   })
 
   it('surfaces a backend failure instead of rendering a balance it does not have', async () => {
@@ -140,7 +164,7 @@ describe('PointsCard', () => {
         text: async () => 'query_failed',
       }),
     )
-    render(<PointsCard />)
+    renderCard()
 
     expect(
       await screen.findByText(/couldn't reach your data/i),

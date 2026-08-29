@@ -233,5 +233,107 @@ func TestHandleRecordUsage_RespondsAndDoesNotDoubleCount(t *testing.T) {
 	require.False(t, body2.Recorded, "the second call within the same test (same UTC day) must report it did not record a new day")
 }
 
+// TestHandleCreatePromotion_PayWithPointsRefusesWhenBalanceInsufficient
+// proves the refuse-rather-than-guess discipline applies to points spend
+// exactly like every other typed refusal in this codebase: an absurd spend
+// no realistic earned balance could ever cover is rejected with a specific,
+// named error (insufficient_points, naming both figures) — and, just as
+// important, nothing is persisted for the refused attempt.
+func TestHandleCreatePromotion_PayWithPointsRefusesWhenBalanceInsufficient(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+
+	campaignID := "TEST-HTTPAPI-SENTINEL-POINTS-INSUFFICIENT"
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), "DELETE FROM promotion_roi_record WHERE campaign_id = $1", campaignID)
+	})
+
+	rec := doCreatePromotion(t, q, map[string]any{
+		"platform":       "TestPlatform",
+		"campaign_id":    campaignID,
+		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
+		"spend":          "999999999.00",
+		"payment_method": "points",
+	})
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "insufficient_points", body["error"])
+
+	var count int
+	require.NoError(t, conn.QueryRow(context.Background(), "SELECT count(*) FROM promotion_roi_record WHERE campaign_id = $1", campaignID).Scan(&count))
+	require.Equal(t, 0, count, "a refused points redemption must not have been persisted")
+}
+
+// TestHandleCreatePromotion_PayWithPointsSucceedsAndDeductsBalance proves the
+// success path end to end against the real, live earned balance: a spend
+// small enough that 1 point covers it (badges.CentsPerPoint = 10) succeeds
+// against any real balance above zero, persists payment_method/points_spent
+// on the row, and reports a real points_balance_after in the response
+// rather than requiring a second GET /api/badges round trip.
+func TestHandleCreatePromotion_PayWithPointsSucceedsAndDeductsBalance(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+
+	earned, err := storage.LoadDailyReconciliationsInPeriod(context.Background(), q,
+		time.Date(1900, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2999, 12, 31, 0, 0, 0, 0, time.UTC))
+	require.NoError(t, err)
+	if len(earned) == 0 {
+		t.Skip("no reconciled days in this database — no earned points balance to redeem against")
+	}
+
+	campaignID := "TEST-HTTPAPI-SENTINEL-POINTS-SUCCESS"
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(), "DELETE FROM promotion_roi_record WHERE campaign_id = $1", campaignID)
+	})
+
+	rec := doCreatePromotion(t, q, map[string]any{
+		"platform":       "TestPlatform",
+		"campaign_id":    campaignID,
+		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
+		"spend":          "0.10",
+		"payment_method": "points",
+	})
+
+	if rec.Code == http.StatusUnprocessableEntity {
+		t.Skip("real earned balance in this database is currently 0 points — nothing to redeem")
+	}
+	require.Equal(t, http.StatusCreated, rec.Code)
+
+	var body CreatePromotionResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "points", body.Promotion.PaymentMethod)
+	require.NotNil(t, body.Promotion.PointsSpent)
+	require.Equal(t, 1, *body.Promotion.PointsSpent)
+	require.NotNil(t, body.PointsBalanceAfter)
+	require.Equal(t, "0.10", body.Promotion.Spend, "spend stays the real dollar amount regardless of how it was funded")
+
+	var paymentMethod string
+	var pointsSpent int
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT payment_method, points_spent FROM promotion_roi_record WHERE campaign_id = $1", campaignID,
+	).Scan(&paymentMethod, &pointsSpent))
+	require.Equal(t, "points", paymentMethod)
+	require.Equal(t, 1, pointsSpent)
+}
+
+// TestHandleCreatePromotion_RejectsAnUnknownPaymentMethod is the same typed-
+// refusal discipline every other malformed field on this endpoint already
+// gets — a payment_method that is neither "money" nor "points" is a 400,
+// never silently coerced to a default.
+func TestHandleCreatePromotion_RejectsAnUnknownPaymentMethod(t *testing.T) {
+	_, q := httpapiConnectOrSkip(t)
+
+	rec := doCreatePromotion(t, q, map[string]any{
+		"platform":       "TestPlatform",
+		"campaign_id":    "TEST-HTTPAPI-SENTINEL-BAD-PAYMENT-METHOD",
+		"period":         map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
+		"spend":          "10.00",
+		"payment_method": "bitcoin",
+	})
+
+	require.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func intPtrHTTP(v int) *int       { return &v }
 func int64PtrHTTP(v int64) *int64 { return &v }

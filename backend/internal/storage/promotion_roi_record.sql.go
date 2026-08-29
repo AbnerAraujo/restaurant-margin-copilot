@@ -21,11 +21,13 @@ INSERT INTO promotion_roi_record (
     flagged_negative,
     source_row_refs,
     origin,
-    replaces_campaign_id
+    replaces_campaign_id,
+    payment_method,
+    points_spent
 ) VALUES (
-    $1, $2, $3, $4, false, $5, 'owner_created', $6
+    $1, $2, $3, $4, false, $5, 'owner_created', $6, $7, $8
 )
-RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id
+RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent
 `
 
 type CreateOwnerPromotionParams struct {
@@ -35,6 +37,8 @@ type CreateOwnerPromotionParams struct {
 	Spend              pgtype.Numeric            `json:"spend"`
 	SourceRowRefs      json.RawMessage           `json:"source_row_refs"`
 	ReplacesCampaignID pgtype.Text               `json:"replaces_campaign_id"`
+	PaymentMethod      string                    `json:"payment_method"`
+	PointsSpent        pgtype.Int4               `json:"points_spent"`
 }
 
 // Backs POST /api/promotions (User Story 3): the owner logging a new
@@ -60,6 +64,8 @@ func (q *Queries) CreateOwnerPromotion(ctx context.Context, arg CreateOwnerPromo
 		arg.Spend,
 		arg.SourceRowRefs,
 		arg.ReplacesCampaignID,
+		arg.PaymentMethod,
+		arg.PointsSpent,
 	)
 	var i PromotionRoiRecord
 	err := row.Scan(
@@ -77,12 +83,14 @@ func (q *Queries) CreateOwnerPromotion(ctx context.Context, arg CreateOwnerPromo
 		&i.UpdatedAt,
 		&i.Origin,
 		&i.ReplacesCampaignID,
+		&i.PaymentMethod,
+		&i.PointsSpent,
 	)
 	return i, err
 }
 
 const getPromotionRoiByCampaign = `-- name: GetPromotionRoiByCampaign :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent FROM promotion_roi_record
 WHERE campaign_id = $1
 ORDER BY period
 `
@@ -112,6 +120,8 @@ func (q *Queries) GetPromotionRoiByCampaign(ctx context.Context, campaignID stri
 			&i.UpdatedAt,
 			&i.Origin,
 			&i.ReplacesCampaignID,
+			&i.PaymentMethod,
+			&i.PointsSpent,
 		); err != nil {
 			return nil, err
 		}
@@ -124,7 +134,7 @@ func (q *Queries) GetPromotionRoiByCampaign(ctx context.Context, campaignID stri
 }
 
 const getPromotionRoiByPlatformAndPeriod = `-- name: GetPromotionRoiByPlatformAndPeriod :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent FROM promotion_roi_record
 WHERE platform = $1 AND period && $2::daterange
 ORDER BY period
 `
@@ -159,6 +169,8 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 			&i.UpdatedAt,
 			&i.Origin,
 			&i.ReplacesCampaignID,
+			&i.PaymentMethod,
+			&i.PointsSpent,
 		); err != nil {
 			return nil, err
 		}
@@ -171,7 +183,7 @@ func (q *Queries) GetPromotionRoiByPlatformAndPeriod(ctx context.Context, arg Ge
 }
 
 const listAllPromotionRoiRecords = `-- name: ListAllPromotionRoiRecords :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent FROM promotion_roi_record
 ORDER BY period, campaign_id
 `
 
@@ -204,6 +216,8 @@ func (q *Queries) ListAllPromotionRoiRecords(ctx context.Context) ([]PromotionRo
 			&i.UpdatedAt,
 			&i.Origin,
 			&i.ReplacesCampaignID,
+			&i.PaymentMethod,
+			&i.PointsSpent,
 		); err != nil {
 			return nil, err
 		}
@@ -249,7 +263,7 @@ func (q *Queries) ListDistinctCampaignIDs(ctx context.Context) ([]string, error)
 }
 
 const listNegativeRoiPromotions = `-- name: ListNegativeRoiPromotions :many
-SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id FROM promotion_roi_record
+SELECT id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent FROM promotion_roi_record
 WHERE flagged_negative = true AND period && $1::daterange
 ORDER BY period
 `
@@ -279,6 +293,8 @@ func (q *Queries) ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype
 			&i.UpdatedAt,
 			&i.Origin,
 			&i.ReplacesCampaignID,
+			&i.PaymentMethod,
+			&i.PointsSpent,
 		); err != nil {
 			return nil, err
 		}
@@ -288,6 +304,25 @@ func (q *Queries) ListNegativeRoiPromotions(ctx context.Context, dollar_1 pgtype
 		return nil, err
 	}
 	return items, nil
+}
+
+const sumPointsSpentOnPromotions = `-- name: SumPointsSpentOnPromotions :one
+SELECT COALESCE(SUM(points_spent), 0)::bigint AS total_points_spent
+FROM promotion_roi_record
+WHERE payment_method = 'points'
+`
+
+// The other half of a points BALANCE (internal/badges.EvaluatePoints only
+// ever computes what's been EARNED): every point already committed to a
+// promotion's spend, regardless of that promotion's own period, since a
+// redeemed point stays spent forever, not just within one reporting window.
+// COALESCE keeps a fresh instance with zero points-paid rows at a real 0,
+// never NULL, so callers never special-case "no rows yet".
+func (q *Queries) SumPointsSpentOnPromotions(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, sumPointsSpentOnPromotions)
+	var total_points_spent int64
+	err := row.Scan(&total_points_spent)
+	return total_points_spent, err
 }
 
 const upsertPromotionRoiRecord = `-- name: UpsertPromotionRoiRecord :one
@@ -312,7 +347,7 @@ ON CONFLICT (platform, campaign_id, period) DO UPDATE SET
     flagged_negative               = EXCLUDED.flagged_negative,
     source_row_refs                = EXCLUDED.source_row_refs,
     updated_at                     = now()
-RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id
+RETURNING id, platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, created_at, updated_at, origin, replaces_campaign_id, payment_method, points_spent
 `
 
 type UpsertPromotionRoiRecordParams struct {
@@ -357,6 +392,8 @@ func (q *Queries) UpsertPromotionRoiRecord(ctx context.Context, arg UpsertPromot
 		&i.UpdatedAt,
 		&i.Origin,
 		&i.ReplacesCampaignID,
+		&i.PaymentMethod,
+		&i.PointsSpent,
 	)
 	return i, err
 }

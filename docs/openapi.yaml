@@ -973,11 +973,13 @@ components:
     Points:
       type: object
       properties:
-        total: { type: integer }
+        total: { type: integer, description: Every point ever earned from badges — never decreases. }
         breakdown:
           type: array
           items: { $ref: "#/components/schemas/PointsLine" }
-      required: [total, breakdown]
+        spent: { type: integer, description: Points already redeemed against a promotion's spend (POST /api/promotions, payment_method:points), all-time. }
+        available: { type: integer, description: total - spent — what's actually left to redeem right now. Never negative. }
+      required: [total, breakdown, spent, available]
 
     BadgesResponse:
       type: object
@@ -1070,7 +1072,15 @@ components:
         replaces_campaign_id:
           type: string
           description: Set only on an owner_created record that named a replacement.
-      required: [platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, origin]
+        payment_method:
+          type: string
+          enum: [money, points]
+          description: How this campaign's spend (above) was funded. spend itself never changes based on this — ROI math is identical either way.
+        points_spent:
+          type: integer
+          nullable: true
+          description: Steward points redeemed to cover spend, at the fixed rate of 10 cents per point. Set only when payment_method is points.
+      required: [platform, campaign_id, period, spend, attributed_incremental_orders, attributed_incremental_revenue, roi, flagged_negative, source_row_refs, origin, payment_method]
 
     PromotionsResponse:
       type: object
@@ -1093,6 +1103,11 @@ components:
         replaces:
           type: string
           description: campaign_id of an existing promotion this record claims to replace. Omitted/empty means no replacement claim (no FR-007 check runs, no badge possible).
+        payment_method:
+          type: string
+          enum: [money, points]
+          default: money
+          description: Pay this campaign's spend from earned Steward points instead of cash. Verified server-side against the real, live balance (GET /api/badges' points.available) at the fixed rate of 10 cents per point — a request that needs more points than are available is refused with 422 insufficient_points, and nothing is persisted.
       required: [platform, campaign_id, period, spend]
 
     CreatePromotionResponse:
@@ -1100,6 +1115,9 @@ components:
       properties:
         promotion: { $ref: "#/components/schemas/PromotionRoiView" }
         earned_campaign_creation_badge: { type: boolean }
+        points_balance_after:
+          type: integer
+          description: The owner's real available points balance immediately after this request. Present only when payment_method was points.
       required: [promotion, earned_campaign_creation_badge]
 
     # --- platforms --------------------------------------------------------

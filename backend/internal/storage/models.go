@@ -90,6 +90,10 @@ type PromotionRoiRecord struct {
 	Origin string `json:"origin"`
 	// Set only on an owner_created row whose creation was framed as replacing a promotion already flagged negative-ROI (FR-006/FR-007). Backs the Campaign-Creation badge (internal/badges) — never itself re-validated after insert, since a re-ingestion cannot retroactively invalidate an action the owner already took (spec Edge Cases).
 	ReplacesCampaignID pgtype.Text `json:"replaces_campaign_id"`
+	// How this campaign's spend was funded: money (default, every row before this migration) or points (redeemed from the owner's earned Steward points balance, internal/badges). Never decided by the model — set by the owner's explicit choice at POST /api/promotions, verified server-side against the real earned-minus-spent balance before insert.
+	PaymentMethod string `json:"payment_method"`
+	// Points redeemed to cover this campaign's spend, at the fixed, disclosed conversion rate internal/badges.CentsPerPoint defines. NULL whenever payment_method is money. Summed across every points-paid row (regardless of period) to compute how much of the owner's earned balance is already committed — see SumPointsSpentOnPromotions.
+	PointsSpent pgtype.Int4 `json:"points_spent"`
 }
 
 // Per-interaction instrumentation (Constitution Principle VI): tokens, cost, latency, and whether refusal/clarification fired, from the first API call — refusal_has_no_answer_or_provenance enforces Principle II.

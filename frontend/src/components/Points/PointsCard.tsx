@@ -1,4 +1,5 @@
-import { Coins, Lock } from 'lucide-react'
+import { Coins, Rocket } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 import { Chip, Panel } from '@/components/ui/page'
 import { Stat, StatGroup } from '@/components/ui/stat'
@@ -9,22 +10,22 @@ import { usePoints } from './usePoints'
 /**
  * Steward Points: the real, derived balance and how it was made.
  *
- * The honesty discipline this card was built around is unchanged — the
- * balance is a deterministic function of closes already run, redemption is
- * not built, and the roadmap block is a destination rather than a disabled
- * button, because a button that does nothing is a fabricated capability.
- *
- * What changed is the form, not the claims. Three paragraphs of explanation
- * (roughly 130 words) became a composition bar showing how the balance splits
- * between the two earning rules, a two-cell stat rail, and a labelled
- * "Not built" panel. The weights are still auditable on screen: they are
- * printed on each legend row rather than argued for in a sentence.
+ * The balance is a deterministic function of closes already run, and — as of
+ * the points-payment feature — a real, working redemption path: an owner can
+ * pay for a logged promotion's spend with points instead of cash on the
+ * Promotions page (POST /api/promotions, payment_method: "points"), verified
+ * server-side against this exact available figure. What's shown here is
+ * "Available to spend" (earned minus already-redeemed), not a bare earned
+ * total, since a spendable balance is the only honest number once spending
+ * is real.
  */
 
 export default function PointsCard({ className }: { className?: string }) {
   const { data, error } = usePoints()
 
   const total = data?.points.total ?? 0
+  const available = data?.points.available ?? total
+  const spent = data?.points.spent ?? 0
   const breakdown = data?.points.breakdown ?? []
   // Reconciliation badges only: spec 002 added three more badge categories
   // to this same response, and a Growth/Engagement/Campaign-Creation badge
@@ -56,15 +57,19 @@ export default function PointsCard({ className }: { className?: string }) {
                 redesign and is deliberately carried through it. */}
             <div
               role="status"
-              aria-label={`${total} Steward Points from ${daysClosed} ${daysClosed === 1 ? 'day' : 'days'} already reconciled`}
+              aria-label={`${available} Steward Points available to spend, out of ${total} earned from ${daysClosed} ${daysClosed === 1 ? 'day' : 'days'} already reconciled`}
             >
               <StatGroup aria-hidden="true">
                 <Stat
-                  label="Steward points"
-                  value={total.toLocaleString('en-US')}
+                  label="Available to spend"
+                  value={available.toLocaleString('en-US')}
                   size="lg"
                   icon={Coins}
-                  caption="Earned, not awarded for signing up"
+                  caption={
+                    spent > 0
+                      ? `${total.toLocaleString('en-US')} earned − ${spent.toLocaleString('en-US')} redeemed`
+                      : 'Earned, not awarded for signing up'
+                  }
                 />
                 <Stat
                   label="Days reconciled"
@@ -88,11 +93,10 @@ export default function PointsCard({ className }: { className?: string }) {
         )}
       </div>
 
-      {/* Roadmap. A recessed surface and a Lock chip carry "not live" before
-          the sentence does, so nothing here can be mistaken for a feature. */}
+      {/* Shipped: a real, working redemption path, not a roadmap promise. */}
       <div className="border-t border-border bg-muted/40 p-5 sm:p-6">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <Chip icon={Lock}>Not built yet</Chip>
+          <Chip icon={Rocket}>Live</Chip>
           {/* h2, not h3: this card sits directly under the route's h1 and
               carries no intermediate heading, so h3 skipped a level (axe
               heading-order on /points). */}
@@ -101,13 +105,18 @@ export default function PointsCard({ className }: { className?: string }) {
           </h2>
         </div>
         <p className="mt-2 max-w-prose-measure text-sm leading-relaxed text-muted-foreground">
-          This system already tells you which promotion lost money. The next
-          step funds its replacement with the closes you have already run.
-          There is no redemption flow in this prototype and nothing to click
-          here, because spending points needs an integration with promotional
-          tooling this build has no API access to. The balance above is the
-          part that is real today.
+          This system already tells you which promotion lost money. Now you
+          can fund its replacement with the closes you have already run:
+          logging a promotion on the Promotions page lets you pay its spend
+          in points instead of cash, at 10&cent; per point, verified against
+          the real balance above before it's ever spent.
         </p>
+        <Link
+          to="/promotions"
+          className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-primary underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          Log a promotion with points &rarr;
+        </Link>
       </div>
     </Panel>
   )

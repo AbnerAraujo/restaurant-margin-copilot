@@ -51,6 +51,13 @@ type PromotionRoiView struct {
 	// distinguished rather than indistinguishable.
 	Origin             string  `json:"origin"`
 	ReplacesCampaignID *string `json:"replaces_campaign_id,omitempty"`
+	// PaymentMethod is reconcile.PaymentMethodMoney or
+	// reconcile.PaymentMethodPoints — how this campaign's Spend above was
+	// funded. PointsSpent is set only when PaymentMethod is
+	// PaymentMethodPoints; Spend itself never changes based on which one it
+	// is, so ROI math stays identical either way.
+	PaymentMethod string `json:"payment_method"`
+	PointsSpent   *int   `json:"points_spent,omitempty"`
 }
 
 // PromotionRoiResult is get_promotion_roi's and
@@ -73,6 +80,8 @@ func toPromotionRoiView(rec reconcile.PromotionRoiRecord) PromotionRoiView {
 		SourceRowRefs:      rec.SourceRowRefs,
 		Origin:             rec.Origin,
 		ReplacesCampaignID: rec.ReplacesCampaignID,
+		PaymentMethod:      rec.PaymentMethod,
+		PointsSpent:        rec.PointsSpent,
 	}
 	if rec.AttributedIncrementalOrders != nil {
 		view.AttributedIncrementalOrders = rec.AttributedIncrementalOrders

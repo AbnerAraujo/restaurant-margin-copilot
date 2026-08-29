@@ -199,6 +199,26 @@ const (
 	PointsCampaignCreation   = 30
 )
 
+// CentsPerPoint is the fixed, disclosed rate a Steward point redeems for
+// when an owner pays for a promotion's spend with points instead of money
+// (POST /api/promotions, internal/httpapi) — 1 point = $0.10. A round,
+// modest rate: at this build's real 200-point balance, that's $20.00 of
+// campaign spend fundable from points alone. Never adjusted per-owner or
+// per-promotion — one rate, everywhere, so "how many points is this" is
+// always the same arithmetic.
+const CentsPerPoint = 10
+
+// PointsNeededForSpend converts a campaign's spend into the whole number of
+// points required to cover it, rounding UP (never down) so a redemption
+// always covers the full spend — the owner never ends up short a few cents
+// because a fractional point got silently dropped.
+func PointsNeededForSpend(spendCents int64) int {
+	if spendCents <= 0 {
+		return 0
+	}
+	return int((spendCents + CentsPerPoint - 1) / CentsPerPoint)
+}
+
 // pointsByCode is the single lookup both the total and the breakdown read
 // from, so a new badge code can never be worth points in one and not the
 // other.
@@ -233,9 +253,27 @@ type PointsLine struct {
 }
 
 // Points is the full earned balance plus the arithmetic behind it.
+//
+// Total is what EvaluatePoints computes below: a pure function of earned
+// badges, no mutable counter, exactly as this package's doc comment
+// promises. Spent and Available are NOT computed here — EvaluatePoints has
+// no storage access and never will (this package's whole point is staying a
+// pure function of already-evaluated badges) — they are set by the caller
+// (RegisterBadgeHandler) from storage.SumPointsSpentOnPromotions, the other
+// real, persisted fact a spendable balance needs. Available is just as
+// deterministic as Total, only derived from two real sources instead of
+// one: Total minus Spent, never a value written or adjusted directly.
 type Points struct {
 	Total     int          `json:"total"`
 	Breakdown []PointsLine `json:"breakdown"`
+	// Spent is every point already redeemed against a promotion's spend,
+	// across all time (storage.SumPointsSpentOnPromotions). Zero on a
+	// fresh instance, never omitted.
+	Spent int `json:"spent"`
+	// Available is Total-Spent — what's actually left to redeem right now.
+	// Never negative: a redemption that would take it below zero is refused
+	// server-side before it can ever be persisted (POST /api/promotions).
+	Available int `json:"available"`
 }
 
 // EvaluatePoints derives the points balance from already-evaluated badges.
@@ -495,8 +533,18 @@ func RegisterBadgeHandler(q storage.Querier) http.HandlerFunc {
 			return
 		}
 
+		spent, err := storage.SumPointsSpentOnPromotions(r.Context(), q)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+			return
+		}
+
+		resp := BuildResponse(days, promotions, usageDays)
+		resp.Points.Spent = spent
+		resp.Points.Available = resp.Points.Total - spent
+
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(BuildResponse(days, promotions, usageDays)); err != nil {
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
 			// Headers are already sent at this point (Content-Type, status
 			// 200 via the default); there is nothing left to do but log —
 			// see cmd/server for how this handler is wired.

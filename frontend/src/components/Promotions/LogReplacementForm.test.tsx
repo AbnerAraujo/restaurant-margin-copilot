@@ -20,6 +20,20 @@ function stubFetchOnce(status: number, body: unknown) {
   )
 }
 
+/**
+ * The form now also fetches GET /api/badges on mount (usePoints, for the
+ * live points-balance preview) — a real, additional call every one of these
+ * tests' fetch mocks now sees. Find the /api/promotions POST specifically,
+ * rather than assuming it's the first (or only) call fetch received.
+ */
+function findPromotionsPostCall(fetchMock: ReturnType<typeof vi.fn>) {
+  const call = fetchMock.mock.calls.find(([url]) =>
+    String(url).includes('/api/promotions'),
+  )
+  if (!call) throw new Error('no call to /api/promotions was made')
+  return call
+}
+
 async function fillRequiredFields(
   user: ReturnType<typeof userEvent.setup>,
   overrides: { campaignId?: string; spend?: string } = {},
@@ -103,13 +117,14 @@ describe('LogReplacementForm', () => {
       expect.stringContaining('/api/promotions'),
       expect.objectContaining({ method: 'POST' }),
     )
-    const [, requestInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const [, requestInit] = findPromotionsPostCall(fetch as ReturnType<typeof vi.fn>)
     const body = JSON.parse(requestInit.body as string)
     expect(body).toMatchObject({
       platform: 'Just Eat Takeaway',
       campaign_id: 'JET-CAMP-NEWREPLACEMENT',
       period: { start: '2026-08-15', end: '2026-08-21' },
       spend: '75.00',
+      payment_method: 'money',
       replaces: 'JET-CAMP-LUNCHFIX',
     })
   })
@@ -133,7 +148,7 @@ describe('LogReplacementForm', () => {
       await screen.findByText(/no campaign launcher badge this time/i),
     ).toBeInTheDocument()
 
-    const [, requestInit] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const [, requestInit] = findPromotionsPostCall(fetch as ReturnType<typeof vi.fn>)
     const body = JSON.parse(requestInit.body as string)
     expect(body).not.toHaveProperty('replaces')
   })
@@ -170,6 +185,8 @@ describe('LogReplacementForm', () => {
     expect(spendInput.checkValidity()).toBe(false)
 
     await user.click(screen.getByRole('button', { name: /log promotion/i }))
-    expect(fetchSpy).not.toHaveBeenCalled()
+    expect(
+      fetchSpy.mock.calls.some(([url]) => String(url).includes('/api/promotions')),
+    ).toBe(false)
   })
 })

@@ -58,12 +58,32 @@ type PromotionRoiRecord struct {
 	// PeriodStart/PeriodEnd), since what it acknowledges is the act of
 	// logging the replacement, not any campaign's own calendar period.
 	CreatedAt time.Time
+
+	// PaymentMethod and PointsSpent back the points-payment option
+	// (internal/badges' earned Steward points, redeemable at POST
+	// /api/promotions instead of paying a campaign's spend in cash).
+	// SpendCents above is unaffected either way — it always records the
+	// campaign's real dollar cost, so ROI math never depends on how that
+	// cost was funded. PaymentMethod is PaymentMethodMoney for every
+	// pre-existing and ingested record (the default the migration backfills)
+	// and PaymentMethodPoints only for an owner-created record that chose to
+	// redeem points; PointsSpent is nil unless PaymentMethod is
+	// PaymentMethodPoints, mirroring AttributedIncrementalRevenueCents'
+	// nil-means-not-applicable convention elsewhere in this struct.
+	PaymentMethod string
+	PointsSpent   *int
 }
 
 // Origin values for PromotionRoiRecord.Origin (spec 002-badge-expansion).
 const (
 	OriginIngested     = "ingested"
 	OriginOwnerCreated = "owner_created"
+)
+
+// PaymentMethod values for PromotionRoiRecord.PaymentMethod.
+const (
+	PaymentMethodMoney  = "money"
+	PaymentMethodPoints = "points"
 )
 
 // ComputePromotionRoiRecords turns raw promotion spend records and the
@@ -107,6 +127,7 @@ func ComputePromotionRoiRecords(promos []ingest.PromotionSpendRecord, delivery [
 			SpendCents:    p.SpendCents,
 			SourceRowRefs: []SourceRowRef{p.Ref},
 			Origin:        OriginIngested,
+			PaymentMethod: PaymentMethodMoney,
 		}
 
 		if len(matches) > 0 {

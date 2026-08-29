@@ -39,7 +39,14 @@ export interface BadgeEntry {
 
 export interface BadgesResponse {
   badges: BadgeEntry[]
-  points: { total: number; breakdown: PointsLine[] }
+  points: {
+    total: number
+    breakdown: PointsLine[]
+    /** Points already redeemed against a promotion's spend, all-time. */
+    spent: number
+    /** total - spent — what's actually left to redeem right now. */
+    available: number
+  }
 }
 
 export interface PointsState {

@@ -20,3 +20,15 @@ export const POINTS_PER_BADGE = {
   engagement: 5,
   campaign_creation: 30,
 } as const
+
+/**
+ * Mirrors `badges.CentsPerPoint` in `backend/internal/badges/badges.go` —
+ * 1 point = $0.10. Used ONLY to preview how many points a spend amount would
+ * need before the owner submits; the actual redemption is always re-checked
+ * server-side against the real, live balance (POST /api/promotions), the
+ * same "client previews, server verifies" discipline the FR-007 replaces
+ * claim already uses. A drift here would at worst show a wrong preview
+ * number, never let a redemption through the server didn't independently
+ * confirm.
+ */
+export const CENTS_PER_POINT = 10
