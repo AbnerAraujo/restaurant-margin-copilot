@@ -183,12 +183,40 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 /* flow */
 .flow{display:flex;align-items:stretch;gap:12px;margin-top:26px;flex-wrap:wrap;justify-content:center}
 .slide.wide .flow{justify-content:flex-start}
-.step{padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center;min-width:130px;transition:border-color .2s}
-.step:hover{border-color:var(--accent)}
+.step{padding:16px 20px;background:var(--surface);border:1px solid var(--border);border-radius:12px;text-align:center;min-width:130px;transition:border-color .2s;cursor:pointer}
+.step:hover,.step:focus-visible{border-color:var(--accent);outline:none}
+.step:focus-visible{box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent)}
 .step-num{font-size:24px;font-weight:600;color:var(--accent);margin-bottom:5px;font-family:var(--mono)}
 .step-label{font-size:15px;color:var(--text-primary);font-weight:600}
 .step-sub{font-size:11.5px;color:var(--text-secondary);margin-top:3px}
+.step-tap{font-size:9.5px;color:var(--accent);margin-top:6px;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
 .arrow{font-size:20px;color:var(--text-tertiary);font-family:var(--mono);align-self:center}
+
+/* Double Diamond step detail popup — a lightweight in-page modal, distinct
+   from the existing openArchPopup (which opens a real new window for the
+   full architecture diagram). This one shows sourced detail inline without
+   leaving the deck, since each step's real content (the problem + rejected
+   alternatives, the OKR, the scoring criteria, the measured results) is
+   short enough to read in a card, not a whole second document. */
+.step-popup-overlay{display:none;position:fixed;inset:0;z-index:200;background:color-mix(in srgb, var(--ink, #1E241F) 55%, transparent);align-items:center;justify-content:center;padding:32px}
+.step-popup-overlay.open{display:flex}
+.step-popup{background:var(--bg);border:1px solid var(--border);border-radius:16px;max-width:640px;max-height:85vh;overflow-y:auto;padding:28px 32px;box-shadow:0 20px 60px rgba(0,0,0,.35);position:relative}
+.step-popup-close{position:absolute;top:16px;right:16px;width:32px;height:32px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:16px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.step-popup-close:hover{border-color:var(--accent);color:var(--accent)}
+.step-popup-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);font-weight:600}
+.step-popup h3{font-family:var(--serif);font-size:22px;margin:6px 0 14px;color:var(--text-primary)}
+.step-popup-body{font-size:13.5px;line-height:1.55;color:var(--text-secondary)}
+.step-popup-body p{margin:0 0 10px}
+.step-popup-body ul{margin:0 0 10px;padding-left:18px}
+.step-popup-body li{margin-bottom:6px}
+.step-popup-body b{color:var(--text-primary)}
+.step-popup-alt{border-top:1px solid var(--border);margin-top:14px;padding-top:12px}
+.step-popup-alt-row{display:flex;gap:10px;margin-bottom:8px;font-size:12.5px}
+.step-popup-alt-row .why{color:var(--text-tertiary)}
+.step-kr-row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12.5px}
+.step-kr-row:last-child{border-bottom:none}
+.step-kr-row .target{color:var(--text-secondary)}
+.step-kr-row .result{font-weight:600;color:var(--accent);white-space:nowrap}
 
 /* comparison */
 .cmp{display:flex;gap:22px;margin-top:26px;max-width:1080px;width:100%}
@@ -490,13 +518,13 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a tag">Product strategy &middot; Double Diamond</div>
   <h2 class="a md">Five candidate products, scored against the OKR &mdash; only A clears every bar</h2>
   <div class="a flow" style="margin-top:18px">
-    <div class="step"><div class="step-num">5</div><div class="step-label">Discover</div><div class="step-sub">candidate problems</div></div>
+    <div class="step" role="button" tabindex="0" aria-haspopup="dialog" onclick="showStepDetail(event,'discover')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showStepDetail(event,'discover')}"><div class="step-num">5</div><div class="step-label">Discover</div><div class="step-sub">candidate problems</div><div class="step-tap">Tap for detail</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">1+4</div><div class="step-label">Define</div><div class="step-sub">OKR + ranked KRs</div></div>
+    <div class="step" role="button" tabindex="0" aria-haspopup="dialog" onclick="showStepDetail(event,'define')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showStepDetail(event,'define')}"><div class="step-num">1+4</div><div class="step-label">Define</div><div class="step-sub">OKR + ranked KRs</div><div class="step-tap">Tap for detail</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">5</div><div class="step-label">Develop</div><div class="step-sub">products scored A&ndash;E</div></div>
+    <div class="step" role="button" tabindex="0" aria-haspopup="dialog" onclick="showStepDetail(event,'develop')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showStepDetail(event,'develop')}"><div class="step-num">5</div><div class="step-label">Develop</div><div class="step-sub">products scored A&ndash;E</div><div class="step-tap">Tap for detail</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">1</div><div class="step-label">Deliver</div><div class="step-sub">Product A &mdash; measured</div></div>
+    <div class="step" role="button" tabindex="0" aria-haspopup="dialog" onclick="showStepDetail(event,'deliver')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showStepDetail(event,'deliver')}"><div class="step-num">1</div><div class="step-label">Deliver</div><div class="step-sub">Product A &mdash; measured</div><div class="step-tap">Tap for detail</div></div>
   </div>
   <p class="a body" style="margin-top:14px;max-width:1000px;font-size:14px">Each candidate scored against the same four criteria the OKR's KRs measure, plus one practical one: could it actually ship in the four days remaining.</p>
   <table class="a data-table" style="max-width:1240px;margin-top:10px">
@@ -1052,6 +1080,15 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 
 <div id="tooltip" role="status"></div>
 
+<div class="step-popup-overlay" id="stepPopupOverlay" onclick="if(event.target===this){closeStepPopup()}">
+  <div class="step-popup" role="dialog" aria-modal="true" aria-labelledby="stepPopupTitle">
+    <button class="step-popup-close" onclick="closeStepPopup()" aria-label="Close">&times;</button>
+    <div class="step-popup-eyebrow" id="stepPopupEyebrow"></div>
+    <h3 id="stepPopupTitle"></h3>
+    <div class="step-popup-body" id="stepPopupBody"></div>
+  </div>
+</div>
+
 <script>
 (function() {
   'use strict';
@@ -1187,6 +1224,90 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       popup.focus();
     }
   };
+
+  // ---- Double Diamond step detail popup ----
+  // Real, sourced detail for the "Five candidate products" slide's four
+  // Double Diamond steps — pulled from what this deck and
+  // docs/product-strategy.md already document elsewhere (the OKR slide's
+  // real targets/results, the "Alternatives considered" table), not
+  // invented for this popup. Discover is framed honestly as "the problem,
+  // and the alternatives considered" rather than claiming 5 independently
+  // documented candidate PROBLEMS — this project's own record only
+  // preserves the one problem in depth, plus the 4 alternative approaches
+  // it was weighed against, and this popup says exactly that rather than
+  // padding it out.
+  var STEP_DETAIL = {
+    discover: {
+      eyebrow: 'Discover',
+      title: 'The problem, and what else was considered',
+      html:
+        '<p><b>The problem, sourced:</b> independent restaurant margins run 3&ndash;5% industry-wide (3&ndash;9% considered healthy), and only 42% of U.S. restaurants were profitable in 2024 (Toast/VantaInsights 2026). Delivery commissions run 15&ndash;30% (DoorDash/Uber Eats) or 10&ndash;20% (Grubhub) plus 2&ndash;3% payment processing &mdash; the advertised rate and the effective cost per order routinely diverge. An estimated 2&ndash;5% of delivery revenue is lost to reconciliation discrepancies never caught, and manual reconciliation can run ~12 hours/week for a mid-size operation (MAS Partner/DeliverGuard 2026).</p>' +
+        '<p>Put together: margins are thin enough that a few points of leakage matters, reconciliation is tedious enough nobody does it daily, and discovery happens at month-end &mdash; too late to change anything about the week that already happened.</p>' +
+        '<div class="step-popup-alt">' +
+          '<p style="margin-bottom:8px"><b>Alternative approaches considered, and why each fell short:</b></p>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>Manual reconciliation</b> (status quo) <span class="why">&mdash; ~12 hrs/week, tedious enough it doesn&rsquo;t happen daily</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>Generic BI dashboard / spreadsheet</b> <span class="why">&mdash; still needs manual export wrangling, no natural-language interface, no refusal discipline (a wrong pivot looks as confident as a right one)</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>Hiring a bookkeeper</b> <span class="why">&mdash; a real recurring cost, not real-time, doesn&rsquo;t scale to a single-location budget</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>A general "ask me anything" assistant</b> <span class="why">&mdash; explicitly rejected: an empty chat box invites the first question that comes to mind, fails, and the owner concludes the product doesn&rsquo;t work</span></span></div>' +
+        '</div>'
+    },
+    define: {
+      eyebrow: 'Define',
+      title: 'One objective, four falsifiable Key Results — set before the build',
+      html:
+        '<p><b>Objective:</b> grow revenue without eroding margin.</p>' +
+        '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b></span><span class="target">Target: 100% refusal correctness</span></div>' +
+        '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b></span><span class="target">Target: zero silent data loss on the messy fixture set</span></div>' +
+        '<div class="step-kr-row"><span><b>KR3 &middot; Growth</b></span><span class="target">Target: &ge;1 negative-ROI promo flagged end-to-end</span></div>' +
+        '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b></span><span class="target">Target: under $0.05 per interaction</span></div>' +
+        '<p style="margin-top:12px">These four KRs are also the exact scoring criteria the next step (Develop) ranks all five candidate products against &mdash; the same bar, not a separate one.</p>'
+    },
+    develop: {
+      eyebrow: 'Develop',
+      title: 'Five candidates, scored against the same four KRs plus one practical bar',
+      html:
+        '<p>Each candidate product was scored against the same four criteria the KRs measure, plus one real-world constraint &mdash; could it actually ship in the four days remaining:</p>' +
+        '<ul>' +
+          '<li><b>Growth</b> &mdash; does it move the needle on KR3 (promo/revenue growth)?</li>' +
+          '<li><b>Margin</b> &mdash; does it move the needle on KR2 (protecting margin)?</li>' +
+          '<li><b>Real data</b> &mdash; can it actually be evaluated against the real fixture data, not just argued for in theory?</li>' +
+          '<li><b>Prosus-unique</b> &mdash; does it fit the 724k-restaurant distribution thesis, or is it a generic tool anyone could ship?</li>' +
+          '<li><b>Buildable in 4 days</b> &mdash; the real interview deadline, not a hypothetical one.</li>' +
+        '</ul>' +
+        '<p><b>A</b> (Margin &amp; Growth Copilot) is the only candidate that clears every bar &mdash; see the full scoring table on this slide for all five. Note D (cross-platform comparator) scored too big to build in four days; it has since shipped anyway, after the take-home freeze.</p>'
+    },
+    deliver: {
+      eyebrow: 'Deliver',
+      title: 'Product A, measured against what was promised',
+      html:
+        '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: 100% refusal correctness</span></span><span class="result">5/5</span></div>' +
+        '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: zero silent data loss</span></span><span class="result">0 defects</span></div>' +
+        '<div class="step-kr-row"><span><b>KR3 &middot; Growth</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: &ge;1 negative-ROI promo flagged</span></span><span class="result">1 flagged</span></div>' +
+        '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: under $0.05/interaction</span></span><span class="result">$0.015</span></div>' +
+        '<p style="margin-top:12px">KR3&rsquo;s flag carries real provenance: JET-CAMP-LUNCHFIX, ROI &minus;$165.00. KR1 also discloses, not just commits: 13/15 accuracy and 2/5 strict consistency are shown alongside the 5/5 refusal result rather than folded into it &mdash; see the Evaluation slide for the full breakdown.</p>'
+    }
+  };
+
+  window.showStepDetail = function(event, key) {
+    if (event) event.stopPropagation();
+    var detail = STEP_DETAIL[key];
+    if (!detail) return;
+    document.getElementById('stepPopupEyebrow').textContent = detail.eyebrow;
+    document.getElementById('stepPopupTitle').textContent = detail.title;
+    document.getElementById('stepPopupBody').innerHTML = detail.html;
+    document.getElementById('stepPopupOverlay').classList.add('open');
+  };
+
+  window.closeStepPopup = function() {
+    document.getElementById('stepPopupOverlay').classList.remove('open');
+  };
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var overlay = document.getElementById('stepPopupOverlay');
+      if (overlay && overlay.classList.contains('open')) closeStepPopup();
+    }
+  });
 
   // ---- Speaker Notes Panel ----
   window.toggleNotes = function() {
