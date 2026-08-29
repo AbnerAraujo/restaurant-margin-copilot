@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { forwardRef, type HTMLAttributes, type ReactNode } from 'react'
 
 import { cn } from '@/lib/utils'
 
@@ -167,31 +167,36 @@ const CHIP_TONE: Record<ChipTone, string> = {
  *
  * Every tone pairs colour with a word, and an icon where one is available, so
  * a chip is never read by hue alone.
+ *
+ * Forwards its ref and spreads any remaining `<span>` attributes so a caller
+ * can wrap it in the shared `Tooltip` primitive (`ui/tooltip.tsx`) via
+ * `<TooltipTrigger asChild>` — that needs a real DOM node to attach a ref and
+ * pointer/focus handlers to, which a plain non-forwarding component can't
+ * give it. `ChatPanel.tsx`'s tool/cache chips are the first callers to do
+ * this, replacing a native `title=` tooltip (unstyled, mouse-only in most
+ * browsers) with the app's own styled, keyboard-reachable one.
  */
-export function Chip({
-  children,
-  icon: Icon,
-  tone = 'neutral',
-  className,
-  title,
-}: {
-  children: ReactNode
-  icon?: LucideIcon
-  tone?: ChipTone
-  className?: string
-  title?: string
-}) {
+export const Chip = forwardRef<
+  HTMLSpanElement,
+  {
+    children: ReactNode
+    icon?: LucideIcon
+    tone?: ChipTone
+    className?: string
+  } & HTMLAttributes<HTMLSpanElement>
+>(function Chip({ children, icon: Icon, tone = 'neutral', className, ...rest }, ref) {
   return (
     <span
-      title={title}
+      ref={ref}
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-micro font-medium',
         CHIP_TONE[tone],
         className,
       )}
+      {...rest}
     >
       {Icon ? <Icon className="size-3 shrink-0" aria-hidden="true" /> : null}
       {children}
     </span>
   )
-}
+})

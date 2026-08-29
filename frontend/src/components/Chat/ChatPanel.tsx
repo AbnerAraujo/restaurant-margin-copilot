@@ -7,6 +7,7 @@ import {
   FileText,
   History,
   CircleHelp,
+  Info,
   Loader2,
   PlugZap,
   RotateCw,
@@ -26,6 +27,7 @@ import Logo from '@/components/Logo/Logo'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
@@ -592,13 +594,17 @@ function ChatAvatar({
  * "$0 spent" and "saved $X" as two separate facts rather than one netted
  * number: the running cost panel must never treat an avoided cost as spend,
  * and the copy here mirrors that distinction so the two can't be conflated.
+ *
+ * `cache.note` — the backend's own statement of what this cache hit does and
+ * does not match — used to ride on a bare `title=` attribute: an unstyled,
+ * browser-default tooltip with no keyboard affordance and no visual cue that
+ * anything was even hoverable. It's now the same Info-icon-plus-Tooltip
+ * pattern `Stat`'s own info tooltips use, so a curious owner has something to
+ * actually spot and Tab to.
  */
 function CacheBadge({ cache }: { cache: AnswerCacheInfo }) {
   return (
-    <p
-      className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro text-muted-foreground"
-      title={cache.note}
-    >
+    <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-micro text-muted-foreground">
       <Zap className="size-3 shrink-0" aria-hidden="true" />
       <span className="font-medium text-foreground">Served from cache</span>
       <span>— no model call, $0.000 spent</span>
@@ -606,6 +612,20 @@ function CacheBadge({ cache }: { cache: AnswerCacheInfo }) {
         <span className="tabular-nums">
           (saved ${cache.cost_avoided_usd.toFixed(3)})
         </span>
+      ) : null}
+      {cache.note ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              aria-label="Why this was served from cache"
+            >
+              <Info className="size-3" aria-hidden="true" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{cache.note}</TooltipContent>
+        </Tooltip>
       ) : null}
     </p>
   )
@@ -726,14 +746,24 @@ function AnswerBubble({
       <div className="w-full max-w-[52rem] space-y-3 rounded-xl rounded-tl-sm border border-border bg-card px-4 py-3.5">
         {tool || sourceCount > 0 || message.cache ? (
           <div className="flex flex-wrap items-center gap-1.5">
+            {/* Both chips below used to carry their explanation on a native
+                `title=` attribute — invisible until the browser's own,
+                unstyled delay fires, and unreachable by keyboard. `Chip` now
+                forwards a ref (ui/page.tsx), so it can be the real trigger
+                for the app's own styled Tooltip instead; `cursor-help` is
+                the one visual addition, so a chip that has more to say reads
+                as such before anyone hovers it. */}
             {tool ? (
-              <Chip
-                icon={Wrench}
-                tone="brand"
-                title="The typed MCP tool that computed this answer's figures"
-              >
-                <span className="font-mono">{tool}</span>
-              </Chip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Chip icon={Wrench} tone="brand" tabIndex={0} className="cursor-help">
+                    <span className="font-mono">{tool}</span>
+                  </Chip>
+                </TooltipTrigger>
+                <TooltipContent>
+                  The typed MCP tool that computed this answer&apos;s figures
+                </TooltipContent>
+              </Tooltip>
             ) : null}
             {sourceCount > 0 ? (
               <Chip icon={FileText}>
@@ -741,9 +771,18 @@ function AnswerBubble({
               </Chip>
             ) : null}
             {message.cache ? (
-              <Chip icon={Zap} title={message.cache.note}>
-                Cached, $0.000
-              </Chip>
+              message.cache.note ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Chip icon={Zap} tabIndex={0} className="cursor-help">
+                      Cached, $0.000
+                    </Chip>
+                  </TooltipTrigger>
+                  <TooltipContent>{message.cache.note}</TooltipContent>
+                </Tooltip>
+              ) : (
+                <Chip icon={Zap}>Cached, $0.000</Chip>
+              )
             ) : null}
           </div>
         ) : null}
@@ -1572,35 +1611,50 @@ export default function ChatPanel({
               className="min-h-10 resize-none border-0 bg-transparent shadow-none
                 focus-visible:ring-0 dark:bg-transparent"
             />
+            {/* These two composer buttons used to carry their hint on a
+                native `title=` attribute — the browser's own unstyled
+                tooltip, on its own delay, with no visual cue either button
+                had one at all. `Button` now forwards a ref (ui/button.tsx),
+                so it can sit inside `TooltipTrigger asChild` and get the
+                app's own styled tooltip instead; `aria-label` (unchanged)
+                stays the source of truth for assistive tech either way. */}
             {persistConversation ? (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                disabled={draft.trim().length === 0}
-                onClick={() => {
-                  setSavedPrompts((prompts) => addSavedPrompt(prompts, draft))
-                  setIdeasOpen(true)
-                }}
-                aria-label="Save this question for reuse"
-                title="Save this question for reuse"
-                className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
-              >
-                <Bookmark className="size-4" aria-hidden="true" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="ghost"
+                    disabled={draft.trim().length === 0}
+                    onClick={() => {
+                      setSavedPrompts((prompts) => addSavedPrompt(prompts, draft))
+                      setIdeasOpen(true)
+                    }}
+                    aria-label="Save this question for reuse"
+                    className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+                  >
+                    <Bookmark className="size-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Save this question for reuse</TooltipContent>
+              </Tooltip>
             ) : null}
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              onClick={() => setIdeasOpen((open) => !open)}
-              aria-expanded={ideasOpen}
-              aria-label={ideasOpen ? 'Hide example questions' : 'Show example questions'}
-              title="What can I ask?"
-              className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
-            >
-              <Lightbulb className="size-4" aria-hidden="true" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => setIdeasOpen((open) => !open)}
+                  aria-expanded={ideasOpen}
+                  aria-label={ideasOpen ? 'Hide example questions' : 'Show example questions'}
+                  className="mb-0.5 shrink-0 rounded-xl text-muted-foreground hover:text-foreground"
+                >
+                  <Lightbulb className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>What can I ask?</TooltipContent>
+            </Tooltip>
             <Button
               type="submit"
               size="icon"
