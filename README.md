@@ -1,20 +1,58 @@
 # My Business Steward (Restaurant Margin Copilot)
 
-A daily-close and margin-alert copilot for an independent restaurant. The owner
-gets sales exports from delivery platforms (iFood, JET) and the in-house POS,
-plus supplier cost sheets — and nobody reconciles them daily because it's
-tedious. Margin slippage is usually discovered when the month closes, too late
-to act on. This ingests those files, reconciles them deterministically, and
-answers plain-language questions about the day and the week — flagging what
-changed, why, and refusing rather than guessing when it doesn't know.
+A daily-close and margin-alert copilot for an independent restaurant. The
+owner gets sales exports from delivery platforms (iFood, Just Eat Takeaway)
+and the in-house POS, plus supplier cost sheets — and nobody reconciles them
+daily because it's tedious. Margin slippage is usually discovered when the
+month closes, too late to act on. This ingests those files, reconciles them
+deterministically, and answers plain-language questions about the day and
+the week — flagging what changed, why, and refusing rather than guessing
+when it doesn't know.
 
 Built as a take-home prototype for a Prosus/Toqan Technical PM interview
 challenge. `CLAUDE.md` in this repo is the original brief and constitution the
 whole build follows.
 
-- **Live presentation** (26-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — also checked in at [`docs/presentation.html`](docs/presentation.html)
-- **Live architecture diagram** (design system, reconciliation engine, full system): https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441 — also checked in at [`docs/architecture.html`](docs/architecture.html)
-- **Live API docs** (interactive Swagger UI, every backend endpoint): https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764 — spec checked in at [`docs/openapi.yaml`](docs/openapi.yaml)
+- **Live presentation** (26-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — checked in at [`docs/presentation.html`](docs/presentation.html)
+- **Live architecture diagram** (design system, reconciliation engine, full system): https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441 — checked in at [`docs/architecture.html`](docs/architecture.html)
+- **Live API docs** (interactive Swagger UI, every backend endpoint): https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764 — checked in at [`docs/api.html`](docs/api.html), generated from the spec at [`docs/openapi.yaml`](docs/openapi.yaml)
+
+## Contents
+
+- [What's real right now](#whats-real-right-now)
+- [The core idea: deterministic engine, probabilistic narrator](#the-core-idea-deterministic-engine-probabilistic-narrator)
+- [Getting started](#getting-started)
+- [Two datasets, two different jobs](#two-datasets-two-different-jobs)
+- [Documentation map](#documentation-map)
+- [User stories and specs](#user-stories-and-specs-spec-driven-development)
+- [Real evaluation results](#real-evaluation-results)
+- [Stack](#stack)
+- [The 7 MCP tools and the Claude Code skills used to build this](#the-7-mcp-tools-and-the-claude-code-skills-used-to-build-this)
+- [Non-goals](#non-goals)
+
+## What's real right now
+
+Queried live against the running Postgres database on 2026-08-29:
+
+| | |
+|---|---|
+| Reconciled days in the database | **744** (the 14-day evaluation fixture, 2026-08-01–14, plus a 730-day synthetic dataset, 2026-08-15–2028-08-13 — see [below](#two-datasets-two-different-jobs)) |
+| Logged model interactions | **442**, cumulative real Anthropic API spend **$3.7045**, per-call in `question_interaction` |
+| Accuracy on the eval harness's known-answer questions | **13/15 (87%)**, grounded only in the 14-day fixture window — see [Real evaluation results](#real-evaluation-results) |
+| MCP tools exposed to the model | **7** typed, read-only tools — no open SQL, no free-form computation |
+| Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Settings |
+
+Shipped since the original take-home submission, in addition to the core
+product: a **points-payment feature** (fund a promotion's spend with earned
+Steward points instead of cash, at a fixed 10¢/point rate — see
+`backend/internal/httpapi/promotions_create.go`'s `payment_method` field), a
+**deterministic capability-question path** (answers "what do you do?" with a
+hand-written, tool-grounded answer, before any model call runs, at zero
+cost), a warmer chat tone (green refusal styling instead of red, warm
+narration), a **Settings page**, and the two-year synthetic dataset described
+below. A larger v2 spec (`specs/008-dashboard-chat-intelligence-v2`,
+comparisons and proactive chat guidance built on top of that new history) is
+drafted but not yet implemented — see the [spec table](#user-stories-and-specs-spec-driven-development).
 
 ## The core idea: deterministic engine, probabilistic narrator
 
@@ -42,16 +80,20 @@ See [`docs/SETUP.md`](docs/SETUP.md) for full local setup (Go, Postgres via
 Quick shape of it:
 
 ```bash
-docker compose up -d                              # Postgres
-go run ./backend/cmd/server -ingest backend/fixtures        # seed + reconcile fixture data
-go run ./backend/cmd/server -serve :8080                    # backend API
-cd frontend && npm install && npm run dev                   # frontend (Vite)
+docker compose up -d                                         # Postgres
+go run ./backend/cmd/server -ingest backend/fixtures         # seed + reconcile the 14-day eval fixture
+go run ./backend/cmd/server -ingest-promo backend/fixtures   # seed promotion/ad-spend data
+go run ./backend/cmd/server -serve :8080                     # backend API
+cd frontend && npm install && npm run dev                    # frontend (Vite)
 ```
+
+To explore the app at realistic scale instead of just the 14-day fixture, see
+[Two datasets, two different jobs](#two-datasets-two-different-jobs) below.
 
 ### Installing it as a Mac app
 
 The frontend is a real PWA (`vite-plugin-pwa`, a real manifest and service
-worker — check with either backend and frontend above running:
+worker — check with both backend and frontend above running):
 
 1. Open `http://localhost:5173` in Chrome.
 2. Click the install icon (⊕) at the right of the address bar, or Chrome
@@ -65,6 +107,28 @@ same as any other local-first tool in this repo. The service worker only
 caches the app's own JS/CSS/icons; it never caches `/api/*`, so every
 number you see always comes from a live request, never a stale cache.
 
+## Two datasets, two different jobs
+
+This repo ships two genuinely different datasets — don't conflate them:
+
+- **`backend/fixtures/`** — the original 14-day evaluation fixture
+  (2026-08-01 through 2026-08-14), small and deliberately messy (a duplicate
+  order, a refund, a missing day, an inconsistent date format). This is the
+  only data the eval harness and the accuracy/consistency/refusal numbers
+  below are grounded in. It's checked into git and never changes.
+- **`backend/data/live/`** (git-ignored) — a 730-day synthetic dataset
+  generated by `backend/cmd/gendata`, running from 2026-08-15 through
+  2028-08-13, built for exploring the running app at realistic scale (a real
+  growth curve, real promotion outcomes, two years of history to make
+  period-over-period comparisons meaningful). It's a separate tool
+  (`go run ./backend/cmd/gendata`) writing the same four CSV shapes
+  `internal/ingest` already parses — it does not touch or regenerate the
+  fixture, and no accuracy/consistency/refusal number anywhere in this repo
+  is computed from it.
+
+The live database currently holds both, back to back (744 reconciled days,
+2026-08-01–2028-08-13) — one continuous timeline, two different origins.
+
 ## Documentation map
 
 Everything here was produced through a real spec-driven process — Definition
@@ -76,8 +140,8 @@ fact.
 | [`docs/dor.md`](docs/dor.md) | Definition of Ready — problem framing, scope, and what had to be true before build started |
 | [`docs/prd.md`](docs/prd.md) | Product Requirements Document — user stories, KRs, success criteria |
 | [`docs/technical-rfc.md`](docs/technical-rfc.md) | Technical RFC — stack choices, architecture decisions, alternatives considered and rejected |
-| [`docs/rfc-multi-tenant.md`](docs/rfc-multi-tenant.md) | Standalone RFC for multi-tenant support — explicitly **not approved for implementation**, kept as a design exercise |
-| [`docs/product-strategy.md`](docs/product-strategy.md) | Product strategy, roadmap, and the real, honest evaluation-results writeup (numbers below are sourced from here) |
+| [`docs/rfc-multi-tenant.md`](docs/rfc-multi-tenant.md) | Standalone RFC for multi-tenant support — status: **proposed, not approved for implementation**, kept as a design exercise |
+| [`docs/product-strategy.md`](docs/product-strategy.md) | Product strategy, roadmap, and the real, honest evaluation-results writeup, dated entry by entry (numbers on this page are sourced from here and from a live database query) |
 | [`docs/plan.md`](docs/plan.md) | The full build log — every phase, every mistake made and how it was fixed, in order |
 | [`docs/test-plan.md`](docs/test-plan.md) | Test strategy across unit, integration, and live-API-gated tests |
 | [`docs/live-integration-test-scenarios.md`](docs/live-integration-test-scenarios.md) | Scenarios that exercise the real Anthropic API and real Postgres, not mocks |
@@ -85,7 +149,7 @@ fact.
 | [`docs/why-ai.md`](docs/why-ai.md) | Why this problem is a good fit for an LLM layer, and where it deliberately isn't used |
 | [`docs/brand.md`](docs/brand.md) | Visual identity / design tokens used across the app and docs |
 | [`docs/frontend.md`](docs/frontend.md) | Frontend design system and architecture reference — real file paths, real consumer counts, real bugs found and fixed |
-| [`docs/openapi.yaml`](docs/openapi.yaml) + **[live API docs ↗](https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764)** | OpenAPI 3.0 spec for every backend endpoint, grounded against real live responses, rendered as an interactive Swagger UI page |
+| [`docs/openapi.yaml`](docs/openapi.yaml) + [`docs/api.html`](docs/api.html) (also live ↗ above) | OpenAPI 3.0 spec for every backend endpoint, grounded against real live responses, rendered as an interactive Swagger UI page |
 | [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 7 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the two this project created itself |
 
 ## User stories and specs (spec-driven development)
@@ -103,22 +167,24 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/004-semantic-cache`](specs/004-semantic-cache/spec.md) | Paraphrase-aware answer cache — skip the LLM on a re-asked question, even reworded | Shipped |
 | [`specs/005-multi-tenant`](specs/005-multi-tenant/spec.md) | Multi-tenant support (Segment 2 expansion) | Spec + RFC only — not built, deliberately gated |
 | [`specs/007-cost-sheet-upload`](specs/007-cost-sheet-upload/spec.md) | Cost-sheet upload UI — validation, preview, template, commit-and-reconcile | Shipped |
+| [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Spec drafted (2026-08-29) — not yet planned or built |
 
 ## Real evaluation results
 
 Measured against the live backend with real Anthropic API calls
 (`evaluation/promptfoo/{accuracy,consistency,refusal}.yaml`, 35 questions
-total), reported honestly including the failures — see
-`docs/product-strategy.md`'s dated fix sections for the full breakdown,
-root-cause analysis, and every before/after re-run.
+total, all grounded exclusively in the 14-day `backend/fixtures/` window —
+none of the 2-year synthetic dataset feeds these numbers), reported honestly
+including the failures — see `docs/product-strategy.md`'s dated fix sections
+for the full breakdown, root-cause analysis, and every before/after re-run.
 
 | Metric | Result |
 |---|---|
 | Accuracy | 13/15 (87%) — only A7 (a grading-regex false negative) and A15 (an honest refusal on unattributable data) still failing |
 | Consistency (5 questions × 3 phrasings each) | 2/5 sets fully agree (promptfoo-strict); 3/5 agree in substance on manual read |
 | Refusal correctness (5 unanswerable questions) | 5/5 (100%) |
-| Cost per interaction | ~$0.015/question average |
-| Cumulative real API spend, this build | ~$3.56, logged per-call in Postgres |
+| Cost per interaction, this eval run | ~$0.016/question average |
+| Cumulative real API spend, all activity to date | $3.7045 across 442 logged interactions, queried live from `question_interaction` (2026-08-29) |
 
 The deterministic reconciliation/ingestion/MCP-tool layer showed **zero
 defects** across the full run — every failure traced to the model layer's
@@ -130,7 +196,7 @@ boundary this architecture's Go/model split is designed to contain.
 - **Backend**: Go, `sqlc` + `pgx/v5` + `golang-migrate` over PostgreSQL, fixed-point cents arithmetic — no floats near money
 - **MCP layer**: `mark3labs/mcp-go`, a fixed set of typed tools, no open SQL
 - **Model**: Anthropic API direct (no agent framework) — Claude Haiku 4.5 for cheap classification (ambiguity gate, paraphrase matching), Claude Sonnet 5 for narration and harder judgment calls
-- **Frontend**: React + TypeScript + Vite + Tailwind v4 + shadcn/ui
+- **Frontend**: React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui, installable as a PWA (`vite-plugin-pwa`)
 - **Evaluation**: `promptfoo` harness, real numbers above
 - **Docs/skills**: built with GitHub Spec Kit (SDD), and Claude Code skills for data visualization, presentation design, and UX review
 
@@ -152,7 +218,7 @@ Full contracts (inputs, refusal conditions, provenance shape): [`specs/001-margi
 
 Claude Code skills actually used, by name (not a generic "AI helped" claim — each is named in a real commit message):
 
-- **GitHub Spec Kit / SDD** — the whole `constitution → specify → plan → tasks → analyze → implement` flow, all ten `speckit-*` commands, across the core spec and 4 follow-on specs
+- **GitHub Spec Kit / SDD** — the whole `constitution → specify → plan → tasks → analyze → implement` flow, all ten `speckit-*` commands, across the core spec and follow-on specs
 - **`dataviz`** — chart-type selection and the categorical/sequential/diverging palette rules
 - **`design-review`, `redesign`, `apply-aesthetic`, `design-component`** — the frontend visual revamp
 - **`make-slide`** — this presentation deck
@@ -165,3 +231,5 @@ Claude Code skills actually used, by name (not a generic "AI helped" claim — e
 - Not a general restaurant assistant, not an open-ended chat box
 - Not a multi-agent architecture for its own sake
 - Not a production system — a prototype built to demonstrate judgment, meant to be opened and used by someone else
+- No authentication or multi-tenancy — single-owner, single-restaurant by design; multi-tenant is spec'd and RFC'd (see the table above) but explicitly not approved for implementation
+- No non-English input — Portuguese-language input was scored and deliberately deferred (`specs/008-dashboard-chat-intelligence-v2`'s Assumptions) rather than risk regressing the tuned English ambiguity-gate/explain prompts this close to the interview date
