@@ -1,4 +1,4 @@
-import { useId, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -117,6 +117,26 @@ const MISSING_CAPSULE_HEIGHT = 28
 
 const MAX_DISPLAY_BARS = 120
 const MIN_SLOT_WIDTH = 28 // BAR_WIDTH + a visible gutter between neighbors
+
+// ---------------------------------------------------------------------------
+// Dataset boundary — the two datasets this chart may be asked to plot span
+// very different dollar magnitudes. backend/fixtures/ (see its README) is a
+// hand-authored, deliberately small-dollar 14-day period, 2026-08-01..14,
+// NEVER modified — and it is chronologically the MOST RECENT slice of the
+// whole timeline the backend serves. Everything before it is a 730-day
+// synthetic dataset (backend/cmd/gendata) generated at realistic restaurant
+// scale, averaging roughly $40,000/month net margin with individual days
+// often in the $1,000-4,000+ range.
+//
+// Reported live: any chart window wide enough to include days on both sides
+// of this boundary renders a real, jarring cliff right where they meet — the
+// fixture's own $10s-$100s bars flatten to a near-invisible line beside
+// towering four-figure live bars, exactly at the "today" edge of the chart a
+// reader looks at first. That is two honestly different datasets sharing one
+// timeline, not broken data, but nothing on the chart said so. This constant
+// lets the chart detect the crossing and label it (see showFixtureBoundary
+// below) rather than let the reader guess "why did the bars disappear".
+const FIXTURE_WINDOW_START = '2026-08-01'
 
 interface DisplayDatum {
   /** ISO date of the bucket's first day (single day when unbucketed). */
@@ -333,6 +353,7 @@ function MarginTrendChart({
   const hatchPatternId = useId()
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
 
   // Every caption below is derived from the data actually plotted. Hard-coded
   // "14-Day" / "August 1–14" strings survived the switch to live
@@ -382,6 +403,36 @@ function MarginTrendChart({
 
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
 
+  // The dataset boundary (see FIXTURE_WINDOW_START) only needs marking when
+  // the plotted window actually straddles it — a window entirely inside the
+  // fixture (fixtureBoundaryIndex === 0, e.g. the default 14-day fixture) or
+  // entirely inside the live history (findIndex returns -1) crosses nothing,
+  // so `> 0` is deliberately the whole condition rather than `!== -1`.
+  const fixtureBoundaryIndex = display.findIndex(
+    (datum) => datum.date >= FIXTURE_WINDOW_START,
+  )
+  const showFixtureBoundary = fixtureBoundaryIndex > 0
+  const fixtureBoundaryX =
+    MARGIN.left + (plotWidth / display.length) * fixtureBoundaryIndex
+  const datasetBoundarySummary = showFixtureBoundary
+    ? `, crossing from the multi-year synthetic history into the small-dollar eval fixture window at ${formatMonthDay(FIXTURE_WINDOW_START)}`
+    : ''
+
+  // Mount (and every genuinely new period load) scrolled to the RIGHT edge —
+  // today / the most recent data — rather than the oldest history a plain
+  // overflow-x-auto container defaults to. "Today's Close" is about now
+  // first, with history a deliberate scroll away, not the other way round.
+  // Keyed on the actual plotted range (not the `data` array's own identity,
+  // which is a fresh array reference on every parent render even for the
+  // SAME period) so re-scrolling only fires when the period genuinely
+  // changes, never on an unrelated re-render that would otherwise yank a
+  // reader back to the right after they scrolled left on purpose.
+  useLayoutEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+    container.scrollLeft = container.scrollWidth
+  }, [firstDate, lastDate, display.length, chartWidth])
+
   return (
     <figure
       aria-label="Daily margin trend"
@@ -403,7 +454,7 @@ function MarginTrendChart({
         ) : null}
       </figcaption>
 
-      <div className="relative w-full overflow-x-auto">
+      <div ref={scrollContainerRef} className="relative w-full overflow-x-auto">
         <svg
           viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
@@ -413,7 +464,7 @@ function MarginTrendChart({
             bucketDays > 1
               ? `, grouped into ${display.length} ${bucketDays}-day totals`
               : ''
-          }${missingDatesSummary}`}
+          }${missingDatesSummary}${datasetBoundarySummary}`}
           // Capped at its own design width (`w-full` alone let the viewBox
           // scale up inside the widened 1200px content column, which
           // enlarges the SVG's text with it — axis ticks rendered at roughly
@@ -647,6 +698,50 @@ function MarginTrendChart({
           >
             {formatChartMonthContext(firstDate, lastDate)}
           </text>
+
+          {/* Dataset boundary — see FIXTURE_WINDOW_START's doc comment. Drawn
+              LAST (on top of the bars) so the dashed rule and its labels stay
+              legible even where a tall live-scale bar sits right beside the
+              crossing. Labels are only rendered when there is genuinely room
+              for them (a real gap on that side of the line) — this project's
+              own dashed-boundary-plus-label visual language for "two honest
+              things sharing one view" (see the architecture diagrams in
+              docs/presentation.html), translated to a vertical rule since
+              this is a timeline, not a stacked layout. */}
+          {showFixtureBoundary ? (
+            <g aria-hidden="true">
+              <line
+                x1={fixtureBoundaryX}
+                x2={fixtureBoundaryX}
+                y1={MARGIN.top}
+                y2={CHART_HEIGHT - MARGIN.bottom}
+                stroke="var(--muted-foreground)"
+                strokeWidth={1}
+                strokeDasharray="4 3"
+                opacity={0.6}
+              />
+              {fixtureBoundaryX - MARGIN.left > 70 ? (
+                <text
+                  x={fixtureBoundaryX - 6}
+                  y={MARGIN.top - 2}
+                  textAnchor="end"
+                  className="fill-muted-foreground text-[9px] uppercase tracking-wide"
+                >
+                  2-yr synthetic history
+                </text>
+              ) : null}
+              {chartWidth - MARGIN.right - fixtureBoundaryX > 60 ? (
+                <text
+                  x={fixtureBoundaryX + 6}
+                  y={MARGIN.top - 2}
+                  textAnchor="start"
+                  className="fill-muted-foreground text-[9px] uppercase tracking-wide"
+                >
+                  eval fixture window
+                </text>
+              ) : null}
+            </g>
+          ) : null}
         </svg>
 
         {hovered ? (

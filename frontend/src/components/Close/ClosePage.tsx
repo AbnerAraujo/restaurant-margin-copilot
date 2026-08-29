@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CalendarDays, CalendarRange } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 
@@ -329,48 +329,84 @@ export default function ClosePage() {
   // previous selection's stale figures.
   const [data, setData] = useState<ReconciliationApiResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // Reported live: Period mode has two independent date fields (rangeStart,
+  // rangeEnd), each its own piece of state with its own onChange handler —
+  // auto-fetching on every change fired an immediate request for a range the
+  // owner hadn't finished choosing yet, then a second request a moment later
+  // once the other field changed too, even with the debounce this used to
+  // have. The fix is not a longer debounce — it's not auto-fetching Period at
+  // all: `periodLoading` tracks only an explicitly-triggered Period fetch
+  // (see handleApplyPeriod), so a null `data` in Period mode with this false
+  // reads as "waiting on the owner to pick dates," not "loading."
+  const [periodLoading, setPeriodLoading] = useState(false)
 
+  // Guards a fetch's own state updates against a newer request finishing
+  // first (Period's explicit Apply button can now fire an out-of-order
+  // second request if clicked again before the first resolves) and against
+  // updating state after unmount — the same two failure modes the previous
+  // per-effect `cancelled` flag guarded, generalized so both the automatic
+  // effect below and the explicit handleApplyPeriod button can share one
+  // fetch path.
+  const latestRequestId = useRef(0)
+  const isMountedRef = useRef(true)
   useEffect(() => {
+    isMountedRef.current = true
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
+
+  function fetchReconciliation(query: string, mode: ViewMode) {
+    const requestId = ++latestRequestId.current
+    getJson<ReconciliationApiResponse>(`/api/reconciliation${query}`)
+      .then((response) => {
+        if (!isMountedRef.current || latestRequestId.current !== requestId) {
+          return
+        }
+        setData(response)
+        // Only the unfiltered "latest" fetch's echoed start/end reflects the
+        // real ingested data's own range — a filtered fetch echoes back the
+        // requested window instead (data.go's servedBound), which would be
+        // the wrong thing to treat as the picker's min/max.
+        if (mode === 'latest') {
+          setBounds({ start: response.start, end: response.end })
+        }
+        setPeriodLoading(false)
+      })
+      .catch((caught: unknown) => {
+        if (!isMountedRef.current || latestRequestId.current !== requestId) {
+          return
+        }
+        setError(caught instanceof Error ? caught.message : String(caught))
+        setPeriodLoading(false)
+      })
+  }
+
+  // "Latest" and "Day" still fetch immediately on their own single-field
+  // change, same as before. Period is excluded here — it fetches only via
+  // the explicit "Show results" button (handleApplyPeriod) below, never as
+  // a side effect of typing into either date field.
+  useEffect(() => {
+    if (viewMode === 'period') return
     const query = buildQuery(viewMode, selectedDate, rangeStart, rangeEnd)
     if (query === null) return
+    fetchReconciliation(query, viewMode)
+    // rangeStart/rangeEnd are intentionally not deps: this effect never
+    // reads them for 'latest' or 'day', and Period's own fields are read
+    // only by handleApplyPeriod.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, selectedDate])
 
-    // Period mode has two independent date fields (rangeStart, rangeEnd),
-    // each its own piece of state with its own onChange handler — so
-    // editing one alone already satisfies this effect's dependency array
-    // and fired an immediate fetch for a range the owner hadn't finished
-    // choosing yet, then a second fetch a moment later once the other
-    // field changed too (reported live). Debounced so the fetch waits
-    // until the whole range has settled. "Latest" and "Day" each have at
-    // most one field to wait on, so they still fetch immediately, same as
-    // before this change.
-    const RANGE_DEBOUNCE_MS = 500
-    const delay = viewMode === 'period' ? RANGE_DEBOUNCE_MS : 0
-
-    let cancelled = false
-    const timeoutId = setTimeout(() => {
-      getJson<ReconciliationApiResponse>(`/api/reconciliation${query}`)
-        .then((response) => {
-          if (cancelled) return
-          setData(response)
-          // Only the unfiltered "latest" fetch's echoed start/end reflects the
-          // real ingested data's own range — a filtered fetch echoes back the
-          // requested window instead (data.go's servedBound), which would be
-          // the wrong thing to treat as the picker's min/max.
-          if (viewMode === 'latest') {
-            setBounds({ start: response.start, end: response.end })
-          }
-        })
-        .catch((caught: unknown) => {
-          if (!cancelled) {
-            setError(caught instanceof Error ? caught.message : String(caught))
-          }
-        })
-    }, delay)
-    return () => {
-      cancelled = true
-      clearTimeout(timeoutId)
-    }
-  }, [viewMode, selectedDate, rangeStart, rangeEnd])
+  /** Period's explicit confirm action — the only thing that fetches a
+   *  period, now that editing rangeStart/rangeEnd no longer does. */
+  function handleApplyPeriod() {
+    const query = buildQuery('period', selectedDate, rangeStart, rangeEnd)
+    if (query === null) return
+    setError(null)
+    setData(null)
+    setPeriodLoading(true)
+    fetchReconciliation(query, 'period')
+  }
 
   const hasAnyData = bounds !== null && bounds.start !== ''
 
@@ -386,6 +422,7 @@ export default function ClosePage() {
     setViewMode(mode)
     setData(null)
     setError(null)
+    setPeriodLoading(false)
   }
 
   function handleSelectedDateChange(value: string) {
@@ -394,16 +431,25 @@ export default function ClosePage() {
     setError(null)
   }
 
+  // Editing either Period field only updates the field's own state — no
+  // fetch, per the button below. Also clears any stale `data`/`error` from
+  // a previously APPLIED range and drops `periodLoading` back to false: an
+  // in-flight fetch for the range being edited away from is left running
+  // (fetchReconciliation's requestId guard drops its result when it lands),
+  // but the UI should read as "waiting on you to pick dates," not "loading,"
+  // the moment the owner starts changing what they asked for.
   function handleRangeStartChange(value: string) {
     setRangeStart(value)
     setData(null)
     setError(null)
+    setPeriodLoading(false)
   }
 
   function handleRangeEndChange(value: string) {
     setRangeEnd(value)
     setData(null)
     setError(null)
+    setPeriodLoading(false)
   }
 
   const days = data?.days ?? []
@@ -532,6 +578,19 @@ export default function ClosePage() {
                 max={bounds.end}
                 onChange={(event) => handleRangeEndChange(event.target.value)}
               />
+              {/* Explicit confirm, not auto-fetch: reported live, editing
+                  From/To used to each trigger their own debounced request,
+                  firing once for a range the owner hadn't finished picking
+                  yet and again once the second field changed. Both fields
+                  now free-edit with no request until this is clicked. */}
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleApplyPeriod}
+                disabled={!rangeStart || !rangeEnd || periodLoading}
+              >
+                Show results
+              </Button>
             </div>
           )}
           <span className="text-xs text-muted-foreground">
@@ -547,11 +606,23 @@ export default function ClosePage() {
         </Panel>
       ) : null}
 
+      {/* Period with no APPLIED range yet reads as "waiting on you," not
+          "loading" — there is no request in flight until Show results is
+          clicked, so a loading skeleton here would be a lie about what the
+          page is doing. */}
+      {!error && !data && isPeriodView && !periodLoading ? (
+        <Panel className="p-4 text-sm text-muted-foreground">
+          Choose a start and end date, then Show results to load that period.
+        </Panel>
+      ) : null}
+
       {/* Loading is a real state, not a blank page. Skeletons hold the exact
           geometry the resolved stats will occupy, so nothing jumps. This
           fires on the initial load AND on every user-triggered re-fetch when
-          a different day or period is picked. */}
-      {!error && !data ? (
+          a different day or period is picked (including Period's own
+          explicit Show results click, tracked by periodLoading since Period
+          no longer fetches as a side effect of the date fields changing). */}
+      {!error && !data && (!isPeriodView || periodLoading) ? (
         <Panel className="p-5 sm:p-6">
           <StatGroup>
             <StatSkeleton size="lg" />
