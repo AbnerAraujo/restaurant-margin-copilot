@@ -9,6 +9,11 @@ import ChatPanel, {
   type PreviousExchange,
 } from '@/components/Chat/ChatPanel'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
+import type {
+  BusinessInsightAdvice,
+  BusinessInsightTeaser,
+  ResolveBusinessInsight,
+} from '@/components/Chat/BusinessInsightChip'
 import type { AskPageNavigationState } from '@/components/Charts/chartFollowUpQuestion'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { postJson } from '@/lib/api'
@@ -80,6 +85,16 @@ interface AskApiResponse {
    * re-derives it from the original question text.
    */
   resolved_period?: { start: string; end: string }
+  /**
+   * Spec 009 (business-insight advisor): the zero-cost teaser derived
+   * deterministically in Go (`httpapi.deriveBusinessInsightTeaser`),
+   * present only when the answer's computed data matched one of the five
+   * documented insight patterns. Passed straight through to
+   * `AnswerChatMessage.businessInsight` — the full advice is a separate,
+   * billed call made only if the owner taps (see resolveBusinessInsight
+   * below), never fetched here.
+   */
+  business_insight?: BusinessInsightTeaser
 }
 
 /**
@@ -204,6 +219,7 @@ export default function AskPage() {
         followUps: data.suggested_followups,
         toolCalls: data.tool_calls,
         resolvedPeriod: data.resolved_period,
+        businessInsight: data.business_insight,
         cache: data.cache,
         askedAt,
       }
@@ -211,9 +227,29 @@ export default function AskPage() {
     [logInteractions],
   )
 
+  // Spec 009: the on-demand advice call behind a tapped business-insight
+  // teaser — the only model-backed request this app makes besides
+  // /api/ask. The chip posts back the answer's own tool_calls (the exact
+  // data the teaser was derived from; the backend re-derives and refuses
+  // a mismatch), and the returned interaction is logged into the same
+  // shared cost panel every /api/ask call already feeds, so an advice
+  // call is never invisible spend.
+  const resolveBusinessInsight = useCallback<ResolveBusinessInsight>(
+    async (kind, toolCalls) => {
+      const advice = await postJson<BusinessInsightAdvice>('/api/business-insight', {
+        kind,
+        tool_calls: toolCalls,
+      })
+      logInteractions([advice.interaction])
+      return advice
+    },
+    [logInteractions],
+  )
+
   return (
     <ChatPanel
       resolveAnswer={resolveAnswer}
+      resolveBusinessInsight={resolveBusinessInsight}
       // Deliberately empty rather than ChatPanel's demo seed. That seed is a
       // fabricated thread with invented figures ("$612.40", an Uber Eats
       // campaign that isn't in the fixtures); rendering it on the LIVE surface

@@ -1034,4 +1034,234 @@ describe('ChatPanel', () => {
       ),
     ).toBeInTheDocument()
   })
+
+  // --- Spec 009: business-insight advisor ---------------------------------
+
+  /** An answered message carrying a real teaser + the tool calls that ground it. */
+  function insightAnswer(): AssistantChatMessage {
+    return {
+      id: 'test-answer-business-insight',
+      role: 'assistant',
+      kind: 'answer',
+      text: 'Margin on 2026-08-03 was -$120.26.',
+      provenance: [],
+      toolCalls: [
+        {
+          name: 'get_daily_summary',
+          result_json: {
+            date: '2026-08-03',
+            discrepancy_flags: [{ type: 'duplicate_order_removed', detail: 'dup' }],
+          },
+        },
+      ],
+      businessInsight: {
+        kind: 'discrepancy_pattern',
+        title: 'Recurring discrepancies may be preventable — see how',
+      },
+      askedAt: '2026-08-27T11:30:00Z',
+    }
+  }
+
+  const adviceResponse = {
+    kind: 'discrepancy_pattern',
+    advice_text:
+      'Restaurants in this situation typically reconcile daily and dispute invalid deductions within the platform window.',
+    disclaimer:
+      'AI suggestion — general industry practice connected to your computed numbers, not a computed fact about your business.',
+    interaction: {
+      model_used: 'claude-sonnet-5',
+      input_tokens: 1420,
+      output_tokens: 190,
+      estimated_cost_usd: 0.00474,
+      latency_ms: 2100,
+    },
+  }
+
+  it('renders the insight teaser title as a labeled AI suggestion, without fetching anything on render', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValueOnce(insightAnswer())
+    const resolveBusinessInsight = vi.fn()
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={resolveBusinessInsight}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-03?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-03 was -$120.26.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    // The teaser shows ONLY the title, explicitly labeled as a suggestion.
+    expect(
+      within(bubble).getByRole('button', {
+        name: /recurring discrepancies may be preventable/i,
+      }),
+    ).toBeInTheDocument()
+    expect(within(bubble).getByText('AI suggestion')).toBeInTheDocument()
+
+    // SC-002: the full advice is NEVER auto-fetched on render.
+    expect(resolveBusinessInsight).not.toHaveBeenCalled()
+    expect(within(bubble).queryByText(/reconcile daily/i)).not.toBeInTheDocument()
+  })
+
+  it('renders no insight chip when the answer carries no teaser', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValueOnce({
+        id: 'test-answer-no-insight',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-04 was $375.82.',
+        provenance: [],
+        askedAt: '2026-08-27T11:31:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={vi.fn()}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-04?{Enter}')
+
+    const answer = await screen.findByText('Margin on 2026-08-04 was $375.82.')
+    const bubble = answer.closest('li') as HTMLElement
+    expect(within(bubble).queryByText('AI suggestion')).not.toBeInTheDocument()
+  })
+
+  it('fetches the advice on tap with a visible loading state, then shows the text, disclosure, and real cost', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValueOnce(insightAnswer())
+    const pending = deferred<typeof adviceResponse>()
+    const resolveBusinessInsight = vi.fn().mockReturnValueOnce(pending.promise)
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={resolveBusinessInsight}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-03?{Enter}')
+    const answer = await screen.findByText('Margin on 2026-08-03 was -$120.26.')
+    const bubble = answer.closest('li') as HTMLElement
+
+    await user.click(
+      within(bubble).getByRole('button', {
+        name: /recurring discrepancies may be preventable/i,
+      }),
+    )
+
+    // In-flight: a real loading state, exactly one call, carrying the
+    // teaser's kind and the answer's own tool_calls back to the backend.
+    expect(within(bubble).getByText(/generating the suggestion/i)).toBeInTheDocument()
+    expect(resolveBusinessInsight).toHaveBeenCalledTimes(1)
+    expect(resolveBusinessInsight).toHaveBeenCalledWith('discrepancy_pattern', [
+      expect.objectContaining({ name: 'get_daily_summary' }),
+    ])
+
+    pending.resolve(adviceResponse)
+
+    // Loaded: the advice text, the disclosure, and the call's REAL cost —
+    // an advice call must never look free.
+    expect(await within(bubble).findByText(/reconcile daily/i)).toBeInTheDocument()
+    expect(within(bubble).getByText(/not a computed fact/i)).toBeInTheDocument()
+    expect(within(bubble).getByText(/\$0\.005 · claude-sonnet-5/)).toBeInTheDocument()
+  })
+
+  it('re-expands already-fetched advice without a second billed call', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValueOnce(insightAnswer())
+    const resolveBusinessInsight = vi.fn().mockResolvedValue(adviceResponse)
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={resolveBusinessInsight}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-03?{Enter}')
+    const answer = await screen.findByText('Margin on 2026-08-03 was -$120.26.')
+    const bubble = answer.closest('li') as HTMLElement
+    const chip = within(bubble).getByRole('button', {
+      name: /recurring discrepancies may be preventable/i,
+    })
+
+    await user.click(chip)
+    expect(await within(bubble).findByText(/reconcile daily/i)).toBeInTheDocument()
+
+    // Collapse, then re-expand: the advice comes back from memory.
+    await user.click(chip)
+    expect(within(bubble).queryByText(/reconcile daily/i)).not.toBeInTheDocument()
+    await user.click(chip)
+    expect(within(bubble).getByText(/reconcile daily/i)).toBeInTheDocument()
+    expect(resolveBusinessInsight).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a real error state when the advice call fails, and stays tappable to retry', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValueOnce(insightAnswer())
+    const resolveBusinessInsight = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('the advice call failed; please try again'))
+      .mockResolvedValueOnce(adviceResponse)
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={resolveBusinessInsight}
+      />,
+    )
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do on 2026-08-03?{Enter}')
+    const answer = await screen.findByText('Margin on 2026-08-03 was -$120.26.')
+    const bubble = answer.closest('li') as HTMLElement
+    const chip = within(bubble).getByRole('button', {
+      name: /recurring discrepancies may be preventable/i,
+    })
+
+    await user.click(chip)
+    expect(
+      await within(bubble).findByText(/the advice call failed/i),
+    ).toBeInTheDocument()
+
+    // The failure is recoverable: tapping again retries for real.
+    await user.click(chip)
+    expect(await within(bubble).findByText(/reconcile daily/i)).toBeInTheDocument()
+    expect(resolveBusinessInsight).toHaveBeenCalledTimes(2)
+  })
 })
