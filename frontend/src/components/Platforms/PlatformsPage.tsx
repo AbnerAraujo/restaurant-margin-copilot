@@ -183,6 +183,16 @@ export default function PlatformsPage() {
               <Chip icon={CalendarRange}>
                 {data.period.start} → {data.period.end}
               </Chip>
+              {/* Always every platform on file, never scoped by
+                  platformFilter below (dataviz skill: filters narrow the
+                  chart/table beneath them, not the header) — same
+                  "overview totals" framing PromotionsPage's header chips
+                  use, made explicit the same way once a filter is active. */}
+              {platformFilter.isFiltered ? (
+                <span className="text-micro font-medium uppercase tracking-wider text-muted-foreground">
+                  Overall
+                </span>
+              ) : null}
               <Chip icon={Percent}>{data.platforms.length} platforms compared</Chip>
             </>
           ) : null

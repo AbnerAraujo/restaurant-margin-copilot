@@ -498,6 +498,27 @@ describe('PromotionsPage', () => {
     expect(screen.getByText('2 campaigns')).toBeInTheDocument()
   })
 
+  it('labels the header chips "Overall" once a filter narrows the table, so the two counts read as deliberate rather than disagreeing', async () => {
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage()
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+    // Unfiltered: the chips are the only summary on screen, so the label
+    // would be pure clutter — it stays hidden.
+    expect(screen.queryByText('Overall')).not.toBeInTheDocument()
+
+    await userEvent.type(
+      screen.getByLabelText('Search campaigns'),
+      'BOOST01',
+    )
+
+    // Filtered: the header chip ("2 campaigns") and the now-1-row table
+    // disagree unless it's clear the chip is a total, not a live readout —
+    // this label makes that explicit.
+    expect(screen.getByText('Overall')).toBeInTheDocument()
+    expect(screen.getByText('2 campaigns')).toBeInTheDocument()
+  })
+
   it('narrows the table by platform, and shows a way back to the full list', async () => {
     stubFetch({
       promotions: [
