@@ -799,6 +799,82 @@ describe('ChatPanel', () => {
     expect(within(bubble).queryByText('Worth checking next')).not.toBeInTheDocument()
   })
 
+  it('disables an earlier answer\'s follow-up chip while a second, separate question is in flight — a real user action, not a double-click on the same button — and re-enables it once that question resolves', async () => {
+    // Regression test: `onSelect` on every chip (follow-ups, refusal
+    // examples, clarification options, retry, "Compare to last period")
+    // reaches the same re-entrancy-guarded `submitQuestion` as the
+    // composer's own Send button. Before this fix, only the composer's
+    // textarea/button reflected `isPending` — a chip sitting on an EARLIER,
+    // already-resolved message stayed fully clickable while a NEW question
+    // was in flight, so tapping it silently did nothing at all: no second
+    // message, no error, no visual sign the tap was ignored. This is
+    // "two separate real user actions in quick succession" (task-brief
+    // language), not a double-click on one control.
+    const user = userEvent.setup()
+    const resolveAnswer = vi.fn<
+      (
+        question: string,
+        history: ChatMessage[],
+      ) => Promise<AssistantChatMessage>
+    >()
+
+    const { promise: secondPromise, resolve: resolveSecond } =
+      deferred<AssistantChatMessage>()
+
+    resolveAnswer
+      .mockResolvedValueOnce({
+        id: 'test-answer-race-1',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        followUps: ['Were there any discrepancies on 2026-08-07?'],
+        askedAt: '2026-08-27T11:00:00Z',
+      })
+      .mockReturnValueOnce(secondPromise)
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+
+    // First question, resolved — leaves a real follow-up chip on screen.
+    await user.type(input, 'How did we do on 2026-08-07?{Enter}')
+    const firstAnswer = await screen.findByText(
+      'Margin on 2026-08-07 was $375.82.',
+    )
+    const firstBubble = firstAnswer.closest('li') as HTMLElement
+    const followUpChip = within(firstBubble).getByRole('button', {
+      name: /were there any discrepancies on 2026-08-07\?/i,
+    })
+    expect(followUpChip).not.toBeDisabled()
+
+    // Second, genuinely different question, submitted through the composer
+    // while the chip above is sitting on an already-answered message.
+    await user.type(input, 'How did we do on 2026-08-08?{Enter}')
+    expect(resolveAnswer).toHaveBeenCalledTimes(2)
+
+    // While that second question is still in flight, the earlier chip must
+    // be visibly and functionally disabled — not silently ignorable.
+    expect(followUpChip).toBeDisabled()
+
+    resolveSecond({
+      id: 'test-answer-race-2',
+      role: 'assistant',
+      kind: 'answer',
+      text: 'Margin on 2026-08-08 was $152.50.',
+      provenance: [],
+      askedAt: '2026-08-27T11:05:00Z',
+    })
+    await screen.findByText('Margin on 2026-08-08 was $152.50.')
+
+    // Once settled, the chip is a live affordance again.
+    expect(followUpChip).not.toBeDisabled()
+    await user.click(followUpChip)
+    expect(resolveAnswer).toHaveBeenCalledTimes(3)
+  })
+
   it('marks a cached answer as costing nothing, and states the saving separately', async () => {
     const user = userEvent.setup()
     const resolveAnswer = vi

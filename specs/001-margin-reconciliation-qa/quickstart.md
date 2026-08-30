@@ -11,8 +11,13 @@
 
 ```
 migrate -path backend/migrations -database "$DATABASE_URL" up
-go run ./backend/cmd/server -ingest backend/data/live
+cd backend && go run ./cmd/server -ingest data/live
 ```
+
+(The Go module root is `backend/`, not the repo root — `go run
+./backend/cmd/server ...` from the repo root fails with "cannot find main
+module". QA finding, see `README.md`'s Getting Started section and
+`CHANGELOG.md` for the same fix applied there.)
 
 Expected: a `DailyReconciliation` row for 2026-08-01 whose `margin` matches
 an independently hand-computed value from the same source files, with
