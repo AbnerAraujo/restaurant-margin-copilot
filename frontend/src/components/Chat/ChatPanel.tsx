@@ -57,6 +57,7 @@ import {
   type SavedPrompt,
   type ThreadStore,
 } from '@/lib/chatStorage'
+import { createUniqueId } from '@/lib/id'
 import AnswerText from '@/components/Chat/AnswerText'
 import {
   findAdvisoryCapability,
@@ -395,10 +396,18 @@ export interface ChatPanelProps {
 // for the backend per this task's brief; no live API exists yet.
 // ---------------------------------------------------------------------------
 
-let messageSequence = 0
+/**
+ * A prefix is kept purely for readability in dev tools (`user-…`,
+ * `assistant-…`) — the uniqueness guarantee comes entirely from
+ * `createUniqueId()`. A previous version of this function used a
+ * module-level incrementing counter, which reset to 0 on every reload and
+ * made ids collide across reloads (see `createUniqueId`'s doc comment for
+ * the incident this caused). Message ORDER is never derived from this id —
+ * see `askedAt` and `mergeMessages` in `chatStorage.ts` — so nothing here
+ * needs ids to sort in creation order.
+ */
 function nextMessageId(prefix: string): string {
-  messageSequence += 1
-  return `${prefix}-${messageSequence}`
+  return `${prefix}-${createUniqueId()}`
 }
 
 /**
