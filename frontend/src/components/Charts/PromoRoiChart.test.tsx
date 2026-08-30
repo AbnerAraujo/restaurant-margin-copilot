@@ -137,7 +137,7 @@ describe('PromoRoiChart', () => {
     ).toBeInTheDocument()
   })
 
-  it('excludes a not_yet_attributed campaign from the bars, unlike attribution_unavailable', async () => {
+  it('gives a not_yet_attributed campaign the same no-bar marker as attribution_unavailable, so the chart never undercounts the table', async () => {
     const freshlyLogged: PromotionRoiDatum = {
       campaignId: 'OWNER-CAMP-FRESH',
       campaignName: 'OWNER-CAMP-FRESH',
@@ -159,22 +159,34 @@ describe('PromoRoiChart', () => {
     const user = userEvent.setup()
     render(<PromoRoiChart data={[...DEFAULT_PROMOTION_ROI, freshlyLogged]} />)
 
-    // Not plotted at all — no bar target, no refusal box, nothing to hover.
-    expect(
-      screen.queryByRole('button', { name: /OWNER-CAMP-FRESH/i }),
-    ).not.toBeInTheDocument()
-    // The genuine FR-013 refusal is untouched by the filter.
+    // Plotted as its own no-bar marker — same treatment as the genuine
+    // FR-013 refusal — worded as "not yet attributed", never as an active
+    // refusal it never went through.
+    const freshBar = screen.getByRole('button', {
+      name: /OWNER-CAMP-FRESH: not yet attributed/i,
+    })
+    expect(freshBar).toBeInTheDocument()
+    fireEvent.mouseEnter(freshBar)
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'Not yet attributed — awaiting incremental-order data',
+    )
+
+    // The genuine FR-013 refusal is untouched and still worded as a refusal.
     expect(
       screen.getByRole('button', {
         name: /Featured Placement.*unattributable, ROI refused/i,
       }),
     ).toBeInTheDocument()
-    // Bar count stays at the original four — the fifth, deferred campaign
-    // never reaches buildBars.
+
+    // Bar count includes the fifth, deferred campaign — the chart's own
+    // count/aria description must never undercount the table below it.
     const bars = screen.getAllByRole('button', {
-      name: /: (net |unattributable)/i,
+      name: /: (net |unattributable|not yet attributed)/i,
     })
-    expect(bars).toHaveLength(DEFAULT_PROMOTION_ROI.length)
+    expect(bars).toHaveLength(DEFAULT_PROMOTION_ROI.length + 1)
+    expect(
+      screen.getByRole('group', { name: new RegExp(`across ${DEFAULT_PROMOTION_ROI.length + 1} promotion campaigns`) }),
+    ).toBeInTheDocument()
 
     // Still present in the table underneath — every logged campaign belongs
     // there, including one with nothing plottable yet.

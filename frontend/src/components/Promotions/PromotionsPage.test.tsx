@@ -114,7 +114,7 @@ describe('PromotionsPage', () => {
     expect(within(boostRow).getByText('$214.00')).toBeInTheDocument()
   })
 
-  it('excludes a freshly-logged, not-yet-attributed campaign from the chart bars but keeps it in the count and table', async () => {
+  it('gives a freshly-logged, not-yet-attributed campaign the same no-bar marker as a refused one, so the chart never undercounts the table', async () => {
     stubFetch({
       promotions: [
         ...PROMOTIONS_RESPONSE.promotions,
@@ -143,11 +143,13 @@ describe('PromotionsPage', () => {
     // nothing plottable yet.
     expect(screen.getByText('3 campaigns')).toBeInTheDocument()
 
-    // Never rendered as a bar target or refusal box — "hasn't happened yet"
-    // is not the same fact as "refused", so it has nothing to plot at all.
+    // Rendered as its own no-bar marker, worded as "not yet attributed"
+    // (never as an active refusal it never went through) — the chart's own
+    // bar count and accessible description must never undercount the table
+    // below it, which is exactly the bug this test used to codify.
     expect(
-      screen.queryByRole('button', { name: /OWNER-CAMP-FRESH:/i }),
-    ).not.toBeInTheDocument()
+      screen.getByRole('button', { name: /OWNER-CAMP-FRESH: not yet attributed/i }),
+    ).toBeInTheDocument()
 
     // The genuine FR-013 refusal keeps its refused bar treatment.
     expect(

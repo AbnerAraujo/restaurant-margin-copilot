@@ -397,6 +397,27 @@ interface BarGeometry {
   barHeight: number
 }
 
+/**
+ * Per-reason copy for a refused (`net === null`) bar's focus label and hover
+ * tooltip. The two `PromotionRoiDatum.reason` values are different facts
+ * (see that field's doc comment) — `attribution_unavailable` is a permanent,
+ * already-tried-and-failed refusal (FR-013), `not_yet_attributed` just
+ * hasn't been checked yet — so the accessible/hover text says which one
+ * this is rather than wording every refused bar as an active refusal.
+ */
+function refusalCopy(reason: string | undefined): { focus: string; tooltip: string } {
+  if (reason === NOT_YET_ATTRIBUTED) {
+    return {
+      focus: 'not yet attributed — awaiting incremental-order data',
+      tooltip: 'Not yet attributed — awaiting incremental-order data',
+    }
+  }
+  return {
+    focus: 'unattributable, ROI refused — no incremental orders on file',
+    tooltip: 'Unattributable — refusing to estimate (FR-013)',
+  }
+}
+
 function buildBars(
   data: PromotionRoiDatum[],
   yToPixel: (value: number) => number,
@@ -472,14 +493,20 @@ function PromoRoiChart({
     return () => observer.disconnect()
   }, [])
 
-  // A `not_yet_attributed` campaign has nothing to plot yet — not a refusal,
-  // just "hasn't been checked yet" — so it never reaches the bars, the
-  // y-scale, or the SVG's slot layout. `data` (unfiltered) still drives the
-  // table and provenance list further down, since every logged campaign
-  // belongs there.
-  const chartableData = data.filter(
-    (datum) => datum.reason !== NOT_YET_ATTRIBUTED,
-  )
+  // Reported live (QA pass): a `not_yet_attributed` campaign used to be
+  // filtered out of the chart entirely here — "nothing to plot yet" — which
+  // meant the chart's own bar count and accessible description silently
+  // undercounted the table below by one, and the campaign got no visual
+  // marker at all despite the table (and its "N unattributable" header chip)
+  // counting it. Both refusal reasons share `net: null`, so both now flow
+  // through unfiltered and render as the same dashed "Unattributable"
+  // no-bar marker `isRefused` already draws below — matching this chart's
+  // own legend, which already describes that marker as a single
+  // "Unattributable — refused" bucket rather than two. The per-bar focus
+  // label and hover tooltip still branch on `reason` (see `refusalCopy`
+  // below) so a campaign that simply hasn't been attributed YET is never
+  // worded as an active refusal.
+  const chartableData = data
   const dataWidth =
     MARGIN.left + MARGIN.right + chartableData.length * MIN_SLOT_WIDTH
   // The larger of: the base floor, what the data actually needs, and the
@@ -628,7 +655,7 @@ function PromoRoiChart({
             const isExtreme = index === maxIndex || index === minIndex
             const showValueLabel = !isRefused && (labelEveryBar || isExtreme)
             const focusLabel = isRefused
-              ? `${datum.campaignName}: unattributable, ROI refused — no incremental orders on file`
+              ? `${datum.campaignName}: ${refusalCopy(datum.reason).focus}`
               : `${datum.campaignName}: net ${formatSignedUsd(datum.net as number)}`
 
             const handleActivate = onDataPointClick
@@ -810,7 +837,7 @@ function PromoRoiChart({
             </p>
             {hovered.isRefused ? (
               <p className="font-semibold text-destructive-text">
-                Unattributable — refusing to estimate (FR-013)
+                {refusalCopy(hovered.datum.reason).tooltip}
               </p>
             ) : (
               <p
