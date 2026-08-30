@@ -1978,3 +1978,127 @@ just not a competitive one. `docs/presentation.html`'s Competitive
 landscape slide and speaker notes were updated to match. Pattern, again:
 never let a "these all look alike" grouping survive without checking who
 actually owns each row.
+
+## 2026-08-29 — A full QA pass: 20 real bugs, a genuine near-miss, and the method used to catch both
+
+**The method.** With the whole app freshly rebuilt on `main` (business-insight
+advisor, the realistic monthly loss pattern, the deterministic date-range
+gate fix, tooltip restyle, grid filters, competitor benchmarks, dark/light
+mode, the guided question composer, and a brand-new Profile page — eleven
+separate pieces of work, each independently reviewed and merged in turn —
+but never all exercised together as one running system), the obvious risk
+was interaction bugs: not defects in any one feature, but breakage where
+two independently-correct features collide. The process:
+
+1. **One exhaustive Playwright QA pass**, dispatched with instructions to
+   find and catalog only — never fix. Every page (Home, Ask/Chat, Close,
+   Promotions, Platforms, Points, Upload, Settings, Profile, Help), every
+   theme (light/dark — dark mode is brand new and the highest-risk surface
+   for invisible-text bugs), two viewports (1440px desktop, 390px mobile),
+   real interactive flows (live `/api/ask` and `/api/business-insight`
+   calls, all 8 guided-composer categories, real file uploads, a full
+   keyboard-Tab accessibility audit), plus a "verified correct" list
+   published alongside the bug list — proof the pass was adversarial, not
+   just bug-hunting for its own sake (every number was independently
+   recomputed against the raw API and checked to the cent).
+2. **Seven fix branches, grouped by root cause and file ownership** (not
+   one bug per branch, and not one branch for everything) — Profile
+   page/CORS, platform-name normalization, fixed-element layout overlaps,
+   guided-composer validation/focus-trap, Help page staleness, the chat
+   tool-attribution chip, and a small polish batch — each independently
+   rebuilt and re-tested by the coordinator (fresh `go build`/`go
+   vet`/`go test` and `tsc -b`/`npm test`, plus spot-reading the actual
+   diff) before being trusted, exactly the "never trust a self-report"
+   discipline this project has applied all session.
+3. **A second, independent Playwright pass** after all seven merged,
+   re-running every one of the 20 original repro steps plus a full
+   regression sweep of the two files the fixes touched most (`AppShell`/
+   `CostPanel`/`Sidebar`, `index.css`) — not just spot-checking a sample.
+
+**The 20 bugs**, one BLOCKER down to four cosmetic, all confirmed fixed by
+the second pass:
+
+| # | Severity | Bug | Root cause |
+|---|---|---|---|
+| 1 | Blocker | Profile page couldn't save at all | Dev CORS preflight allowed only GET/POST/OPTIONS — PUT was silently rejected in the browser though the handler itself worked via curl |
+| 2 | Major | Two contradictory "IFOOD ROI" cards | A free-text platform field let "iFood" and "Ifood" both exist as real DB values |
+| 3 | Major | Platform filter listed 4 options for 2 platforms, silently hid campaigns | Same root cause as #2 |
+| 4 | Major | Expanded cost panel covered the chat Send button (desktop) | Fixed-position chrome didn't reserve space |
+| 5 | Major | Mobile "Help" nav item permanently unclickable | Fullscreen toggle overlapped the scrollable nav's right edge |
+| 6 | Major | Mobile cost pill covered a Promotions filter chip | Same fixed-chrome root cause as #4/#5 |
+| 7 | Major | Guided composer accepted dates outside the known data range with no error | `toGuidedParams` checked chronological order, never bounds |
+| 8 | Major | Guided composer dialog didn't trap keyboard focus despite `aria-modal` | No focus-containment or `inert` background |
+| 9 | Major | Help page hardcoded "seven tools", missing the 8th | A second, hand-maintained copy of the tool list drifted from the real one |
+| 10 | Major | Chat's tool-attribution chip missing on prose-only (no chart) answers | Chip was derived from the visualization, not the actual tool call |
+| 11 | Minor | Dark-mode primary buttons/chat bubbles failed WCAG AA (3.03:1) | `--primary-foreground` was pure white in both themes |
+| 12 | Minor | Close page showed raw API keys (`ifood`) instead of display names | No display-name mapping applied on this one page |
+| 13 | Minor | Profile "Restaurant name" not marked required despite the page's own copy | Missing `required`/`aria-required` |
+| 14 | Minor | Profile save failure showed the raw string "Failed to fetch" | No distinction between a network failure and a real server rejection |
+| 15 | Minor | Upload CSV errors double-prefixed with "ingest:" | Error already carried the prefix, then got wrapped again by its caller |
+| 16 | Minor | Help's usage guide omitted Today's Close, Profile, Settings | Hand-maintained list, same staleness pattern as #9 |
+| 17 | Minor | No skip-to-content link anywhere (WCAG 2.4.1) | Never added |
+| 18 | Minor | Platforms' filter missing the "N of M shown" live-region other pages have | Not wired to the shared summary component |
+| 19 | Cosmetic | Mobile stat labels truncated mid-word | Single-line `truncate` instead of wrapping |
+| 20 | Cosmetic | Splash screen blocked all clicks for a fixed 2.7s after the app was visually rendered | Timer disconnected from actual animation state |
+
+**The near-miss, found only by the second pass: `backend/data/live/
+supplier_cost_sheet.csv` had already been silently replaced with the
+3-line onboarding template.** The Upload page's "Confirm & Ingest" handler
+(`backend/internal/httpapi/ingest_cost_sheet.go`) overwrites the cost sheet
+file wholesale rather than appending, then re-ingests every day in
+`data/live/` — any day absent from the uploaded file gets `input_costs`
+silently zeroed, with no flag raised. At some earlier point in this
+session (most likely a live-verification click against the Upload flow by
+one of the many agents dispatched today, before the QA discipline above
+was in place), that handler ran with only the downloaded template
+attached, replacing 730 days' worth of real supplier invoices with two
+placeholder rows. The file is git-ignored, so it was not recoverable from
+version control. **The live Postgres database itself was never touched or
+corrupted** — the write evidently didn't reach a full re-ingest — so every
+number in this document, the README, and the presentation deck stayed
+accurate throughout. Fixed by regenerating `data/live/` from
+`backend/cmd/gendata` (unchanged, and confirmed deterministic — two
+back-to-back runs today produced byte-identical output) — this restores a
+full, real 730-day cost sheet on disk so a future accidental commit-click
+loads real data instead of zeroing 728 days of it.
+
+**A second, smaller finding surfaced while fixing the first, disclosed
+rather than quietly absorbed:** re-running `cmd/gendata` today, with its
+code unchanged since the commit that produced the live dataset
+(`76d1ed8`), produces a dataset that does **not** exactly match what's
+already in Postgres — August 2025 comes out −$8,113 today versus the
+already-documented −$5,750.43, and the 24-month average comes out
+$40,016/month versus the documented $40,428/month. The generator's seed is
+a fixed constant (`randSeed = 20260815`, not time-derived) and reproduces
+identically run-to-run right now, so this isn't live non-determinism — the
+likely explanation is that the live database was populated partway through
+an iterative tuning pass (`docs/product-strategy.md`'s own account of that
+work describes "empirically tuned — by actually running the generator and
+reading its own new monthly-verification printout" across several
+iterations) and one further constant tweak was committed after the ingest
+that actually populated the database, without a final re-ingest to match.
+**Deliberate decision: the live database was NOT re-ingested to close this
+gap.** The already-live numbers are the ones cited throughout this
+document, the README, and the deck, and they remain internally consistent
+and fully intact — re-ingesting now would silently invalidate every one of
+those citations for a marginal reproducibility improvement, days before
+submission. The gap is disclosed here so it's a known, understood fact
+rather than a silent trap for whoever next regenerates this dataset.
+
+**Five items deliberately left for a follow-up pass, not silently
+dropped** (found by the second QA pass, none blocking): `go test ./...`
+against a live `DATABASE_URL` will delete the real `restaurant_profile`
+row with no restoration (`restaurant_profile_test.go` — other live-DB
+tests in this codebase clean up after themselves; this one doesn't); the
+Promotions chart's accessible description undercounts campaigns by one
+relative to the table, because a not-yet-attributed campaign is dropped
+from the chart data with no marker; a bad `amount` value in an uploaded
+CSV leaks a raw `strconv.ParseInt` error to the user (the same bug class
+as #15, on a different field, that fix didn't cover); the Platforms bar
+chart's y-axis labels can truncate two different series to identical text
+("Just Eat Takeaway — com…") with no way to tell them apart; and one
+pre-existing test (`AppShell.test.tsx`'s scroll-reset-on-navigation test)
+is a real, confirmed flake — a bare `await router.navigate()` outside
+`act()` racing a passive effect — that never reflects a real product bug
+(a real browser flushes effects before paint) but is a genuine
+test-discipline defect worth a five-line fix.
