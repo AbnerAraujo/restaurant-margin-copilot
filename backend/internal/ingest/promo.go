@@ -112,5 +112,8 @@ func ParsePromotionExport(r io.Reader, sourceFile string) ([]PromotionSpendRecor
 
 		out = append(out, rec)
 	}
+	if err := requireDataRows(len(out), sourceFile, "campaign"); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
