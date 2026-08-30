@@ -99,6 +99,52 @@ func TestHandlePreviewCostSheet_AcceptsHeaderAliases(t *testing.T) {
 	require.Equal(t, "75.00", resp.Rows[0].Amount)
 }
 
+// TestHandlePreviewCostSheet_AcceptsABOMPrefixedUpload is a regression test
+// for a reported HIGH-severity defect: a CSV whose bytes start with the
+// UTF-8 byte-order-mark (EF BB BF) — what Microsoft Excel on Windows
+// produces by default when saving as "CSV UTF-8" — was rejected with
+// "required column \"invoice_id\" not found", pointing the owner at a
+// column plainly visible in the file. The BOM must be stripped before
+// header matching, at the ingest.ParseCostSheet layer this handler calls
+// unchanged.
+func TestHandlePreviewCostSheet_AcceptsABOMPrefixedUpload(t *testing.T) {
+	bomPrefixed := "\xEF\xBB\xBF" + validCostSheetCSV
+	req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/preview", "bom.csv", bomPrefixed)
+	rec := httptest.NewRecorder()
+
+	HandlePreviewCostSheet(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var resp PreviewCostSheetResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Equal(t, 2, resp.RowCount)
+	require.Equal(t, "INV-TEST-001", resp.Rows[0].InvoiceID)
+}
+
+// TestHandlePreviewCostSheet_RejectsAHeaderOnlyUpload is a regression test
+// for a reported HIGH-severity defect: a CSV with only the header row (zero
+// data rows) previewed successfully with row_count: 0, total $0.00, and
+// Confirm & Ingest enabled — since ParseCostSheet's old "is empty" guard
+// only fired on a truly empty/zero-byte file. Confirming that preview would
+// have made HandleCommitCostSheet REPLACE the entire live cost-sheet file
+// (FR-008) with a bare header, wiping the whole multi-year cost history.
+// spec.md's own Edge Cases section says this exact case ("header row
+// only") must be refused.
+func TestHandlePreviewCostSheet_RejectsAHeaderOnlyUpload(t *testing.T) {
+	headerOnly := "invoice_id,invoice_date,supplier,category,amount,notes\n"
+	req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/preview", "header_only.csv", headerOnly)
+	rec := httptest.NewRecorder()
+
+	HandlePreviewCostSheet(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code,
+		"a header-only file must be refused, not previewed as a valid 0-row upload")
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "invalid_cost_sheet", body["error"])
+	require.Contains(t, body["detail"], "no data rows found")
+}
+
 // TestHandlePreviewCostSheet_RejectsAMissingRequiredColumn is spec
 // Acceptance Scenario US2.1 / FR-003: a specific, real error naming the
 // missing column — never a generic failure message.
@@ -182,6 +228,30 @@ func TestHandleCommitCostSheet_RejectsAMalformedUploadBeforeTouchingStoreOrDisk(
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, "invalid_cost_sheet", body["error"])
 	require.Contains(t, body["detail"], "supplier")
+}
+
+// TestHandleCommitCostSheet_RejectsAHeaderOnlyUploadBeforeTouchingStoreOrDisk
+// is the commit-side companion to
+// TestHandlePreviewCostSheet_RejectsAHeaderOnlyUpload: a header-only file
+// passed to /commit must be refused by the same FR-007 re-validation, before
+// os.WriteFile ever REPLACES the live cost-sheet file. Passing a nil
+// store/cache would panic if the handler reached the database or livedata
+// step, so this doubles as proof the refusal happens first — a 0-row commit
+// must never get anywhere near overwriting the multi-year cost history.
+func TestHandleCommitCostSheet_RejectsAHeaderOnlyUploadBeforeTouchingStoreOrDisk(t *testing.T) {
+	headerOnly := "invoice_id,invoice_date,supplier,category,amount,notes\n"
+
+	req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "header_only.csv", headerOnly)
+	rec := httptest.NewRecorder()
+
+	handler := HandleCommitCostSheet(nil, nil)
+	handler(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "invalid_cost_sheet", body["error"])
+	require.Contains(t, body["detail"], "no data rows found")
 }
 
 // TestHandleCostSheetTemplate_ServesAParsableCSV is spec FR-006/SC-004: the

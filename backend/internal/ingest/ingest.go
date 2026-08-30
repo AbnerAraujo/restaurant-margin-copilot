@@ -1,6 +1,8 @@
 package ingest
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"io"
@@ -9,8 +11,24 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
 )
 
+// utf8BOM is the 3-byte UTF-8 byte-order-mark Microsoft Excel on Windows
+// prepends by default when saving a file as "CSV UTF-8". It is invisible in
+// most editors, but left un-stripped it glues onto the first header cell
+// (e.g. an "invoice_id" header cell), which then fails every alias match in
+// columns.go's headerIndex and surfaces as a "required column not found"
+// error that points the user at a column plainly visible in the file.
+// Stripped once here, at the one place file bytes become a CSV reader, so
+// every parser in this package (and promo.go's) is immune without a special
+// case anywhere else.
+var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
+
 func readAllRows(r io.Reader) ([][]string, error) {
-	cr := csv.NewReader(r)
+	br := bufio.NewReader(r)
+	if peek, err := br.Peek(len(utf8BOM)); err == nil && bytes.Equal(peek, utf8BOM) {
+		_, _ = br.Discard(len(utf8BOM))
+	}
+
+	cr := csv.NewReader(br)
 	cr.FieldsPerRecord = -1 // tolerate short rows (a trailing optional column simply omitted)
 	cr.TrimLeadingSpace = true
 	rows, err := cr.ReadAll()
@@ -18,6 +36,21 @@ func readAllRows(r io.Reader) ([][]string, error) {
 		return nil, err
 	}
 	return rows, nil
+}
+
+// requireDataRows refuses a file that parsed successfully but produced zero
+// actual data records — a header-only CSV (or one whose only content rows
+// are blank), which readAllRows' "is empty" check does NOT catch: that check
+// only fires on a truly empty/zero-byte file (len(rows) == 0), while a
+// header-only file parses to len(rows) == 1. Distinguished from "is empty"
+// deliberately: this is a different, equally serious failure mode (a
+// dataset-wiping commit, not a bad upload) and deserves a message that
+// names it rather than reusing "is empty" for a file that plainly isn't.
+func requireDataRows(n int, sourceFile, noun string) error {
+	if n == 0 {
+		return fmt.Errorf("ingest: %s: no data rows found — the file has a header row but no %s rows to ingest", sourceFile, noun)
+	}
+	return nil
 }
 
 // ParseDeliveryExport parses a delivery-platform settlement export
@@ -137,6 +170,9 @@ func ParseDeliveryExport(r io.Reader, sourceFile string) ([]DeliveryRecord, erro
 
 		out = append(out, rec)
 	}
+	if err := requireDataRows(len(out), sourceFile, "order"); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -210,6 +246,9 @@ func ParsePOSExport(r io.Reader, sourceFile string) ([]POSRecord, error) {
 
 		out = append(out, rec)
 	}
+	if err := requireDataRows(len(out), sourceFile, "order"); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
@@ -277,6 +316,9 @@ func ParseCostSheet(r io.Reader, sourceFile string) ([]CostInvoiceRecord, error)
 		}
 
 		out = append(out, rec)
+	}
+	if err := requireDataRows(len(out), sourceFile, "invoice"); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
