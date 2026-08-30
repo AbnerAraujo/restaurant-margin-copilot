@@ -12,6 +12,168 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Checking the model's numbers against the tools' numbers, and taking "which days are the weekend?" away from the model
+
+Two changes to the deterministic/probabilistic boundary, both moving work
+that was silently sitting on the model's side of the line back onto Go's.
+
+### A deterministic numeric check on every narrated answer (`internal/answerverify`)
+
+**The gap.** Constitution Principle I says the model narrates a number, it
+never produces one. Nothing enforced that at the sentence level.
+`internal/explain`'s system prompt asks for it, and its one structural
+guard (`looksLikeCurrencyAmount`) catches only the crudest violation: a
+currency-shaped answer produced with ZERO tool calls. A model that calls
+`get_daily_summary` correctly, is handed `374.75`, and then narrates
+`$999.99` — or, far worse, `$374.57` — passed every check in the codebase.
+That is precisely the "confidently wrong margin figure is worse than a
+refusal" case CLAUDE.md names, and it was unguarded.
+
+**What now happens.** After the final narration and before `Explain`
+returns, a new pure Go package extracts every money and percentage figure
+the answer text STATES, builds the set of values the tool results actually
+RETURNED (walking every numeric leaf of their raw JSON, including numbers
+embedded in discrepancy-flag prose), and requires each stated figure to
+match. A mismatch is a refusal, in the same owner-voiced copy the existing
+refusal paths use, logged as a `numeric_validation_failed` marker; the
+refusal itself is recorded as a normal `RefusalFired` interaction row by
+`internal/httpapi`, unchanged. Dates are extracted and logged as
+`date_validation_mismatch` but deliberately never refused on — legitimate
+date phrasing varies far more than money phrasing, and the cost of
+refusing on it would be real answers lost to catch a class of error
+provenance already surfaces.
+
+**The whole difficulty was calibration, and it was done against real
+answers, not hypotheticals.** The full 35-question harness was run first,
+its narrations and their tool results captured, and the matching policy
+built against that corpus, then replayed over it after every change. Four
+narration habits had to be survived, three of them found by an early,
+stricter version actually refusing a correct answer live:
+
+- **Rounded restatement.** "it cost $610 and only drove about $159 in
+  extra sales", against tool values `610.00` and `159.25`; "a net loss of
+  roughly $451" against `-450.75`. A cents-exact matcher refuses all
+  three, and every one is correct. Resolved by verifying a figure at the
+  precision it was WRITTEN: `$159` is a claim about dollars and is
+  satisfied by anything within a dollar; `$374.75` is a claim about cents
+  and is satisfied only by `374.75`.
+- **Sign carried by prose.** "a net loss of $450.75" states a value the
+  tool returned as `-450.75`. Matching is on absolute value.
+- **One-step arithmetic the tools don't expose.** "iFood was $6.75 ahead"
+  (a subtraction), "about $153 an order" (a division), "for every $1
+  spent" (a rhetorical unit, and `610.00/610.00`). The allowed set
+  therefore includes every sum, difference and quotient of two
+  tool-returned values, **recomputed in Go** — the model's arithmetic is
+  checked against Go's, never trusted. Exactly one step, over the values
+  the tools returned and never over each other's output.
+- **Percentages no tool emits.** "that's about 52% of your delivery
+  revenue" is `196.50/374.75`, computed by the model. Same treatment, one
+  operator over: ratios are rederived in Go.
+
+**What that costs, measured rather than assumed.** Replaying the corpus
+with each answer's headline figure deliberately corrupted, the check
+catches 29/29 cent-level alterations, 29/29 wholesale fabrications, and
+28/29 five-dollar alterations. The cent-level number is the one that
+matters, because every figure this product states is stated to the cent.
+One narrowing was needed to get there: the `source_row_refs` subtree is
+excluded from the allowed set. Those row indices are small integers (2, 3,
+4…) no narration ever states as money, and admitting them made every real
+figure plus-or-minus a few dollars verifiable — five-dollar detection was
+19/29 with them in, 28/29 with them out.
+
+**Before/after on the harness, same seeded database, cache disabled
+(`-eval-no-answer-cache`), three runs each side because the model layer is
+not deterministic:**
+
+| Suite | `main` (3 runs) | With the check (3 runs) |
+|---|---|---|
+| Accuracy (15) | 14 · 14 · 14 | 14 · 14 · 14 |
+| Consistency (15) | 15 · 15 · 15 | 14 · 14 · 15 |
+| Refusal (5) | 4 · 4 · 3 | 5 · 4 · 4 |
+
+**The check fired zero times across all 105 graded post-change questions.**
+Every failure on both sides was hand-read from the raw JSON, and not one
+was caused by it:
+
+- **A15**, failing on all six runs either side, is the open tool-contract
+  gap already recorded in README: nothing exposes delivery revenue net of
+  refunds, so the model correctly declines to subtract.
+- **R1** and **R2** trip `refusal.yaml`'s blanket "no `$0.00` anywhere"
+  guard and its `not available` vocabulary while behaving correctly —
+  both already documented as grader misses, deliberately left untuned.
+- **The two consistency dips (C2a, C3a)** are the same class: answered,
+  correct, provenanced figures whose wording missed the assertion's
+  vocabulary ("counted it only **once**" with markdown between the words;
+  "lost money" where the regex wants `negative|loss|underperform` — the
+  exact C3 miss README already records). Reported rather than smoothed
+  over: consistency held 15/15 on all three `main` runs and 14/15 on two
+  of three after, which is inside this suite's known wording variance and
+  has no validator involvement, but it is a real difference in the
+  measured numbers and is stated as one.
+
+Two intermediate versions of the check DID cause real regressions, caught
+by exactly this before/after discipline and fixed rather than accepted: a
+first version with no derivation refused A13 over "$6.75", and a second
+refused A10 over "$1" and C3c over "$153 an order". Both are why the
+one-step derivation exists.
+
+### "How was the weekend?" no longer depends on which way the model feels (`internal/ambiguity/weekend.go`)
+
+**Root cause.** `TestGate_Classify_LiveSmokeTest`'s ambiguous case
+asserted that "How did we do over the weekend?" classifies `ambiguous`,
+and flaked — the same input came back `answerable` on some runs. The
+prompt held two rules in tension. The date-grounding section says relative
+language including "the weekend" MUST be resolved as an offset from
+`dataEnd` (which settles WHICH weekend); the ambiguous-classification
+example described "a vague date range like 'the weekend' without a clear
+anchor **once resolved** per the date-grounding rule above" (which is
+about WHICH DAYS — Friday–Sunday, or Saturday and Sunday only). The two
+are logically compatible, anchoring being necessary but not sufficient,
+and the phrasing reads as though anchoring disposes of the ambiguity.
+
+**Fix, both halves.** The prompt now says outright that resolving the
+anchor does not resolve the day range, with the weekend worked through as
+an example. And, because a definition this product does not have should
+never have been a model's call in the first place — the same reasoning
+`daterange.go` records for date arithmetic — a deterministic Go pre-check
+now short-circuits it before any model call: a standalone "weekend" with
+no days named and no explicit date returns `ambiguous` with a clarifying
+question and two options composed from constants, at zero tokens.
+
+Deliberately narrow, and the narrowness is load-bearing:
+
+- Boundaries are checked by hand, not with `\b`. Go treats `-` as a word
+  boundary, so a naive `\bweekend\b` would hijack **`IFOOD-CAMP-WEEKEND`**
+  — a real campaign in this dataset and a graded `refusal.yaml` question —
+  into a clarifying question instead of letting the tool report its ROI as
+  unattributable. Same discipline as `daterange.go`'s
+  `bareYearBoundariesOK`. The plural ("how do weekends compare to
+  weekdays?") is excluded by the same rule.
+- It does not fire when the days are already named, when an explicit date
+  is present ("the weekend of August 9, 2025" — reusing `daterange.go`'s
+  own parser), or on a REPLY to a clarifying question, which would loop
+  the owner back into the question they just answered.
+- It was NOT widened to "recently" or any other vague-period word. "The
+  weekend" has exactly two candidate readings, which is what makes a
+  deterministic clarification composable at all; "recently" has no bounded
+  set, so a deterministic clarification would have to invent the choices —
+  guessing, in the one place this check exists to stop guessing.
+
+`R5` ("How was the weekend?") now returns `clarification_needed` from Go
+with zero model calls, and passed on all three post-change runs.
+`instrumentation` records it honestly under a new
+`WeekendPrecheckModelLabel` sentinel rather than logging a phantom
+zero-token call against the gate's model — `httpapi`'s ambiguous branch
+was carrying that dishonesty for any deterministic clarification, and now
+uses the same `gateModelLabel` helper as the refusal branch.
+
+The live smoke test's ambiguous case now asserts the zero-model-call fact
+instead of a live classification, so the suite's one flake is gone; the
+answerable and unanswerable cases still hit the real API, which is what
+that test is for.
+
+---
+
 ## 2026-08-30 — Excel-style per-column header filters, and the search boxes that stopped filtering on every keystroke
 
 Two related, additive changes to how a grid gets narrowed, both explicitly

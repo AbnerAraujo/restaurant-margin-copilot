@@ -1496,7 +1496,8 @@
           <ul style="font-size:14.5px;padding-left:18px;">
             <li><strong>Why not Opus or Fable:</strong> it narrates an already-computed number. That does not need frontier reasoning, and paying for it would be spending on the one step where a wrong answer is <em>impossible anyway</em>, because the figure came from Go.</li>
             <li><strong>Why not Haiku:</strong> it does need to sequence several tool calls and hold a period's worth of figures straight while writing an owner-legible sentence.</li>
-            <li>Its non-test imports are exactly two packages: <code>internal/llmclient</code> and <code>internal/mcptools</code>. It has no path to <code>internal/storage</code>. Every number it sees arrived through a typed tool result.</li>
+            <li>Its non-test imports are exactly three packages: <code>internal/llmclient</code>, <code>internal/mcptools</code>, and <code>internal/answerverify</code>. It has no path to <code>internal/storage</code>. Every number it sees arrived through a typed tool result.</li>
+            <li><strong>Its narration is checked before it is served.</strong> <code>internal/answerverify</code> is pure Go with no model and no I/O: it lifts every money and percentage figure out of the finished answer and requires each one to match a value the tool results actually returned &mdash; or a value Go can rederive from two of them in a single operation, which is how a legitimate "$6.75 ahead" or "about 52% of delivery" stays servable while a fabricated or cents-altered figure does not. A mismatch is refused in plain owner-facing language and logged as <code>numeric_validation_failed</code>, never served. Calibrated against the evaluation harness's own 35 real narrations rather than hypotheticals, and measured against them: it catches 29 of 29 cent-level alterations of a correct answer's headline figure, and fired zero times across 105 graded questions of real traffic.</li>
           </ul>
         </div>
       </div>
@@ -1529,7 +1530,8 @@
             <tr><td class="mono">internal/answercache</td><td class="mono">storage</td><td class="no">no</td><td class="yes">yes</td></tr>
             <tr><td class="mono">internal/badges</td><td class="mono">reconcile, storage</td><td class="no">no</td><td class="yes">read-only</td></tr>
             <tr><td class="mono">internal/ambiguity</td><td class="mono">llmclient, instrumentation</td><td class="yes">Sonnet 5 (gate) + Sonnet 5 (writer, conditional)</td><td class="no"><strong>no import path exists</strong></td></tr>
-            <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
+            <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools, answerverify</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
+            <tr><td class="mono">internal/answerverify</td><td class="mono">&mdash; (stdlib only)</td><td class="no">no &mdash; a pure matcher over text and JSON</td><td class="no">no</td></tr>
             <tr><td class="mono">internal/advisor</td><td class="mono">llmclient</td><td class="yes">Sonnet 5 (opt-in, per tap)</td><td class="no"><strong>no import path exists</strong></td></tr>
             <tr><td class="mono">internal/paraphrase</td><td class="mono">llmclient, answercache</td><td class="yes">Haiku 4.5 (cache miss only)</td><td class="no">no &mdash; candidates are handed in</td></tr>
             <tr><td class="mono">internal/httpapi</td><td class="mono">advisor, ambiguity, explain, answercache, paraphrase, mcptools, instrumentation, llmclient, ingest, pipeline, platformconnector, livedata, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>

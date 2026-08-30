@@ -512,10 +512,7 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			// never touched a model: record it under an honest "no model"
 			// label with its genuinely zero token/cost figures, rather than
 			// attributing a phantom zero-token call to the gate's model.
-			gateModel := llmclient.ModelAmbiguityGate
-			if decision.DeterministicPrecheck {
-				gateModel = ambiguity.PrecheckModelLabel
-			}
+			gateModel := gateModelLabel(decision)
 			deps.logOrWarn(ctx, instrumentation.Record{
 				QuestionText:        req.Question,
 				AmbiguityGateResult: instrumentation.GateUnanswerable,
@@ -539,18 +536,24 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		}
 
 		if decision.Result == instrumentation.GateAmbiguous && decision.ClarifyingQuestion != "" {
+			// Same honesty rule the refusal branch above applies: a
+			// clarification decided by a deterministic Go pre-check (the
+			// vague-weekend check) never touched a model, so it is recorded
+			// under a no-model label with its genuinely zero figures rather
+			// than as a phantom zero-token call to the gate's model.
+			gateModel := gateModelLabel(decision)
 			deps.logOrWarn(ctx, instrumentation.Record{
 				QuestionText:        req.Question,
 				AmbiguityGateResult: instrumentation.GateAmbiguous,
 				ClarificationFired:  true,
-				ModelUsed:           llmclient.ModelAmbiguityGate,
+				ModelUsed:           gateModel,
 				InputTokens:         decision.InputTokens,
 				OutputTokens:        decision.OutputTokens,
 				EstimatedCostUSD:    decision.EstimatedCostUSD,
 				LatencyMs:           decision.LatencyMs,
 			})
 			interactions := []CostInteraction{
-				{ModelUsed: llmclient.ModelAmbiguityGate, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
+				{ModelUsed: gateModel, InputTokens: decision.InputTokens, OutputTokens: decision.OutputTokens, EstimatedCostUSD: decision.EstimatedCostUSD, LatencyMs: decision.LatencyMs},
 			}
 			interactions = deps.logWriterCallIfAny(ctx, req.Question, decision, true, false, interactions)
 			deps.writeAndCache(ctx, w, resolved, AskResponse{
@@ -685,6 +688,24 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		}
 		deps.writeAndCache(ctx, w, resolved, resp)
 	}
+}
+
+// gateModelLabel is the honest "model used" for one gate Decision: the
+// gate's real model normally, or the naming sentinel of whichever
+// deterministic Go pre-check decided it instead (internal/ambiguity's
+// PrecheckModelLabel / WeekendPrecheckModelLabel), for which no model ran
+// and no tokens were spent. Falls back to the date-range label if a
+// pre-check Decision somehow carries no label of its own, so an
+// externally-constructed Decision can never be mislogged as a real,
+// zero-token model call.
+func gateModelLabel(decision *ambiguity.Decision) string {
+	if !decision.DeterministicPrecheck {
+		return llmclient.ModelAmbiguityGate
+	}
+	if decision.PrecheckLabel != "" {
+		return decision.PrecheckLabel
+	}
+	return ambiguity.PrecheckModelLabel
 }
 
 // logOrWarn writes r via deps.Logger and, on failure, logs loudly to

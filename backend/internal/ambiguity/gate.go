@@ -171,16 +171,28 @@ type Decision struct {
 	EstimatedCostUSD float64
 	LatencyMs        int64
 
-	// DeterministicPrecheck marks a Decision produced entirely by
-	// daterange.go's explicit-date range pre-check: every explicit date the
-	// question named falls wholly outside the known data window, so the
-	// refusal was decided and worded in Go and NO model call of any kind was
-	// made — every token/cost/latency field above is genuinely zero, and
-	// Writer is nil by construction. The caller (internal/httpapi) uses this
-	// to record the interaction honestly as a no-model refusal
-	// (PrecheckModelLabel) rather than attributing a zero-token call to the
-	// gate's model.
+	// DeterministicPrecheck marks a Decision produced entirely by one of
+	// this package's Go pre-checks, with NO model call of any kind — so
+	// every token/cost/latency field above is genuinely zero, and Writer is
+	// nil by construction. Two pre-checks set it today:
+	//
+	//   - daterange.go: every explicit date the question named falls wholly
+	//     outside the known data window, so the refusal was decided and
+	//     worded in Go.
+	//   - weekend.go: the question asks about "the weekend" without saying
+	//     which days count, so the clarifying question was composed in Go.
+	//
+	// The caller (internal/httpapi) uses this to record the interaction
+	// honestly as a no-model interaction, under PrecheckLabel, rather than
+	// attributing a zero-token call to the gate's model.
 	DeterministicPrecheck bool
+
+	// PrecheckLabel is the honest "model used" for this Decision when
+	// DeterministicPrecheck is set — PrecheckModelLabel or
+	// WeekendPrecheckModelLabel, naming WHICH pre-check decided it rather
+	// than collapsing both into one label that would be wrong for one of
+	// them. Empty on every model-decided Decision.
+	PrecheckLabel string
 
 	// Writer is set when — and only when — this Decision's ambiguous/
 	// unanswerable message was upgraded by the second-pass Claude Sonnet 5
@@ -371,6 +383,28 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 			Result:                instrumentation.GateUnanswerable,
 			RefusalReason:         precheckRefusalReason(check.Verdicts, g.dataStart, g.dataEnd),
 			DeterministicPrecheck: true,
+			PrecheckLabel:         PrecheckModelLabel,
+		}, nil
+	}
+
+	// Deterministic vague-weekend pre-check (weekend.go), also BEFORE any
+	// model call: WHICH DAYS count as "the weekend" is a definition this
+	// product does not have, not a judgment call, so it is asked about here
+	// in Go rather than left to a model that has been observed answering it
+	// inconsistently on identical input.
+	//
+	// Skipped when pending != nil: that input is the owner's REPLY to a
+	// clarifying question this gate already asked. A reply that happens to
+	// repeat the word ("the weekend that just finished") must be classified
+	// as the resolved question, never bounced back into the same
+	// clarification it is answering.
+	if pending == nil && needsWeekendClarification(question) {
+		return &Decision{
+			Result:                instrumentation.GateAmbiguous,
+			ClarifyingQuestion:    weekendClarifyingQuestion,
+			ClarifyingOptions:     weekendClarifyingOptions,
+			DeterministicPrecheck: true,
+			PrecheckLabel:         WeekendPrecheckModelLabel,
 		}, nil
 	}
 
@@ -839,7 +873,7 @@ Data actually available to this product (nothing else exists — do not assume a
 
 Date grounding — read this before classifying any question that mentions a date:
 - This product's only notion of "now"/"today" is %[2]s, the last date it has any data for. Never use the real-world current calendar date for that purpose — you do not know it reliably, and guessing at it (including inventing a plausible-sounding year) is exactly the failure this rule exists to prevent.
-- Relative language — "today", "yesterday", "this week", "last week", "the weekend" — MUST be resolved as an offset from %[2]s, not from the real world's current date. E.g. "this week" is a trailing window ending %[2]s; "last week" is the 7 days before that.
+- Relative language — "today", "yesterday", "this week", "last week", "the weekend" — MUST be resolved as an offset from %[2]s, not from the real world's current date. E.g. "this week" is a trailing window ending %[2]s; "last week" is the 7 days before that. This rule settles WHICH period a phrase points at. It does NOT settle which DAYS a phrase covers when the phrase itself never defines them — see "the weekend" under the ambiguous classification below, where anchoring the period still leaves a second, separate question open.
 - "This month" is the calendar month CONTAINING %[2]s, truncated at %[2]s (i.e. the 1st of that month through %[2]s inclusive, not a trailing 30-day window) — the same calendar-month convention internal/httpapi's period-comparison and platform-trend endpoints already use, so a chat answer about "this month" never disagrees with what those pages show for the same data. "Last month" is the FULL prior calendar month (1st through its last day), not the 30 days before %[2]s.
 - A date given without a year (e.g. "August 3rd", "the 2nd", "Aug 1") MUST be resolved against %[2]s (this product's "today") — assume the most recent occurrence of that month/day at or before %[2]s, since that is what "today" and recent relative language ("this week", "last week") already anchor to elsewhere in this prompt. Do not ask a clarifying question about the year, and never state or imply the real-world current year.
 - Range comparison for explicitly dated references is NOT your job. A deterministic pre-check in Go parses common explicit date forms (an ISO date, "July 2026", "August 9, 2025", a bare year) and compares them against %[1]s..%[2]s before you are ever called: a question whose explicit dates all fall outside the range is refused before this prompt runs, and any explicit reference the pre-check did recognize reaches you inside a "[Deterministic date-range check]" block with its verdict already computed. Treat those verdicts as settled fact — never re-derive, second-guess, or contradict them, and never classify a question as unanswerable on date-range grounds when its reference is marked IN RANGE.
@@ -876,7 +910,9 @@ Follow-ups to a previous answer — read this before classifying any input conta
 
 Classify the question into exactly one of:
 - "answerable": it can be answered from the data above with no ambiguity about what's being asked.
-- "ambiguous": the question is answerable in principle, but has more than one reasonable interpretation (e.g. a vague date range like "the weekend" without a clear anchor once resolved per the date-grounding rule above, or a pronoun/reference with no clear antecedent). For an ambiguous question, either:
+- "ambiguous": the question is answerable in principle, but has more than one reasonable interpretation. The two cases that come up: (a) a period whose DAYS are undefined even after the date-grounding rule above has anchored WHICH period it is, or (b) a pronoun/reference with no clear antecedent.
+  Worked example of (a), "the weekend": the date-grounding rule tells you which calendar weekend is meant (the most recent one at or before %[2]s). That is necessary and it is NOT sufficient — this product nowhere defines whether "the weekend" means Friday through Sunday or Saturday and Sunday only, and the two give different numbers. Resolving the anchor does not resolve the day range, so a question about "the weekend" with no days named stays ambiguous even after you have anchored it. (A deterministic Go pre-check normally catches this exact phrasing before you are called; if one reaches you anyway, classify it ambiguous on the day-range grounds above, not answerable.) A question that DOES name its days ("Friday to Sunday", "Saturday and Sunday") has no ambiguity left and is answerable.
+  For an ambiguous question, either:
   - ask ONE specific clarifying question that would resolve it (set "clarifying_question", and set "clarifying_options" to 2-3 short phrasings of the possible answers, each one a complete reply the user could send as-is, e.g. ["Friday to Sunday", "Saturday and Sunday only"]), OR
   - if a reasonable default assumption is obvious and stating it plainly would let you proceed safely (e.g. "week" defaults to a trailing 7-day window ending %[2]s), state that assumption instead (set "assumption_stated") — never both, never neither.
 - "unanswerable": the question references data this product does not have at all (a date outside %[1]s..%[2]s once resolved per the date-grounding rule above, a supplier/platform/restaurant not listed above, or a question that isn't about this restaurant's margin/reconciliation/promotions at all). Give a specific "reason" naming what's missing.
