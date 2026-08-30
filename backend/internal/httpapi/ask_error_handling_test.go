@@ -113,6 +113,56 @@ func TestExplanationFailureLogsPartialSpendAndReturnsASafeMessage(t *testing.T) 
 	require.True(t, explainRecord.RefusalFired)
 }
 
+// TestHandleAsk_RequestValidationFailuresUseTheJSONErrorEnvelope guards
+// against a regression found in QA round 4: the three request-validation
+// branches at the top of HandleAsk (wrong method, unparseable JSON, blank
+// question) used to call http.Error directly, writing a bare text/plain
+// body instead of the {error, detail} JSON shape writeJSONError produces
+// everywhere else in this package. frontend/src/lib/api.ts's toApiError
+// tries to JSON-parse every non-2xx body; a plain-text body silently
+// downgrades to ApiError{code: "unknown_error"}, which
+// lib/requestFailure.ts's blocklist then replaces with a generic "server
+// ran into a problem" message — discarding a perfectly safe, specific,
+// actionable string ("question is required") behind a useless one. Fixed
+// by routing all three through writeJSONError with the same codes
+// (method_not_allowed, invalid_body, invalid_input) every other handler in
+// this package uses for the same situations.
+func TestHandleAsk_RequestValidationFailuresUseTheJSONErrorEnvelope(t *testing.T) {
+	deps := Deps{Gate: fixedAnswerableGate{}}
+
+	t.Run("wrong method", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/api/ask", nil)
+		HandleAsk(deps)(recorder, request)
+
+		require.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body), "body must be the standard {error, detail} JSON envelope, not plain text")
+		require.Equal(t, "method_not_allowed", body["error"])
+	})
+
+	t.Run("unparseable JSON", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader("{not json"))
+		HandleAsk(deps)(recorder, request)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body), "body must be the standard {error, detail} JSON envelope, not plain text")
+		require.Equal(t, "invalid_body", body["error"])
+	})
+
+	t.Run("blank question", func(t *testing.T) {
+		recorder, rawBody := doAsk(t, deps, "   ")
+
+		require.Equal(t, http.StatusBadRequest, recorder.Code)
+		var body map[string]string
+		require.NoError(t, json.Unmarshal([]byte(rawBody), &body), "body must be the standard {error, detail} JSON envelope, not plain text")
+		require.Equal(t, "invalid_input", body["error"])
+		require.NotEmpty(t, body["detail"])
+	})
+}
+
 func TestGateFailureReturnsASafeMessageWithoutLeakingInternals(t *testing.T) {
 	store := &recordingInstrumentationStore{}
 	underlyingErr := errors.New(`postgres: password authentication failed for user "prod"`)

@@ -319,6 +319,26 @@ func EvaluatePoints(earned []Badge) Points {
 	return points
 }
 
+// applySpent sets Spent and derives Available from an already-built Points,
+// clamped so Available can never go negative — the guarantee the Points
+// struct's own doc comment states. Pulled out of RegisterBadgeHandler
+// (rather than left as inline arithmetic) specifically so this clamp is
+// unit-testable without a storage.Querier: found in QA round 4 that the
+// optional ?start/?end query on GET /api/badges scopes `points.Total` (via
+// the Reconciliation-category days it's built from) while `spent` is always
+// all-time (SumPointsSpentOnPromotions takes no period, by design — see
+// that handler's own comment), so a narrow enough period could otherwise
+// make Total < Spent and report a negative Available. Nothing can ever
+// actually be spent past zero (POST /api/promotions independently
+// re-verifies against the true all-time total, never this endpoint's
+// possibly-scoped one) — this clamp keeps the REPORTED number honest to
+// that same fact.
+func applySpent(points Points, spent int) Points {
+	points.Spent = spent
+	points.Available = max(0, points.Total-spent)
+	return points
+}
+
 // EvaluateReconciliationBadges evaluates the two built-now Reconciliation
 // -category badges against already-computed DailyReconciliation rows.
 // Nothing here recomputes or reinterprets margin, discrepancies, or
@@ -583,8 +603,7 @@ func RegisterBadgeHandler(q storage.Querier) http.HandlerFunc {
 		}
 
 		resp := BuildResponse(days, promotions, usageDays)
-		resp.Points.Spent = spent
-		resp.Points.Available = resp.Points.Total - spent
+		resp.Points = applySpent(resp.Points, spent)
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {

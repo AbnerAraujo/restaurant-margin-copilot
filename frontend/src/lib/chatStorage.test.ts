@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatMessage } from '@/components/Chat/ChatPanel'
 import {
+  MAX_MESSAGES_PER_THREAD,
   MAX_THREADS,
   activeThread,
   addSavedPrompt,
@@ -100,6 +101,35 @@ describe('chatStorage', () => {
       store = startNewThread(store)
     }
     expect(store.threads.length).toBeLessThanOrEqual(MAX_THREADS)
+  })
+
+  // QA round 4: MAX_THREADS bounds how many threads survive, but nothing
+  // used to bound how long any ONE of them could grow — an owner who keeps
+  // asking questions in a single ongoing thread (never starting a new one)
+  // would accumulate every message forever, eventually pushing that one
+  // localStorage entry over quota and silently breaking every future write
+  // (see MAX_MESSAGES_PER_THREAD's own doc comment).
+  it('caps a single thread\'s own message history so one long-lived conversation cannot grow without bound', () => {
+    // Seeded through storage first, then every commit passes `base` — the
+    // same shape ChatPanel.tsx's commitMessages callback actually uses
+    // (threadStoreRef.current as base), so this exercises the real
+    // read-modify-write path rather than each call re-generating a fresh,
+    // unpersisted store with a different activeId.
+    let store = persistActiveThread(loadThreadStore(), [])
+    const threadId = store.activeId
+    for (let i = 0; i < MAX_MESSAGES_PER_THREAD + 20; i++) {
+      store = commitThreadMessages(
+        threadId,
+        (messages) => [...messages, userMessage(`question ${i}`)],
+        store,
+      )
+    }
+    const messages = activeThread(store)?.messages ?? []
+    expect(messages.length).toBeLessThanOrEqual(MAX_MESSAGES_PER_THREAD)
+    // The most RECENT messages survive, not the oldest.
+    expect(messages.at(-1)).toEqual(
+      userMessage(`question ${MAX_MESSAGES_PER_THREAD + 19}`),
+    )
   })
 
   it('derives a thread title from the first question, never from a model', () => {

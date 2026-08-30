@@ -27,7 +27,7 @@ whole build follows.
 - [User stories and specs](#user-stories-and-specs-spec-driven-development)
 - [Real evaluation results](#real-evaluation-results)
 - [Stack](#stack)
-- [The 7 MCP tools and the Claude Code skills used to build this](#the-7-mcp-tools-and-the-claude-code-skills-used-to-build-this)
+- [The 8 MCP tools and the Claude Code skills used to build this](#the-8-mcp-tools-and-the-claude-code-skills-used-to-build-this)
 - [Non-goals](#non-goals)
 
 ## What's real right now
@@ -41,7 +41,7 @@ Queried live against the running Postgres database on 2026-08-30:
 | Measured cost per question | **$0.0313** — 70 questions through the full uncached gate+explain path, 142 model calls, $2.1931 (KR4's bar is $0.05) |
 | Accuracy on the eval harness's known-answer questions | **14/15**, twice, with the cache disabled — the one failure is a real tool-contract gap, described in [Real evaluation results](#real-evaluation-results) |
 | Earned Steward points | **12,345** (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
-| MCP tools exposed to the model | **7** typed, read-only tools — no open SQL, no free-form computation |
+| MCP tools exposed to the model | **8** typed, read-only tools — no open SQL, no free-form computation |
 | Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Settings |
 
 A note on units, because the earlier version of this table blurred them: a
@@ -170,7 +170,7 @@ fact.
 | [`docs/brand.md`](docs/brand.md) | Visual identity / design tokens used across the app and docs |
 | [`docs/frontend.md`](docs/frontend.md) | Frontend design system and architecture reference — real file paths, real consumer counts, real bugs found and fixed |
 | [`docs/openapi.yaml`](docs/openapi.yaml) + [`docs/api.html`](docs/api.html) (also live ↗ above) | OpenAPI 3.0 spec for every backend endpoint, grounded against real live responses, rendered as an interactive Swagger UI page |
-| [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 7 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the two this project created itself |
+| [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md) | The MCP typed-tool layer (all 8 tools, the timeout/call-cap middleware) and a fact-checked inventory of the Claude Code skills used to build this, including the two this project created itself |
 
 ## User stories and specs (spec-driven development)
 
@@ -295,9 +295,9 @@ you get to re-score yourself is not a target.
 - **Evaluation**: `promptfoo` harness, real numbers above
 - **Docs/skills**: built with GitHub Spec Kit (SDD), and Claude Code skills for data visualization, presentation design, and UX review
 
-## The 7 MCP tools and the Claude Code skills used to build this
+## The 8 MCP tools and the Claude Code skills used to build this
 
-The model never has open SQL or a free-form computation tool — only these seven typed, read-only tools (`backend/internal/mcptools/`), each refusing rather than estimating when the data it needs isn't there:
+The model never has open SQL or a free-form computation tool — only these eight typed, read-only tools (`backend/internal/mcptools/`), each refusing rather than estimating when the data it needs isn't there:
 
 | Tool | Answers |
 |---|---|
@@ -308,6 +308,7 @@ The model never has open SQL or a free-form computation tool — only these seve
 | `list_negative_roi_promotions` | Every campaign losing money in a period |
 | `compare_platform_economics` | iFood vs. Just Eat Takeaway commission/promo cost, side by side |
 | `get_period_totals` | A whole period's totals, averages, and best/worst day in one call |
+| `get_expense_pattern_by_day_of_month` | Which position in the month (1st–31st) runs highest/lowest on average expense, across every month in a period |
 
 Full contracts (inputs, refusal conditions, provenance shape): [`specs/001-margin-reconciliation-qa/contracts/mcp-tools.md`](specs/001-margin-reconciliation-qa/contracts/mcp-tools.md); the fact-checked build-time inventory below is [`docs/mcp-and-skills.md`](docs/mcp-and-skills.md).
 

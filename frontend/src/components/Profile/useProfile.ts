@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 
 /**
  * Wire shape of GET /api/profile (backend `internal/httpapi/profile.go`) —
@@ -81,7 +82,7 @@ export function useProfile(): ProfileState {
         })
         .catch((caught: unknown) => {
           if (!cancelled) {
-            setError(caught instanceof Error ? caught.message : String(caught))
+            setError(explainRequestFailure(caught))
           }
         })
     }

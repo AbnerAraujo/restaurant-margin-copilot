@@ -47,6 +47,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -389,18 +390,18 @@ type Deps struct {
 func HandleAsk(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
 			return
 		}
 
 		var req AskRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_body", fmt.Sprintf("could not parse request body as JSON: %v", err))
 			return
 		}
 		req.Question = strings.TrimSpace(req.Question)
 		if req.Question == "" {
-			http.Error(w, "question is required", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid_input", "enter a question — the box can't be submitted empty")
 			return
 		}
 

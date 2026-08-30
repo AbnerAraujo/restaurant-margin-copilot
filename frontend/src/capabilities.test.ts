@@ -50,6 +50,8 @@ const TOOL_CONTRACTS_FILE = path.join(
   'contracts',
   'mcp-tools.md',
 )
+const README_FILE = path.join(REPO_ROOT, 'README.md')
+const MCP_AND_SKILLS_FILE = path.join(REPO_ROOT, 'docs', 'mcp-and-skills.md')
 
 /**
  * Every tool name actually registered with the MCP server, read from the
@@ -89,6 +91,38 @@ function documentedContractToolNames(): string[] {
   return [...names].sort()
 }
 
+/**
+ * Every tool named as the first cell of a `| \`name\` | ... |` row in
+ * README.md's "## The N MCP tools..." table. Found in QA round 4: this
+ * exact staleness class — a hand-maintained tool list drifting from the
+ * real one — had already bitten the Help page and `exampleQuestions.ts`
+ * (see this file's own doc comment above), and it had ALSO bitten this
+ * prose README and `docs/mcp-and-skills.md` at the same time, undetected,
+ * because neither is TypeScript this file previously read. Both are now in
+ * scope.
+ */
+function readmeToolTableNames(): string[] {
+  const source = readFileSync(README_FILE, 'utf8')
+  const names = new Set<string>()
+  for (const match of source.matchAll(/^\| `([a-z0-9_]+)` \|/gm)) {
+    names.add(match[1])
+  }
+  return [...names].sort()
+}
+
+/**
+ * Every tool named as the second cell of a `| # | \`name\` | ... |` row in
+ * `docs/mcp-and-skills.md`'s "The exact N typed tools" table.
+ */
+function mcpAndSkillsToolTableNames(): string[] {
+  const source = readFileSync(MCP_AND_SKILLS_FILE, 'utf8')
+  const names = new Set<string>()
+  for (const match of source.matchAll(/^\| \d+ \| `([a-z0-9_]+)` \|/gm)) {
+    names.add(match[1])
+  }
+  return [...names].sort()
+}
+
 describe('capabilities catalog vs. the real backend', () => {
   it('names exactly the MCP tools registered in Go — no more, no fewer', () => {
     expect([...MCP_TOOL_NAMES].sort()).toEqual(registeredGoToolNames())
@@ -96,6 +130,14 @@ describe('capabilities catalog vs. the real backend', () => {
 
   it('names exactly the MCP tools in the authoritative tool-contract doc', () => {
     expect([...MCP_TOOL_NAMES].sort()).toEqual(documentedContractToolNames())
+  })
+
+  it('names exactly the MCP tools in README.md\'s tool table', () => {
+    expect([...MCP_TOOL_NAMES].sort()).toEqual(readmeToolTableNames())
+  })
+
+  it('names exactly the MCP tools in docs/mcp-and-skills.md\'s tool table', () => {
+    expect([...MCP_TOOL_NAMES].sort()).toEqual(mcpAndSkillsToolTableNames())
   })
 
   it('names exactly the business-insight kinds declared in Go', () => {

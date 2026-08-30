@@ -108,6 +108,33 @@ func TestEvaluatePointsBreakdownOrderIsStable(t *testing.T) {
 	}
 }
 
+// TestApplySpent_NeverReportsNegativeAvailable is the QA round 4 regression:
+// GET /api/badges?start&end scopes Total (via the Reconciliation-category
+// days it's built from — see RegisterBadgeHandler's own doc comment) while
+// Spent is always all-time, so a narrow enough period used to make
+// Available = Total - Spent go negative, contradicting the Points struct's
+// own "Never negative" claim.
+func TestApplySpent_NeverReportsNegativeAvailable(t *testing.T) {
+	points := Points{Total: 10}
+
+	got := applySpent(points, 25)
+
+	if got.Spent != 25 {
+		t.Fatalf("Spent = %d, want 25 (recorded as-is, not clamped)", got.Spent)
+	}
+	if got.Available != 0 {
+		t.Fatalf("Available = %d, want 0 — Total (10) - Spent (25) must clamp at zero, never go negative", got.Available)
+	}
+}
+
+func TestApplySpent_OrdinaryCaseIsPlainSubtraction(t *testing.T) {
+	got := applySpent(Points{Total: 100}, 40)
+
+	if got.Spent != 40 || got.Available != 60 {
+		t.Fatalf("got Spent=%d Available=%d, want Spent=40 Available=60", got.Spent, got.Available)
+	}
+}
+
 // TestBuildResponseWireContract pins the exact JSON shape the frontend's
 // points card reads.
 func TestBuildResponseWireContract(t *testing.T) {

@@ -23,6 +23,28 @@ function stubFetchOnce(status: number, body: unknown) {
 }
 
 /**
+ * Routes fetch by URL substring — needed once a test cares about the LIVE
+ * points balance specifically, since GET /api/badges (usePoints, for the
+ * points-needed preview) and POST /api/promotions are two different calls
+ * that `stubFetchOnce`'s single shared response can't tell apart.
+ */
+function stubFetchRoutes(routes: Record<string, unknown>) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: RequestInfo | URL) => {
+      const match = Object.keys(routes).find((path) => String(url).includes(path))
+      const body = match ? routes[match] : {}
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => body,
+        text: async () => JSON.stringify(body),
+      })
+    }),
+  )
+}
+
+/**
  * The form now also fetches GET /api/badges on mount (usePoints, for the
  * live points-balance preview) — a real, additional call every one of these
  * tests' fetch mocks now sees. Find the /api/promotions POST specifically,
@@ -214,6 +236,30 @@ describe('LogReplacementForm', () => {
     ).toHaveTextContent(/not currently flagged negative-roi/i)
   })
 
+  // QA round 4 regression: this form used to render `caught.message`
+  // straight from the thrown ApiError, bypassing lib/requestFailure.ts's
+  // blocklist entirely (unlike PromotionsPage.tsx, which already routed
+  // through explainRequestFailure). backend/internal/httpapi/promotions_
+  // create.go's query_failed path writes the raw pgx error string as
+  // `detail`, and it — like every other internal-only code — must never
+  // reach this screen.
+  it('never renders a raw internal error for an internal-only failure code', async () => {
+    const user = userEvent.setup()
+    stubFetchOnce(500, {
+      error: 'query_failed',
+      detail: 'ERROR: relation "promotion" does not exist (SQLSTATE 42P01)',
+    })
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+    await fillRequiredFields(user)
+    await user.click(screen.getByRole('button', { name: /log promotion/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).not.toHaveTextContent(/SQLSTATE/i)
+    expect(alert).not.toHaveTextContent(/relation "promotion"/i)
+    expect(alert).toHaveTextContent(/server ran into a problem/i)
+  })
+
   it('refuses a negative spend without ever calling the backend', async () => {
     const user = userEvent.setup()
     const fetchSpy = vi.fn()
@@ -233,6 +279,32 @@ describe('LogReplacementForm', () => {
     expect(
       fetchSpy.mock.calls.some(([url]) => String(url).includes('/api/promotions')),
     ).toBe(false)
+  })
+
+  // QA round 4 regression: `pointsNeededPreview` used to compute
+  // `Math.ceil((spendNumberPreview * 100) / CENTS_PER_POINT)`. Plain JS
+  // float multiplication lands `1.1 * 100` at 110.00000000000001, not 110,
+  // so the ceiling division inflated the preview to 12 points for a spend
+  // that costs exactly 11 — enough to wrongly disable submission for an
+  // owner who has exactly enough points. The backend
+  // (PointsNeededForSpend, backend/internal/badges/badges.go) never has
+  // this problem because it operates on already-integer cents.
+  it('never overstates the points-needed preview due to float multiplication drift', async () => {
+    const user = userEvent.setup()
+    stubFetchRoutes({
+      '/api/badges': {
+        badges: [],
+        points: { total: 11, breakdown: [], spent: 0, available: 11 },
+      },
+    })
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+    await fillRequiredFields(user, { spend: '1.10' })
+    await user.click(screen.getByRole('radio', { name: /points/i }))
+
+    expect(await screen.findByText(/11 points needed/i)).toBeInTheDocument()
+    expect(screen.queryByText(/not enough to cover this/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /log promotion/i })).not.toBeDisabled()
   })
 
   describe('unsaved-changes guard', () => {
