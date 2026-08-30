@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Download,
+  FlaskConical,
   Loader2,
   UploadCloud,
 } from 'lucide-react'
@@ -51,10 +52,50 @@ interface MarginSnapshotApi {
   margin: string | null
 }
 
+interface ConnectorDedupDecisionApi {
+  kind: string
+  detail: string
+}
+
+/** What the connector sync that rode along with this upload actually did.
+ *  Absent (null) when the box was unticked — a real "not asked for", never
+ *  an empty sync. */
+interface ConnectorSyncSummaryApi {
+  simulated: boolean
+  notice: string
+  from: string
+  to: string
+  days_affected: number
+  orders_synced: number
+  refunds_synced: number
+  tickets_synced: number
+  duplicates_removed: number
+  unresolved_overlaps: number
+  dedup: ConnectorDedupDecisionApi[]
+}
+
 interface CommitCostSheetApi {
   rows_committed: number
+  covers_from: string
+  covers_to: string
+  connector_sync: ConnectorSyncSummaryApi | null
   before: MarginSnapshotApi
   after: MarginSnapshotApi
+}
+
+/** The inclusive calendar range the previewed invoices cover — the same
+ *  min/max scan the backend runs over the same rows (`costSheetDateRange`).
+ *  Computed here only to NAME the range in the opt-in label before the
+ *  commit; the backend never trusts it, and re-derives its own from the
+ *  file's bytes at commit time. */
+function coveredRange(preview: PreviewCostSheetApi): { from: string; to: string } | null {
+  const dates = preview.rows.map((row) => row.invoice_date).filter(Boolean).sort()
+  if (dates.length === 0) return null
+  return { from: dates[0], to: dates[dates.length - 1] }
+}
+
+function describeRange(range: { from: string; to: string }): string {
+  return range.from === range.to ? range.from : `${range.from} to ${range.to}`
 }
 
 type Stage =
@@ -105,6 +146,16 @@ function renderMargin(snapshot: MarginSnapshotApi): string {
 export default function CostSheetTab() {
   const [stage, setStage] = useState<Stage>({ name: 'idle' })
   const [dragActive, setDragActive] = useState(false)
+  // Pre-ticked, and deliberately so. The owner's ask was that uploading a
+  // cost sheet should not require a second trip to Connected Platforms, so
+  // the default has to be the thing they asked for. What it must NOT be is
+  // invisible: the control sits in the preview panel directly above the
+  // commit button, names the exact dates it will pull, and says "simulated"
+  // in its own label — so nobody reaches "Replace cost sheet" without having
+  // been told what else that button does. The backend defaults the other
+  // way (absent flag means no sync) precisely because an API has no label to
+  // read; see wantsConnectorSync's doc comment in ingest_cost_sheet.go.
+  const [syncConnectors, setSyncConnectors] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
   // Found live: a fast double-click on "Replace cost sheet" fires two
   // synchronous click events before React's re-render disables the button
@@ -139,6 +190,7 @@ export default function CostSheetTab() {
       const result = await postMultipart<CommitCostSheetApi>(
         '/api/ingest/cost-sheet/commit',
         file,
+        { sync_connectors: String(syncConnectors) },
       )
       setStage({ name: 'committed', result })
     } catch (caught) {
@@ -172,6 +224,7 @@ export default function CostSheetTab() {
   // page hasn't anticipated — the UI never lets a 0-row preview look like
   // an ordinary one with the commit button quietly enabled underneath it.
   const previewHasNoRows = preview !== null && preview.row_count === 0
+  const range = preview === null ? null : coveredRange(preview)
 
   // "Meaningful in-progress content" for this page: anything staged past a
   // blank picker and short of an actual commit — a file mid-preview, a
@@ -319,6 +372,42 @@ export default function CostSheetTab() {
             </p>
           )}
 
+          {range && !previewHasNoRows ? (
+            <div className="mt-4 rounded-lg border border-warning/25 bg-warning/10 p-3">
+              <label
+                htmlFor="cost-sheet-sync-connectors"
+                className="flex cursor-pointer items-start gap-2.5 text-xs"
+              >
+                <input
+                  id="cost-sheet-sync-connectors"
+                  type="checkbox"
+                  checked={syncConnectors}
+                  disabled={isBusy}
+                  onChange={(event) => setSyncConnectors(event.target.checked)}
+                  className="mt-0.5 size-3.5 shrink-0 rounded-sm border-input accent-primary focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                />
+                <span>
+                  <span className="flex items-center gap-1.5 font-medium text-foreground">
+                    <FlaskConical className="size-3.5 shrink-0 text-warning-text" aria-hidden="true" />
+                    Also pull in simulated platform revenue for {describeRange(range)}
+                  </span>
+                  {/* The disclosure is here, next to the control, and not
+                      only in the Connected Platforms tab — an owner who
+                      never opens that tab must still be told what this
+                      box does before they tick past it. */}
+                  <span className="mt-1 block leading-relaxed text-muted-foreground">
+                    Your costs alone would reconcile against whatever revenue is already on file
+                    for those days. Leaving this ticked also pulls iFood, Just Eat Takeaway and POS
+                    orders for the same dates, so the margin you see afterwards is a complete one.
+                    Those three connections are <strong>simulated</strong> — no real account is
+                    connected, and the orders are generated locally for demonstration. Untick to
+                    replace the cost sheet on its own.
+                  </span>
+                </span>
+              </label>
+            </div>
+          ) : null}
+
           <DataGrid
             className="mt-4"
             title="Parsed cost sheet rows"
@@ -347,8 +436,55 @@ export default function CostSheetTab() {
           <p className="mt-1 flex items-center gap-1.5 text-sm text-success-text">
             <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
             {stage.result.rows_committed} row{stage.result.rows_committed === 1 ? '' : 's'}{' '}
+            covering {describeRange({ from: stage.result.covers_from, to: stage.result.covers_to })}{' '}
             committed and the full reconciliation pipeline re-ran.
           </p>
+
+          {/* Restated after the fact, not only before it. The owner ticked a
+              box a moment ago; what they need now is what actually landed —
+              including, and especially, the overlaps the matcher refused to
+              resolve, which are possible double-counts sitting inside the
+              margin figures directly below this. */}
+          {stage.result.connector_sync ? (
+            <div className="mt-3 rounded-md border border-warning/25 bg-warning/10 p-2.5 text-xs">
+              <p className="flex items-start gap-1.5 text-foreground">
+                <FlaskConical className="mt-0.5 size-3.5 shrink-0 text-warning-text" aria-hidden="true" />
+                <span>
+                  {stage.result.connector_sync.orders_synced} simulated delivery order
+                  {stage.result.connector_sync.orders_synced === 1 ? '' : 's'} and{' '}
+                  {stage.result.connector_sync.tickets_synced} POS ticket
+                  {stage.result.connector_sync.tickets_synced === 1 ? '' : 's'} were pulled in for{' '}
+                  {describeRange(stage.result.connector_sync)} and reconciled together with these
+                  costs. {stage.result.connector_sync.notice}
+                </span>
+              </p>
+              {stage.result.connector_sync.duplicates_removed > 0 ? (
+                <p className="mt-1.5 pl-5 text-muted-foreground">
+                  {stage.result.connector_sync.duplicates_removed} POS ticket
+                  {stage.result.connector_sync.duplicates_removed === 1 ? '' : 's'} matched a
+                  delivery order and {stage.result.connector_sync.duplicates_removed === 1 ? 'was' : 'were'}{' '}
+                  counted once rather than twice.
+                </p>
+              ) : null}
+              {stage.result.connector_sync.unresolved_overlaps > 0 ? (
+                <p role="note" className="mt-1.5 flex items-start gap-1.5 pl-5 text-warning-text">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+                  <span>
+                    {stage.result.connector_sync.unresolved_overlaps} overlap
+                    {stage.result.connector_sync.unresolved_overlaps === 1 ? '' : 's'} could not be
+                    resolved and {stage.result.connector_sync.unresolved_overlaps === 1 ? 'was' : 'were'}{' '}
+                    left in rather than guessed at, so those days may count an order twice. Each one
+                    is flagged on the day it affected.
+                  </span>
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="mt-3 text-xs text-muted-foreground">
+              Simulated platform revenue was not pulled in — these days reconcile against whatever
+              revenue was already on file for them.
+            </p>
+          )}
           <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-md border border-border bg-muted/30 p-3">
               <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">

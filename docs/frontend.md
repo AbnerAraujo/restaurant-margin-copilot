@@ -254,6 +254,18 @@ Two decisions inside it are worth keeping written down:
   an inactive tabpanel is also what the WAI-ARIA tabs pattern asks for, so
   the accessibility and the state-preservation come from one decision
   rather than two.
+- **The Cost sheet tab can now do the Connected Platforms tab's job, and
+  says so before it does** (2026-08-30). Committing a cost sheet offers, in
+  the preview panel directly above the commit button, a pre-ticked box that
+  also pulls the simulated platform revenue for the exact dates the invoices
+  cover. Pre-ticked because that is the outcome the owner wants; *visible,
+  adjacent and specific* because the revenue is simulated, and a control
+  that quietly injected simulated numbers would defeat the five-times-over
+  disclosure the other tab is built around. The label names the date range
+  and says "simulated" and "no real account is connected" in its own words —
+  the banner on the other tab cannot do that work for a person who never
+  opened it. The backend defaults the other way (`sync_connectors` absent
+  means no sync), because an API has no label to read.
 
 ### `ColumnFilterButton` / `useColumnFilters` — `frontend/src/components/ui/column-filter.tsx`, `frontend/src/lib/useColumnFilters.ts`
 

@@ -106,10 +106,22 @@ export async function putJson<T>(path: string, body: unknown): Promise<T> {
  * silently corrupt a multipart body. Error handling matches `postJson`
  * exactly: the server's real `{error, detail}` body surfaces as a typed
  * `ApiError`, never a generic re-wording.
+ *
+ * `fields` are extra plain form values sent alongside the file — today only
+ * the cost-sheet commit's `sync_connectors` opt-in. They are appended after
+ * the file so the server can read the file part without buffering the whole
+ * body first, matching the order a browser `<form>` would produce.
  */
-export async function postMultipart<T>(path: string, file: File): Promise<T> {
+export async function postMultipart<T>(
+  path: string,
+  file: File,
+  fields?: Record<string, string>,
+): Promise<T> {
   const formData = new FormData()
   formData.append('file', file)
+  for (const [name, value] of Object.entries(fields ?? {})) {
+    formData.append(name, value)
+  }
 
   const response = await fetch(`${API_BASE}${path}`, {
     method: 'POST',

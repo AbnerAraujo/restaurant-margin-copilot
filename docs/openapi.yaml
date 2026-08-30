@@ -727,6 +727,29 @@ paths:
         **after** the commit so the effect is visible immediately.
         `margin` is `null` (not `"0.00"`) when there was no prior
         reconciliation data at all — a real absence, not a computed zero.
+
+        ### Pulling the matching platform revenue in with the upload
+        Set `sync_connectors=true` and this endpoint also fetches the
+        **simulated** iFood / Just Eat Takeaway / POS revenue for the exact
+        calendar range the uploaded invoices cover (`covers_from`..`covers_to`,
+        the min/max `invoice_date` across every parsed row) and commits both
+        through **one** pipeline run — so the reconciliation you are shown is a
+        real combined one rather than new costs against whatever revenue
+        happened to already be on file.
+
+        **It is opt-in, and absent means false.** The revenue is simulated, and
+        injecting simulated numbers into a caller that never mentioned
+        connectors would be the product inventing data on its behalf. Existing
+        clients that omit the field behave exactly as they did before this was
+        added. (The web UI ticks the box by default, but only alongside a label
+        naming the dates and the word "simulated" — an API has no label to
+        read.)
+
+        **The combined action is atomic.** The connector fetch happens before
+        anything is written, so a range the connector refuses (over the 31-day
+        sync cap, or an upstream failure) refuses the whole request with a `422`
+        and leaves the cost sheet on file untouched. Re-send without
+        `sync_connectors` to commit the costs on their own.
       operationId: commitCostSheet
       requestBody:
         required: true
@@ -740,6 +763,13 @@ paths:
                   type: string
                   format: binary
                   description: The supplier cost-sheet CSV, field name "file". Bounded at 5MB.
+                sync_connectors:
+                  type: string
+                  description: >-
+                    Opt in to also pulling the simulated platform revenue for the
+                    dates the invoices cover. "true", "1", "yes" or "on" enable it;
+                    absent or anything else means no sync at all.
+                  example: "true"
       responses:
         "200":
           description: The cost sheet was committed and reconciliation re-run.
@@ -748,6 +778,9 @@ paths:
               schema: { $ref: "#/components/schemas/CommitCostSheetResponse" }
               example:
                 rows_committed: 12
+                covers_from: "2026-08-01"
+                covers_to: "2026-08-14"
+                connector_sync: null
                 before: { days: 14, margin: "-1842.30" }
                 after: { days: 14, margin: "-1798.10" }
         "400":
@@ -761,10 +794,18 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "422":
-          description: The file failed cost-sheet validation on re-check.
+          description: >-
+            The file failed cost-sheet validation on re-check
+            (`invalid_cost_sheet`), or `sync_connectors` was set and the
+            connector refused the range the invoices cover
+            (`connector_fetch_failed` — over the 31-day sync cap, or an upstream
+            failure). Nothing was written in either case.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
+              example:
+                error: connector_fetch_failed
+                detail: "date range 2026-06-02..2026-08-29 covers 89 days, more than the 31-day limit on a single sync — sync a shorter range — the cost sheet was not committed; upload it again without \"also pull in simulated platform revenue\" to commit it on its own"
         "500":
           description: |
             A downstream operational failure — reading pre/post-commit margin
@@ -1053,27 +1094,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required: [simulated, notice, from, to, days_affected, orders_synced, refunds_synced, tickets_synced, duplicates_removed, unresolved_overlaps, dedup, before, after]
-                properties:
-                  simulated: { type: boolean, enum: [true] }
-                  notice: { type: string }
-                  from: { type: string, format: date, example: "2026-08-18" }
-                  to: { type: string, format: date, example: "2026-08-20" }
-                  days_affected: { type: integer, example: 3 }
-                  orders_synced: { type: integer, example: 121 }
-                  refunds_synced: { type: integer, example: 4 }
-                  tickets_synced:
-                    type: integer
-                    description: POS tickets committed, already net of the duplicates removed.
-                    example: 198
-                  duplicates_removed: { type: integer, example: 50 }
-                  unresolved_overlaps: { type: integer, example: 5 }
-                  dedup:
-                    type: array
-                    items: { $ref: "#/components/schemas/ConnectorDedupDecision" }
-                  before: { $ref: "#/components/schemas/MarginSnapshotView" }
-                  after: { $ref: "#/components/schemas/MarginSnapshotView" }
+                allOf:
+                  - $ref: "#/components/schemas/ConnectorSyncSummary"
+                  - type: object
+                    required: [before, after]
+                    properties:
+                      before: { $ref: "#/components/schemas/MarginSnapshotView" }
+                      after: { $ref: "#/components/schemas/MarginSnapshotView" }
         "400":
           description: A malformed body, an unparseable date, or an unknown platform name.
           content:
@@ -1796,9 +1823,54 @@ components:
       type: object
       properties:
         rows_committed: { type: integer }
+        covers_from:
+          type: string
+          format: date
+          description: >-
+            Earliest `invoice_date` across every committed row — the start of the
+            calendar range this upload just replaced the cost sheet for. Derived
+            from the file, never from anything the client sent.
+          example: "2026-08-01"
+        covers_to:
+          type: string
+          format: date
+          description: Latest `invoice_date` across every committed row.
+          example: "2026-08-29"
+        connector_sync:
+          allOf: [{ $ref: "#/components/schemas/ConnectorSyncSummary" }]
+          nullable: true
+          description: >-
+            What the connector pull that rode along with this upload did, or `null`
+            when `sync_connectors` was absent or false. `null` means "not asked
+            for" — a real absence, never an empty sync.
         before: { $ref: "#/components/schemas/MarginSnapshotView" }
         after: { $ref: "#/components/schemas/MarginSnapshotView" }
-      required: [rows_committed, before, after]
+      required: [rows_committed, covers_from, covers_to, connector_sync, before, after]
+
+    ConnectorSyncSummary:
+      type: object
+      description: >-
+        What a completed sync did. Shared by `POST /api/connectors/sync` and by
+        `POST /api/ingest/cost-sheet/commit`'s `connector_sync` field, so the
+        disclosure fields cannot drift between the two.
+      properties:
+        simulated: { type: boolean, enum: [true] }
+        notice: { type: string }
+        from: { type: string, format: date, example: "2026-08-01" }
+        to: { type: string, format: date, example: "2026-08-29" }
+        days_affected: { type: integer, example: 29 }
+        orders_synced: { type: integer, example: 1252 }
+        refunds_synced: { type: integer, example: 36 }
+        tickets_synced:
+          type: integer
+          description: POS tickets committed, already net of the duplicates removed.
+          example: 2163
+        duplicates_removed: { type: integer, example: 602 }
+        unresolved_overlaps: { type: integer, example: 18 }
+        dedup:
+          type: array
+          items: { $ref: "#/components/schemas/ConnectorDedupDecision" }
+      required: [simulated, notice, from, to, days_affected, orders_synced, refunds_synced, tickets_synced, duplicates_removed, unresolved_overlaps, dedup]
 
     # --- platform connectors (all simulated) --------------------------------
     ConnectorSyncRequest:
@@ -1867,6 +1939,16 @@ components:
             summary listing only the removals would claim a clean result the product
             did not achieve.
           example: 1
+        trading_note:
+          type: string
+          description: >-
+            The simulated day's statable cause, omitted on an ordinary day. The
+            connector's day model gives an unusual day a named reason rather than
+            an unexplained dip (see `internal/platformconnector/seed.go`'s
+            trading-day conditions). It is a property of the DATE, so every
+            source's row for the same day carries the same note — which is what
+            says the storm hit the restaurant, not one feed.
+          example: "Severe weather — couriers scarce and almost no walk-in trade"
       required: [platform, platform_name, date, order_count, refund_count, gross_sales, refunds, commissions, duplicates_removed, unresolved_overlaps]
 
     ConnectorDedupDecision:

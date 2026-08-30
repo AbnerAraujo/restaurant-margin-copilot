@@ -24,6 +24,16 @@ package httpapi
 //     writes into internal/livedata.Dir and re-runs the real pipeline.
 //   - GET /api/ingest/cost-sheet/template — a static, downloadable example
 //     CSV (spec FR-006).
+//
+// 2026-08-30: the commit endpoint can now, on the request's explicit
+// opt-in, also pull the SIMULATED platform revenue for the calendar range
+// the uploaded invoices cover and commit both through one pipeline run, so
+// that uploading a day's costs produces a real combined reconciliation
+// instead of a cost-only one the owner then has to go and complete from a
+// different tab. Two things about that are deliberate and are argued for at
+// their own call sites: it is an opt-in rather than automatic
+// (wantsConnectorSync), and the composition lives in this handler rather
+// than inside internal/pipeline (HandleCommitCostSheet).
 
 import (
 	"bytes"
@@ -34,13 +44,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/livedata"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/pipeline"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
 
@@ -128,9 +141,103 @@ type MarginSnapshotView struct {
 // CommitCostSheetResponse is POST /api/ingest/cost-sheet/commit's success
 // body (spec FR-009).
 type CommitCostSheetResponse struct {
-	RowsCommitted int                `json:"rows_committed"`
-	Before        MarginSnapshotView `json:"before"`
-	After         MarginSnapshotView `json:"after"`
+	RowsCommitted int `json:"rows_committed"`
+
+	// CoversFrom and CoversTo are the inclusive calendar range the uploaded
+	// invoices span — the minimum and maximum invoice_date across every
+	// parsed row. Reported unconditionally, not only when a sync ran,
+	// because it is the range this upload just replaced the cost sheet for,
+	// and the owner has no other way to see what the file they picked
+	// actually covered.
+	CoversFrom string `json:"covers_from"`
+	CoversTo   string `json:"covers_to"`
+
+	// ConnectorSync is present only when the request asked for the matching
+	// simulated platform revenue to be pulled in with the upload
+	// (sync_connectors=true). null means the box was not ticked and no
+	// simulated revenue was fetched or persisted — a real absence, not an
+	// empty sync.
+	ConnectorSync *ConnectorSyncSummaryView `json:"connector_sync"`
+
+	Before MarginSnapshotView `json:"before"`
+	After  MarginSnapshotView `json:"after"`
+}
+
+// costSheetDateRange is the inclusive calendar range a parsed cost sheet
+// covers: the minimum and maximum invoice_date across its rows.
+//
+// A cost sheet is not one date. ingest.ParseCostSheet's own contract is one
+// invoice per row, each with its own invoice_date on a supplier's own
+// irregular cadence (cmd/gendata/opening/README.md: "produce ~every 3 days,
+// protein weekly"), so a real upload can be a single day's invoices or a
+// month of them. Deriving the range from the rows rather than asking the
+// client for it means the sync covers exactly what the file covers, and
+// cannot be pointed somewhere else by a caller.
+//
+// records must be non-empty — ParseCostSheet already refuses a file with no
+// data rows, and every caller here runs after that refusal.
+func costSheetDateRange(records []ingest.CostInvoiceRecord) (from, to time.Time) {
+	from, to = records[0].InvoiceDate, records[0].InvoiceDate
+	for _, rec := range records[1:] {
+		if rec.InvoiceDate.Before(from) {
+			from = rec.InvoiceDate
+		}
+		if rec.InvoiceDate.After(to) {
+			to = rec.InvoiceDate
+		}
+	}
+	return from, to
+}
+
+// wantsConnectorSync reads the commit request's opt-in flag.
+//
+// # Why this is an opt-in and not automatic
+//
+// The product owner's ask was that uploading a cost sheet should not
+// require a second manual trip to the Connected Platforms tab. It should
+// not — and after this change it does not. But "does not require a second
+// trip" and "happens without being asked" are different things, and the
+// difference matters more here than it usually would, because the revenue
+// being pulled in is SIMULATED.
+//
+// internal/platformconnector's package doc states that fact five separate
+// times on the way to a number, deliberately and redundantly, on the
+// reasoning that a disclosure which lives in exactly one place is a
+// disclosure that can be cropped out of a screenshot. A cost-sheet upload
+// that silently reached out and injected simulated iFood, Just Eat
+// Takeaway and POS revenue into the owner's margin would defeat all five
+// at once: the owner never visited the tab that carries the warning, never
+// saw the notice, never pressed a button whose own label says "simulated".
+// The numbers would simply be different afterward, and nothing in the
+// interaction would have said why. That is the product inventing data
+// behind the owner's back, which is the specific failure this codebase
+// spends the most words guarding against.
+//
+// So: opt-in at the API, default-on in the UI. The two are not in tension,
+// they are the same decision applied at two layers.
+//
+//   - At the API (this function), the flag is absent-means-false. A curl,
+//     a script, or any future integration gets exactly the behaviour it had
+//     before this change unless it explicitly asks otherwise. An API has no
+//     banner to read.
+//
+//   - In the browser (CostSheetTab.tsx), the checkbox is pre-ticked, sits
+//     in the preview panel directly above the commit button, names the
+//     exact date range it will pull, and says "simulated" in its own label.
+//     Pre-ticked because it is what the owner asked for and re-ticking it
+//     on every upload would be its own kind of friction; visible and
+//     adjacent to the confirm button because consent has to be current, and
+//     because the owner must be able to say no without leaving the page.
+//
+// The result reaches them either way: the commit response reports the sync
+// it ran, so even a client that ignored the flag can see what landed.
+func wantsConnectorSync(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.FormValue("sync_connectors"))) {
+	case "true", "1", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 // HandlePreviewCostSheet implements POST /api/ingest/cost-sheet/preview.
@@ -187,7 +294,34 @@ func HandlePreviewCostSheet(w http.ResponseWriter, r *http.Request) {
 // error, no conflict signal, nothing. A single in-process mutex closes it:
 // this is a single-process server (cmd/server/main.go), so no cross-process
 // locking is needed for a prototype of this shape.
-func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) http.HandlerFunc {
+// Since 2026-08-30 this handler also composes the connector sync: when the
+// request sets sync_connectors (see wantsConnectorSync for the
+// automatic-vs-opt-in reasoning), it fetches the simulated platform revenue
+// for the same calendar range the uploaded invoices cover and commits both
+// through ONE pipeline run, so the reconciliation the owner is shown
+// afterward is a real combined one rather than a cost-only figure they then
+// have to go and correct from another tab.
+//
+// The composition lives here, in the handler layer, and not in
+// internal/pipeline. internal/pipeline already accepts a ConnectorOverlay
+// and internal/platformconnector already produces one; entangling the two
+// packages so a cost-sheet ingest could reach into a connector fetch would
+// make the deterministic core depend on the integration layer that feeds
+// it, which is backwards, and would put "did the user tick a box" inside a
+// package whose job is arithmetic. Orchestrating two existing pipelines is
+// exactly what this layer is for (CLAUDE.md: internal/httpapi is "request
+// shaping, orchestration, and rendering ... no arithmetic, no domain
+// rules").
+//
+// Ordering is deliberate and load-bearing. The fetch happens BEFORE
+// ingestMu is taken and before a single byte is written, so a range the
+// connector refuses — over the 31-day cap, or an upstream failure —
+// refuses the whole request with the connector's own specific message and
+// leaves the cost sheet on file untouched. The alternative (commit the
+// cost sheet, then report that the sync failed) would half-perform a
+// combined action the owner asked for as one thing, and would do it in the
+// direction that changes financial numbers.
+func HandleCommitCostSheet(proxy *platformconnector.Proxy, store *storage.Queries, cache *answercache.Cache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
@@ -215,6 +349,39 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 		if err != nil {
 			writeJSONError(w, http.StatusUnprocessableEntity, "invalid_cost_sheet", err.Error())
 			return
+		}
+
+		coversFrom, coversTo := costSheetDateRange(records)
+
+		// The connector fetch, if asked for, runs here: after validation,
+		// before the lock, before any write. See this handler's doc comment
+		// for why a connector refusal must refuse the whole request rather
+		// than half-committing it.
+		var (
+			overlay     *pipeline.ConnectorOverlay
+			syncSummary *ConnectorSyncSummaryView
+		)
+		if wantsConnectorSync(r) {
+			if proxy == nil {
+				writeJSONError(w, http.StatusInternalServerError, "connectors_unavailable",
+					"this server was started without the platform connectors, so simulated revenue cannot be pulled in with this upload — re-send without sync_connectors to commit the cost sheet on its own")
+				return
+			}
+			result, err := proxy.FetchRange(r.Context(), coversFrom, coversTo, proxy.Platforms())
+			if err != nil {
+				// Verbatim, the same treatment ParseCostSheet's errors get:
+				// the connector's refusals already name the cap and the fix
+				// ("covers 35 days, more than the 31-day limit ... sync a
+				// shorter range"). Nothing has been written at this point,
+				// which is what makes "your cost sheet was not changed" a
+				// true statement rather than a hopeful one.
+				writeJSONError(w, http.StatusUnprocessableEntity, "connector_fetch_failed",
+					fmt.Sprintf("%s — the cost sheet was not committed; upload it again without \"also pull in simulated platform revenue\" to commit it on its own", ownerFacing(err)))
+				return
+			}
+			overlay = connectorOverlayFor(result, proxy.Platforms())
+			summary := summarizeConnectorSync(result)
+			syncSummary = &summary
 		}
 
 		// From here on, this request touches the shared livedata file and the
@@ -260,7 +427,14 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 			}
 		}
 
-		if err := pipeline.RunIngestionPipeline(livedata.Dir, store); err != nil {
+		// ONE pipeline run, carrying both the newly written cost sheet and
+		// (when asked for) the connector overlay for the dates it covers.
+		// Two sequential runs would persist an intermediate state in which
+		// the new costs sat against the OLD revenue — a reconciliation that
+		// was never true of anything, briefly readable by any concurrent
+		// request and durably readable if the second run then failed. A nil
+		// overlay makes this exactly the call it was before.
+		if err := pipeline.RunIngestionPipelineWithConnectorOverlay(livedata.Dir, store, overlay); err != nil {
 			// The file itself already passed validation above — a failure
 			// here is an operational failure of the pipeline run, not a
 			// rejection of the upload, so it is a 500, not a 422.
@@ -276,6 +450,9 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 
 		writeJSON(w, http.StatusOK, CommitCostSheetResponse{
 			RowsCommitted: len(records),
+			CoversFrom:    coversFrom.Format(dateLayout),
+			CoversTo:      coversTo.Format(dateLayout),
+			ConnectorSync: syncSummary,
 			Before:        toMarginSnapshotView(before),
 			After:         toMarginSnapshotView(after),
 		})

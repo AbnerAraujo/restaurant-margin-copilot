@@ -120,6 +120,14 @@ type ConnectorDayTotalsView struct {
 	// removals — it is what will land, not what the terminal reported.
 	DuplicatesRemoved  int `json:"duplicates_removed"`
 	UnresolvedOverlaps int `json:"unresolved_overlaps"`
+
+	// TradingNote is the simulated day's statable cause, or "" on an
+	// ordinary day — "Severe weather — couriers scarce and almost no
+	// walk-in trade". Every source's row for the same date carries the
+	// same note, because the cause is a property of the restaurant's day
+	// rather than of one feed. Without it, this model's day-to-day
+	// variance would reach the owner as an unexplained dip.
+	TradingNote string `json:"trading_note,omitempty"`
 }
 
 // ConnectorDedupDecisionView is one cross-source deduplication outcome, as
@@ -166,10 +174,17 @@ type ConnectorSyncPreviewResponse struct {
 	Days []ConnectorDayTotalsView `json:"days"`
 }
 
-// ConnectorSyncResponse is POST /api/connectors/sync's body. Before/After
-// reuse ingest_cost_sheet.go's MarginSnapshotView so the two write paths
-// report their effect in exactly the same shape.
-type ConnectorSyncResponse struct {
+// ConnectorSyncSummaryView is what a completed sync did: the range, the
+// volumes, and every deduplication decision.
+//
+// It is its own type, embedded rather than copied, because two endpoints
+// now report a sync: POST /api/connectors/sync, and — since 2026-08-30 —
+// POST /api/ingest/cost-sheet/commit, when the upload asked for the
+// matching platform revenue to be pulled in with it. Two hand-maintained
+// copies of this shape is how the disclosure fields ("simulated", the
+// notice) quietly drift apart, and the one nobody is looking at is the one
+// that drifts.
+type ConnectorSyncSummaryView struct {
 	Simulated     bool   `json:"simulated"`
 	Notice        string `json:"notice"`
 	From          string `json:"from"`
@@ -183,9 +198,41 @@ type ConnectorSyncResponse struct {
 	DuplicatesRemoved  int                          `json:"duplicates_removed"`
 	UnresolvedOverlaps int                          `json:"unresolved_overlaps"`
 	Dedup              []ConnectorDedupDecisionView `json:"dedup"`
+}
+
+// ConnectorSyncResponse is POST /api/connectors/sync's body. Before/After
+// reuse ingest_cost_sheet.go's MarginSnapshotView so the two write paths
+// report their effect in exactly the same shape.
+type ConnectorSyncResponse struct {
+	ConnectorSyncSummaryView
 
 	Before MarginSnapshotView `json:"before"`
 	After  MarginSnapshotView `json:"after"`
+}
+
+// summarizeConnectorSync renders a completed fetch for the API. Both
+// endpoints that commit connector records go through it, so both report
+// the same counts computed the same way.
+func summarizeConnectorSync(result *platformconnector.FetchResult) ConnectorSyncSummaryView {
+	var refunds int
+	for _, rec := range result.Records {
+		if rec.Status == "refunded" {
+			refunds++
+		}
+	}
+	return ConnectorSyncSummaryView{
+		Simulated:          true,
+		Notice:             syncSimulationNotice,
+		From:               result.From.Format(dateLayout),
+		To:                 result.To.Format(dateLayout),
+		DaysAffected:       int(result.To.Sub(result.From).Hours()/24) + 1,
+		OrdersSynced:       len(result.Records),
+		RefundsSynced:      refunds,
+		TicketsSynced:      len(result.POSRecords),
+		DuplicatesRemoved:  result.DuplicatesRemoved(),
+		UnresolvedOverlaps: result.UnresolvedOverlaps(),
+		Dedup:              toDedupViews(result.Decisions),
+	}
 }
 
 // toDedupViews renders the connector's decisions for the API. Order is the
@@ -271,6 +318,7 @@ func HandleConnectorSyncPreview(proxy *platformconnector.Proxy) http.HandlerFunc
 				Commissions:        money.FormatCents(t.CommissionCents),
 				DuplicatesRemoved:  t.DuplicatesRemoved,
 				UnresolvedOverlaps: t.UnresolvedOverlaps,
+				TradingNote:        t.TradingNote,
 			})
 		}
 
@@ -343,22 +391,7 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 			}
 		}
 
-		// The two Active booleans mirror what the request actually asked
-		// for. A sync that named only delivery platforms leaves POS
-		// revenue alone; a sync that named only the POS leaves delivery
-		// revenue alone. Deriving them from the fetch rather than
-		// hardcoding both to true is what makes a partial sync safe —
-		// see pipeline.ConnectorOverlay's own doc comment for what the
-		// alternative silently destroys.
-		overlay := &pipeline.ConnectorOverlay{
-			From:           result.From,
-			To:             result.To,
-			DeliveryActive: containsDeliveryPlatform(platforms),
-			Delivery:       result.Records,
-			POSActive:      containsPOS(platforms),
-			POS:            result.POSRecords,
-			Decisions:      result.Decisions,
-		}
+		overlay := connectorOverlayFor(result, platforms)
 		if err := pipeline.RunIngestionPipelineWithConnectorOverlay(livedata.Dir, store, overlay); err != nil {
 			// The fetch itself already succeeded and passed the
 			// connector contract check, so a failure here is an
@@ -375,27 +408,10 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 			return
 		}
 
-		var refunds int
-		for _, rec := range result.Records {
-			if rec.Status == "refunded" {
-				refunds++
-			}
-		}
-
 		writeJSON(w, http.StatusOK, ConnectorSyncResponse{
-			Simulated:          true,
-			Notice:             syncSimulationNotice,
-			From:               result.From.Format(dateLayout),
-			To:                 result.To.Format(dateLayout),
-			DaysAffected:       int(result.To.Sub(result.From).Hours()/24) + 1,
-			OrdersSynced:       len(result.Records),
-			RefundsSynced:      refunds,
-			TicketsSynced:      len(result.POSRecords),
-			DuplicatesRemoved:  result.DuplicatesRemoved(),
-			UnresolvedOverlaps: result.UnresolvedOverlaps(),
-			Dedup:              toDedupViews(result.Decisions),
-			Before:             toMarginSnapshotView(before),
-			After:              toMarginSnapshotView(after),
+			ConnectorSyncSummaryView: summarizeConnectorSync(result),
+			Before:                   toMarginSnapshotView(before),
+			After:                    toMarginSnapshotView(after),
 		})
 	}
 }
@@ -452,6 +468,31 @@ func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconn
 		return nil, nil, false
 	}
 	return result, platforms, true
+}
+
+// connectorOverlayFor builds the pipeline overlay a completed fetch should
+// be committed through.
+//
+// The two Active booleans mirror what the request actually asked for. A
+// sync that named only delivery platforms leaves POS revenue alone; a sync
+// that named only the POS leaves delivery revenue alone. Deriving them from
+// the fetch rather than hardcoding both to true is what makes a partial
+// sync safe — see pipeline.ConnectorOverlay's own doc comment for what the
+// alternative silently destroys.
+//
+// Shared by both endpoints that commit connector records, so a cost-sheet
+// upload that pulls its dates' revenue in cannot end up applying a
+// different overlay policy from the connector tab's own sync.
+func connectorOverlayFor(result *platformconnector.FetchResult, platforms []platformconnector.Platform) *pipeline.ConnectorOverlay {
+	return &pipeline.ConnectorOverlay{
+		From:           result.From,
+		To:             result.To,
+		DeliveryActive: containsDeliveryPlatform(platforms),
+		Delivery:       result.Records,
+		POSActive:      containsPOS(platforms),
+		POS:            result.POSRecords,
+		Decisions:      result.Decisions,
+	}
 }
 
 func containsPOS(platforms []platformconnector.Platform) bool {

@@ -136,8 +136,14 @@ func Routes(deps Deps) []Route {
 			Summary:  "Parse an uploaded cost sheet; persist nothing (spec 007).",
 		},
 		{
+			// Takes the connector proxy as well as the store because a
+			// commit can now, on the request's explicit opt-in, pull the
+			// simulated platform revenue for the dates the uploaded
+			// invoices cover and commit both in one pipeline run — see
+			// httpapi.wantsConnectorSync for why that is an opt-in rather
+			// than automatic.
 			Pattern:  "/api/ingest/cost-sheet/commit",
-			Handlers: post(httpapi.HandleCommitCostSheet(deps.Store, deps.Cache)),
+			Handlers: post(httpapi.HandleCommitCostSheet(deps.Connectors, deps.Store, deps.Cache)),
 			Summary:  "Commit a cost sheet; re-reconciles and clears the answer cache.",
 		},
 		{

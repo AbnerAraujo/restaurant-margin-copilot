@@ -12,6 +12,245 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — One upload, one reconciliation: cost-sheet commit can pull its own dates' revenue, and simulated days stop being uniformly profitable
+
+Two requests, both about the same complaint: what the product shows after an
+upload was not the whole day.
+
+### 1. Uploading a cost sheet can now pull in the matching platform revenue
+
+**The problem.** `POST /api/ingest/cost-sheet/commit` persisted supplier costs
+and re-ran reconciliation; `POST /api/connectors/sync` fetched simulated
+iFood/Just Eat Takeaway/POS revenue for a chosen range and re-ran the same
+pipeline. Two endpoints, two tabs, two trips. Upload today's costs and the
+margin you were shown was those costs against whatever revenue happened to
+already be on file — a real number, but not the one the owner came for.
+
+**What changed.** The commit endpoint now derives the calendar range the
+uploaded invoices cover (`costSheetDateRange`: a min/max scan over every parsed
+`invoice_date`, because a cost sheet is one invoice per row on a supplier's own
+irregular cadence, not one date) and — when asked — fetches the connector
+revenue for exactly that range and commits both through **one**
+`RunIngestionPipelineWithConnectorOverlay` call. One run, not two: two
+sequential runs would durably persist an intermediate state in which the new
+costs sat against the old revenue, a reconciliation that was never true of
+anything.
+
+The composition lives in `internal/httpapi`, not in `internal/pipeline`.
+`internal/pipeline` already accepts a `ConnectorOverlay` and
+`internal/platformconnector` already produces one; making the deterministic
+core reach into the integration layer that feeds it would be backwards, and
+would put "did the user tick a box" inside a package whose job is arithmetic.
+Orchestrating two existing pipelines is what the handler layer is for.
+
+**The design decision: opt-in at the API, default-on in the UI.** This was the
+judgment call, and it is not "automatic" and not "off by default" — it is both,
+at the layer each is honest at.
+
+`internal/platformconnector`'s package doc states the connections are simulated
+five separate times on the way to a number, on the reasoning that a disclosure
+living in exactly one place is one that can be cropped out of a screenshot. A
+cost-sheet upload that silently reached out and injected simulated revenue into
+the owner's margin would defeat all five at once: they never opened the tab that
+carries the warning, never saw the notice, never pressed a button whose own
+label says "simulated". The numbers would just be different afterwards. That is
+the product inventing data behind the owner's back.
+
+So:
+
+- **API** (`wantsConnectorSync`) — `sync_connectors` absent means **false**.
+  Every client that existed before this change (curl, the evaluation harness,
+  any future integration) behaves exactly as it did. An API has no banner to
+  read.
+- **UI** (`CostSheetTab.tsx`) — the checkbox is **pre-ticked**, sits in the
+  preview panel directly above the commit button, names the exact date range it
+  will pull, and says "simulated" and "no real account is connected" in its own
+  label. Pre-ticked because it is what was asked for; visible and adjacent
+  because consent has to be current and refusable without leaving the page.
+- **Either way, the response says what happened.** `connector_sync` is a
+  populated object or `null` — a real "not asked for", never an empty sync — and
+  the commit panel restates the orders, tickets, duplicates removed **and
+  unresolved overlaps** afterwards.
+
+**Refusal is atomic.** If the invoices span more than the connector's 31-day cap
+(or an upstream fails), the fetch happens *before* `ingestMu` is taken and
+before a byte is written, so the whole request is refused with the connector's
+own message plus what to do about it, and the cost sheet on file is untouched.
+Verified live: a 124-row sheet spanning 2026-06-02..2026-08-29 with the opt-in
+returns `422 connector_fetch_failed` — *"date range 2026-06-02..2026-08-29
+covers 89 days, more than the 31-day limit on a single sync — sync a shorter
+range — the cost sheet was not committed; upload it again without \"also pull
+in simulated platform revenue\" to commit it on its own"* — with the on-disk
+cost sheet still carrying all 25 months before and after. The same file without
+the opt-in commits normally (`200`, 124 rows).
+
+Half-committing (persist the costs, mention the sync failed in a field nobody
+reads) was rejected: the owner asked for one thing, and the failing half is the
+half that changes financial numbers.
+
+### 2. Simulated days now have real variance, with a statable cause
+
+**The problem.** Every connector-synced day reconciled to a healthy positive
+margin. `seed.go` drew an order count from one narrow band
+(`minOrdersPerDay + Intn(orderCountSpread)`), applied a flat Friday/Saturday
+lift, and stopped. Measured over 363 days against the live dataset's own cost
+sheet: daily gross ran **$3,970 to $9,131 (0.66x to 1.51x of its own mean)** — a
+band too tight for any plausible cost sheet to push through zero. The only
+losing days it produced were days the *cost sheet* spiked on. A product whose
+job is telling an owner when something went wrong was demoing on data where
+nothing ever did.
+
+**What changed: a trading-day condition model**, following `cmd/gendata`'s
+monthly-regime convention in spirit — a named, statable cause, never an
+unexplained multiplier. Seven conditions in a weighted table: an ordinary day
+(52%), a quiet midweek lull, a neighbourhood event (the upside half — a
+distribution with only bad days is as flat a line as one with only good days),
+a delivery-app outage, a short-staffed shift, a kitchen equipment failure, and
+severe weather. Each carries a demand multiplier for the **delivery** side and a
+separate one for the **dining room**, because real disruptions hit them
+differently: an app outage barely touches walk-ins, a storm empties the dining
+room faster than it empties the delivery queue. Bad-weather and equipment days
+also raise the refund rate (capped), which is causally right and exercises the
+refund-sign normalization on the connector path.
+
+Two things about the mechanism differ from `cmd/gendata`, both forced rather
+than chosen:
+
+- **Granularity.** `gendata` plans a whole dataset up front and can tag calendar
+  *months*, then allocate a fixed count of shock days inside each. A connector
+  fetch is random access — one date, or three, in any order — so the unit here
+  is the **day**, drawn from a weight table seeded off the date itself. The
+  hash-based per-key seeding `dayRNG` was built for is preserved exactly; the
+  condition simply gets its **own seed namespace keyed on the date alone, not on
+  (platform, date)**, so iFood, Just Eat Takeaway and the POS all agree about
+  what kind of day it was. Drawing it per-platform would produce a day where one
+  platform was snowed in and the other was not — not a bad day, a bug that looks
+  like one.
+- **What a demand dip can do.** `gendata`'s own research ledger records that a
+  demand dip alone can never flip one of *its* months negative, because every
+  cost it models scales with revenue — so it pairs each slump with a cost-side
+  shock. That constraint does not hold here, and the asymmetry is the whole
+  mechanism: **the connector supplies revenue only.** The costs a synced day
+  reconciles against come from the cost sheet, and they are fixed — the produce
+  was ordered, delivered and invoiced before anyone knew what the day would do.
+  A demand collapse against already-committed input costs is how a real
+  restaurant loses money on a Tuesday. No cost-side fiction is invented on this
+  path; the connector never writes an invoice.
+
+The flat `weekendLift` was also replaced by a full weekday curve (`dayShape`:
+Mon 0.82 → Sat 1.30, Thursday as the 1.00 anchor). Its mean is 1.026 against
+the old shape's 1.071, so it changes the shape of a week, not the size of the
+business.
+
+**Before / after, measured** (363 days from 2025-09-01, all three simulated
+sources, scored against the live dataset's real `supplier_cost_sheet.csv`):
+
+| | before (salt v1) | after (salt v2) | the historical CSV dataset, same window |
+|---|---|---|---|
+| mean daily gross | $6,037.93 | $5,354.83 | $4,423.90 |
+| mean daily margin | $3,495.11 | $2,856.34 | $1,940.26 |
+| quietest day | 0.66x mean | 0.28x mean | 0.49x mean |
+| busiest day | 1.51x mean | 2.36x mean | 2.03x mean |
+| losing days | 35/363 (9.6%) | 55/363 (15.2%) | 73/363 (20.1%) |
+| worst / best day | −$5,484.60 / +$8,428.00 | −$4,938.04 / +$10,855.09 | −$5,199.27 / +$8,244.82 |
+
+Two things worth naming honestly. The loss rate moved from 9.6% to 15.2%
+against the dataset's own 20.1% — closer, not equal, and it was **not** tuned
+further to close the gap, because at this business's cost structure (a ~60%
+margin before rent and labour, which this product's margin metric excludes by
+design) reaching 20% would have required demand cuts deep enough to break the
+dollar scale. And the mean daily gross *fell* by 11%, as a side effect of
+`dayShape`'s lower mean — which moved the connector from 36% above the
+historical dataset's mean to 21% above it. The scale constants themselves
+(`meanTicketCents`, `minOrdersPerDay`, `orderCountSpread`, both commission
+rates) are untouched.
+
+**Every unusual day now says why.** `PlatformDayTotals.TradingNote` →
+`trading_note` in the API → a "Trading day" column in the connector preview
+table. Empty on an ordinary day, because a UI that printed "nothing in
+particular happened" on five days out of seven would train people to stop
+reading the column.
+
+**This intentionally changes every previously-generated connector number, and
+`connectorSeedSalt` was bumped `v1` → `v2` to record it.** That constant's own
+doc comment has said since spec 010 that changing it "changes every simulated
+number, which is a deliberate, visible act, not something that should happen by
+accident" — this is that act, performed deliberately and visibly. Nothing
+outside `internal/platformconnector` moves: `cmd/gendata` seeds its own stream
+from its own constant, imports no internal package at all (`go list -deps
+./cmd/gendata` returns only itself), and its four regenerated CSVs are
+**byte-identical** to the pre-change output (same MD5s), reconciling to the same
+`$1,078,340.64` total margin across the same 759 days.
+
+**Live smoke test**, on a throwaway Postgres with a freshly regenerated dataset —
+uploading August 2026's real cost sheet with the opt-in ticked, one action:
+
+| | negative days | worst day | best day |
+|---|---|---|---|
+| cost sheet alone (opt-in unticked) | 3 / 29 | −$2,314.65 | +$4,992.60 |
+| cost sheet + connector pull | **5 / 29** | −$3,166.85 | +$6,051.70 |
+
+The five losing days are `08-01` (−$216.68, severe weather), `08-05` (−$937.39,
+quiet midweek), `08-11` (−$681.41, kitchen equipment failure), `08-13`
+(−$136.86, kitchen equipment failure) and `08-26` (−$3,166.85, quiet midweek on
+the month's $6,245 restock day). Under the old model the same August produced
+two losing days, both driven purely by cost spikes and neither with anything to
+say about itself.
+
+### Tests
+
+New `internal/platformconnector/seed_test.go` asserts **properties, never golden
+numbers for specific dates** — deliberately, because the salt's own contract is
+that tuning the model changes every number, so a test pinned to "2026-08-18
+produces 22 orders" would be rewritten on every tune, and a test rewritten to
+match new output proves nothing. What is asserted: the weight table is a
+complete partition, every non-ordinary condition carries a label and the
+ordinary one carries none, the draw is deterministic and platform-independent,
+weekday eligibility holds (no midweek lull on a Saturday), a bad day is a small
+day and never an empty one (zero delivery records is how `internal/reconcile`
+says "I have no data" — a simulated storm must not be able to impersonate a gap
+in the data), the refund multiplier is capped, and a simulated year contains
+both real losses and real healthy days at a plausible rate against a lumpy
+five-day cost cycle derived from the live cost sheet's measured shape.
+
+The existing connector tests needed **no number updates at all** — they were
+already written against structure (dedup patterns over hand-built records, wire
+formats, contract checks) rather than against generated amounts, which is why a
+deliberate regeneration cost nothing. `ConnectedPlatformsTab.test.tsx`'s
+`PREVIEW_RESPONSE` is a hand-authored API mock, independent of Go generation, so
+it was extended with `trading_note` rather than corrected.
+
+New coverage for part 1: `costSheetDateRange` across out-of-order rows and the
+single-day degenerate case; `wantsConnectorSync` off unless explicitly asked;
+the over-wide-range refusal happening before any disk or database work (proved
+by passing a nil store — reaching it would panic); the no-connectors-wired
+refusal; and four frontend tests covering the pre-ticked box, its wording, the
+`FormData` field actually sent, declining it, and the post-commit restatement
+including unresolved overlaps.
+
+### Docs
+
+`docs/openapi.yaml` gains the `sync_connectors` request field, `covers_from` /
+`covers_to` / `connector_sync` on `CommitCostSheetResponse`, a shared
+`ConnectorSyncSummary` schema (referenced by both endpoints that report a sync,
+so the disclosure fields cannot drift between them), `trading_note` on
+`ConnectorDayTotals`, and the `connector_fetch_failed` 422 with its real
+message. `docs/api.html`'s embedded spec was regenerated from it — which also
+picked up `GET /api/sources`, present in the YAML since spec 013 landed but
+missing from the checked-in HTML. That drift predates this branch; it is named
+here rather than folded in silently.
+
+**Green:** `go build ./... && go vet ./... && go test ./...` clean (with a live
+Postgres and a fully ingested dataset, so the DB-backed tests actually run
+rather than skip); `go test -race ./internal/platformconnector/` clean;
+`tsc -b --noEmit` clean; 613 frontend tests passing across 50 files; `vite build`
+clean. `npm run lint` still reports 6 pre-existing errors in files this change
+does not touch (`useTableFilter.ts`, `AppShell.tsx`, `SplashScreen.tsx`,
+`QuestionComposer.tsx`, `CompositionPieChart.tsx`) — they were failing before
+this branch and were left alone rather than mixed into an unrelated change.
+
+---
+
 ## 2026-08-30 — Checking the model's numbers against the tools' numbers, and taking "which days are the weekend?" away from the model
 
 Two changes to the deterministic/probabilistic boundary, both moving work
