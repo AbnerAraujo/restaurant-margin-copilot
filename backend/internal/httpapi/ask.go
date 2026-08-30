@@ -753,6 +753,12 @@ func (deps Deps) logWriterCallIfAny(ctx context.Context, questionText string, de
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	WriteJSON(w, status, v)
+}
+
+// WriteJSON is writeJSON, exported for internal/bff — see WriteError's doc
+// comment for why the BFF layer reuses these rather than defining its own.
+func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
