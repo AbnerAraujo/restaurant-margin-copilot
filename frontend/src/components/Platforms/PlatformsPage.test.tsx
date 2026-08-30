@@ -1,8 +1,20 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PlatformsPage from './PlatformsPage'
+
+// useTableFilter now syncs to the URL via useSearchParams (spec 008 FR-001
+// fix), which needs a Router ancestor — the same fix PromotionsPage.test.tsx
+// already applies for its own router usage.
+function renderPage() {
+  return render(
+    <MemoryRouter>
+      <PlatformsPage />
+    </MemoryRouter>,
+  )
+}
 
 const PLATFORM_COMPARISON_RESPONSE = {
   period: { start: '2026-08-01', end: '2026-08-14' },
@@ -133,7 +145,7 @@ describe('PlatformsPage', () => {
 
   it('fetches the real platforms endpoint and shows both platforms side by side', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/platforms'))
@@ -142,7 +154,7 @@ describe('PlatformsPage', () => {
 
   it("shows iFood's real 22.06% effective rate, not the nominal flat 23% rate", async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(screen.getAllByText('22.06%').length).toBeGreaterThan(0)
@@ -151,7 +163,7 @@ describe('PlatformsPage', () => {
 
   it('renders commission-only and commission+promo as two distinct bars, never merged', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(
@@ -168,7 +180,7 @@ describe('PlatformsPage', () => {
 
   it('never truncates two same-platform bar labels down to identical visible text (reported live: both read "Just Eat Takeaway — com…")', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
 
@@ -189,7 +201,7 @@ describe('PlatformsPage', () => {
 
   it('shows a platform with zero sales this period as a real zero, never omitted (FR-003)', async () => {
     stubFetch(ZERO_SALES_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     // The table renders "No sales this period" for the null rate rather than
@@ -203,7 +215,7 @@ describe('PlatformsPage', () => {
       'fetch',
       vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' }),
     )
-    render(<PlatformsPage />)
+    renderPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/boom/i)
   })
@@ -216,7 +228,7 @@ describe('PlatformsPage', () => {
         trendPeriod('2026-08', '22.06%', '20.00%'),
       ],
     })
-    render(<PlatformsPage />)
+    renderPage()
 
     const panel = await screen.findByRole('region', { name: 'Effective rate trend' })
     expect(panel).toBeInTheDocument()
@@ -227,7 +239,7 @@ describe('PlatformsPage', () => {
     stubFetchByUrl(PLATFORM_COMPARISON_RESPONSE, {
       periods: [trendPeriod('2026-08', '22.06%', '20.00%')],
     })
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(screen.queryByRole('region', { name: 'Effective rate trend' })).not.toBeInTheDocument()
@@ -243,7 +255,7 @@ describe('PlatformsPage', () => {
         return Promise.resolve({ ok: true, json: async () => PLATFORM_COMPARISON_RESPONSE })
       }),
     )
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(screen.queryByRole('region', { name: 'Effective rate trend' })).not.toBeInTheDocument()
@@ -252,7 +264,7 @@ describe('PlatformsPage', () => {
 
   it('narrows the chart and table to platforms matching the search, and clears back', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)
@@ -274,7 +286,7 @@ describe('PlatformsPage', () => {
 
   it('shows a reassuring empty state when the platform search matches nothing', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
-    render(<PlatformsPage />)
+    renderPage()
 
     await screen.findAllByText('iFood')
     await userEvent.type(
