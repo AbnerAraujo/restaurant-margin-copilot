@@ -281,6 +281,26 @@ func TestBuildSystemPrompt_MonthHasADeterministicAnchor(t *testing.T) {
 	require.Contains(t, prompt, `"last month" is the FULL prior calendar month`)
 }
 
+// TestBuildSystemPrompt_AnswersDataCoreBeforeDecliningAdvice is the
+// narration step's half of a real live defect (internal/ambiguity/gate_test.go's
+// TestBuildSystemPrompt_MixedDataAdviceQuestionsAreNotFlatlyUnanswerable
+// covers the gate's copy): a question like "what should I change about
+// staffing/menu/promotions to replicate the margin from Aug 22?" reliably
+// got refused outright by the gate before this fix, and even the rare cases
+// that reached this package had no instruction telling the model to answer
+// the data-answerable core (what actually happened that day) before
+// declining the part it genuinely can't help with (a staffing or menu
+// recommendation). This is a plain offline string check that the fix — a
+// new rule near the top of "Rules, no exceptions" — is present in the
+// generated prompt, no live model call involved.
+func TestBuildSystemPrompt_AnswersDataCoreBeforeDecliningAdvice(t *testing.T) {
+	prompt := buildSystemPrompt("2026-08-01", "2026-08-14")
+
+	require.Contains(t, prompt, "ALWAYS call the relevant tool(s) and answer the data-answerable part in full first",
+		"the narration step must answer whatever the tools can show before declining an advice-shaped request this product's data can't support")
+	require.Contains(t, prompt, "isn't something this tool computes or has data for")
+}
+
 // --- Explain's tool-calling loop, against the fake llmCaller --------------
 
 func costFor(t *testing.T, inputTokens, outputTokens int64) float64 {
