@@ -413,7 +413,21 @@ export default function ProfilePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={submitting}>
+            <Button
+              type="submit"
+              disabled={submitting}
+              onClick={() => {
+                // Fires on every submit ATTEMPT, including one the
+                // browser's native `type="email"`/`required` validation
+                // goes on to block before `handleSubmit` ever runs. Without
+                // this, a stale error from a previously-fixed field (e.g.
+                // phone) stays on screen describing a field that's now
+                // fine, while the actual blocker (e.g. email) shows no
+                // error at all — the QA "stale field error" finding.
+                setSubmitError(null)
+                setSaved(false)
+              }}
+            >
               {submitting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
               {submitting ? 'Saving…' : 'Save profile'}
             </Button>
