@@ -40,9 +40,12 @@ export default function PointsCard({ className }: { className?: string }) {
       aria-label="Steward Points"
       className={cn('overflow-hidden', className)}
     >
+      {/* The failure branch carries role="alert", matching every other
+          page's load-failure panel — this was the only one whose error was
+          silent to assistive tech. */}
       <div className="p-5 sm:p-6">
         {error ? (
-          <p className="text-sm text-muted-foreground">
+          <p role="alert" className="text-sm text-muted-foreground">
             We couldn&apos;t load your points, so there is no balance to show
             rather than a placeholder number. {error}
           </p>

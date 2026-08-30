@@ -70,10 +70,12 @@ const EMPTY_FORM: ProfileFormState = {
  * PUT /api/profile surfacing as the browser's bare "Failed to fetch") is now
  * `lib/requestFailure`, shared by every page — the fix that started here,
  * generalized, so no surface is left showing a raw Go error or a browser
- * string. Save failures add the "to save your changes" clause this page's
- * own wording had, since a failed save is not a failed load.
+ * string. Only SAVE failures take the "to save your changes" clause this
+ * page's own wording had — the load path below uses the shared describer
+ * directly, since telling someone a load failed "to save your changes" is
+ * simply the wrong sentence.
  */
-function errorMessage(caught: unknown): string {
+function saveErrorMessage(caught: unknown): string {
   if (isNetworkFailure(caught)) {
     return "We couldn't reach the server to save your changes. Check your connection and try again."
   }
@@ -146,7 +148,7 @@ export default function ProfilePage() {
         setUpdatedAt(data.updated_at)
       })
       .catch((caught) => {
-        if (!cancelled) setLoadError(errorMessage(caught))
+        if (!cancelled) setLoadError(explainRequestFailure(caught))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -228,7 +230,7 @@ export default function ProfilePage() {
       setUpdatedAt(response.updated_at)
       setSaved(true)
     } catch (caught) {
-      setSubmitError(errorMessage(caught))
+      setSubmitError(saveErrorMessage(caught))
     } finally {
       setSubmitting(false)
     }
@@ -250,9 +252,13 @@ export default function ProfilePage() {
     return (
       <PageContainer className="flex flex-col gap-5">
         <PageHeader eyebrow="Company info" title="Profile" />
+        {/* `loadError` used to be read as a boolean here and its message
+            thrown away, so an unreachable server and a failing query gave
+            byte-identical copy — the one page whose load error said nothing
+            about what actually went wrong. */}
         <p role="alert" className="flex items-start gap-1.5 text-sm text-destructive-text">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          We couldn't load your profile. Try refreshing in a moment.
+          We couldn&apos;t load your profile. {loadError}
         </p>
       </PageContainer>
     )
