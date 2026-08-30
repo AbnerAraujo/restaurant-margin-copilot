@@ -7,7 +7,7 @@ package httpapi
 // Deliberately does NOT hardcode an expected date range the way
 // platform_comparison_test.go's own DefaultsToRealDataRange test does
 // (that test is currently broken on this dev machine, unrelated to this
-// change: it assumes the 14-day fixture alone, but this machine's Postgres
+// change: it assumes a single 14-day window, but this machine's Postgres
 // has since been seeded with the full, gap-free 2024-08-01..2026-08-14
 // synthetic history — see backend/cmd/gendata's 2026-08-29 fix). This test
 // derives its expectations from storage.LoadDataDateRange itself, so it

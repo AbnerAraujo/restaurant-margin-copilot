@@ -103,7 +103,7 @@ func TestGetPeriodTotals_SumsAndRanksAThreeDayPeriod_Fake(t *testing.T) {
 	// the three days' distinct rows above) — not one entry per day. See
 	// collapseSourceRowRefsByFile's doc comment: this is the fix for a
 	// real live failure where an unbounded per-day ref list, multiplied
-	// across the full 744-day live dataset, pushed a single explain-step
+	// across the full multi-year dataset, pushed a single explain-step
 	// prompt past 1,000,000 tokens.
 	require.Equal(t, []reconcile.SourceRowRef{
 		{File: "test.csv", Row: 1},

@@ -17,7 +17,7 @@ func mustDate(t *testing.T, s string) time.Time {
 }
 
 // TestEvaluateReconciliationBadges_TableDriven is pure Go logic over
-// synthetic DailyReconciliation values — no database, no fixture files —
+// synthetic DailyReconciliation values — no database, no data files —
 // exercising the complementary CleanClose/DiscrepancyCatcher pair the way
 // docs/product-strategy.md describes them: "both fire directly off
 // DailyReconciliation.discrepancy_flags".

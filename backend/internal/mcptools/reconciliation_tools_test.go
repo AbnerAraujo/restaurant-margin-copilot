@@ -9,9 +9,9 @@ package mcptools_test
 // it against the real thing is worth the extra setup.
 //
 // Every row this file writes uses a sentinel date far outside the real
-// fixture period (2026-08-01..14) — 1999-02-xx / 1999-03-xx — per the
+// dataset period — 1999-02-xx / 1999-03-xx — per the
 // lesson recorded in docs/plan.md's mistakes log: an earlier integration
-// test in this project once used an in-range fixture date as its own
+// test in this project once used an in-range dataset date as its own
 // primary key and its cleanup silently deleted real pipeline output that
 // happened to share it. Dates here are also kept distinct from
 // reconciliation_test.go's own sentinel (1999-01-01) so the two test files

@@ -17,7 +17,7 @@
 // of `known`, or "" ("no confident match — do not guess"). In particular,
 // it deliberately refuses to pick a winner when normalization makes more
 // than one known id plausible (e.g. a bare "camp", which is a substring of
-// every id in this fixture set) rather than silently guessing one —
+// every id in this dataset) rather than silently guessing one —
 // Principle II's "refuse rather than guess" applies just as much to this
 // package's own internal resolution step as it does to the model layer.
 package mcptools
@@ -45,7 +45,7 @@ func normalizeCampaignRef(s string) string {
 
 // minNormalizedMatchLen is the shortest normalized input this function will
 // ever resolve via substring containment. Every known campaign_id's own
-// hyphen-delimited suffix in this fixture set ("BOOST01", "LUNCHFIX",
+// hyphen-delimited suffix in this dataset ("BOOST01", "LUNCHFIX",
 // "WEEKEND", "NEWMENU") normalizes to 7-8 characters; a much shorter
 // fragment (e.g. "CAMP", common to every id's platform-prefix segment)
 // would be a substring of several real ids at once, which is exactly the

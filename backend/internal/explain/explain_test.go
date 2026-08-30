@@ -2,12 +2,12 @@ package explain_test
 
 // TestExplain_LiveSmokeTest makes a small, deliberately bounded number of
 // real Claude Sonnet 5 calls against the real in-process MCP server (backed
-// by the real, already-persisted 2026-08-01..14 fixture data) to prove the
+// by the real, already-persisted dataset) to prove the
 // tool-calling loop's request shape — tool definitions built from the live
 // MCP server, tool_use round-tripping, provenance collection — actually
 // works end to end, not just against hand-crafted types. It only reads
 // already-persisted rows (no writes, no deletes), so it cannot touch the
-// fixture data's integrity. Skipped, not faked, when either DATABASE_URL or
+// dataset's integrity. Skipped, not faked, when either DATABASE_URL or
 // ANTHROPIC_API_KEY isn't set. Full evaluation-harness verification happens
 // in a later phase; tasks.md's "under 10 calls" guidance for this phase is
 // deliberately respected here (two scenarios, a handful of model turns).
@@ -45,13 +45,13 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 
 	store := storage.New(conn)
 	dataStart, dataEnd, err := storage.LoadDataDateRange(ctx, store)
-	require.NoError(t, err, "the real fixture pipeline must already be persisted for this smoke test to resolve a data date range")
+	require.NoError(t, err, "the real ingestion pipeline must already be persisted for this smoke test to resolve a data date range")
 
 	mcpServer := mcptools.RegisterMCPServer(store)
 	explainer, err := explain.New(ctx, llmclient.New(), mcpServer, dataStart.Format("2006-01-02"), dataEnd.Format("2006-01-02"))
 	require.NoError(t, err)
 
-	t.Run("answerable question about real fixture data", func(t *testing.T) {
+	t.Run("answerable question about real data", func(t *testing.T) {
 		result, err := explainer.Explain(ctx, "What was our reconciled margin on 2026-08-03, and were there any discrepancies that day?", "")
 		require.NoError(t, err)
 		require.Empty(t, result.IncompleteReason, "should produce a final answer, not stop mid-loop")
@@ -64,7 +64,7 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 		t.Logf("tool calls=%d, tokens=%d in / %d out, cost=$%.6f", result.ToolCallsMade, result.InputTokens, result.OutputTokens, result.EstimatedCostUSD)
 	})
 
-	t.Run("question about data outside the fixture period states the range is out of bounds rather than guessing", func(t *testing.T) {
+	t.Run("question about data outside the dataset period states the range is out of bounds rather than guessing", func(t *testing.T) {
 		result, err := explainer.Explain(ctx, "What was our margin on 2026-09-01?", "")
 		require.NoError(t, err)
 		t.Logf("answer: %s", result.AnswerText)

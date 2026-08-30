@@ -22,7 +22,7 @@ import (
 )
 
 // RunIngestionPipeline reads whichever delivery-platform, POS, and
-// supplier-cost-sheet exports it finds in fixtureDir — matched by filename
+// supplier-cost-sheet exports it finds in dataDir — matched by filename
 // keyword, not a hardcoded exact filename, the same real-file-compatibility
 // posture as internal/ingest's column matching — computes one
 // DailyReconciliation per calendar day (internal/reconcile), persists each
@@ -40,8 +40,8 @@ import (
 // PromotionRoiRecord ingestion and computation is User Story 4's scope
 // (tasks.md T029-T030), not User Story 1's — this function does not touch
 // it.
-func RunIngestionPipeline(fixtureDir string, store *storage.Queries) error {
-	deliveryPath, posPath, costPath, err := findSourceFiles(fixtureDir)
+func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
+	deliveryPath, posPath, costPath, err := findSourceFiles(dataDir)
 	if err != nil {
 		return err
 	}
@@ -59,12 +59,12 @@ func RunIngestionPipeline(fixtureDir string, store *storage.Queries) error {
 		return err
 	}
 	if deliveryPath == "" {
-		fmt.Printf("pipeline: no delivery-platform export found in %s — every day will carry a %s flag\n", fixtureDir, reconcile.FlagMissingDeliverySource)
+		fmt.Printf("pipeline: no delivery-platform export found in %s — every day will carry a %s flag\n", dataDir, reconcile.FlagMissingDeliverySource)
 	}
 
 	days := reconcile.ComputeDailyReconciliations(delivery, pos, costs)
 	if len(days) == 0 {
-		return fmt.Errorf("pipeline: no daily reconciliations produced from %s (no dated rows found in any source)", fixtureDir)
+		return fmt.Errorf("pipeline: no daily reconciliations produced from %s (no dated rows found in any source)", dataDir)
 	}
 
 	ctx := context.Background()
@@ -81,15 +81,15 @@ func RunIngestionPipeline(fixtureDir string, store *storage.Queries) error {
 	return nil
 }
 
-// findSourceFiles scans fixtureDir for files recognizable as a delivery-
+// findSourceFiles scans dataDir for files recognizable as a delivery-
 // platform export, a POS export, or a supplier cost sheet, by filename
 // keyword. It errors only if none of the three are found at all — a
 // directory with, say, no cost sheet still reconciles gross revenue and
 // commissions from what's present.
-func findSourceFiles(fixtureDir string) (deliveryPath, posPath, costPath string, err error) {
-	entries, err := os.ReadDir(fixtureDir)
+func findSourceFiles(dataDir string) (deliveryPath, posPath, costPath string, err error) {
+	entries, err := os.ReadDir(dataDir)
 	if err != nil {
-		return "", "", "", fmt.Errorf("pipeline: reading fixture directory %s: %w", fixtureDir, err)
+		return "", "", "", fmt.Errorf("pipeline: reading data directory %s: %w", dataDir, err)
 	}
 
 	for _, e := range entries {
@@ -97,7 +97,7 @@ func findSourceFiles(fixtureDir string) (deliveryPath, posPath, costPath string,
 			continue
 		}
 		name := strings.ToLower(e.Name())
-		path := filepath.Join(fixtureDir, e.Name())
+		path := filepath.Join(dataDir, e.Name())
 
 		switch {
 		case strings.Contains(name, "promo") || strings.Contains(name, "campaign") || strings.Contains(name, "ad_spend") || strings.Contains(name, "adspend"):
@@ -112,7 +112,7 @@ func findSourceFiles(fixtureDir string) (deliveryPath, posPath, costPath string,
 	}
 
 	if deliveryPath == "" && posPath == "" && costPath == "" {
-		return "", "", "", fmt.Errorf("pipeline: no recognizable delivery-platform, POS, or supplier-cost-sheet file found in %s", fixtureDir)
+		return "", "", "", fmt.Errorf("pipeline: no recognizable delivery-platform, POS, or supplier-cost-sheet file found in %s", dataDir)
 	}
 	return deliveryPath, posPath, costPath, nil
 }

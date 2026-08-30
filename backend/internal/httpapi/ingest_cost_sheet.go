@@ -232,8 +232,8 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 
 // HandleCostSheetTemplate implements GET /api/ingest/cost-sheet/template
 // (spec FR-006). The example rows are fabricated, clearly-labeled data
-// ("Example ..."), deliberately NOT copied from backend/fixtures/ — a
-// downloadable "template" that turned out to secretly be real fixture rows
+// ("Example ..."), deliberately NOT copied from the real dataset — a
+// downloadable "template" that turned out to secretly be real dataset rows
 // would blur the line this whole feature exists to keep bright.
 func HandleCostSheetTemplate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {

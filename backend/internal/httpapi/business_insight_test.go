@@ -8,7 +8,7 @@ package httpapi
 // ride AskResponse.business_insight without changing anything else about
 // the response (SC-001: zero added model calls, zero added cost).
 //
-// Fixtures are real tool-result-shaped JSON, suggestions_test.go's style —
+// Samples are real tool-result-shaped JSON, suggestions_test.go's style —
 // never mocks of internal state.
 
 import (
@@ -20,7 +20,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
 )
 
-// --- fixtures ----------------------------------------------------------
+// --- samples -----------------------------------------------------------
 
 func platformComparisonJSONWithRates(ifoodRate, jetRate string) string {
 	return `{"period":{"start":"2026-08-01","end":"2026-08-07"},"days_included":7,"platforms":[` +

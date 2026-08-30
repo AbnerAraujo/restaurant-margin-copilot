@@ -23,7 +23,7 @@ func readAllRows(r io.Reader) ([][]string, error) {
 // ParseDeliveryExport parses a delivery-platform settlement export
 // (iFood, Just Eat Takeaway, or any similarly-shaped platform export) into
 // DeliveryRecords. Column matching tolerates realistic real-world header
-// variance (see columns.go) rather than requiring this fixture set's exact
+// variance (see columns.go) rather than requiring this dataset's exact
 // column names.
 func ParseDeliveryExport(r io.Reader, sourceFile string) ([]DeliveryRecord, error) {
 	rows, err := readAllRows(r)

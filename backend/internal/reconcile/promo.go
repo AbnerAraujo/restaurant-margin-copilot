@@ -96,7 +96,7 @@ const (
 // Attribution is a tag-join over delivery orders by campaign_id, restricted
 // to status=completed and deduplicated first (reusing the exact same
 // dedupeDelivery pass ComputeDailyReconciliations uses) — per
-// fixtures/README.md: "A campaign's incremental revenue must be computed by
+// cmd/gendata/opening/README.md: "A campaign's incremental revenue must be computed by
 // summing the subtotal of delivery_platform_export.csv rows whose
 // campaign_id matches (after deduplication), restricted to status =
 // completed." This is a defined, deterministic tagging convention, not

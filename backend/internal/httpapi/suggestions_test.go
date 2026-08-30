@@ -7,28 +7,27 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
 )
 
-// Shared data bounds for every test below, matching this product's real
-// fixture coverage window (frontend/src/components/Chat/exampleQuestions.ts'
-// COVERAGE_PERIOD) — every generated suggestion in these tests is checked
-// against these exact bounds.
+// Shared data bounds for every test below — an arbitrary 14-day window the
+// sample tool JSON beneath it stays consistent with; every generated
+// suggestion in these tests is checked against these exact bounds.
 const (
 	testDataStart = "2026-08-01"
 	testDataEnd   = "2026-08-14"
 )
 
-// dailySummaryAug14JSONFixture and periodTotals fixtures below are local to
-// this file: visualization_test.go's fixtures don't cover a day at the very
+// dailySummaryAug14JSONSample and the periodTotals samples below are local to
+// this file: visualization_test.go's samples don't cover a day at the very
 // end of the data range (needed to exercise a FULL 7-day zoom-out) or
 // get_period_totals at all (visualization.go has no get_period_totals
 // rendering to test against).
 const (
-	dailySummaryAug14JSONFixture = `{"date":"2026-08-14"}`
+	dailySummaryAug14JSONSample = `{"date":"2026-08-14"}`
 
-	periodTotalsJSONFixture = `{"start":"2026-08-01","end":"2026-08-14",
+	periodTotalsJSONSample = `{"start":"2026-08-01","end":"2026-08-14",
 		"best_day":{"date":"2026-08-07","margin":"375.82"},
 		"worst_day":{"date":"2026-08-08","margin":"152.50"}}`
 
-	periodTotalsSingleDayJSONFixture = `{"start":"2026-08-05","end":"2026-08-05",
+	periodTotalsSingleDayJSONSample = `{"start":"2026-08-05","end":"2026-08-05",
 		"best_day":{"date":"2026-08-05","margin":"200.00"},
 		"worst_day":{"date":"2026-08-05","margin":"200.00"}}`
 )
@@ -43,13 +42,13 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 	}{
 		{
 			name:         "get_daily_summary mid-range: zoom-in only, zoom-out week would fall before data start",
-			invocations:  []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONFixture)},
+			invocations:  []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONSample)},
 			wantCount:    1,
 			wantContains: []string{"2026-08-07"},
 		},
 		{
 			name:        "get_daily_summary at the end of the range: zoom-in and a full week-over-week zoom-out",
-			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug14JSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug14JSONSample)},
 			wantCount:   2,
 			wantContains: []string{
 				"2026-08-14",
@@ -59,7 +58,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "get_margin_delta grounds all three suggestions in period_b, not period_a",
-			invocations: []explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)},
 			wantCount:   3,
 			wantContains: []string{
 				"2026-08-08", "2026-08-14",
@@ -67,7 +66,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "list_discrepancies with flagged days grounds suggestions in the latest flagged date",
-			invocations: []explain.ToolInvocation{inv("list_discrepancies", discrepanciesJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_discrepancies", discrepanciesJSONSample)},
 			wantCount:   2,
 			wantContains: []string{
 				"2026-08-08",
@@ -75,12 +74,12 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "list_discrepancies clean period yields nothing — no date to ground a suggestion in",
-			invocations: []explain.ToolInvocation{inv("list_discrepancies", cleanDiscrepanciesJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_discrepancies", cleanDiscrepanciesJSONSample)},
 			wantCount:   0,
 		},
 		{
 			name:        "get_promotion_roi grounds suggestions in the first promotion's real period",
-			invocations: []explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONSample)},
 			wantCount:   3,
 			wantContains: []string{
 				"2026-08-01", "2026-08-07", "iFood", "Just Eat Takeaway",
@@ -88,7 +87,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "list_negative_roi_promotions uses the identical template",
-			invocations: []explain.ToolInvocation{inv("list_negative_roi_promotions", promotionsJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_negative_roi_promotions", promotionsJSONSample)},
 			wantCount:   3,
 			wantContains: []string{
 				"2026-08-01", "2026-08-07",
@@ -96,7 +95,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "compare_platform_economics grounds suggestions in its own period",
-			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONSample)},
 			wantCount:   3,
 			wantContains: []string{
 				"2026-08-01", "2026-08-14",
@@ -104,7 +103,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "get_period_totals points at the real best/worst day it already computed",
-			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsJSONSample)},
 			wantCount:   3,
 			wantContains: []string{
 				"2026-08-07", "2026-08-08", "2026-08-01", "2026-08-14",
@@ -112,7 +111,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 		},
 		{
 			name:        "get_period_totals over a single day skips the duplicate best/worst suggestion",
-			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsSingleDayJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsSingleDayJSONSample)},
 			wantCount:   2,
 			wantContains: []string{
 				"2026-08-05",
@@ -153,7 +152,7 @@ func TestDeriveFollowUpSuggestionsCoversAllSevenTools(t *testing.T) {
 
 func TestDeriveFollowUpSuggestionsNeverExceedsThree(t *testing.T) {
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)},
+		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)},
 		"",
 		testDataStart, testDataEnd,
 	)
@@ -168,8 +167,8 @@ func TestDeriveFollowUpSuggestionsFixedPriorityMatchesVisualization(t *testing.T
 	// economics even if a promotion tool also ran for context.
 	got := deriveFollowUpSuggestions(
 		[]explain.ToolInvocation{
-			inv("get_promotion_roi", promotionsJSONFixture),
-			inv("compare_platform_economics", platformComparisonJSONFixture),
+			inv("get_promotion_roi", promotionsJSONSample),
+			inv("compare_platform_economics", platformComparisonJSONSample),
 		},
 		"",
 		testDataStart, testDataEnd,
@@ -181,11 +180,11 @@ func TestDeriveFollowUpSuggestionsFixedPriorityMatchesVisualization(t *testing.T
 }
 
 func TestDeriveFollowUpSuggestionsClampsOutOfRangePeriodToRealBounds(t *testing.T) {
-	// platformComparisonZeroSalesJSONFixture's period (1999-04-01..1999-04-01)
+	// platformComparisonZeroSalesJSONSample's period (1999-04-01..1999-04-01)
 	// is entirely before the real data range — every generated date must be
 	// clamped forward into [testDataStart, testDataEnd], never left at 1999.
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("compare_platform_economics", platformComparisonZeroSalesJSONFixture)},
+		[]explain.ToolInvocation{inv("compare_platform_economics", platformComparisonZeroSalesJSONSample)},
 		"",
 		testDataStart, testDataEnd,
 	)
@@ -204,7 +203,7 @@ func TestDeriveFollowUpSuggestionsClampsOutOfRangePeriodToRealBounds(t *testing.
 
 func TestDeriveFollowUpSuggestionsNeverRepeatsTheQuestionJustAsked(t *testing.T) {
 	baseline := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)},
+		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)},
 		"",
 		testDataStart, testDataEnd,
 	)
@@ -214,7 +213,7 @@ func TestDeriveFollowUpSuggestionsNeverRepeatsTheQuestionJustAsked(t *testing.T)
 	asked := baseline[0]
 
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)},
+		[]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)},
 		// Loose, case/whitespace-insensitive match per this file's documented
 		// policy — not the exact same casing as the generated suggestion.
 		"  "+strings.ToUpper(asked)+"  ",
@@ -232,7 +231,7 @@ func TestDeriveFollowUpSuggestionsNeverRepeatsTheQuestionJustAsked(t *testing.T)
 
 func TestDeriveFollowUpSuggestionsInvalidDataBoundsYieldsEmpty(t *testing.T) {
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONFixture)},
+		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONSample)},
 		"",
 		"not-a-date", testDataEnd,
 	)
@@ -268,7 +267,7 @@ func TestFinalizeSuggestionsDedupesAndCapsAtThree(t *testing.T) {
 // existing MaxFollowUpSuggestions slots rather than being added on top.
 func TestDeriveFollowUpSuggestionsIncludesFlagBasedFollowUpWhenDiscrepancyFlagsPresent(t *testing.T) {
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug08JSONFixture)},
+		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug08JSONSample)},
 		"",
 		testDataStart, testDataEnd,
 	)
@@ -286,7 +285,7 @@ func TestDeriveFollowUpSuggestionsIncludesFlagBasedFollowUpWhenDiscrepancyFlagsP
 // flags) must never manufacture a flag-based question.
 func TestDeriveFollowUpSuggestionsOmitsFlagBasedFollowUpWhenNoFlags(t *testing.T) {
 	got := deriveFollowUpSuggestions(
-		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONFixture)},
+		[]explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONSample)},
 		"",
 		testDataStart, testDataEnd,
 	)
@@ -302,7 +301,7 @@ func TestDeriveFollowUpSuggestionsOmitsFlagBasedFollowUpWhenNoFlags(t *testing.T
 // multi-day chart) and more than one carries a flag.
 func TestFlagBasedFollowUpUsesLatestFlaggedDateAcrossMultipleResults(t *testing.T) {
 	earlierFlagged := `{"date":"2026-08-03","discrepancy_flags":[{"type":"commission_mismatch","detail":"stated 8.10, recomputed 8.35"}]}`
-	got := flagBasedFollowUp([]string{dailySummaryAug08JSONFixture, earlierFlagged})
+	got := flagBasedFollowUp([]string{dailySummaryAug08JSONSample, earlierFlagged})
 	want := "Why is 2026-08-08 different from usual?"
 	if got != want {
 		t.Errorf("flagBasedFollowUp() = %q, want %q", got, want)

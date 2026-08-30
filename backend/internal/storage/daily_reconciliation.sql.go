@@ -54,7 +54,7 @@ type GetDataDateRangeRow struct {
 // internal/explain's system prompt as plain strings, so relative date
 // language ("today", "this week", a year-less date) resolves against the
 // real data's own range instead of the host machine's wall-clock date or
-// a hardcoded literal that could drift from the fixtures actually loaded.
+// a hardcoded literal that could drift from the data actually loaded.
 func (q *Queries) GetDataDateRange(ctx context.Context) (GetDataDateRangeRow, error) {
 	row := q.db.QueryRow(ctx, getDataDateRange)
 	var i GetDataDateRangeRow

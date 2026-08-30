@@ -3,10 +3,10 @@ package httpapi
 // Live-Postgres integration test for GET /api/platforms, following this
 // package's established pattern (promotions_create_test.go's
 // httpapiConnectOrSkip): skipped when DATABASE_URL is unset. This test makes
-// no writes — it reads the real, already-persisted fixture data the same
+// no writes — it reads the real, already-persisted dataset the same
 // read-only way internal/mcptools' own
-// TestComparePlatformEconomics_MatchesFixtureReferenceValues does — so it
-// costs nothing and can never collide with real fixture rows.
+// TestComparePlatformEconomics_MatchesOpeningReferenceValues does — so it
+// costs nothing and can never collide with real rows.
 
 import (
 	"context"
@@ -26,7 +26,7 @@ import (
 // real, currently-persisted data range actually is — computed live via
 // storage.LoadDataDateRange rather than a hardcoded literal, since this
 // dev database's real range legitimately changes as datasets are
-// regenerated (it originally held only the 14-day fixture; it now also
+// regenerated (it originally held only a 14-day window; it now also
 // holds the full 2024-08-01..today dataset from
 // backend/cmd/gendata). A hardcoded expectation here would silently
 // re-encode "whatever the range happened to be on the day this test was

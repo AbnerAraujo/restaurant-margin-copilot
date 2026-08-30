@@ -117,7 +117,7 @@ func TestClassify_EmptyCandidateListMakesNoAPICall(t *testing.T) {
 
 // testDataStart/testDataEnd mirror internal/ambiguity's own test constants
 // — this package doesn't use them for date grounding, but keeping the same
-// literal values documents which fixture window the live tests below assume.
+// literal values documents which data window the live tests below assume.
 const (
 	testDataStart = "2026-08-01"
 	testDataEnd   = "2026-08-14"

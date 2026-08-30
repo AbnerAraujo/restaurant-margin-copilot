@@ -56,7 +56,8 @@ type POSRecord struct {
 }
 
 // CostInvoiceRecord is one supplier invoice line from the cost sheet.
-// Supplier billing is not daily (fixtures/README.md: "produce ~every 3
+// Supplier billing is not daily (cmd/gendata/opening/README.md: real,
+// irregular cadences — "produce ~every 3
 // days, protein weekly, ...") — internal/reconcile, not this package,
 // decides how invoices allocate to days without one of their own.
 type CostInvoiceRecord struct {
