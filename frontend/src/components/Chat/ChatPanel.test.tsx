@@ -895,6 +895,152 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('drives the composer’s advice path through the same ask flow and surfaces the chip', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-advice',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'iFood’s effective commission rate was 23.00%.',
+        provenance: [],
+        toolCalls: [{ name: 'compare_platform_economics', result_json: {} }],
+        businessInsight: {
+          kind: 'high_commission',
+          title: 'That commission rate is in the platforms’ premium band',
+        },
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /build a question/i }))
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+    await user.click(within(dialog).getByRole('button', { name: /get business advice/i }))
+    await user.click(within(dialog).getByText('Advice on a high commission rate'))
+    await user.type(within(dialog).getByLabelText('Start date'), '2026-08-01')
+    await user.type(within(dialog).getByLabelText('End date'), '2026-08-14')
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
+    await user.click(
+      within(dialog).getByRole('button', { name: /compute this and offer advice/i }),
+    )
+
+    // The pattern is computed through the ordinary, guaranteed-answerable ask
+    // flow — there is no second submission path, and no advice call has been
+    // billed yet.
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'Which platform costs me more in commission — iFood or Just Eat Takeaway — between 2026-08-01 and 2026-08-14?',
+      expect.any(Array),
+      undefined,
+      undefined,
+    )
+    expect(
+      await screen.findByText('iFood’s effective commission rate was 23.00%.'),
+    ).toBeInTheDocument()
+    // The advice itself is still one explicit tap away (spec FR-014).
+    expect(
+      screen.getByText('That commission rate is in the platforms’ premium band'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/no advice needed/i)).not.toBeInTheDocument()
+  })
+
+  it('says so honestly when the requested pattern simply is not in the data', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-advice',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'No discrepancies were flagged between 2026-08-01 and 2026-08-14.',
+        provenance: [],
+        toolCalls: [{ name: 'list_discrepancies', result_json: { days: [] } }],
+        // No businessInsight: a clean period genuinely has no pattern to
+        // advise on, and Go returns no teaser for one.
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /build a question/i }))
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+    await user.click(within(dialog).getByRole('button', { name: /get business advice/i }))
+    await user.click(within(dialog).getByText('Advice on recurring discrepancies'))
+    await user.type(within(dialog).getByLabelText('Start date'), '2026-08-01')
+    await user.type(within(dialog).getByLabelText('End date'), '2026-08-14')
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
+    await user.click(
+      within(dialog).getByRole('button', { name: /compute this and offer advice/i }),
+    )
+
+    expect(
+      await screen.findByText(
+        'No discrepancies were flagged between 2026-08-01 and 2026-08-14.',
+      ),
+    ).toBeInTheDocument()
+    // Without this, the owner cannot tell "clean data" from "the advice
+    // request quietly went nowhere".
+    expect(screen.getByText(/no advice needed/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/nothing was flagged in this period/i),
+    ).toBeInTheDocument()
+  })
+
+  it('never claims a clean result for an ordinary question that got no teaser', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-plain',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+    await user.type(
+      screen.getByRole('textbox', { name: /ask a question about your margin/i }),
+      'How did we do on 2026-08-07?',
+    )
+    await user.click(screen.getByRole('button', { name: /send question/i }))
+
+    expect(
+      await screen.findByText('Margin on 2026-08-07 was $375.82.'),
+    ).toBeInTheDocument()
+    // Most answers carry no teaser; that is the norm, not an advisory outcome.
+    expect(screen.queryByText(/no advice needed/i)).not.toBeInTheDocument()
+  })
+
   it('keeps the scroll area able to shrink below its content height', () => {
     // Regression guard for the measured layout defect: a `flex-1` column
     // child's automatic minimum size is its CONTENT height, so without

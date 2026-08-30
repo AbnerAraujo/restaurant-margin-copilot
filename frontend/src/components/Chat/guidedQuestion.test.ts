@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
+import { ADVISORY_CAPABILITIES, COMPUTED_CAPABILITIES } from '@/capabilities'
+
 import {
   GUIDED_CATEGORIES,
   KNOWN_PLATFORMS,
+  advisoryPeriodCount,
+  composeAdviceRequest,
   composeGuidedQuestion,
   dateRangeErrorMessage,
   formatDisplayDate,
@@ -322,5 +326,122 @@ describe('composeGuidedQuestion', () => {
         period: { start: '2026-08-01', end: '2026-08-14' },
       }),
     ).toBe('Which day of the month costs the most, on average, between 2026-08-01 and 2026-08-14?')
+  })
+})
+
+describe('GUIDED_CATEGORIES is derived, not restated', () => {
+  // The guard against the staleness that already bit the Help page's "seven
+  // tools" and exampleQuestions.ts's missing eighth entry: the composer must
+  // read the one catalog rather than keep a parallel list beside it.
+  // capabilities.test.ts holds that catalog against the real Go registry.
+  it('offers exactly the catalog’s computed capabilities, in order', () => {
+    expect(GUIDED_CATEGORIES).toBe(COMPUTED_CAPABILITIES)
+    expect(GUIDED_CATEGORIES.map((c) => c.tool)).toEqual(
+      COMPUTED_CAPABILITIES.map((c) => c.tool),
+    )
+  })
+})
+
+describe('composeAdviceRequest', () => {
+  const PERIOD = { start: '2026-08-01', end: '2026-08-14' }
+
+  it('needs two periods only for a margin decline', () => {
+    for (const capability of ADVISORY_CAPABILITIES) {
+      expect(advisoryPeriodCount(capability)).toBe(
+        capability.insightKind === 'margin_decline' ? 2 : 1,
+      )
+    }
+  })
+
+  it('grounds a high-commission request in the platform-comparison question', () => {
+    expect(composeAdviceRequest('high_commission', { period: PERIOD })).toEqual({
+      insightKind: 'high_commission',
+      question:
+        'Which platform costs me more in commission — iFood or Just Eat Takeaway — between 2026-08-01 and 2026-08-14?',
+    })
+  })
+
+  it('grounds a discrepancy request in a PERIOD question, never a single day', () => {
+    // A pattern worth advising on is a recurrence, so the advisory path pins
+    // list_discrepancies to its period scope rather than inheriting whatever
+    // scope happens to be in the draft.
+    const request = composeAdviceRequest('discrepancy_pattern', {
+      period: PERIOD,
+      scope: 'single_date',
+      date: '2026-08-07',
+    })
+    expect(request?.question).toBe(
+      'Which days had discrepancies between 2026-08-01 and 2026-08-14?',
+    )
+  })
+
+  it('grounds a margin-decline request in the two-period comparison question', () => {
+    const request = composeAdviceRequest('margin_decline', {
+      periodA: { start: '2026-08-01', end: '2026-08-07' },
+      periodB: { start: '2026-08-08', end: '2026-08-14' },
+    })
+    expect(request?.question).toBe(
+      'Compare total margin for 2026-08-01 to 2026-08-07 against 2026-08-08 to 2026-08-14',
+    )
+  })
+
+  it('composes a question the computed path could equally have composed, for every kind', () => {
+    // The guarantee that matters: broadening the composer must not open a
+    // route to a question the backend would refuse. Every advisory question
+    // is byte-identical to the one its grounding category already produces.
+    for (const capability of ADVISORY_CAPABILITIES) {
+      const draft: GuidedDraft =
+        advisoryPeriodCount(capability) === 2
+          ? {
+              periodA: { start: '2026-08-01', end: '2026-08-07' },
+              periodB: { start: '2026-08-08', end: '2026-08-14' },
+            }
+          : { period: PERIOD }
+      const request = composeAdviceRequest(capability.insightKind, draft)
+      expect(request).not.toBeNull()
+
+      const params = toGuidedParams(capability.groundedBy, {
+        ...draft,
+        scope: 'period',
+      })
+      expect(params).not.toBeNull()
+      expect(request?.question).toBe(composeGuidedQuestion(params!))
+    }
+  })
+
+  it('returns null while the form is incomplete', () => {
+    expect(composeAdviceRequest('high_commission', {})).toBeNull()
+    expect(
+      composeAdviceRequest('high_commission', { period: { start: PERIOD.start } }),
+    ).toBeNull()
+    expect(composeAdviceRequest('margin_decline', { periodA: PERIOD })).toBeNull()
+  })
+
+  it('refuses a date outside the live data window, exactly like the computed path', () => {
+    const bounds = { minDate: '2026-08-01', maxDate: '2026-08-14' }
+    expect(composeAdviceRequest('high_commission', { period: PERIOD }, bounds)).not.toBeNull()
+    expect(
+      composeAdviceRequest(
+        'high_commission',
+        { period: { start: '2026-07-20', end: '2026-08-14' } },
+        bounds,
+      ),
+    ).toBeNull()
+    expect(
+      composeAdviceRequest(
+        'high_commission',
+        { period: { start: '2026-08-01', end: '2026-09-30' } },
+        bounds,
+      ),
+    ).toBeNull()
+  })
+
+  it('returns null for an insight kind the catalog does not know', () => {
+    expect(
+      composeAdviceRequest(
+        'not_a_real_kind' as (typeof ADVISORY_CAPABILITIES)[number]['insightKind'],
+        { period: PERIOD },
+      ),
+    ).toBeNull()
   })
 })
