@@ -69,7 +69,14 @@ func ParseFixedPoint(s string, decimals int) (int64, error) {
 	digits := whole + frac
 	v, err := strconv.ParseInt(digits, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("money: invalid value %q: %w", s, err)
+		// Deliberately not %w-wrapping strconv's error here: it names the
+		// cents-padded internal `digits` string ("abc00"), not the raw input
+		// the owner actually typed, and its own text ("strconv.ParseInt:
+		// parsing ...: invalid syntax") is an implementation detail no
+		// end user should see — the same "clean, human-readable, no
+		// internal stack trace" treatment ingest/date.go's parse() already
+		// gives a malformed date.
+		return 0, fmt.Errorf("money: %q is not a valid amount", s)
 	}
 	if neg {
 		v = -v
