@@ -375,21 +375,31 @@ func TestGate_Classify_LiveSmokeTest(t *testing.T) {
 		t.Logf("unanswerable smoke test: %d in / %d out tokens, $%.6f, reason=%q", d.InputTokens, d.OutputTokens, d.EstimatedCostUSD, d.RefusalReason)
 	})
 
-	t.Run("ambiguous", func(t *testing.T) {
+	// This subtest used to send "How did we do over the weekend?" to the
+	// live model and assert "ambiguous". It flaked: the same input came
+	// back "answerable" on some runs. The cause was not a bad model — it
+	// was asking a probabilistic step to supply a DEFINITION this product
+	// does not have (does "the weekend" include Friday?), which is
+	// arithmetic-shaped work under Constitution Principle I, not judgment.
+	// weekend.go now decides it in Go before any model call, so the case
+	// that used to be this suite's flake is asserted here as the
+	// zero-model-call fact it should always have been. The genuinely
+	// linguistic live cases either side of it (answerable, unanswerable)
+	// are untouched — they still exercise the real API, which is what this
+	// test exists for.
+	t.Run("ambiguous, now decided deterministically", func(t *testing.T) {
 		d, err := g.Classify(ctx, "How did we do over the weekend?", nil, nil)
 		require.NoError(t, err)
 		require.Equal(t, instrumentation.GateAmbiguous, d.Result)
-		require.True(t, d.ClarifyingQuestion != "" || d.AssumptionStated != "")
-		// Same non-negotiable as the unanswerable case above: a real writer
-		// pass (only fires when a clarifying question, not an assumption,
-		// was chosen) must never move d.Result off "ambiguous".
-		require.Equal(t, instrumentation.GateAmbiguous, d.Result, "Sonnet's writing pass must never change the gate's classification")
-		if d.ClarifyingQuestion != "" && d.Writer != nil {
-			require.Equal(t, llmclient.ModelExplanation, d.Writer.ModelUsed)
-			require.Greater(t, d.Writer.InputTokens, int64(0))
-			t.Logf("ambiguous writer pass: %d in / %d out tokens, $%.6f", d.Writer.InputTokens, d.Writer.OutputTokens, d.Writer.EstimatedCostUSD)
-		}
-		t.Logf("ambiguous smoke test: %d in / %d out tokens, $%.6f, clarify=%q assume=%q", d.InputTokens, d.OutputTokens, d.EstimatedCostUSD, d.ClarifyingQuestion, d.AssumptionStated)
+		require.True(t, d.DeterministicPrecheck, "the vague-weekend case must never depend on live model behavior")
+		require.Equal(t, WeekendPrecheckModelLabel, d.PrecheckLabel)
+		require.NotEmpty(t, d.ClarifyingQuestion)
+		require.NotEmpty(t, d.ClarifyingOptions)
+		require.Nil(t, d.Writer, "a deterministically-worded clarification never pays for a writer pass")
+		require.Zero(t, d.InputTokens)
+		require.Zero(t, d.OutputTokens)
+		require.Zero(t, d.EstimatedCostUSD)
+		t.Logf("ambiguous smoke test: 0 model calls, clarify=%q options=%v", d.ClarifyingQuestion, d.ClarifyingOptions)
 	})
 
 	t.Run("answerable question costs exactly the gate's single Haiku call", func(t *testing.T) {

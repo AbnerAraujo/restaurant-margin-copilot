@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answerverify"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/llmclient"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
 )
@@ -87,11 +89,12 @@ type Result struct {
 	ToolInvocations []ToolInvocation
 
 	// IncompleteReason is set (and AnswerText left empty) when the loop
-	// exhausted MaxTurns, the model refused, or the model narrated an
+	// exhausted MaxTurns, the model refused, the model narrated an
 	// answer without ever making a grounded tool call (see Explain's
-	// zero-tool-call guard), without ever producing a final narrated
-	// answer — the caller (internal/httpapi) treats this as a refusal, not
-	// a partial answer.
+	// zero-tool-call guard), or the narration stated a money/percentage
+	// figure that does not appear in what the tools returned (Explain's
+	// internal/answerverify check) — the caller (internal/httpapi) treats
+	// this as a refusal, not a partial answer.
 	IncompleteReason string
 
 	InputTokens      int64
@@ -213,6 +216,13 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		seenRefs          = map[string]struct{}{}
 		orderedRefs       []string
 		invocations       []ToolInvocation
+		// verifySources is every tool result text this interaction saw,
+		// INCLUDING the errored ones invocations deliberately drops. A typed
+		// no_data/invalid_input payload is still deterministic tool output the
+		// narration may legitimately quote a figure from, and feeding it to
+		// answerverify can only widen the allowed set, never narrow it — so
+		// including it removes a false-refusal risk rather than adding one.
+		verifySources []string
 	)
 
 	for turn := 0; turn < MaxTurns; turn++ {
@@ -349,6 +359,44 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 					EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
 				}, nil
 			}
+			// The zero-tool-call guard above is a STRUCTURAL check: did any
+			// grounded computation happen at all. This one is the arithmetic
+			// check it never was — does every money figure this sentence
+			// STATES actually appear in what the tools RETURNED
+			// (internal/answerverify). A model that calls get_daily_summary
+			// correctly, is handed $374.75, and then narrates $999.99 — or
+			// $374.57 — passes every other check in this file. It is the exact
+			// shape of "a confidently wrong margin figure" CLAUDE.md calls
+			// worse than a refusal, and until this call nothing caught it.
+			//
+			// Runs only when at least one tool result exists to check against:
+			// with an empty allowed set every figure would "mismatch", which
+			// is not a finding, it is an absence of evidence — and the
+			// zero-tool-call case already has its own guard, with its own
+			// wording, immediately above.
+			if len(verifySources) > 0 {
+				report := answerverify.Verify(resp.Text, verifySources)
+				if len(report.Dates) > 0 {
+					// Advisory only, deliberately: legitimate date phrasing
+					// varies far more than money phrasing, so a refusal here
+					// would cost real answers to catch a class of error
+					// provenance already surfaces. Logged so the variance is
+					// measurable if it ever becomes worth acting on.
+					log.Printf("explain: date_validation_mismatch (advisory, not refused) dates=%d", len(report.Dates))
+				}
+				if report.Blocking() {
+					log.Printf("explain: numeric_validation_failed — narrated figures not found in tool results: %s (tool calls made=%d, figures checked: currency=%d percent=%d)",
+						report.Summary(), budget.Used(), report.CheckedCurrency, report.CheckedPercent)
+					return &Result{
+						IncompleteReason: answerverify.RefusalReason,
+						ToolCallsMade:    budget.Used(),
+						ToolInvocations:  invocations,
+						InputTokens:      totalIn, OutputTokens: totalOut,
+						EstimatedCostUSD: totalCostUSD, LatencyMs: totalLatencyMs,
+					}, nil
+				}
+			}
+
 			return &Result{
 				AnswerText:      resp.Text,
 				ProvenanceRefs:  orderedRefs,
@@ -362,6 +410,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		toolResultBlocks := make([]anthropic.ContentBlockParamUnion, 0, len(toolUses))
 		for _, tu := range toolUses {
 			text, isError := e.callTool(ctx, tu, seenRefs, &orderedRefs)
+			verifySources = append(verifySources, text)
 			if !isError {
 				invocations = append(invocations, ToolInvocation{Name: tu.Name, ResultJSON: text})
 			}
