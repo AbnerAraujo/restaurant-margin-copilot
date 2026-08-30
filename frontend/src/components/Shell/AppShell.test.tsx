@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { describe, expect, it } from 'vitest'
@@ -42,12 +42,28 @@ describe('AppShell scroll-to-top on navigation', () => {
     Object.defineProperty(main, 'scrollTop', { value: 400, writable: true })
     expect(main?.scrollTop).toBe(400)
 
-    await router.navigate('/two')
+    // Root cause of the reported flake: a bare `await router.navigate(...)`
+    // outside `act()` races AppShell's own scroll-reset effect (see
+    // AppShell.tsx around line 152 — a useEffect keyed on `pathname`, which
+    // React flushes on a separate tick from the route change itself).
+    // Wrapping the navigation in `act()` ensures React flushes every effect
+    // the route change triggers — the scroll reset included — before this
+    // proceeds, rather than only waiting for the new heading to appear and
+    // hoping the effect already ran by then.
+    await act(async () => {
+      await router.navigate('/two')
+    })
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: 'Page Two' })).toBeInTheDocument()
     })
 
-    expect(main?.scrollTop).toBe(0)
+    // Asserted inside waitFor too, not just after it: belt-and-suspenders
+    // against the same class of race even with the act() wrap above — a
+    // flush ordering this test doesn't fully control should never turn into
+    // a flaky failure here.
+    await waitFor(() => {
+      expect(main?.scrollTop).toBe(0)
+    })
   })
 })
 

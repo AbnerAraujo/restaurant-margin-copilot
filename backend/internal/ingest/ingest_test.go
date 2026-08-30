@@ -261,6 +261,25 @@ func TestParseCostSheet_UnrecognizedDateFormatIsNotDoublePrefixed(t *testing.T) 
 	require.Contains(t, err.Error(), "unrecognized date format")
 }
 
+// Regression test for a reported defect: a bad cost-sheet amount ("abc")
+// produced "ingest: bad-amt.csv row 2: amount: money: invalid value \"abc\":
+// strconv.ParseInt: parsing \"abc00\": invalid syntax" — an internal
+// strconv trace plus the cents-padded string ("abc00", not the "abc" the
+// owner actually typed) reaching the UI directly. Same bug class, same
+// call-site pattern, as TestParseCostSheet_UnrecognizedDateFormatIsNotDoublePrefixed
+// above, just on the amount-parsing path (internal/money) instead of dates.
+func TestParseCostSheet_MalformedAmountErrorIsCleanAndHumanReadable(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,amount\nINV-1,2026-08-02,Acme Foods,abc\n"
+	_, err := ParseCostSheet(strings.NewReader(csvData), "bad-amt.csv")
+	require.Error(t, err)
+	require.Equal(t, 1, strings.Count(err.Error(), "ingest:"),
+		"the \"ingest:\" prefix must appear exactly once, not double-wrapped: %q", err.Error())
+	require.Contains(t, err.Error(), "bad-amt.csv row 2: amount:")
+	require.Contains(t, err.Error(), `"abc"`, "must name the value the owner actually typed")
+	require.NotContains(t, err.Error(), "strconv", "must never leak Go's internal parser trace to the user")
+	require.NotContains(t, err.Error(), "abc00", "must never leak the internal cents-padded digit string")
+}
+
 func TestParsePOSExport_TableDriven(t *testing.T) {
 	tests := []struct {
 		name    string

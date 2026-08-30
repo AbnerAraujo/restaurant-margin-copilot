@@ -32,12 +32,30 @@ const PLOT_WIDTH = CHART_WIDTH - LABEL_GUTTER - MARGIN.right
 // the rendered output rather than guessed, since a truncated period label
 // hides which period a bar belongs to.
 const MAX_LABEL_CHARS = 24
+// How much of the label's START survives truncation — see truncateLabel.
+// 12 is enough to keep a real platform name ("Just Eat Takeaway") legible
+// as an identifier without eating the whole budget, leaving the rest for
+// whatever comes after it.
+const LABEL_HEAD_CHARS = 12
 const UNAVAILABLE_BOX_WIDTH = 104
 
+// Reported live on /platforms: two adjacent rows for the SAME platform —
+// "Just Eat Takeaway — commission only" and "Just Eat Takeaway — commission
+// + promo" (toChartPoints in PlatformsPage.tsx) — both share an identical
+// first 23 characters, so simple end-truncation rendered both as the
+// indistinguishable "Just Eat Takeaway — com…" despite showing different
+// values. Truncating from the middle instead — a fixed-length head (enough
+// to identify the category, e.g. the platform name) plus whatever tail fits
+// in the remaining budget (the part that actually varies between otherwise-
+// identical labels, e.g. "only" vs "+ promo") — keeps two such labels
+// visually distinct instead of colliding on their shared prefix. A label
+// short enough to need no truncation (e.g. the 23-char period range this
+// budget was originally sized for) is returned unchanged, so this is a
+// strict improvement, never a regression, for every existing caller.
 function truncateLabel(label: string): string {
-  return label.length <= MAX_LABEL_CHARS
-    ? label
-    : `${label.slice(0, MAX_LABEL_CHARS - 1)}…`
+  if (label.length <= MAX_LABEL_CHARS) return label
+  const tailChars = MAX_LABEL_CHARS - LABEL_HEAD_CHARS - 1
+  return `${label.slice(0, LABEL_HEAD_CHARS)}…${label.slice(label.length - tailChars)}`
 }
 
 /**

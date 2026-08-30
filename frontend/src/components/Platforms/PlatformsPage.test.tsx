@@ -166,6 +166,27 @@ describe('PlatformsPage', () => {
     ).toBeInTheDocument()
   })
 
+  it('never truncates two same-platform bar labels down to identical visible text (reported live: both read "Just Eat Takeaway — com…")', async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    render(<PlatformsPage />)
+
+    await screen.findAllByText('iFood')
+
+    // Full labels ("Just Eat Takeaway — commission only" / "... + promo")
+    // both run past the chart's label budget and share an identical first
+    // 23 characters — the exact case that used to collapse both rows to
+    // "Just Eat Takeaway — com…". The fixed truncation keeps a stable head
+    // (enough to identify the platform) plus whatever tail fits, so the
+    // two visible strings stay distinguishable.
+    const commissionOnlyLabel = screen.getByText('Just Eat Tak…ission only')
+    const commissionPlusPromoLabel = screen.getByText('Just Eat Tak…ion + promo')
+    expect(commissionOnlyLabel).toBeInTheDocument()
+    expect(commissionPlusPromoLabel).toBeInTheDocument()
+    expect(commissionOnlyLabel.textContent).not.toEqual(
+      commissionPlusPromoLabel.textContent,
+    )
+  })
+
   it('shows a platform with zero sales this period as a real zero, never omitted (FR-003)', async () => {
     stubFetch(ZERO_SALES_RESPONSE)
     render(<PlatformsPage />)
