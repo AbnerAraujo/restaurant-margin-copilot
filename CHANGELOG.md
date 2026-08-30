@@ -12,6 +12,23 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Coordinator fix: docs/openapi.yaml was genuinely invalid YAML
+
+Found while independently verifying QA round 9's `/api/profile` addition to
+`docs/openapi.yaml`: parsing the full file with a real YAML library (PyYAML,
+then `js-yaml`) failed with `expected ',' or '}', but got '?'` — and this
+predates round 9, confirmed present on `develop` before that round's changes
+too. `Points.spent`'s flow-mapping `description` was unquoted and contained a
+literal `:` (`payment_method:points`) and `,`, both structural characters
+inside a YAML flow mapping (`{ ... }`). QA round 4 had already found and fixed
+the downstream symptom — `docs/api.html`'s checked-in embedded JSON had this
+same field corrupted into two garbage `null` properties — without checking
+whether the source `docs/openapi.yaml` itself still parsed; it didn't. Quoted
+the description and regenerated `docs/api.html`'s embedded `OPENAPI_SPEC` JSON
+from the now-valid source. Confirmed the full spec parses cleanly with both
+PyYAML and `js-yaml`, and that no other flow-mapping `description` in the file
+has the same unquoted-colon/comma shape.
+
 ## 2026-08-30 — QA round 9 (final): the interactive API docs were missing a real endpoint
 
 A ninth and final planned overnight QA pass, focused on every OTHER
