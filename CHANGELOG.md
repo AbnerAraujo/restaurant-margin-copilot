@@ -12,6 +12,76 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Promotions chart: newest campaigns no longer scroll out of view unnoticed
+
+Reported by the product owner: "not all campaigns are in the chart, add all
+of them and show from the right to the left side." Investigated live against
+the real dataset (30 campaigns on file, backend on `:8080`) with Playwright
+screenshots at several viewport widths before changing anything, per this
+project's own discipline of tracing root cause instead of assuming one.
+
+**This was a discoverability gap, not a data-loss bug.** Every campaign was
+already reaching `PromoRoiChart` as a real, focusable bar —
+`PromotionsPage.tsx`'s `displayedPromotions` never slices or caps the list
+(confirmed by the existing `PromotionsPage.test.tsx` regression test
+guarding exactly this at 30-campaign scale, which was already passing), and
+`PromoRoiChart.tsx`'s own `chartableData = data` has carried every record
+unfiltered since an earlier QA fix. Screenshots proved it: at a wide
+viewport (1440px) all 30 bars, including the two "Unattributable" refusals,
+rendered and fit with no scrolling. At a common laptop width (1024px) all
+30 bars were STILL in the DOM (`aria-label="...across 30 promotion
+campaigns"` matched the header's "30 campaigns" chip exactly) — but the
+chart's `overflow-x-auto` wrapper defaulted to its scrolled-to-the-LEFT
+position, showing only the OLDEST campaigns, with no visual cue that more
+existed off-screen to the right. The owner's reading ("not all campaigns are
+in the chart") was a fair one: the newest, most-actionable campaigns — the
+ones a "needs a decision" reader most wants — were also the ones most likely
+scrolled out of view on first load.
+
+**Fix, two parts, both scoped to `PromoRoiChart.tsx`:**
+
+1. **Default scroll position.** The chart's own data order is chronological,
+   oldest-first (the API's natural order — see `toChartDatum`'s neighboring
+   comment in `PromotionsPage.tsx`), the same left-to-right time convention
+   `MarginTrendChart` already uses. That chart already mounts scrolled to
+   its own right edge for the identical reason ("today first, history a
+   deliberate scroll away") — this applies the same fix here via a new
+   `initialScrollToEnd` prop (default `true`), rather than reversing the
+   chronological axis itself, which would read backwards against every
+   other time-ordered chart in this app and the dataviz skill's own
+   convention. The one case that opts out: `PromotionsPage`'s ROI sort
+   toggle ("Highest first"/"Lowest first") already puts the campaign the
+   owner asked to see first at the left — auto-scrolling right there would
+   hide it, so `PromotionsPage` passes `initialScrollToEnd={roiSortDirection
+   === null}`.
+2. **Scroll-fade affordance.** Reused this codebase's one existing answer to
+   "an `overflow-x-auto` row gives no visual reason to suspect there's
+   more" — `Shell/Sidebar.tsx`'s `MobileNavBar` edge fade, fixed earlier
+   this week for the identical problem on the mobile nav bar. Added the same
+   pattern to `PromoRoiChart`, bidirectionally: a left fade shown only while
+   scrolled away from the start (real history sits further left) and a
+   right fade shown only while not scrolled all the way to the end — never
+   a permanent decoration in either direction.
+
+Interpreted "show from the right to the left side" as: start the reader at
+the right (the newest campaigns), with older history a deliberate scroll to
+the left — not a request to reverse the chronological axis itself (which
+would contradict "recent reads as rightmost," this app's own
+`MarginTrendChart` precedent, and standard time-series chart convention).
+
+Verified live: at 1024px the chart now mounts showing campaigns through the
+newest (`IFOOD_CAMP_02`, period ending 2026-09-30) with a left fade
+indicating older history; scrolling to the start flips to a right fade with
+no left fade. Header chip, chart `aria-label`, and table row count agree on
+"30" in every case — the chart and the table never disagree about how many
+campaigns exist. Added 9 tests to `PromoRoiChart.test.tsx`: an explicit
+30-campaign bar-count assertion pinned to the real dataset's own scale, four
+covering the default-scroll-to-end behavior (including that it does NOT
+fire when `initialScrollToEnd` is false, and that it doesn't fight a
+reader's manual scroll on an unrelated re-render), and four covering the
+fade's visibility in each direction. `npx tsc -b --noEmit` and the full
+frontend suite (579 tests) pass.
+
 ## 2026-08-30 — Close's Period totals no longer truncate to a plausible-looking wrong number
 
 Reported live: filtering Today's Close to a period showed a total margin cut

@@ -514,4 +514,264 @@ describe('PromoRoiChart', () => {
     })
     expect(bar).not.toHaveAccessibleName(/ask about this/i)
   })
+
+  // Reported live against the real dataset (30 campaigns on file): the owner
+  // read the chart as missing campaigns. It wasn't — every campaign has
+  // always reached this component as a real bar target (see the 29-campaign
+  // scale tests above, which predate this report) — but confirms it again at
+  // the EXACT real count, matching the header chip/table's own "30
+  // campaigns" so the chart and the rest of the page can never silently
+  // disagree about how many campaigns exist.
+  it('renders every campaign as a real, focusable bar at the real 30-campaign dataset scale', () => {
+    const realScaleCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 30 },
+      (_, i) => ({
+        campaignId: `${i % 2 === 0 ? 'IFOOD' : 'JET'}-CAMP-${String(i + 1).padStart(3, '0')}`,
+        campaignName: `${i % 2 === 0 ? 'IFOOD' : 'JET'}-CAMP-${String(i + 1).padStart(3, '0')}`,
+        platform: i % 2 === 0 ? 'iFood' : 'Just Eat Takeaway',
+        spend: 100,
+        attributedIncrementalRevenue: 100 + i,
+        net: i - 15,
+        sourceRefs: [],
+      }),
+    )
+
+    render(<PromoRoiChart data={realScaleCampaigns} />)
+
+    const bars = screen.getAllByRole('button', { name: /: net /i })
+    expect(bars).toHaveLength(30)
+    expect(
+      screen.getByRole('group', {
+        name: /across 30 promotion campaigns/,
+      }),
+    ).toBeInTheDocument()
+  })
+
+  // Reported live: the chart's own natural order is chronological (oldest
+  // first — see PromotionsPage's toChartDatum/API-order comment), and a
+  // plain `overflow-x-auto` wrapper defaults to showing that LEFT edge on
+  // mount — the oldest campaigns, not the newest, most-actionable ones. The
+  // owner read the newest campaigns being scrolled out of view as "not all
+  // campaigns are in the chart." Exactly MarginTrendChart's own fix for the
+  // identical problem (see that chart's matching describe block).
+  describe('mounts scrolled to the right edge (the newest campaigns), not the oldest history', () => {
+    const chronological: PromotionRoiDatum[] = Array.from(
+      { length: 12 },
+      (_, i) => ({
+        campaignId: `CAMP-${i}`,
+        campaignName: `CAMP-${i}`,
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: 120,
+        net: 20,
+        sourceRefs: [],
+      }),
+    )
+
+    it('sets the scroll container\'s scrollLeft to its full scrollWidth after render, by default', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container } = render(<PromoRoiChart data={chronological} />)
+
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      scrollWidthSpy.mockRestore()
+    })
+
+    it('does NOT auto-scroll when initialScrollToEnd is false — the ROI-sorted case, where the campaign the owner asked to see first is already at the left', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container } = render(
+        <PromoRoiChart data={chronological} initialScrollToEnd={false} />,
+      )
+
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      expect(scrollContainer.scrollLeft).toBe(0)
+
+      scrollWidthSpy.mockRestore()
+    })
+
+    it('does not fight a reader\'s manual scroll on a re-render of the SAME order (only a new array reference)', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container, rerender } = render(
+        <PromoRoiChart data={chronological} />,
+      )
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      // The reader scrolls back to look at older history.
+      scrollContainer.scrollLeft = 0
+
+      // A fresh array with the exact same campaigns in the exact same
+      // order — e.g. a parent re-rendering for an unrelated reason. This
+      // must NOT yank the reader back to the right.
+      rerender(<PromoRoiChart data={[...chronological]} />)
+      expect(scrollContainer.scrollLeft).toBe(0)
+
+      scrollWidthSpy.mockRestore()
+    })
+
+    it('DOES re-scroll to the right when the plotted order genuinely changes', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+
+      const { container, rerender } = render(
+        <PromoRoiChart data={chronological} />,
+      )
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+      scrollContainer.scrollLeft = 0
+
+      // A different order entirely (e.g. an ROI sort toggling back off) —
+      // first/last campaign id both change.
+      rerender(<PromoRoiChart data={[...chronological].reverse()} />)
+      expect(scrollContainer.scrollLeft).toBe(2000)
+
+      scrollWidthSpy.mockRestore()
+    })
+  })
+
+  // Reported live: even once every campaign renders as a real bar and the
+  // chart mounts scrolled to the newest ones, a plain overflow-x-auto row
+  // gives no visual reason to suspect there's MORE off-screen in either
+  // direction — the same discoverability gap Shell/Sidebar.tsx's
+  // MobileNavBar already hit and fixed with an edge fade. Same pattern,
+  // applied here.
+  describe('scroll-fade affordance', () => {
+    const manyCampaigns: PromotionRoiDatum[] = Array.from(
+      { length: 29 },
+      (_, i) => ({
+        campaignId: `CAMP-${i}`,
+        campaignName: `CAMP-${i}`,
+        platform: 'iFood',
+        spend: 100,
+        attributedIncrementalRevenue: 100 + i,
+        net: i - 14,
+        sourceRefs: [],
+      }),
+    )
+
+    it('shows a left fade — never a right one — once mounted scrolled to the default right edge, when real history sits off-screen', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+      const clientWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+        .mockReturnValue(500)
+
+      render(<PromoRoiChart data={manyCampaigns} />)
+
+      expect(
+        screen.getByTestId('promo-roi-chart-scroll-fade-left'),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('promo-roi-chart-scroll-fade-right'),
+      ).not.toBeInTheDocument()
+
+      scrollWidthSpy.mockRestore()
+      clientWidthSpy.mockRestore()
+    })
+
+    it('shows a right fade — never a left one — in the ROI-sorted view, where the chart stays scrolled to its start', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+      const clientWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+        .mockReturnValue(500)
+
+      render(
+        <PromoRoiChart data={manyCampaigns} initialScrollToEnd={false} />,
+      )
+
+      expect(
+        screen.getByTestId('promo-roi-chart-scroll-fade-right'),
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByTestId('promo-roi-chart-scroll-fade-left'),
+      ).not.toBeInTheDocument()
+
+      scrollWidthSpy.mockRestore()
+      clientWidthSpy.mockRestore()
+    })
+
+    it('shows no fade in either direction once everything already fits — never a permanent decoration', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(500)
+      const clientWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+        .mockReturnValue(500)
+      // jsdom has no real scroll clamping — a real browser refuses to let
+      // scrollLeft exceed scrollWidth - clientWidth (0 here, no overflow),
+      // so the component's own `scrollLeft = scrollWidth` write is a no-op
+      // in practice. Modeling that clamp explicitly, rather than leaving
+      // jsdom free to "accept" a scrollLeft no real browser would.
+      const scrollLeftSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollLeft', 'get')
+        .mockReturnValue(0)
+
+      render(<PromoRoiChart />)
+
+      expect(
+        screen.queryByTestId('promo-roi-chart-scroll-fade-left'),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.queryByTestId('promo-roi-chart-scroll-fade-right'),
+      ).not.toBeInTheDocument()
+
+      scrollWidthSpy.mockRestore()
+      clientWidthSpy.mockRestore()
+      scrollLeftSpy.mockRestore()
+    })
+
+    it('hides the left fade once scrolled all the way back to the start', () => {
+      const scrollWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
+        .mockReturnValue(2000)
+      const clientWidthSpy = vi
+        .spyOn(HTMLElement.prototype, 'clientWidth', 'get')
+        .mockReturnValue(500)
+
+      const { container } = render(<PromoRoiChart data={manyCampaigns} />)
+      const scrollContainer = container.querySelector(
+        '.overflow-x-auto',
+      ) as HTMLDivElement
+
+      expect(
+        screen.getByTestId('promo-roi-chart-scroll-fade-left'),
+      ).toBeInTheDocument()
+
+      act(() => {
+        scrollContainer.scrollLeft = 0
+        fireEvent.scroll(scrollContainer)
+      })
+
+      expect(
+        screen.queryByTestId('promo-roi-chart-scroll-fade-left'),
+      ).not.toBeInTheDocument()
+      expect(
+        screen.getByTestId('promo-roi-chart-scroll-fade-right'),
+      ).toBeInTheDocument()
+
+      scrollWidthSpy.mockRestore()
+      clientWidthSpy.mockRestore()
+    })
+  })
 })
