@@ -25,6 +25,23 @@ class MockResizeObserver {
   disconnect() {}
 }
 
+/**
+ * The plot SVG's viewBox is cropped to start where the pinned value-axis
+ * gutter ends (`MARGIN.left 0 plotWidth+right height`), so its own width is
+ * the plot's, not the whole chart's. These two read the geometry back out in
+ * the terms the assertions below are actually about.
+ */
+function plotLeftEdge(container: HTMLElement): number {
+  const viewBox = container.querySelector('svg')?.getAttribute('viewBox') ?? ''
+  return Number(viewBox.split(' ')[0])
+}
+
+function renderedChartWidth(container: HTMLElement): number {
+  const viewBox = container.querySelector('svg')?.getAttribute('viewBox') ?? ''
+  const [x, , width] = viewBox.split(' ').map(Number)
+  return x + width
+}
+
 function triggerResize(width: number) {
   const entries = [
     { contentRect: { width } } as ResizeObserverEntry,
@@ -239,9 +256,7 @@ describe('PromoRoiChart', () => {
     // staying pinned to the 4-campaign sample's 560px, which is what left
     // a fixed-width chart flush against the left edge with dead space
     // beside it once there was real data to fill that space with.
-    const svg = container.querySelector('svg')
-    const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
-    expect(viewBoxWidth).toBeGreaterThan(560)
+    expect(renderedChartWidth(container)).toBeGreaterThan(560)
   })
 
   it('shrinks the refusal marker to fit its own slot at real scale, dropping the text label rather than spilling into neighboring bars', () => {
@@ -321,9 +336,7 @@ describe('PromoRoiChart', () => {
 
     act(() => triggerResize(1200))
 
-    const svg = container.querySelector('svg')
-    const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
-    expect(viewBoxWidth).toBe(1200)
+    expect(renderedChartWidth(container)).toBe(1200)
   })
 
   it('keeps the existing scroll-on-overflow behavior when the data needs MORE room than the container has', () => {
@@ -343,17 +356,13 @@ describe('PromoRoiChart', () => {
     )
 
     const { container } = render(<PromoRoiChart data={manyCampaigns} />)
-    const dataWidth = Number(
-      container.querySelector('svg')?.getAttribute('viewBox')?.split(' ')[2],
-    )
+    const dataWidth = renderedChartWidth(container)
 
     // A container narrower than what 29 campaigns need must not shrink it.
     act(() => triggerResize(600))
 
-    const svg = container.querySelector('svg')
-    const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
-    expect(viewBoxWidth).toBe(dataWidth)
-    expect(viewBoxWidth).toBeGreaterThan(600)
+    expect(renderedChartWidth(container)).toBe(dataWidth)
+    expect(dataWidth).toBeGreaterThan(600)
   })
 
   it('anchors the first and last axis tick label inward from the plot edge instead of centering a long campaign id past it', () => {
@@ -385,10 +394,8 @@ describe('PromoRoiChart', () => {
     )
 
     const { container } = render(<PromoRoiChart data={longIdCampaigns} />)
-    const svg = container.querySelector('svg')
-    const chartWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
-    const leftEdge = 48 // MARGIN.left
-    const rightEdge = chartWidth - 16 // MARGIN.right
+    const leftEdge = plotLeftEdge(container) // MARGIN.left
+    const rightEdge = renderedChartWidth(container) - 16 // MARGIN.right
 
     const firstTick = screen.getByText('IFOOD-CAMP-BOOST01')
     expect(firstTick).toHaveAttribute('text-anchor', 'start')
