@@ -156,7 +156,7 @@ export default function UploadPage() {
   // should never actually carry row_count 0. This guard exists so that if
   // it ever does — a future parser change, a file shaped in some way this
   // page hasn't anticipated — the UI never lets a 0-row preview look like
-  // an ordinary one with Confirm & Ingest quietly enabled underneath it.
+  // an ordinary one with the commit button quietly enabled underneath it.
   const previewHasNoRows = preview !== null && preview.row_count === 0
 
   return (
@@ -258,7 +258,14 @@ export default function UploadPage() {
                   {stage.name === 'committing' ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : null}
-                  Confirm & Ingest
+                  {/* Was "Confirm & Ingest": Title Case, an ampersand, and a
+                      bare verb that never said what would be confirmed. The
+                      outcome this button actually produces is that the cost
+                      sheet on file is replaced by this file — which is what
+                      the warning above it already warns about, so the two now
+                      use the same words (ux-writing: a confirm restates the
+                      action AND the object). */}
+                  Replace cost sheet
                 </Button>
               </div>
             }
@@ -275,7 +282,8 @@ export default function UploadPage() {
             <p className="mt-1 text-xs text-muted-foreground">
               Nothing has been saved yet — {preview.row_count} row
               {preview.row_count === 1 ? '' : 's'} parsed, totalling{' '}
-              {formatUsd(preview.total_amount)}. Review before confirming.
+              {formatUsd(preview.total_amount)}. Review the rows below, then
+              replace the cost sheet on file with them.
             </p>
           )}
 

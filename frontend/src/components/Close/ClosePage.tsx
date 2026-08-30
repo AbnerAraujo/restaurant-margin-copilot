@@ -678,13 +678,20 @@ export default function ClosePage() {
                 Every value is either a decimal string the API sent or the
                 pre-existing grossSalesTotal of the per-source values it sent
                 — no new arithmetic was introduced to build this row. */}
+            {/* The margin captions below read "Closed at a loss"/"at a
+                profit". They used to say "in the red"/"in the green" — an
+                English finance idiom that means nothing translated literally,
+                and one that leans on a colour name to say "loss": the two
+                things the ux-writing rules ask a caption not to do. The plain
+                wording still pairs with the Stat's own negative/positive
+                tone, which is what carries the colour. */}
             <StatGroup>
               <Stat
                 label="Margin"
                 value={formatUsd(margin)}
                 size="lg"
                 tone={margin < 0 ? 'negative' : 'positive'}
-                caption={margin < 0 ? 'Closed in the red' : 'Closed in the green'}
+                caption={margin < 0 ? 'Closed at a loss' : 'Closed at a profit'}
                 footer={<ProvenanceTag refs={toProvenanceRefs(latest)} />}
               />
               <Stat
@@ -794,8 +801,8 @@ export default function ClosePage() {
                 tone={periodMargin < 0 ? 'negative' : 'positive'}
                 caption={
                   periodMargin < 0
-                    ? `Closed in the red over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
-                    : `Closed in the green over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
+                    ? `Closed at a loss over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
+                    : `Closed at a profit over ${days.length} ${days.length === 1 ? 'day' : 'days'}`
                 }
                 footer={
                   <ProvenanceTag

@@ -52,6 +52,22 @@ describe('ErrorBoundary', () => {
     )
   })
 
+  it('names the outcome on its recovery button rather than a bare "Reset"', () => {
+    function AlwaysThrows(): never {
+      throw new Error('boom')
+    }
+
+    render(
+      <ErrorBoundary component="Test surface">
+        <AlwaysThrows />
+      </ErrorBoundary>,
+    )
+
+    expect(
+      screen.getByRole('button', { name: 'Reset this section' }),
+    ).toBeInTheDocument()
+  })
+
   it('reports the crash to /api/client-errors', () => {
     function AlwaysThrows(): never {
       throw new Error('boom')
@@ -140,5 +156,30 @@ describe('RouteErrorBoundary', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Something broke in App shell.',
     )
+  })
+
+  it('offers the recovery it can actually perform — a trip Home, not resetting a subtree it has none of', async () => {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/',
+          element: <div>should never render</div>,
+          errorElement: <RouteErrorBoundary component="App shell" />,
+          loader: () => {
+            throw new Error('loader exploded')
+          },
+        },
+      ],
+      { initialEntries: ['/'] },
+    )
+
+    render(<RouterProvider router={router} />)
+
+    expect(
+      await screen.findByRole('button', { name: 'Go to Home' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /reset this section/i }),
+    ).not.toBeInTheDocument()
   })
 })

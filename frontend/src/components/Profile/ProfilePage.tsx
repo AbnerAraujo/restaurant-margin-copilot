@@ -311,7 +311,7 @@ export default function ProfilePage() {
                 {photo ? (
                   <Button type="button" variant="ghost" size="sm" onClick={removePhoto}>
                     <Trash2 aria-hidden="true" />
-                    Remove
+                    Remove photo
                   </Button>
                 ) : null}
               </div>

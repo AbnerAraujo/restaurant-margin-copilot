@@ -80,7 +80,7 @@ describe('UploadPage', () => {
     expect(screen.getByText('$100.00')).toBeInTheDocument()
     expect(screen.getByText(/150.25/)).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: /confirm & ingest/i }),
+      screen.getByRole('button', { name: /replace cost sheet/i }),
     ).toBeInTheDocument()
     // Preview alone must never claim anything was saved.
     expect(screen.queryByText(/ingested/i)).not.toBeInTheDocument()
@@ -113,7 +113,7 @@ describe('UploadPage', () => {
       after: { days: 14, margin: '950.00' },
     })
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /confirm & ingest/i }))
+    await user.click(screen.getByRole('button', { name: /replace cost sheet/i }))
 
     expect(await screen.findByText(/cost sheet ingested/i)).toBeInTheDocument()
     expect(screen.getByText(/\$1,000\.00 across 14 days/)).toBeInTheDocument()
@@ -147,7 +147,7 @@ describe('UploadPage', () => {
       after: { days: 14, margin: '950.00' },
     })
     const user = userEvent.setup()
-    await user.click(screen.getByRole('button', { name: /confirm & ingest/i }))
+    await user.click(screen.getByRole('button', { name: /replace cost sheet/i }))
 
     expect(await screen.findByText(/cost sheet ingested/i)).toBeInTheDocument()
     expect(screen.getByText(/no prior data/i)).toBeInTheDocument()
@@ -158,9 +158,9 @@ describe('UploadPage', () => {
   // refuses a 0-data-row upload outright (ingest.ParseCostSheet's "no data
   // rows found" check), so this response shape shouldn't occur in practice
   // — but this page must never let it look like an ordinary preview with
-  // Confirm & Ingest quietly enabled underneath it, in case some future
+  // the commit button quietly enabled underneath it, in case some future
   // parser path ever produces row_count: 0 without erroring.
-  it('disables Confirm & Ingest and warns when a preview somehow carries zero rows', async () => {
+  it('disables the commit button and warns when a preview somehow carries zero rows', async () => {
     stubFetchOnce(true, {
       row_count: 0,
       total_amount: '0.00',
@@ -172,7 +172,7 @@ describe('UploadPage', () => {
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/no data rows/i)
-    expect(screen.getByRole('button', { name: /confirm & ingest/i })).toBeDisabled()
+    expect(screen.getByRole('button', { name: /replace cost sheet/i })).toBeDisabled()
     // Never the ordinary "nothing has been saved yet, N rows parsed" copy.
     expect(screen.queryByText(/rows? parsed/i)).not.toBeInTheDocument()
   })

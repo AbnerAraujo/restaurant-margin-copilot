@@ -58,14 +58,34 @@ function reportClientError(component: string, error: Error, componentStack?: str
 interface FallbackProps {
   component: string
   onReset: () => void
+  /**
+   * What clicking the recovery button actually does. The two boundaries below
+   * recover differently — the in-tree one re-renders this section, the router
+   * one navigates back to Home — and the shared copy used to describe only
+   * the first, while the button said a bare "Reset" that named no outcome at
+   * all (ux-writing: frontload the verb, name the outcome).
+   */
+  recovery: 'section' | 'home'
 }
+
+const RECOVERY_COPY = {
+  section: {
+    explanation: 'Nothing else on the page is affected — resetting this section starts it fresh.',
+    button: 'Reset this section',
+  },
+  home: {
+    explanation: 'The rest of the app is unaffected — going back to Home loads it fresh.',
+    button: 'Go to Home',
+  },
+} as const
 
 /**
  * The crash screen itself, shared by both the in-tree `ErrorBoundary` and
  * `RouteErrorBoundary` below, so a crash reads identically to the owner no
  * matter which of the two actually caught it.
  */
-function ErrorFallback({ component, onReset }: FallbackProps) {
+function ErrorFallback({ component, onReset, recovery }: FallbackProps) {
+  const copy = RECOVERY_COPY[recovery]
   return (
     <div
       role="alert"
@@ -79,8 +99,7 @@ function ErrorFallback({ component, onReset }: FallbackProps) {
         Something broke in {component}.
       </p>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        This has been logged. Nothing else on the page is affected —
-        resetting this section starts it fresh.
+        This has been logged. {copy.explanation}
       </p>
       <button
         type="button"
@@ -88,7 +107,7 @@ function ErrorFallback({ component, onReset }: FallbackProps) {
         className="mt-1 inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
         <RotateCcw className="size-3.5" aria-hidden="true" />
-        Reset
+        {copy.button}
       </button>
     </div>
   )
@@ -112,7 +131,13 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.error) return this.props.children
-    return <ErrorFallback component={this.props.component} onReset={this.reset} />
+    return (
+      <ErrorFallback
+        component={this.props.component}
+        onReset={this.reset}
+        recovery="section"
+      />
+    )
   }
 }
 
@@ -122,9 +147,12 @@ export default class ErrorBoundary extends Component<Props, State> {
  * component subtree exists for a class `ErrorBoundary` to wrap — so this is
  * a separate function component, reading the error via `useRouteError`
  * instead of `componentDidCatch`. Same visual fallback and same
- * `/api/client-errors` report as the in-tree boundary; "Reset" does a full
- * navigation back to `/` rather than clearing local component state, since
- * a router-level failure has no children subtree here to re-render.
+ * `/api/client-errors` report as the in-tree boundary; recovery here is a
+ * full navigation back to `/` rather than clearing local component state,
+ * since a router-level failure has no children subtree here to re-render.
+ * That difference is why the fallback takes a `recovery` prop: this boundary
+ * offers "Go to Home", the in-tree one "Reset this section", and neither
+ * button promises something the other one's handler would do.
  */
 export function RouteErrorBoundary({ component }: { component: string }) {
   const error = useRouteError()
@@ -134,6 +162,10 @@ export function RouteErrorBoundary({ component }: { component: string }) {
   }, [component, error])
 
   return (
-    <ErrorFallback component={component} onReset={() => window.location.assign('/')} />
+    <ErrorFallback
+      component={component}
+      onReset={() => window.location.assign('/')}
+      recovery="home"
+    />
   )
 }
