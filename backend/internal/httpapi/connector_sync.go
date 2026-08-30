@@ -68,7 +68,13 @@ func ownerFacing(err error) string {
 // because the UI is not the only consumer: a curl, a screenshot of a JSON
 // body, a future integration reading this API. Disclosure that lives only
 // in the presentation layer is disclosure that can be cropped out.
-const syncSimulationNotice = "Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration."
+const syncSimulationNotice = SimulationNotice
+
+// SimulationNotice is that sentence, exported so internal/bff's
+// GET /api/sources states emulation in the identical words rather than in a
+// near-copy. Two wordings of one disclosure is how a disclosure quietly
+// weakens: the one nobody is looking at drifts.
+const SimulationNotice = "Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration."
 
 // ConnectorPlatformView is one connector, as GET
 // /api/connectors/platforms renders it.

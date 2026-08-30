@@ -106,6 +106,15 @@ tags:
       a client that ignores the UI still cannot render these numbers undisclosed. No
       model in any request path — the matcher is integer comparison, not a similarity
       score.
+  - name: Sources
+    description: >-
+      Every source of data this product ingests, in ONE vocabulary — the supplier
+      cost sheet (a file a person uploads) alongside the three simulated connectors
+      (pulled on demand). Bringing new source data into the reconciliation engine is
+      one owner-facing job, but it was exposed as two URL families with two response
+      shapes; specs/013-bff-layer unifies the read side of it. `simulated` and
+      `notice` are carried PER SOURCE, never once on the envelope, so the emulation
+      disclosure survives a client that renders a single entry.
   - name: Ask
     description: The primary model-backed endpoint — natural-language Q&A over the reconciled data, via a pre-processing ambiguity gate and a typed-MCP-tool explanation step.
   - name: Business Insight
@@ -793,6 +802,83 @@ paths:
                 invoice_id,invoice_date,supplier,category,amount,notes
                 INV-TEMPLATE-001,2026-01-15,Example Produce Co.,produce,250.00,Weekly produce delivery
                 INV-TEMPLATE-002,2026-01-16,Example Beverage Distributors,beverage,180.50,"Kegs, soft drinks, mixers"
+        "405":
+          description: Any method other than GET.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  # ------------------------------------------------------------------
+  /api/sources:
+    get:
+      tags: [Sources]
+      summary: Every source this product ingests, in one vocabulary
+      description: |
+        One list covering both ways data reaches the reconciliation engine:
+        an uploaded file (`kind: file_upload`) and a connector pull
+        (`kind: connector`). No database access, no fetch, no side effect,
+        no model — static descriptions plus the connector proxy's own
+        registrations.
+
+        `kind` exists so the list can be uniform **without pretending the
+        difference away**. A file upload waits for a person and a connector
+        pull does not; an endpoint that flattened that would be lying to
+        make a list look tidy.
+
+        **`simulated` and `notice` are per source, never per list.** This
+        product discloses connector emulation in five independent places by
+        design; a single envelope-level flag would quietly become a sixth
+        place it can be cropped from — by a screenshot of one row, or a
+        client rendering one entry. The supplier cost sheet is a real file
+        and is correctly NOT marked simulated: claiming emulation where
+        there is none devalues the claim where there is.
+
+        The three connector entries are derived from the proxy's own
+        `Describe()`, so they cannot drift from what it actually registers.
+      operationId: listSources
+      responses:
+        "200":
+          description: Every ingestion source.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sources]
+                properties:
+                  sources:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, kind, simulated, arrival]
+                      properties:
+                        id: { type: string, example: "ifood" }
+                        name: { type: string, example: "iFood" }
+                        kind:
+                          type: string
+                          enum: [file_upload, connector]
+                        simulated:
+                          type: boolean
+                          description: >-
+                            True for all three connectors, false for the supplier
+                            cost sheet. A property of the SOURCE, not of the kind.
+                        notice:
+                          type: string
+                          description: >-
+                            Present only when `simulated` is true. Absent (omitted)
+                            for the cost sheet.
+                          example: "Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration."
+                        arrival:
+                          type: string
+                          example: "Pulled on demand when you sync a date range. Nothing to export by hand."
+                        wire_format:
+                          type: string
+                          description: Connector sources only; omitted for a file upload.
+                        commission_rate_pct:
+                          type: string
+                          description: Connector sources only; omitted for a file upload.
+                        endpoint:
+                          type: string
+                          description: Connector sources only; carries the `simulated://` scheme.
         "405":
           description: Any method other than GET.
           content:

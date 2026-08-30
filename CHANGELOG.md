@@ -12,6 +12,133 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — A named BFF boundary: the API surface becomes data, and the CORS bug class ends
+
+`specs/013-bff-layer/`. Requested as "unify the main backend with the
+platform-connector proxy behind one coherent API surface". **The first finding
+contradicted the request, and is the most useful thing in this entry: there
+were never two backends.** `backend/internal/platformconnector` is an ordinary
+in-process Go package — same binary, same `http.ServeMux`, same origin, same
+`/api/*` prefix. `frontend/src/lib/api.ts` has had exactly one `API_BASE` since
+spec 001. So no service was introduced, no network hop was added, and no new
+deployable exists. What was added is the boundary discipline that was genuinely
+missing.
+
+**The real defect, with a real prior incident.** Seventeen routes were
+registered by hand in `cmd/server/main.go`, and `withDevCORS` advertised
+`Access-Control-Allow-Methods` as one hand-maintained string literal for the
+whole mux. The two had to stay in sync from memory, and once did not: `PUT
+/api/profile` shipped broken from the browser because the literal read
+`"GET, POST, OPTIONS"`. The failure mode is why it survived — a blocked CORS
+preflight produces no 405 to see in the browser, and `curl -X PUT` against the
+same handler succeeded every time. No test could catch it either: `main` is not
+importable, so nothing could enumerate the surface to compare the two lists.
+The 2026-08-29 fix pinned the literal with a regression test, which was correct
+for the incident and wrong for the defect — it asserted that today's string
+contained today's four methods, so it could not fail for route eighteen.
+
+**What changed.** New `backend/internal/bff` package: the composition root.
+
+- **The route table is data**, keyed by HTTP method (`map[string]http.HandlerFunc`,
+  not a `Methods []string` beside one handler). That shape is load-bearing — the
+  methods a route *advertises* and the methods it can *dispatch* are the same map
+  keys, so they are one fact and cannot drift. Preflight, 405 policy and startup
+  log are all derived from it.
+- **CORS is per route, and strictly tighter.** On `main` every route advertised
+  the union `GET, POST, PUT, OPTIONS`; `GET /api/reconciliation` told the browser
+  it accepted `PUT`. Verified live: `/api/reconciliation` → `GET, OPTIONS`;
+  `/api/usage` → `OPTIONS, POST`; `/api/profile` → `GET, OPTIONS, PUT`.
+- **`methodSplit` deleted.** It routed `POST` to the create handler and *every
+  other verb* to the listing handler, so a `DELETE /api/promotions` was answered
+  by whichever handler happened to be the fallback. Now: `405` with
+  `Allow: GET, OPTIONS, POST` and the standard envelope, from the router, before
+  any handler runs.
+- **Panics become responses.** `net/http` recovers a handler panic per connection
+  so the process survives, but the client got a *closed socket*, not the
+  `{error, detail}` envelope. (`lib/api.ts`'s `toApiError` has been coding that
+  case `unknown_error` all along — the browser was handling a failure the backend
+  never converted.) Now a 500 with a fixed detail string; the panic value is
+  logged, never written to the body.
+- **`main()` contains no `mux.HandleFunc` call.** It parses flags, connects,
+  builds `bff.Deps`, and listens. 120 lines of interleaved wiring and prose moved
+  to a table that a test can read.
+- **`GET /api/sources` (new).** `connector_sync.go`'s own doc comment admits the
+  two ingestion families are "the same job"; they were nonetheless two URL
+  prefixes with two response vocabularies, which is why `UploadPage.tsx` is one
+  page whose two tabs were written against two different API idioms. The two
+  concerns were never "backend" and "connector" — they were *upload* and
+  *connect*. One list now covers all four sources with a `kind` field
+  (`file_upload` | `connector`) that keeps the vocabulary uniform without
+  pretending the arrival difference away.
+
+**One honesty property defended.** A uniform list is exactly the shape that
+tempts hoisting `simulated: true` and the emulation notice onto the envelope,
+where they read more cleanly — which would make the disclosure a *sixth* place
+it can be cropped from (a screenshot of one row; a client rendering one entry).
+Both are per source, pinned by
+`TestEverySimulatedSourceCarriesItsOwnNotice`. Symmetrically, the supplier cost
+sheet is *not* marked simulated — `TestTheCostSheetIsNotMarkedSimulated` —
+because claiming emulation where there is none devalues the claim where there
+is. The notice string itself is now exported from `internal/httpapi`
+(`SimulationNotice`) and consumed by `internal/bff` rather than restated: two
+wordings of one disclosure is how a disclosure quietly weakens.
+
+**Test replaced, not just moved.** `cmd/server/main_test.go` is deleted; its two
+tests are superseded in `internal/bff` by tests that read the *real* route
+table — `TestEveryRouteAdvertisesExactlyWhatItServes` walks all 17 routes and
+fails when any route's declared and advertised methods disagree, including
+routes that do not exist yet. `TestProfileRouteStillAdvertisesPUT` keeps the
+original incident findable by name. `TestSurfaceIsUnchangedFromMain` pins the 16
+pre-existing paths as a snapshot so the refactor cannot silently drop one.
+
+**Deliberately NOT done, each for a stated reason:** no separate deployable (one
+experience, one consumer, one team — Azure's explicit non-fit; the modular shape
+is the documented right answer until independent scaling or cadence is
+exercised); no aggregate page endpoint (worst fan-out in the app is *two*
+localhost calls, and `HomePage` already holds independent per-call error state
+and renders correctly when one fails — composing them server-side would move
+working degradation somewhere it would have to be rebuilt); no retries, circuit
+breakers, bulkheads or hedging (that spine assumes a *network* upstream; this
+one is a function call in the same process, and `docs/architecture.html` already
+rejected it as "fiction stacked on fiction" — that decision stands); no write-path
+renames (the logical end of the argument, and a breaking change to two working
+components days before a deadline — recorded as knowingly unfinished); no MCP
+change at all (`internal/mcptools`: zero-line diff).
+
+**Constitutional collision, recorded.** The BFF pattern's partial-failure ladder
+permits degrading a failed section to a "static or safe default". This
+constitution forbids that rung outright for any numeric section. The pattern was
+adopted with it removed — which is a second, independent reason no aggregation
+endpoint was added, since aggregation is where the temptation to reach for it
+lives.
+
+**Verification** (isolated Postgres on :15433, seeded via `cmd/gendata` +
+`-ingest` + `-ingest-promo`: 759 days reconciled, period total margin
+$1,078,340.64, 29 promotions):
+
+- `go build ./...` clean; `go vet ./...` clean; `go test ./...` — **19 packages
+  green** (18 before, plus the new `internal/bff`; `cmd/server` moves to "no test
+  files" as its coverage relocated to `internal/bff` and grew from 2 test
+  functions to 19, running 40 cases including subtests).
+- Frontend `tsc -b --noEmit` clean; `vitest run` — **50 files / 608 tests
+  passing**, unchanged from the pre-refactor baseline measured on the same
+  worktree. Zero frontend files changed.
+- Live smoke against a real server: `GET /api/reconciliation` → 200, 759 days,
+  `2024-08-01..2026-08-29`; per-route preflights as listed above; `DELETE
+  /api/promotions` → 405 + `Allow`; `Origin: https://evil.example` not reflected;
+  `GET /api/sources` → 4 sources, 3 simulated each with its own notice, cost sheet
+  with neither.
+- Pre-existing `gofmt` findings in 4 unrelated files (`internal/money/money_test.go`
+  and three others) were verified as already unformatted on `main` and left alone;
+  every file this change touches is `gofmt`-clean.
+
+Docs updated: `CLAUDE.md` (Stack section now names the three layers),
+`docs/architecture.html` (dependency table row + a "why it is not a service"
+section), `docs/prd.md` (section 13), `docs/openapi.yaml` (`/api/sources` path +
+`Sources` tag; 17 paths, matching the 17 routes).
+
+---
+
 ## 2026-08-30 — Excel-style per-column header filters, and the search boxes that stopped filtering on every keystroke
 
 Two related, additive changes to how a grid gets narrowed, both explicitly
