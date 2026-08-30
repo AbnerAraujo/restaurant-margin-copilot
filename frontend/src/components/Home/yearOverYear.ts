@@ -12,11 +12,46 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : `${n}`
 }
 
+const MONTH_ABBREVIATIONS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+/**
+ * The day range this tile compares, in the app's own short-date form — the
+ * one `guidedQuestion.formatDisplayDate`, `ProvenanceTag` and the chart axes
+ * already use ("Aug 1–29").
+ *
+ * This label used to be built as `MM/DD`, which read "08/01–08/29" on screen.
+ * Two things were wrong with it. It was the only date on Home not in the
+ * app's format — every other one, including the Recent closes table directly
+ * below this tile, is ISO or a month abbreviation. And numeric month/day with
+ * no year is genuinely ambiguous: "08/01" is 1 August to a US reader and 8
+ * January to most others, on a tile whose entire job is comparing one date
+ * range against the same range a year earlier. Spelling the month removes
+ * both problems, and matches what this file's own doc comment always claimed
+ * the label looked like.
+ *
+ * No year appears here on purpose: the surrounding copy supplies it ("…, this
+ * year" / "…, last year"), so a year in the label would contradict one of the
+ * two stats it sits above.
+ *
+ * Built by hand from the numbers rather than via `Date`/`toLocaleDateString`
+ * for the same reason `formatDisplayDate` is: those parse an ISO date as UTC
+ * midnight and render it in the viewer's local zone, shifting the displayed
+ * day by one for anyone west of UTC.
+ */
+function formatMonthDay(month: number, day: number): string {
+  const abbreviation = MONTH_ABBREVIATIONS[month - 1]
+  if (!abbreviation) return `${pad2(month)}-${pad2(day)}`
+  return `${abbreviation} ${day}`
+}
+
 export interface YearOverYear {
   thisPeriodUsd: number
   priorYearUsd: number
   deltaUsd: number
-  /** The real, identical day range compared in both years — e.g. "Aug 1-14". */
+  /** The real, identical day range compared in both years — e.g. "Aug 1–14". */
   label: string
 }
 
@@ -58,8 +93,8 @@ export function deriveYearOverYear(days: DaySummaryApi[]): YearOverYear | null {
 
   const label =
     thisPeriodDates.length === 1
-      ? `${pad2(latestMonth)}/${pad2(latestDay)}`
-      : `${pad2(latestMonth)}/01–${pad2(latestMonth)}/${pad2(latestDay)}`
+      ? formatMonthDay(latestMonth, latestDay)
+      : `${formatMonthDay(latestMonth, 1)}–${latestDay}`
 
   return { thisPeriodUsd, priorYearUsd, deltaUsd: thisPeriodUsd - priorYearUsd, label }
 }

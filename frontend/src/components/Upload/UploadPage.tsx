@@ -206,8 +206,11 @@ export default function UploadPage() {
           }`}
         >
           <UploadCloud className="size-8 text-muted-foreground" aria-hidden="true" />
+          {/* Was "Click to browse": this target is reachable by keyboard
+              (Enter/Space, see onKeyDown above) and by touch, so naming the
+              mouse was both wrong and the only instruction on offer. */}
           <p className="text-sm font-medium text-foreground">
-            Click to browse, or drag a CSV file here
+            Choose a file, or drag a CSV here
           </p>
           {currentFile ? (
             <p className="text-xs text-muted-foreground">Selected: {currentFile.name}</p>

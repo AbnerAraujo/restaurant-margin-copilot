@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownNarrowWide,
@@ -229,6 +229,7 @@ export default function PromotionsPage() {
   // rather than actionable. Same discipline as BadgeDisplay's
   // BadgeSummaryRow collapsing repeated Discrepancy Catcher days.
   const [needsActionExpanded, setNeedsActionExpanded] = useState(false)
+  const roiSortLabelId = useId()
 
   const loadPromotions = useCallback(() => {
     return getJson<PromotionsApiResponse>('/api/promotions')
@@ -454,9 +455,24 @@ export default function PromotionsPage() {
               below render — one ordering, not two. Unattributable/not-yet-
               attributed campaigns stay at the end in EITHER direction; see
               sortPromotionsByRoi's doc comment for why. */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-            <span className="text-xs font-medium text-muted-foreground">
-              Sort by ROI:
+          {/* The visible label names the pair of toggles, and now names them
+              programmatically too: HomePage's status filter already wraps its
+              equivalent chip pair in a labelled `role="group"`, and this one
+              predated that convention — two buttons sitting loose next to a
+              <span> that nothing associated them with. Labelled by the span
+              itself rather than a duplicated `aria-label`, so the two can
+              never drift apart. The trailing colon is gone with it (labels
+              take no terminal punctuation). */}
+          <div
+            role="group"
+            aria-labelledby={roiSortLabelId}
+            className="flex flex-wrap items-center gap-2 border-t border-border pt-4"
+          >
+            <span
+              id={roiSortLabelId}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Sort by ROI
             </span>
             <Button
               type="button"

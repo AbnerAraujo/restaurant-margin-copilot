@@ -105,7 +105,7 @@ function WhatThisDoesPanel() {
         <BenefitItem
           icon={ShieldAlert}
           title="Refuses rather than guesses"
-          description="When a question can't be answered from the data on file, the system says so and explains why, instead of estimating. A confidently wrong margin figure is worse than an honest 'I don't have that.'"
+          description="When a question can't be answered from the data on file, the system says so and explains why, instead of estimating. A confidently wrong margin figure is worse than an honest “I don’t have that.”"
         />
       </ul>
     </Panel>

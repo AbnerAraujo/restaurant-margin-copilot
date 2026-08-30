@@ -603,4 +603,21 @@ describe('PromotionsPage', () => {
     const table = screen.getByRole('table')
     expect(within(table).getByText('IFOOD-CAMP-WEEKEND')).toBeInTheDocument()
   })
+
+  it('groups the two ROI sort toggles under their visible label, the way the Home status filter already does', async () => {
+    // The pair used to sit loose beside a <span> that nothing associated them
+    // with, so "Highest first" reached assistive tech with no hint of what it
+    // sorted. Labelled by that same span rather than a duplicated aria-label,
+    // so the visible and accessible names can never drift apart.
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage()
+
+    const group = await screen.findByRole('group', { name: 'Sort by ROI' })
+    expect(
+      within(group).getByRole('button', { name: /highest first/i }),
+    ).toBeInTheDocument()
+    expect(
+      within(group).getByRole('button', { name: /lowest first/i }),
+    ).toBeInTheDocument()
+  })
 })
