@@ -17,6 +17,7 @@ import type {
 import type { AskPageNavigationState } from '@/components/Charts/chartFollowUpQuestion'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { postJson } from '@/lib/api'
+import { createUniqueId } from '@/lib/id'
 
 // ---------------------------------------------------------------------------
 // Live wiring to POST /api/ask (httpapi.HandleAsk) — the real two-step
@@ -115,10 +116,15 @@ function parseProvenanceRef(ref: string): SourceRowRef {
   }
 }
 
-let messageSequence = 0
+/**
+ * A prefix is kept purely for readability in dev tools (`assistant-…`) — the
+ * uniqueness guarantee comes entirely from `createUniqueId()`. A previous
+ * version of this function used a module-level incrementing counter, which
+ * reset to 0 on every reload and made ids collide across reloads (see
+ * `createUniqueId`'s doc comment for the incident this caused).
+ */
 function nextMessageId(prefix: string): string {
-  messageSequence += 1
-  return `${prefix}-${messageSequence}`
+  return `${prefix}-${createUniqueId()}`
 }
 
 /**

@@ -395,4 +395,62 @@ describe('chatStorage spend ledger', () => {
     clearThreadStorage()
     expect(loadSpendLedger()).toHaveLength(1)
   })
+
+  /**
+   * The regression this guards against, at the layer that actually lost
+   * money: `ChatPanel`/`AskPage` used to mint message ids from a
+   * module-level counter that reset to 0 on every reload, so the first
+   * question asked after a reload got the exact same id
+   * (`assistant-1`) as the first question asked before it. `recordSpend`'s
+   * dedupe-by-id safeguard — a deliberate, documented anti-double-billing
+   * feature — then had no way to tell "a retried commit for the same
+   * answer" from "a genuinely new, separately billed answer that happens
+   * to share an id", and silently dropped the second question's cost.
+   *
+   * This test documents that the dedupe itself is still correct and
+   * intentional (colliding ids ARE treated as one entry) — the fix is that
+   * production code must never hand it a colliding id for two different
+   * questions again. See `createUniqueId` (`lib/id.ts`) and its test for
+   * the other half of the guarantee: real message ids never collide like
+   * this across a reload.
+   */
+  it('would silently drop a second question\'s cost if given the same id twice (documents why ids must never collide)', () => {
+    recordSpend('t1', 'assistant-1', [gate]) // "before the reload"
+    recordSpend('t1', 'assistant-1', [explain]) // "after the reload" — colliding id
+
+    expect(loadSpendLedger()).toHaveLength(1)
+    const total = loadSpendLedger().reduce(
+      (sum, entry) => sum + entry.estimated_cost_usd,
+      0,
+    )
+    // The bug, made concrete: only the gate's cost is on the books. The
+    // explanation call that answered the second, real question was billed
+    // by the backend but never shows up here.
+    expect(total).toBeCloseTo(gate.estimated_cost_usd, 8)
+  })
+
+  /**
+   * The outcome that actually matters to the reader: ask a question,
+   * reload, ask a DIFFERENT question — the second question's spend must
+   * show up too. `createUniqueId()` stands in for the real id each
+   * component now generates via `nextMessageId`; unlike the old counter, it
+   * is guaranteed not to repeat across a reload (see `lib/id.test.ts`), so
+   * this is exercising the real fix end to end at the ledger layer.
+   */
+  it('records the second question\'s spend after a reload, because its id no longer collides with the first', async () => {
+    const { createUniqueId } = await import('./id')
+
+    const beforeReloadId = createUniqueId()
+    recordSpend('t1', beforeReloadId, [gate])
+
+    // Simulates the reload: a fresh id, exactly as `nextMessageId` would
+    // hand a newly-asked question after the page comes back up.
+    const afterReloadId = createUniqueId()
+    recordSpend('t1', afterReloadId, [explain])
+
+    const entries = loadSpendLedger()
+    expect(entries).toHaveLength(2)
+    const total = entries.reduce((sum, entry) => sum + entry.estimated_cost_usd, 0)
+    expect(total).toBeCloseTo(gate.estimated_cost_usd + explain.estimated_cost_usd, 8)
+  })
 })
