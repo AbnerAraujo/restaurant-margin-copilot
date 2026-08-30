@@ -12,6 +12,132 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — QA round 4: error-envelope consistency, a docs-drift repeat, and a genuine memory-hygiene bug
+
+A fourth overnight QA pass, deliberately scoped away from every scenario
+prior rounds already covered (concurrent-request races, chart precision,
+eval-cache grading, badge duplication, fixture elimination, keyboard/
+screen-reader coverage). This one targeted five specific NEW angles: the
+evaluation harness's current numbers, backend error-response information
+leakage, the badge/points economy end to end, long-running-session memory
+hygiene, and documentation-to-code drift beyond what `capabilities.ts`'s own
+drift-alarm test already catches.
+
+- **Blocked, disclosed rather than skipped silently**: re-running
+  `evaluation/promptfoo/{accuracy,consistency,refusal}.yaml` against a fresh
+  ephemeral backend with `-eval-no-answer-cache`, as this round's brief
+  asked, requires a real `ANTHROPIC_API_KEY` — none was available in this
+  environment (checked the shell environment and the worktree's `.env`;
+  no key present, and reading the shared `:8080` supervisor's own
+  environment or scanning shell profiles for one was correctly refused by
+  the permission system as out of scope for this task). The
+  README.md/docs/prd.md numbers dated 2026-08-30 were left as-is rather
+  than being overwritten with fabricated figures — a report of "still
+  holds" or "drifted" would have been invented either way. Flagging this
+  explicitly for whoever has real API credentials to re-run.
+- **Fixed** `POST /api/ask`'s three request-validation branches (wrong
+  method, unparseable JSON body, blank question) writing a bare
+  `text/plain` body via `http.Error` instead of the `{error, detail}` JSON
+  envelope every other handler in `internal/httpapi` uses. `lib/api.ts`'s
+  `toApiError` tries to JSON-parse every non-2xx body; a plain-text body
+  silently downgrades to `ApiError{code: "unknown_error"}`, which
+  `lib/requestFailure.ts`'s blocklist then replaces with a generic "server
+  ran into a problem" message — discarding a perfectly safe, specific,
+  actionable string ("question is required") behind a useless one on the
+  single most-used endpoint in the app. Now routed through `writeJSONError`
+  with the same codes (`method_not_allowed`, `invalid_body`,
+  `invalid_input`) every sibling handler already uses for the identical
+  situations. New test:
+  `TestHandleAsk_RequestValidationFailuresUseTheJSONErrorEnvelope`.
+- **Fixed** two frontend call sites that rendered `caught.message` straight
+  from a thrown `ApiError`, bypassing `lib/requestFailure.ts`'s
+  `INTERNAL_ONLY_CODES` blocklist entirely: `Promotions/LogReplacementForm.tsx`
+  (a *live*, rendered leak — a `query_failed` from `POST /api/promotions`
+  would have put a raw pgx/SQLSTATE error string directly in the promotion
+  form's alert) and `Profile/useProfile.ts` (currently dormant — its `error`
+  field isn't rendered by its one consumer, `Shell/Sidebar.tsx`, today, but
+  the hook's own doc comment says it mirrors `Points/usePoints.ts`, which
+  already did this correctly, so the gap was a real miss, not a design
+  choice). Both now call `explainRequestFailure`, matching every other
+  surface in the app. New tests: a case in `LogReplacementForm.test.tsx`
+  and a new `useProfile.test.ts`.
+- **Fixed** unbounded per-thread growth in `lib/chatStorage.ts`.
+  `MAX_THREADS` caps how many threads survive and `MAX_SPEND_ENTRIES` caps
+  the spend ledger, but nothing capped how long any ONE thread's own
+  `messages` array could grow — an owner who never starts a new chat (a
+  realistic pattern for a tool used the same way every day) would
+  accumulate every question and full `AnswerChatMessage` (provenance, raw
+  tool-call JSON, visualization spec, follow-ups) into one thread forever.
+  Once that one localStorage entry alone pushed the origin over quota,
+  `writeJSON`'s wrapped try/catch would make every subsequent write for
+  *any* key silently stop persisting, app-wide, with no visible error. Added
+  `MAX_MESSAGES_PER_THREAD = 200` and a `capMessages` helper, applied
+  everywhere a thread's messages are written or merged
+  (`commitThreadMessages`, `mergeThreadStores`), oldest dropped first. New
+  test: `chatStorage.test.ts`'s "caps a single thread's own message
+  history...".
+- **Fixed** a float-multiplication off-by-one in the points-payment
+  preview (`Promotions/LogReplacementForm.tsx`):
+  `Math.ceil((spendNumberPreview * 100) / CENTS_PER_POINT)` used plain JS
+  float math, which lands e.g. `1.10 * 100` at `110.00000000000001`, not
+  `110` — the ceiling division then overstates the points-needed preview by
+  one whole point for a large, common class of dollar amounts, which could
+  wrongly disable submission for an owner who actually has exactly enough
+  points. The backend's own `PointsNeededForSpend`
+  (`backend/internal/badges/badges.go`) never has this problem because it
+  operates on already-integer cents. Fixed with `Math.round` before the
+  ceiling division. New test: "never overstates the points-needed preview
+  due to float multiplication drift".
+- **Fixed** `GET /api/badges?start&end` being able to report a negative
+  `points.available`, contradicting the `Points` struct's own "Never
+  negative" doc comment and `docs/openapi.yaml`'s schema description. The
+  optional period query intentionally scopes Reconciliation-category badges
+  only (by design, per `RegisterBadgeHandler`'s own comment — Growth/
+  Engagement/Campaign-Creation badges are always all-time), but
+  `spent` (`storage.SumPointsSpentOnPromotions`) has no period argument at
+  all and is always all-time — so a narrow enough period could make
+  `total < spent` and drive `available` negative. Not reachable through the
+  shipped frontend (`usePoints.ts` never passes these params, and
+  `POST /api/promotions`'s own balance check independently recomputes the
+  true all-time figure rather than trusting this endpoint), but a real
+  defect for the documented, publicly-usable API contract
+  (`docs/api.html`'s live Swagger UI). Extracted the `Spent`/`Available`
+  arithmetic into a new `applySpent` helper that clamps `Available` at
+  zero, and corrected `docs/openapi.yaml`'s `total`/`spent`/`available`
+  descriptions to state the real, period-query-aware behavior instead of an
+  unconditional "never decreases"/"never negative" claim that was only true
+  in the no-period case. New tests:
+  `TestApplySpent_NeverReportsNegativeAvailable`,
+  `TestApplySpent_OrdinaryCaseIsPlainSubtraction`.
+- **Found and fixed, while updating the above**: `docs/api.html`'s embedded
+  copy of the OpenAPI spec had a pre-existing, unrelated corruption in this
+  exact schema — the `Points.spent` field's description had been split at
+  an internal comma during whatever process embedded it, producing two
+  garbage extra properties (`"payment_method:points)":null` and
+  `"all-time.":null`) instead of one description string. Fixed alongside
+  the `total`/`spent`/`available` wording update; verified the corrected
+  blob still parses as valid JSON and re-scanned the rest of the embedded
+  `components.schemas` section for the same failure shape (comma inside a
+  description value) — found no other instance.
+- **Fixed a docs-drift repeat of a bug this project has now shipped three
+  times**: `capabilities.test.ts`'s own doc comment names two prior
+  instances of a stale, hand-maintained tool-count list ("seven tools")
+  drifting from the real, now-eight-tool registry — the Help page and
+  `exampleQuestions.ts`. This round found a third instance, in prose docs
+  that test never covered: README.md's tool table and section header still
+  said "7"/"seven" and omitted `get_expense_pattern_by_day_of_month`
+  entirely, and `docs/mcp-and-skills.md`'s "The exact 7 typed tools"
+  section (registrar count, `AddTool` count, the typed-handler count, and
+  its own tool table) was stale the same way — even though
+  `docs/architecture.html` and `docs/presentation.html` had both already
+  been corrected to "8" earlier. Fixed both docs' prose and tables, and
+  extended `capabilities.test.ts` itself with two new assertions
+  (`readmeToolTableNames`, `mcpAndSkillsToolTableNames`) that parse both
+  files' tool tables and fail loudly the next time this drifts — closing
+  the same gap for docs that the existing test already closed for code.
+
+---
+
 ## 2026-08-30 — A fresh QA pass moved from single-request bugs to concurrent-request bugs
 
 Every prior pass this build tested one request at a time. This one asked what

@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input, Select } from '@/components/ui/input'
 import { Panel, PanelHeader } from '@/components/ui/page'
-import { ApiError, postJson } from '@/lib/api'
+import { postJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { usePoints } from '@/components/Points/usePoints'
 import { CENTS_PER_POINT } from '@/components/Points/pointValues'
 import { KNOWN_PLATFORMS } from '@/components/Chat/guidedQuestion'
@@ -89,9 +90,18 @@ export default function LogReplacementForm({
   const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesGuard(hasUnsavedChanges)
 
   const spendNumberPreview = Number(spend)
+  // Found in QA round 4: `spendNumberPreview * 100` is plain float
+  // multiplication, which lands fractionally ABOVE the true integer-cents
+  // value for a large, common class of dollar amounts (e.g. 1.1 * 100 ===
+  // 110.00000000000001 in JS). Math.ceil on that inflated value can round
+  // the points-needed preview UP by a whole point versus the backend's own
+  // PointsNeededForSpend (backend/internal/badges/badges.go), which always
+  // operates on already-integer cents — enough to wrongly flag a payment as
+  // short on points the owner actually has enough of. Math.round first
+  // snaps back to the true integer cents before the ceiling division.
   const pointsNeededPreview =
     Number.isFinite(spendNumberPreview) && spendNumberPreview > 0
-      ? Math.ceil((spendNumberPreview * 100) / CENTS_PER_POINT)
+      ? Math.ceil(Math.round(spendNumberPreview * 100) / CENTS_PER_POINT)
       : 0
   const insufficientPointsPreview =
     paymentMethod === 'points' && pointsNeededPreview > availablePoints
@@ -138,13 +148,7 @@ export default function LogReplacementForm({
       resetFields()
       onCreated()
     } catch (caught) {
-      setError(
-        caught instanceof ApiError
-          ? caught.message
-          : caught instanceof Error
-            ? caught.message
-            : String(caught),
-      )
+      setError(explainRequestFailure(caught))
     } finally {
       setSubmitting(false)
     }

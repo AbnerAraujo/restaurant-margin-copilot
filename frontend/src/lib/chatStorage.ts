@@ -86,6 +86,23 @@ export const MAX_SAVED_PROMPTS = 12
  * the ledger deliberately outlives the threads it describes.
  */
 export const MAX_SPEND_ENTRIES = 500
+/**
+ * How many messages a single thread keeps, oldest dropped first. Found in QA
+ * round 4: MAX_THREADS caps how many THREADS survive, but nothing capped how
+ * long any one of them could grow — an owner who never starts a new chat
+ * (a realistic pattern for a daily-close tool used the same way every day)
+ * would accumulate every question and every full AnswerChatMessage (its
+ * provenance, raw tool-call JSON, visualization spec, and follow-ups —
+ * not a trivial string) into one thread's localStorage entry forever. Once
+ * that entry alone pushed the origin over its storage quota, `writeJSON`'s
+ * wrapped try/catch (see its own doc comment) would make every subsequent
+ * write for ANY key — a new answer, a new thread, even a spend-ledger
+ * update — silently stop persisting, with no visible error. Trimming a
+ * thread's own messages never drops spend from the running total: the
+ * spend ledger above is a separate, independently-capped record for
+ * exactly that reason.
+ */
+export const MAX_MESSAGES_PER_THREAD = 200
 
 export interface StoredThread {
   id: string
@@ -514,6 +531,18 @@ function capThreads(threads: StoredThread[], activeId: string): StoredThread[] {
 }
 
 /**
+ * Enforces MAX_MESSAGES_PER_THREAD, oldest first — mirrors capThreads'
+ * "trim, don't discard the thing being written to" shape, just applied
+ * within one thread instead of across the store. Dropping from the front
+ * keeps the messages an ongoing conversation actually needs (the most
+ * recent exchanges) rather than the ones least likely to still matter.
+ */
+function capMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= MAX_MESSAGES_PER_THREAD) return messages
+  return messages.slice(messages.length - MAX_MESSAGES_PER_THREAD)
+}
+
+/**
  * Reconciles two thread stores without either one destroying the other.
  *
  * `primary` wins ties; `secondary`'s threads and messages are folded in
@@ -531,7 +560,7 @@ export function mergeThreadStores(
   const merged: StoredThread[] = primary.threads.map((thread) => {
     const other = secondaryById.get(thread.id)
     if (!other) return thread
-    const messages = mergeMessages(thread.messages, other.messages)
+    const messages = capMessages(mergeMessages(thread.messages, other.messages))
     return {
       id: thread.id,
       title: deriveThreadTitle(messages),
@@ -544,7 +573,9 @@ export function mergeThreadStores(
   })
   const primaryIds = new Set(primary.threads.map((thread) => thread.id))
   for (const thread of secondary.threads) {
-    if (!primaryIds.has(thread.id)) merged.push(thread)
+    if (!primaryIds.has(thread.id)) {
+      merged.push({ ...thread, messages: capMessages(thread.messages) })
+    }
   }
 
   const candidates = [preferredActiveId, primary.activeId, secondary.activeId]
@@ -620,7 +651,7 @@ export function commitThreadMessages(
       threads: capThreads(
         threads.map((thread) => {
           if (thread.id !== threadId) return thread
-          const messages = mutate(thread.messages)
+          const messages = capMessages(mutate(thread.messages))
           return {
             ...thread,
             title: deriveThreadTitle(messages),

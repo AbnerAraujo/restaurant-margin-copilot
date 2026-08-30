@@ -7,9 +7,12 @@ This is the grep-able, in-editor companion to `docs/architecture.html`'s
 existing MCP coverage — the ask-pipeline diagram's "MCP tool layer" node, the
 "boundary enforced by the import graph" table (`internal/mcptools` row: "no
 import path to a model, read-only Postgres"), and the "Hard limits" card's
-"Six defined, typed MCP tools, and nothing else" line — that card is now
-stale (a seventh tool, `get_period_totals`, shipped after it was last
-edited; see Section 1 below for the disclosed inconsistency). That HTML is
+"Eight defined, typed MCP tools, and nothing else" line — that card has
+already been corrected twice as the tool count grew (it briefly read "Six",
+then "Seven" after `get_period_totals` shipped, before
+`get_expense_pattern_by_day_of_month` became the eighth; see Section 1
+below for the disclosed inconsistency this doc itself carried the same
+way). That HTML is
 the diagram; this document is for someone with the code open, the same relationship
 `docs/frontend.md` has to `docs/architecture.html`'s design-system tab. Where
 the two overlap, this doc cross-references the HTML section by name rather
@@ -62,15 +65,17 @@ Anthropic tool definitions (`anthropicTools(listed.Tools)`) — so the tool
 schemas the model actually sees are generated from the live MCP server's own
 registrations, not a hand-maintained second copy.
 
-### The exact 7 typed tools
+### The exact 8 typed tools
 
-`server.go`'s `RegisterMCPServer` calls exactly four registrars —
+`server.go`'s `RegisterMCPServer` calls exactly five registrars —
 `registerReconciliationTools`, `registerPromoTools`,
-`registerPlatformComparisonTool`, `registerPeriodTools` — which together
-call `s.AddTool` seven times. Confirmed by reading each `register*`
+`registerPlatformComparisonTool`, `registerPeriodTools`,
+`registerDayOfMonthPatternTools` — which together
+call `s.AddTool` eight times. Confirmed by reading each `register*`
 function directly. `docs/architecture.html` has since been corrected to
-match (it briefly read "Six defined, typed MCP tools" before
-`get_period_totals` was reflected there too):
+match (it read "Six defined, typed MCP tools", then "Seven" after
+`get_period_totals` shipped, before `get_expense_pattern_by_day_of_month`
+became the eighth):
 
 | # | Tool | File | Purpose | Refuses to do |
 |---|---|---|---|---|
@@ -81,14 +86,16 @@ match (it briefly read "Six defined, typed MCP tools" before
 | 5 | `list_negative_roi_promotions` | `promo_tools.go` | Every campaign with negative ROI in a period. | A promotion with unattributable ROI is never included — "not known to be negative" is a different fact from "negative," and the tool doesn't conflate them. |
 | 6 | `compare_platform_economics` | `platform_comparison_tools.go` | iFood vs. Just Eat Takeaway side by side for one period: gross sales, commission paid, effective rate, promo spend, combined cost/rate. The one tool a comparison question must resolve to — its own description tells the model never to reconstruct a comparison from two single-platform calls. | `effective_rate`/`combined_effective_rate` are `null`, never a fabricated `"0.00%"`, when `gross_sales` is zero (divide-by-zero guarded in `effectiveRatePercent`). `insufficient_data` if any calendar day in the period has no persisted reconciliation. |
 | 7 | `get_period_totals` | `period_tools.go` | Sums and ranks an ENTIRE period's `DailyReconciliation` rows in one call: per-source gross sales, `total_delivery_gross_sales`, commissions, refunds (with a new `refunds_by_source` per-platform breakdown), input costs, margin total, `avg_daily_margin` (via `money.DivRoundHalfUp`), and which single day was `best_day`/`worst_day` by margin — all carrying one combined `source_row_refs` list. Its own file doc comment names the real gap it closes: a failing period-total eval question, and an observed case where "which day had the most profit and why" burned through the per-interaction tool-call budget calling `get_daily_summary` once per day, since `get_margin_delta` only sums margin as one side of a two-period delta — no per-source breakdown, no best/worst-day ranking. | `{"error":"insufficient_data","missing":[...dates...]}` and totals nothing if any calendar day in `[start,end]` has no persisted reconciliation — the same policy `periodMargin` already enforces for `get_margin_delta`. On an exact best/worst-day margin tie, the chronologically earliest date wins both slots — this tool's own documented tie-break, since `contracts/mcp-tools.md` doesn't prescribe one. |
+| 8 | `get_expense_pattern_by_day_of_month` | `day_of_month_pattern_tools.go` | Groups every reconciled day in a period by its DAY-OF-MONTH (1st–31st) and averages total expense (commissions + refunds + input costs) for each day-of-month across however many months in the period contain it, ranking which position in the month runs highest/lowest on average — a RECURRING-position grouping `get_period_totals` cannot produce, since that tool ranks by one specific calendar date within a single period. Added after a real live question ("is the 15th typically my worst day?") that no existing tool could answer without reconstructing the grouping client-side. | Returns `{"error":"insufficient_data"}` — never a pattern computed against partial coverage — if any calendar day in the period has no persisted reconciliation. |
 
 Every result struct renders money as a `FormatCents`-style decimal string
 (`"-12.34"`), the same convention `internal/storage`'s JSON surfaces
 already use — the model receives numbers pre-formatted the way a human
 reads them, never a raw integer-cents value it might misread as dollars.
 
-Four of the seven (`get_promotion_roi`, `list_negative_roi_promotions`,
-`compare_platform_economics`, `get_period_totals`) use
+Five of the eight (`get_promotion_roi`, `list_negative_roi_promotions`,
+`compare_platform_economics`, `get_period_totals`,
+`get_expense_pattern_by_day_of_month`) use
 `mcp.NewTypedToolHandler` / `mcp.NewToolResultStructuredOnly`, a newer,
 typed adapter pattern than the first three's hand-written
 `req.BindArguments` + `jsonResult`/`errorResult` helpers
@@ -109,7 +116,7 @@ package."
 
 - `DefaultToolTimeout = 5 * time.Second` — bounds every tool call.
   `contracts/mcp-tools.md` states 5s explicitly for `get_daily_summary`
-  only; this package applies the same bound to all seven uniformly, per the
+  only; this package applies the same bound to all eight uniformly, per the
   constant's own comment, "since none of them do anything `get_daily_summary`
   doesn't already do (a handful of indexed Postgres reads)."
 - `DefaultMaxToolCallsPerInteraction = 8` — the hard per-interaction
@@ -175,8 +182,9 @@ reconciliation_tools_test.go:50:  _, err := conn.Exec(context.Background(), "DEL
 
 One hit, in `reconciliation_tools_test.go` — a `DATABASE_URL`-gated
 integration test's own cleanup step (deleting a sentinel row it wrote),
-not the tool logic itself. Zero raw SQL anywhere in the seven tools, their
-handlers, `campaign_match.go`, or `limits.go` — `period_tools.go` included,
+not the tool logic itself. Zero raw SQL anywhere in the eight tools, their
+handlers, `campaign_match.go`, or `limits.go` — `period_tools.go` and
+`day_of_month_pattern_tools.go` included,
 confirmed by the same grep (it reaches Postgres only through
 `storage.LoadDailyReconciliationsInPeriod`, the same adapter
 `get_margin_delta` already uses).
@@ -247,8 +255,14 @@ scaffolding generated by a plugin. The seventh, `get_period_totals`
 appears in its commit message — but its own file doc comment still opens
 by naming itself "`contracts/mcp-tools.md`'s seventh entry," so the
 contract-first discipline continued even without a numbered SDD task behind
-it. Reported honestly either way: no evidence `mcp-server-dev` was used for
-any of the seven.
+it. The eighth, `get_expense_pattern_by_day_of_month`, shipped in a single
+commit (`aadbb5d`, "add get_expense_pattern_by_day_of_month, the 8th
+tool") that added both the Go tool and its `contracts/mcp-tools.md` entry
+together — unlike the seventh's staggered history, so no ordering claim is
+made either way for this one. Its own file doc comment does still open by
+naming itself "`contracts/mcp-tools.md`'s eighth entry," consistent with
+every other tool in this package. Reported honestly either way: no evidence
+`mcp-server-dev` was used for any of the eight.
 
 ## 2. Claude Code skills actually used to build this
 
