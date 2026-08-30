@@ -8,11 +8,12 @@ import MarginTrendChart, {
   type DailyMarginDatum,
 } from './MarginTrendChart'
 
-/** A synthetic 2-year-scale period (744 days), the same order of magnitude
- *  as the real `daily_reconciliation` table this chart now has to survive. */
+/** A synthetic multi-year period (759 days matches the real dataset's own
+ *  scale), the same order of magnitude as the real `daily_reconciliation`
+ *  table this chart has to survive. */
 function buildLongPeriod(days: number): DailyMarginDatum[] {
   return Array.from({ length: days }, (_, i) => {
-    const date = new Date(Date.UTC(2026, 7, 15))
+    const date = new Date(Date.UTC(2024, 7, 15))
     date.setUTCDate(date.getUTCDate() + i)
     return { date: date.toISOString().slice(0, 10), margin: 100 + i }
   })
@@ -27,23 +28,44 @@ describe('MarginTrendChart', () => {
   })
 
   it('fills a profit day with the success token and a loss day with the destructive token', () => {
-    render(<MarginTrendChart />)
+    // Explicit data: the default sample (the dataset's own opening window)
+    // has no loss day, so the destructive-token path needs its own datum.
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-01', margin: 500 },
+          { date: '2024-08-02', margin: -250 },
+        ]}
+      />,
+    )
 
-    const profitBar = screen.getByRole('button', { name: /Aug 1:.*\+\$43\.26/ })
+    const profitBar = screen.getByRole('button', { name: /Aug 1:.*\+\$500\.00/ })
     expect(profitBar.querySelector('path')).toHaveAttribute(
       'fill',
       'var(--success)',
     )
 
-    const lossBar = screen.getByRole('button', { name: /Aug 2:.*−\$227\.09/ })
+    const lossBar = screen.getByRole('button', { name: /Aug 2:.*−\$250\.00/ })
     expect(lossBar.querySelector('path')).toHaveAttribute(
       'fill',
       'var(--destructive)',
     )
   })
 
-  it('renders 2026-08-08 as an explicit missing-data placeholder, never a zero-value bar', () => {
-    render(<MarginTrendChart />)
+  it('renders a day with no reconciliation row as an explicit missing-data placeholder, never a zero-value bar', () => {
+    // Explicit data: every calendar day of the real dataset has a
+    // reconciliation row, so the no-row case is constructed here (it still
+    // happens live for a gap inside a requested period, e.g. after a
+    // partial upload).
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-07', margin: 659 },
+          { date: '2024-08-08', margin: null },
+          { date: '2024-08-09', margin: 831.65 },
+        ]}
+      />,
+    )
 
     const missingBar = screen.getByRole('button', { name: /Aug 8: no data/i })
     expect(missingBar.querySelector(':scope > path')).not.toBeInTheDocument()
@@ -56,10 +78,10 @@ describe('MarginTrendChart', () => {
   it('direct-labels only the two extreme days, with an explicit sign', () => {
     render(<MarginTrendChart />)
 
-    expect(screen.getByText('+$375.82')).toBeInTheDocument()
-    expect(screen.getByText('−$227.09')).toBeInTheDocument()
+    expect(screen.getByText('+$1,019.45')).toBeInTheDocument()
+    expect(screen.getByText('+$331.52')).toBeInTheDocument()
     // A mid-range day's exact value is not printed directly on the chart.
-    expect(screen.queryByText('+$43.26')).not.toBeInTheDocument()
+    expect(screen.queryByText('+$701.90')).not.toBeInTheDocument()
   })
 
   it('shows a tooltip with date, exact margin, and a provenance hint on hover', () => {
@@ -70,7 +92,7 @@ describe('MarginTrendChart', () => {
 
     const tooltip = screen.getByRole('status')
     expect(tooltip).toHaveTextContent('Aug 7')
-    expect(tooltip).toHaveTextContent('+$375.82')
+    expect(tooltip).toHaveTextContent('+$659.00')
     expect(tooltip).toHaveTextContent('daily_reconciliation.csv')
 
     fireEvent.mouseLeave(profitBar)
@@ -78,7 +100,14 @@ describe('MarginTrendChart', () => {
   })
 
   it('shows the same tooltip detail on keyboard focus as on hover', () => {
-    render(<MarginTrendChart />)
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-07', margin: 659 },
+          { date: '2024-08-08', margin: null },
+        ]}
+      />,
+    )
 
     const missingBar = screen.getByRole('button', { name: /Aug 8: no data/i })
     fireEvent.focus(missingBar)
@@ -91,7 +120,16 @@ describe('MarginTrendChart', () => {
   })
 
   it('carries a text-labeled legend, not color-only swatches', () => {
-    render(<MarginTrendChart />)
+    // Explicit data with a missing day so the conditional "No data" legend
+    // entry renders too (the default sample has no missing day).
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-07', margin: 659 },
+          { date: '2024-08-08', margin: null },
+        ]}
+      />,
+    )
 
     const legend = screen.getByRole('list', { name: /chart legend/i })
     expect(within(legend).getByText('Profit day')).toBeInTheDocument()
@@ -107,30 +145,30 @@ describe('MarginTrendChart', () => {
     ).toBeInTheDocument()
   })
 
-  it('buckets a 744-day period into readable groups instead of plotting 744 overlapping bars', () => {
-    const longPeriod = buildLongPeriod(744)
+  it('buckets a 759-day period into readable groups instead of plotting 759 overlapping bars', () => {
+    const longPeriod = buildLongPeriod(759)
     const { container } = render(<MarginTrendChart data={longPeriod} />)
 
     // Never one bar per day at this scale — that was the live "the chart
-    // doesn't make sense" bug: 744 bars at a fixed 24px width overlap into
+    // doesn't make sense" bug: 759 bars at a fixed 24px width overlap into
     // one unreadable block.
     const bars = screen.getAllByRole('button', { name: /: [+−]\$/ })
-    expect(bars.length).toBeLessThan(744)
+    expect(bars.length).toBeLessThan(759)
     expect(bars.length).toBeGreaterThan(1)
 
     // The canvas grows to give each remaining bar real room rather than
-    // squeezing all 744 into the original 700px design width.
+    // squeezing all 759 into the original 700px design width.
     const svg = container.querySelector('svg')
     const viewBoxWidth = Number(svg?.getAttribute('viewBox')?.split(' ')[2])
     expect(viewBoxWidth).toBeGreaterThan(700)
 
-    // The heading still honestly reports the full 744-day span plotted.
-    expect(screen.getByText('744-Day Margin Trend')).toBeInTheDocument()
+    // The heading still honestly reports the full 759-day span plotted.
+    expect(screen.getByText('759-Day Margin Trend')).toBeInTheDocument()
     // ...and the table underneath still has one real row per day, so no
     // day's detail is lost to the aggregation.
     fireEvent.click(screen.getByRole('button', { name: /view as table/i }))
     const table = screen.getByRole('table')
-    expect(within(table).getAllByRole('row')).toHaveLength(745)
+    expect(within(table).getAllByRole('row')).toHaveLength(760)
   })
 
   // Reported live: the month/year label above the plot used to show only
@@ -139,7 +177,7 @@ describe('MarginTrendChart', () => {
   // month, since the per-tick day-of-month labels carry no month of their
   // own to disambiguate at this scale.
   it('shows an honest month/year range above the plot when the period spans more than one month, not just the last date\'s month', () => {
-    const longPeriod = buildLongPeriod(744) // 2026-08-15 -> spans ~2 years
+    const longPeriod = buildLongPeriod(759) // 2024-08-15 -> spans ~2 years
     const { container } = render(<MarginTrendChart data={longPeriod} />)
 
     const monthLabel = [...container.querySelectorAll('text')].find((el) =>
@@ -148,18 +186,18 @@ describe('MarginTrendChart', () => {
     expect(monthLabel).toBeDefined()
     // A real range, not a single trailing month — proves the fix reports
     // the full span rather than just where the data happens to end.
-    expect(monthLabel?.textContent).toContain('Aug 2026')
+    expect(monthLabel?.textContent).toContain('Aug 2024')
     expect(monthLabel?.textContent).toMatch(/–/)
-    expect(monthLabel?.textContent).not.toBe('Aug 2026')
+    expect(monthLabel?.textContent).not.toBe('Aug 2024')
   })
 
   it('collapses the month/year label to a single month when the period genuinely stays within one (unchanged from before)', () => {
-    const { container } = render(<MarginTrendChart />) // DEFAULT_DAILY_MARGIN: a 14-day August fixture
+    const { container } = render(<MarginTrendChart />) // DEFAULT_DAILY_MARGIN: a single-month 14-day sample
 
     const monthLabel = [...container.querySelectorAll('text')].find((el) =>
       /^[A-Z][a-z]{2} \d{4}$/.test(el.textContent ?? ''),
     )
-    expect(monthLabel?.textContent).toBe('Aug 2026')
+    expect(monthLabel?.textContent).toBe('Aug 2024')
   })
 
   it('renders exactly as before for a period under the bucketing threshold (no behavior change at normal scale)', () => {
@@ -171,7 +209,7 @@ describe('MarginTrendChart', () => {
     expect(bars).toHaveLength(30)
   })
 
-  it('exposes a table view with every day, including the missing-data reason', async () => {
+  it('exposes a table view with every day of the default sample', async () => {
     const user = userEvent.setup()
     render(<MarginTrendChart />)
 
@@ -183,9 +221,23 @@ describe('MarginTrendChart', () => {
     const rows = within(table).getAllByRole('row')
     // header + 14 days
     expect(rows).toHaveLength(DEFAULT_DAILY_MARGIN.length + 1)
-    expect(table).toHaveTextContent(MISSING_MARGIN_REASON)
-    expect(table).toHaveTextContent('+$375.82')
-    expect(table).toHaveTextContent('−$227.09')
+    expect(table).toHaveTextContent('+$1,019.45')
+    expect(table).toHaveTextContent('+$331.52')
+  })
+
+  it('prints the missing-data reason in the table for a day with no reconciliation row', async () => {
+    const user = userEvent.setup()
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-07', margin: 659 },
+          { date: '2024-08-08', margin: null },
+        ]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    expect(screen.getByRole('table')).toHaveTextContent(MISSING_MARGIN_REASON)
   })
 
   // Spec 008 FR-001 — chart click-to-ask.
@@ -195,12 +247,12 @@ describe('MarginTrendChart', () => {
     const onDataPointClick = vi.fn()
     render(<MarginTrendChart onDataPointClick={onDataPointClick} />)
 
-    await user.click(screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ }))
+    await user.click(screen.getByRole('button', { name: /Aug 7:.*\+\$659\.00/ }))
 
     expect(onDataPointClick).toHaveBeenCalledTimes(1)
     expect(onDataPointClick).toHaveBeenCalledWith({
-      date: '2026-08-07',
-      rangeEndDate: '2026-08-07',
+      date: '2024-08-07',
+      rangeEndDate: '2024-08-07',
     })
   })
 
@@ -209,7 +261,7 @@ describe('MarginTrendChart', () => {
     const onDataPointClick = vi.fn()
     render(
       <MarginTrendChart
-        data={buildLongPeriod(744)}
+        data={buildLongPeriod(759)}
         onDataPointClick={onDataPointClick}
       />,
     )
@@ -227,7 +279,7 @@ describe('MarginTrendChart', () => {
     const onDataPointClick = vi.fn()
     render(<MarginTrendChart onDataPointClick={onDataPointClick} />)
 
-    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ })
+    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$659\.00/ })
     bar.focus()
     await user.keyboard('{Enter}')
 
@@ -237,86 +289,8 @@ describe('MarginTrendChart', () => {
   it('renders no click affordance in the accessible name when onDataPointClick is not provided', () => {
     render(<MarginTrendChart />)
 
-    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$375\.82/ })
+    const bar = screen.getByRole('button', { name: /Aug 7:.*\+\$659\.00/ })
     expect(bar).not.toHaveAccessibleName(/ask about this/i)
-  })
-
-  // Reported live: any window wide enough to include days from BOTH the
-  // 730-day synthetic live dataset (thousand-dollar days) and the 14-day
-  // hand-authored fixture (ten/hundred-dollar days) renders a real, jarring
-  // magnitude cliff exactly at the boundary — the fixture's own bars flatten
-  // to a near-invisible sliver beside towering live bars, right at the
-  // "today" edge of the chart a reader looks at first. A dashed boundary +
-  // labels make that cliff read as "two honest datasets," not "broken data."
-  describe('dataset boundary (live-scale history vs. the eval fixture)', () => {
-    /** 10 live-scale days (2026-07-20..29, thousand-dollar margins) followed
-     *  by the real fixture's own first 8 days (2026-08-01..08) — a period
-     *  that genuinely crosses FIXTURE_WINDOW_START. */
-    function buildCrossingPeriod(): DailyMarginDatum[] {
-      const liveScaleDays: DailyMarginDatum[] = Array.from(
-        { length: 10 },
-        (_, i) => {
-          const date = new Date(Date.UTC(2026, 6, 20))
-          date.setUTCDate(date.getUTCDate() + i)
-          return { date: date.toISOString().slice(0, 10), margin: 2000 + i * 10 }
-        },
-      )
-      return [...liveScaleDays, ...DEFAULT_DAILY_MARGIN.slice(0, 8)]
-    }
-
-    it('draws a dashed boundary line and labels both sides when the period crosses from live-scale history into the fixture', () => {
-      const { container } = render(
-        <MarginTrendChart data={buildCrossingPeriod()} />,
-      )
-
-      const dashedLines = [...container.querySelectorAll('line')].filter(
-        (line) => line.getAttribute('stroke-dasharray') === '4 3',
-      )
-      expect(dashedLines).toHaveLength(1)
-      expect(screen.getByText(/2-yr synthetic history/i)).toBeInTheDocument()
-      expect(screen.getByText(/eval fixture window/i)).toBeInTheDocument()
-    })
-
-    it('names the crossing in the chart\'s own aria-label, not just visually', () => {
-      render(<MarginTrendChart data={buildCrossingPeriod()} />)
-
-      const chartGroup = screen.getByRole('group', {
-        name: /bar chart of daily reconciled margin/i,
-      })
-      expect(chartGroup.getAttribute('aria-label')).toMatch(
-        /eval fixture window/i,
-      )
-    })
-
-    it('draws no boundary when the whole period is on one side of it (the default 14-day fixture)', () => {
-      render(<MarginTrendChart />)
-
-      expect(
-        screen.queryByText(/2-yr synthetic history/i),
-      ).not.toBeInTheDocument()
-      expect(
-        screen.queryByText(/eval fixture window/i),
-      ).not.toBeInTheDocument()
-    })
-
-    it('draws no boundary for a period entirely inside the live-scale history (nothing to cross)', () => {
-      const allLiveScale: DailyMarginDatum[] = Array.from(
-        { length: 10 },
-        (_, i) => {
-          const date = new Date(Date.UTC(2026, 6, 1))
-          date.setUTCDate(date.getUTCDate() + i)
-          return { date: date.toISOString().slice(0, 10), margin: 2000 + i }
-        },
-      )
-      render(<MarginTrendChart data={allLiveScale} />)
-
-      expect(
-        screen.queryByText(/2-yr synthetic history/i),
-      ).not.toBeInTheDocument()
-      expect(
-        screen.queryByText(/eval fixture window/i),
-      ).not.toBeInTheDocument()
-    })
   })
 
   // Reported live: the chart's overflow-x-auto wrapper defaulted to showing
@@ -330,7 +304,7 @@ describe('MarginTrendChart', () => {
         .mockReturnValue(2000)
 
       const { container } = render(
-        <MarginTrendChart data={buildLongPeriod(744)} />,
+        <MarginTrendChart data={buildLongPeriod(759)} />,
       )
 
       const scrollContainer = container.querySelector(
@@ -346,7 +320,7 @@ describe('MarginTrendChart', () => {
         .spyOn(HTMLElement.prototype, 'scrollWidth', 'get')
         .mockReturnValue(2000)
 
-      const period = buildLongPeriod(744)
+      const period = buildLongPeriod(759)
       const { container, rerender } = render(<MarginTrendChart data={period} />)
       const scrollContainer = container.querySelector(
         '.overflow-x-auto',
@@ -371,7 +345,7 @@ describe('MarginTrendChart', () => {
         .mockReturnValue(2000)
 
       const { container, rerender } = render(
-        <MarginTrendChart data={buildLongPeriod(744)} />,
+        <MarginTrendChart data={buildLongPeriod(759)} />,
       )
       const scrollContainer = container.querySelector(
         '.overflow-x-auto',

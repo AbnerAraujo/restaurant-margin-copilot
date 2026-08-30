@@ -252,7 +252,7 @@ export default function AskPage() {
       resolveBusinessInsight={resolveBusinessInsight}
       // Deliberately empty rather than ChatPanel's demo seed. That seed is a
       // fabricated thread with invented figures ("$612.40", an Uber Eats
-      // campaign that isn't in the fixtures); rendering it on the LIVE surface
+      // campaign that isn't in the dataset); rendering it on the LIVE surface
       // put unsourced numbers in front of the owner styled exactly like real,
       // provenance-backed answers. Same class of defect as this page calling a
       // mock instead of /api/ask, and ruled out by the same principle.

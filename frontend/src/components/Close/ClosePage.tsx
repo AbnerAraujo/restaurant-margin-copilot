@@ -28,7 +28,7 @@ import { humanizeSource } from '@/lib/sourceDisplayName'
 // Live wiring to GET /api/reconciliation (backend internal/httpapi/data.go).
 //
 // Everything on this page previously came from a hardcoded literal — a
-// $612.40 margin for a date that isn't in the fixtures, and a 14-point chart
+// $612.40 margin for a date that isn't in the dataset, and a 14-point chart
 // whose 2026-08-08 value said "no data" while Postgres actually holds a
 // computed margin of $152.50 for that day. Both were plausible and both were
 // wrong, which is exactly the failure mode this product exists to prevent.

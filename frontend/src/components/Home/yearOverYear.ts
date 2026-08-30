@@ -26,7 +26,7 @@ export interface YearOverYear {
  * every one of those exact calendar dates is present for BOTH years
  * (spec.md's acceptance scenario: "a full prior-year period of EQUAL
  * LENGTH", FR-013's degrade-to-omission discipline). A real gap in the
- * data (this project's fixture has one on purpose) simply shrinks the
+ * data (this project's dataset has one on purpose) simply shrinks the
  * month-to-date window being compared rather than being padded over.
  */
 export function deriveYearOverYear(days: DaySummaryApi[]): YearOverYear | null {

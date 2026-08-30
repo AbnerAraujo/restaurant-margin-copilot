@@ -236,7 +236,7 @@ describe('PromoRoiChart', () => {
     expect(screen.queryByText('CAMP-3')).not.toBeInTheDocument()
 
     // The SVG's own design width grows with campaign count rather than
-    // staying pinned to the 4-campaign fixture's 560px, which is what left
+    // staying pinned to the 4-campaign sample's 560px, which is what left
     // a fixed-width chart flush against the left edge with dead space
     // beside it once there was real data to fill that space with.
     const svg = container.querySelector('svg')
@@ -314,7 +314,7 @@ describe('PromoRoiChart', () => {
 
   it('grows to fill the real container width when the data needs less room than is available, instead of leaving dead space', () => {
     // Reported live: with few enough campaigns that the data-driven width
-    // (well under CHART_WIDTH for the 4-campaign fixture) stayed under the
+    // (well under CHART_WIDTH for the 4-campaign sample) stayed under the
     // panel's real available width, the chart rendered at its minimum
     // computed size and left visible dead space to the right of it.
     const { container } = render(<PromoRoiChart />)

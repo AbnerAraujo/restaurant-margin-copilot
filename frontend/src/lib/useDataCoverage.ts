@@ -4,7 +4,7 @@ import { getJson } from '@/lib/api'
 
 // The real, current answerable date range — fetched live rather than
 // hardcoded, since it changes whenever the ingested dataset changes (it
-// used to be the 14-day fixture alone; it is now that fixture plus a
+// used to be a single 14-day window; it is now one continuous
 // multi-year synthetic history, and will change again the next time data is
 // regenerated). A hardcoded string here is exactly the kind of stale claim
 // this product's own discipline argues against: the chat's empty state and

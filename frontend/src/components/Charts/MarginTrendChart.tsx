@@ -7,12 +7,13 @@ import ProvenanceTag, {
 } from '@/components/Provenance/ProvenanceTag'
 
 // ---------------------------------------------------------------------------
-// Data — the exact 2026-08-01..14 `daily_reconciliation.csv` fixture values
-// (see backend/fixtures/README.md). 2026-08-08 is `margin: null`, never a
-// fabricated zero: the delivery-platform source has zero rows that day
-// (irregularity #3), so the reconciliation engine cannot compute a figure
-// and the chart must say so rather than draw a bar at $0, which would read
-// as "broke even" instead of "unknown."
+// Data — the exact reconciled margins of the dataset's hand-authored opening
+// window, 2024-08-01..14 (see backend/cmd/gendata/opening/README.md), used
+// only when no `data` prop is passed; the live app always feeds this chart
+// real `/api/reconciliation` rows. A calendar day with no reconciliation row
+// at all renders as `margin: null` — an explicit "No data" placeholder,
+// never a fabricated zero, which would read as "broke even" instead of
+// "unknown" (see the missing-day rendering below).
 // ---------------------------------------------------------------------------
 
 export interface DailyMarginDatum {
@@ -26,25 +27,25 @@ export const MISSING_MARGIN_REASON =
   'No delivery-platform export on file for this date'
 
 export const DEFAULT_DAILY_MARGIN: DailyMarginDatum[] = [
-  { date: '2026-08-01', margin: 43.26 },
-  { date: '2026-08-02', margin: -227.09 },
-  { date: '2026-08-03', margin: -120.26 },
-  { date: '2026-08-04', margin: 34.27 },
-  { date: '2026-08-05', margin: 182.91 },
-  { date: '2026-08-06', margin: -183.9 },
-  { date: '2026-08-07', margin: 375.82 },
-  { date: '2026-08-08', margin: null },
-  { date: '2026-08-09', margin: -70.58 },
-  { date: '2026-08-10', margin: 328.82 },
-  { date: '2026-08-11', margin: 25.77 },
-  { date: '2026-08-12', margin: -214.55 },
-  { date: '2026-08-13', margin: 184.94 },
-  { date: '2026-08-14', margin: -29.86 },
+  { date: '2024-08-01', margin: 701.9 },
+  { date: '2024-08-02', margin: 491.6 },
+  { date: '2024-08-03', margin: 936.33 },
+  { date: '2024-08-04', margin: 747.09 },
+  { date: '2024-08-05', margin: 680.89 },
+  { date: '2024-08-06', margin: 331.52 },
+  { date: '2024-08-07', margin: 659.0 },
+  { date: '2024-08-08', margin: 1019.45 },
+  { date: '2024-08-09', margin: 831.65 },
+  { date: '2024-08-10', margin: 868.5 },
+  { date: '2024-08-11', margin: 466.86 },
+  { date: '2024-08-12', margin: 683.06 },
+  { date: '2024-08-13', margin: 596.16 },
+  { date: '2024-08-14', margin: 493.58 },
 ]
 
 /**
  * Default provenance: `DailyReconciliation` rows 1–14 of
- * `daily_reconciliation.csv` cover the full 2026-08-01..14 period this chart
+ * `daily_reconciliation.csv` cover the full 2024-08-01..14 period this chart
  * plots (see specs/001-margin-reconciliation-qa/data-model.md).
  */
 const DEFAULT_SOURCE_REFS: SourceRowRef[] = [
@@ -52,8 +53,8 @@ const DEFAULT_SOURCE_REFS: SourceRowRef[] = [
     source_file: 'daily_reconciliation.csv',
     row_start: 1,
     row_end: 14,
-    period_start: '2026-08-01',
-    period_end: '2026-08-14',
+    period_start: '2024-08-01',
+    period_end: '2024-08-14',
   },
 ]
 
@@ -88,21 +89,21 @@ const BAR_RADIUS = 4
 const MISSING_CAPSULE_HEIGHT = 28
 
 // ---------------------------------------------------------------------------
-// Scale — the live 2-year dataset (744 days) exposed a real bug the 14-day
-// fixture never could: `PLOT_WIDTH / data.length` with a FIXED 24px
+// Scale — the full multi-year dataset (hundreds of days) exposed a real bug
+// a 14-day window never could: `PLOT_WIDTH / data.length` with a FIXED 24px
 // `BAR_WIDTH` means bars start overlapping the moment a period holds more
-// than ~27 days, and by 744 days every bar overlaps every neighbor into one
+// than ~27 days, and at multi-year scale every bar overlaps every neighbor into one
 // solid, unreadable block — a diverging bar chart simply is not the right
 // mark past a few dozen categories (dataviz skill: bars <= 24px thick and
 // unclamped is a per-bar promise this chart cannot keep at unbounded N).
 //
 // Two changes, both scoped to fire only once a period is actually too wide
-// to read, so the default 14-day fixture and any period under
+// to read, so the default 14-day sample and any period under
 // MAX_DISPLAY_BARS renders pixel-identical to before:
 //
 //  1. `aggregateForDisplay` buckets consecutive days once there would be more
 //     than MAX_DISPLAY_BARS of them, so the chart is never asked to plot more
-//     bars than it can given a real BAR_WIDTH. A 744-day period buckets into
+//     bars than it can given a real BAR_WIDTH. A multi-year period buckets into
 //     7-day (weekly) totals; a 90-day period stays daily. Buckets are dated
 //     to their FIRST day and sum the days actually present — a bucket with no
 //     reconciled day at all is `margin: null` (still an explicit gap, never a
@@ -117,26 +118,6 @@ const MISSING_CAPSULE_HEIGHT = 28
 
 const MAX_DISPLAY_BARS = 120
 const MIN_SLOT_WIDTH = 28 // BAR_WIDTH + a visible gutter between neighbors
-
-// ---------------------------------------------------------------------------
-// Dataset boundary — the two datasets this chart may be asked to plot span
-// very different dollar magnitudes. backend/fixtures/ (see its README) is a
-// hand-authored, deliberately small-dollar 14-day period, 2026-08-01..14,
-// NEVER modified — and it is chronologically the MOST RECENT slice of the
-// whole timeline the backend serves. Everything before it is a 730-day
-// synthetic dataset (backend/cmd/gendata) generated at realistic restaurant
-// scale, averaging roughly $40,000/month net margin with individual days
-// often in the $1,000-4,000+ range.
-//
-// Reported live: any chart window wide enough to include days on both sides
-// of this boundary renders a real, jarring cliff right where they meet — the
-// fixture's own $10s-$100s bars flatten to a near-invisible line beside
-// towering four-figure live bars, exactly at the "today" edge of the chart a
-// reader looks at first. That is two honestly different datasets sharing one
-// timeline, not broken data, but nothing on the chart said so. This constant
-// lets the chart detect the crossing and label it (see showFixtureBoundary
-// below) rather than let the reader guess "why did the bars disappear".
-const FIXTURE_WINDOW_START = '2026-08-01'
 
 interface DisplayDatum {
   /** ISO date of the bucket's first day (single day when unbucketed). */
@@ -194,7 +175,7 @@ function aggregateForDisplay(data: DailyMarginDatum[]): {
 
 /**
  * Y scale derived from the data rather than hard-coded. The previous fixed
- * [-250, 400] domain was tuned to one specific fixture; against the real
+ * [-250, 400] domain was tuned to one specific 14-day sample; against the real
  * `/api/reconciliation` rows a day outside that window would be silently
  * CLAMPED to the axis edge — a bar drawn shorter than the loss it represents,
  * which is the one failure mode a margin chart must not have.
@@ -265,7 +246,7 @@ function formatMonthYear(iso: string): string {
  * The month/year context shown above the plot, honest about however many
  * months the chart actually spans — this used to always show just the LAST
  * date's month ("Aug 2026"), which was correct for the original single-month
- * fixture but became a real, reported bug once this same label kept
+ * single-month window but became a real, reported bug once this same label kept
  * appearing on a chart spanning a full year or more: a lone "Aug 2026" above
  * a chart running from 2024 to 2026 reads as if the whole chart were August
  * 2026, when the per-tick day-of-month labels (bucketDays === 1) carry no
@@ -384,7 +365,7 @@ function MarginTrendChart({
     MARGIN.left + MARGIN.right + display.length * MIN_SLOT_WIDTH,
   )
   const plotWidth = chartWidth - MARGIN.left - MARGIN.right
-  // Never label every bar past ~14 of them — the fixture's 14-day chart
+  // Never label every bar past ~14 of them — a 14-day chart
   // keeps its exact previous look (one tick per day), while a bucketed
   // multi-year chart shows at most ~14 evenly-spaced ticks instead of an
   // illegible smear of overlapping text.
@@ -402,21 +383,6 @@ function MarginTrendChart({
   const minIndex = display.findIndex((d) => d.margin === minValue)
 
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
-
-  // The dataset boundary (see FIXTURE_WINDOW_START) only needs marking when
-  // the plotted window actually straddles it — a window entirely inside the
-  // fixture (fixtureBoundaryIndex === 0, e.g. the default 14-day fixture) or
-  // entirely inside the live history (findIndex returns -1) crosses nothing,
-  // so `> 0` is deliberately the whole condition rather than `!== -1`.
-  const fixtureBoundaryIndex = display.findIndex(
-    (datum) => datum.date >= FIXTURE_WINDOW_START,
-  )
-  const showFixtureBoundary = fixtureBoundaryIndex > 0
-  const fixtureBoundaryX =
-    MARGIN.left + (plotWidth / display.length) * fixtureBoundaryIndex
-  const datasetBoundarySummary = showFixtureBoundary
-    ? `, crossing from the multi-year synthetic history into the small-dollar eval fixture window at ${formatMonthDay(FIXTURE_WINDOW_START)}`
-    : ''
 
   // Mount (and every genuinely new period load) scrolled to the RIGHT edge —
   // today / the most recent data — rather than the oldest history a plain
@@ -464,7 +430,7 @@ function MarginTrendChart({
             bucketDays > 1
               ? `, grouped into ${display.length} ${bucketDays}-day totals`
               : ''
-          }${missingDatesSummary}${datasetBoundarySummary}`}
+          }${missingDatesSummary}`}
           // Capped at its own design width (`w-full` alone let the viewBox
           // scale up inside the widened 1200px content column, which
           // enlarges the SVG's text with it — axis ticks rendered at roughly
@@ -699,49 +665,6 @@ function MarginTrendChart({
             {formatChartMonthContext(firstDate, lastDate)}
           </text>
 
-          {/* Dataset boundary — see FIXTURE_WINDOW_START's doc comment. Drawn
-              LAST (on top of the bars) so the dashed rule and its labels stay
-              legible even where a tall live-scale bar sits right beside the
-              crossing. Labels are only rendered when there is genuinely room
-              for them (a real gap on that side of the line) — this project's
-              own dashed-boundary-plus-label visual language for "two honest
-              things sharing one view" (see the architecture diagrams in
-              docs/presentation.html), translated to a vertical rule since
-              this is a timeline, not a stacked layout. */}
-          {showFixtureBoundary ? (
-            <g aria-hidden="true">
-              <line
-                x1={fixtureBoundaryX}
-                x2={fixtureBoundaryX}
-                y1={MARGIN.top}
-                y2={CHART_HEIGHT - MARGIN.bottom}
-                stroke="var(--muted-foreground)"
-                strokeWidth={1}
-                strokeDasharray="4 3"
-                opacity={0.6}
-              />
-              {fixtureBoundaryX - MARGIN.left > 70 ? (
-                <text
-                  x={fixtureBoundaryX - 6}
-                  y={MARGIN.top - 2}
-                  textAnchor="end"
-                  className="fill-muted-foreground text-[9px] uppercase tracking-wide"
-                >
-                  2-yr synthetic history
-                </text>
-              ) : null}
-              {chartWidth - MARGIN.right - fixtureBoundaryX > 60 ? (
-                <text
-                  x={fixtureBoundaryX + 6}
-                  y={MARGIN.top - 2}
-                  textAnchor="start"
-                  className="fill-muted-foreground text-[9px] uppercase tracking-wide"
-                >
-                  eval fixture window
-                </text>
-              ) : null}
-            </g>
-          ) : null}
         </svg>
 
         {hovered ? (

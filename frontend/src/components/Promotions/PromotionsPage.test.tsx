@@ -28,8 +28,8 @@ const PROMOTIONS_RESPONSE = {
       roi: '34.00',
       flagged_negative: false,
       source_row_refs: [
-        { file: 'fixtures/promotion_ad_spend_export.csv', row: 2 },
-        { file: 'fixtures/delivery_platform_export.csv', row: 6 },
+        { file: 'data/live/promotion_ad_spend_export.csv', row: 2 },
+        { file: 'data/live/delivery_platform_export.csv', row: 6 },
       ],
     },
     {
@@ -43,7 +43,7 @@ const PROMOTIONS_RESPONSE = {
       reason: 'attribution_unavailable',
       flagged_negative: false,
       source_row_refs: [
-        { file: 'fixtures/promotion_ad_spend_export.csv', row: 4 },
+        { file: 'data/live/promotion_ad_spend_export.csv', row: 4 },
       ],
     },
   ],
@@ -130,7 +130,7 @@ describe('PromotionsPage', () => {
           flagged_negative: false,
           origin: 'owner_created',
           source_row_refs: [
-            { file: 'fixtures/promotion_ad_spend_export.csv', row: 9 },
+            { file: 'data/live/promotion_ad_spend_export.csv', row: 9 },
           ],
         },
       ],
@@ -203,7 +203,7 @@ describe('PromotionsPage', () => {
           roi: '-80.00',
           flagged_negative: true,
           source_row_refs: [
-            { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+            { file: 'data/live/promotion_ad_spend_export.csv', row: 7 },
           ],
         },
       ],
@@ -229,7 +229,7 @@ describe('PromotionsPage', () => {
       roi: '-80.00',
       flagged_negative: true,
       source_row_refs: [
-        { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+        { file: 'data/live/promotion_ad_spend_export.csv', row: 7 },
       ],
     }))
     stubFetch({
@@ -275,7 +275,7 @@ describe('PromotionsPage', () => {
           attributed_incremental_revenue: '150.00',
           roi: '50.00',
           flagged_negative: false,
-          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 10 }],
+          source_row_refs: [{ file: 'data/live/promotion_ad_spend_export.csv', row: 10 }],
         },
         {
           platform: 'Just Eat Takeaway',
@@ -286,7 +286,7 @@ describe('PromotionsPage', () => {
           attributed_incremental_revenue: '20.00',
           roi: '-80.00',
           flagged_negative: true,
-          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 11 }],
+          source_row_refs: [{ file: 'data/live/promotion_ad_spend_export.csv', row: 11 }],
         },
       ],
     })
@@ -321,7 +321,7 @@ describe('PromotionsPage', () => {
           attributed_incremental_revenue: '20.00',
           roi: '-80.00',
           flagged_negative: true,
-          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 12 }],
+          source_row_refs: [{ file: 'data/live/promotion_ad_spend_export.csv', row: 12 }],
         },
       ],
     })
@@ -417,7 +417,7 @@ describe('PromotionsPage', () => {
           roi: '-80.00',
           flagged_negative: true,
           source_row_refs: [
-            { file: 'fixtures/promotion_ad_spend_export.csv', row: 7 },
+            { file: 'data/live/promotion_ad_spend_export.csv', row: 7 },
           ],
         },
         {
@@ -433,7 +433,7 @@ describe('PromotionsPage', () => {
           origin: 'owner_created',
           replaces_campaign_id: 'JET-CAMP-LOSER',
           source_row_refs: [
-            { file: 'fixtures/promotion_ad_spend_export.csv', row: 8 },
+            { file: 'data/live/promotion_ad_spend_export.csv', row: 8 },
           ],
         },
       ],
@@ -482,7 +482,7 @@ describe('PromotionsPage', () => {
           attributed_incremental_revenue: '150.00',
           roi: '50.00',
           flagged_negative: false,
-          source_row_refs: [{ file: 'fixtures/promotion_ad_spend_export.csv', row: 10 }],
+          source_row_refs: [{ file: 'data/live/promotion_ad_spend_export.csv', row: 10 }],
         },
       ],
     })

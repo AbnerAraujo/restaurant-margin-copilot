@@ -303,7 +303,7 @@ export interface ChatPanelProps {
 }
 
 // ---------------------------------------------------------------------------
-// Mocked conversation + resolver — realistic fixture-shaped data standing in
+// Mocked conversation + resolver — realistic dataset-shaped data standing in
 // for the backend per this task's brief; no live API exists yet.
 // ---------------------------------------------------------------------------
 

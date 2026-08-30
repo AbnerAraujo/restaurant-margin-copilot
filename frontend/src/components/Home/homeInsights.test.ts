@@ -50,7 +50,8 @@ describe('deriveMarginTrend', () => {
   })
 
   it('compares against the immediately preceding reconciled day, not a fixed calendar offset, across a real gap', () => {
-    // 2026-08-08 is missing (this project's own known fixture gap) — the
+    // 2026-08-08 is missing (a constructed gap, mirroring the dataset's own
+    // known missing-delivery day) — the
     // comparison point must still be the previous REAL entry (08-07), not
     // silently produce no result because "yesterday" (08-09) has no data.
     const trend = deriveMarginTrend([

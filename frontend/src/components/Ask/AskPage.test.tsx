@@ -125,7 +125,7 @@ describe('AskPage', () => {
     mockAskResponse({
       status: 'answered',
       answer_text: 'Margin for that period was $1,842.60.',
-      provenance_refs: ['fixtures/daily_reconciliation.csv:18'],
+      provenance_refs: ['data/live/daily_reconciliation.csv:18'],
       interactions: [
         { model_used: 'claude-haiku-4-5', input_tokens: 420, output_tokens: 18, estimated_cost_usd: HAIKU_GATE_USD, latency_ms: 310 },
         { model_used: 'claude-sonnet-5', input_tokens: 1180, output_tokens: 240, estimated_cost_usd: SONNET_EXPLAIN_USD, latency_ms: 1420 },
