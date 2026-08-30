@@ -252,6 +252,22 @@ func servedBound(requested time.Time, days []reconcile.DailyReconciliation, isSt
 }
 
 func writeJSONError(w http.ResponseWriter, status int, code, detail string) {
+	WriteError(w, status, code, detail)
+}
+
+// WriteError is writeJSONError, exported for internal/bff.
+//
+// The BFF layer (specs/013-bff-layer) refuses two things before a handler
+// ever runs — a method the route does not serve, and a panic — and both
+// refusals have to arrive in the SAME {error, detail} envelope every
+// handler in this package already produces, because the frontend's
+// lib/api.ts parses exactly one shape for every verb (its ApiError).
+//
+// Exported rather than duplicated in internal/bff on purpose: two
+// definitions of one wire envelope is the drift this whole spec exists to
+// remove, and reintroducing it one package over to avoid an exported
+// identifier would be a poor trade. One implementation, two callers.
+func WriteError(w http.ResponseWriter, status int, code, detail string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "detail": detail})

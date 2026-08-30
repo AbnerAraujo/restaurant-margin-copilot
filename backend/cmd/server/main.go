@@ -11,6 +11,14 @@
 // internal/ packages, not here, specifically so the evaluation harness can
 // import and call them directly — a package named main cannot be imported
 // elsewhere.
+//
+// As of specs/013-bff-layer, the API SURFACE lives in internal/bff too, for
+// exactly that last reason. This file used to register seventeen routes by
+// hand and hand-maintain the CORS allow-methods header beside them; because
+// main is not importable, nothing could enumerate the surface to check the
+// two agreed — and they did not, which is how PUT /api/profile shipped
+// broken from the browser. main() now builds dependencies, hands them to
+// internal/bff, and listens. It contains no route registration at all.
 package main
 
 import (
@@ -19,7 +27,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,7 +34,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/advisor"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ambiguity"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
-	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/bff"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/explain"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/httpapi"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/instrumentation"
@@ -119,68 +126,6 @@ func main() {
 	}
 
 	if *serveAddr != "" {
-		mux := http.NewServeMux()
-		mux.HandleFunc("/api/badges", badges.RegisterBadgeHandler(store))
-		// Plain read-only data endpoints backing the Close and Promotions
-		// pages. No model is involved in either request path — they read the
-		// same persisted deterministic output the MCP tools read, through the
-		// same rendering (see internal/httpapi/data.go).
-		mux.HandleFunc("/api/reconciliation", httpapi.HandleReconciliation(store))
-		mux.HandleFunc("/api/promotions", methodSplit(httpapi.HandlePromotions(store), httpapi.HandleCreatePromotion(store)))
-		// GET /api/platforms: specs/003-platform-comparator's dedicated
-		// Platforms page, reading the exact same compare_platform_economics
-		// computation a chat answer about the same period would (see
-		// httpapi.HandlePlatformComparison's doc comment).
-		mux.HandleFunc("/api/platforms", httpapi.HandlePlatformComparison(store))
-		// GET /api/platforms/trend: spec 008 FR-007's effective-rate trend —
-		// the trailing calendar months of the same compare_platform_economics
-		// computation above, computed server-side (see
-		// httpapi.HandlePlatformsTrend's doc comment for why this is a new
-		// small aggregation rather than several sequential frontend calls).
-		mux.HandleFunc("/api/platforms/trend", httpapi.HandlePlatformsTrend(store))
-		// POST /api/usage: the real app-open ping backing Engagement badges
-		// (spec 002-badge-expansion). No model involved, same as every other
-		// endpoint registered directly here rather than through
-		// internal/mcptools.
-		mux.HandleFunc("/api/usage", httpapi.HandleRecordUsage(store))
-		// POST /api/client-errors: the frontend ErrorBoundary's "retro feed"
-		// — a real crash report, logged so the next one leaves a queryable
-		// trace instead of depending on someone noticing and describing it.
-		mux.HandleFunc("/api/client-errors", httpapi.HandleRecordClientError(store))
-		// GET/PUT /api/profile: the restaurant owner's own company
-		// information and photo, shown on and edited from the Profile page
-		// (migration 000011). No model involved, same as every other
-		// plain CRUD endpoint registered directly here.
-		mux.HandleFunc("/api/profile", httpapi.HandleProfile(store))
-		// specs/007-cost-sheet-upload: letting the owner upload/replace the
-		// supplier cost sheet through the web UI instead of requiring a
-		// developer to run -ingest on their behalf. Preview and template need
-		// no dependencies (pure parsing / a static file); commit needs the
-		// concrete *storage.Queries RunIngestionPipeline requires plus the
-		// same answer cache the -ingest flag above invalidates, for the same
-		// reason (new cost data can change any previously-cached answer).
-		mux.HandleFunc("/api/ingest/cost-sheet/preview", httpapi.HandlePreviewCostSheet)
-		mux.HandleFunc("/api/ingest/cost-sheet/commit", httpapi.HandleCommitCostSheet(store, cache))
-		mux.HandleFunc("/api/ingest/cost-sheet/template", httpapi.HandleCostSheetTemplate)
-
-		// specs/010-platform-connector-proxy: delivery-platform revenue
-		// pulled from iFood and Just Eat Takeaway instead of from an
-		// exported CSV. Both upstreams are SIMULATED — this project has no
-		// partner-API credentials for either platform — and every response
-		// on these three routes says so in its own body. The proxy is
-		// constructed once here, like the llmclient below, so all three
-		// handlers share one registration of the two connectors.
-		//
-		// No model anywhere in this path: the fetch is seeded pseudorandom
-		// Go, the normalization is Go, and the sync re-runs the same
-		// internal/pipeline the -ingest flag above runs. It needs the same
-		// concrete *storage.Queries and the same answer cache the
-		// cost-sheet commit does, for the same reasons.
-		connectors := platformconnector.NewSimulatedProxy()
-		mux.HandleFunc("/api/connectors/platforms", httpapi.HandleConnectorPlatforms(connectors))
-		mux.HandleFunc("/api/connectors/sync/preview", httpapi.HandleConnectorSyncPreview(connectors))
-		mux.HandleFunc("/api/connectors/sync", httpapi.HandleConnectorSync(connectors, store, cache))
-
 		// One shared llmclient.Client for every model call this process
 		// makes — the ask pipeline (gate/explain/paraphrase) and the
 		// business-insight advisor alike — so all of them share one
@@ -197,73 +142,26 @@ func main() {
 		if err != nil {
 			log.Fatalf("wiring POST /api/ask: %v", err)
 		}
-		mux.HandleFunc("/api/ask", httpapi.HandleAsk(askDeps))
-		// POST /api/business-insight: specs/009-business-insight-advisor's
-		// on-demand advice call — the one OTHER model-backed endpoint
-		// besides /api/ask, run only when the owner taps a
-		// deterministically-derived teaser, ledgered in its own dedicated
-		// business_insight_interaction table (see migration 000010).
-		mux.HandleFunc("/api/business-insight", httpapi.HandleBusinessInsight(httpapi.BusinessInsightDeps{
-			Adviser: advisor.New(llm),
-			Store:   store,
-		}))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, GET/PUT /api/profile, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, GET /api/connectors/platforms, POST /api/connectors/sync/{preview,}, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
-		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
+		// The three SIMULATED upstreams (specs/010, 012). Constructed once
+		// here, like the llmclient above, so every connector route shares
+		// one registration of the three. No model anywhere in that path:
+		// the fetch is seeded pseudorandom Go, the normalization is Go, the
+		// cross-source matching is integer comparison, and the sync re-runs
+		// the same internal/pipeline the -ingest flag runs.
+		routes := bff.Routes(bff.Deps{
+			Store:      store,
+			Cache:      cache,
+			Connectors: platformconnector.NewSimulatedProxy(),
+			Ask:        askDeps,
+			LLM:        llm,
+		})
+
+		bff.LogSurface(routes, *serveAddr)
+		if err := http.ListenAndServe(*serveAddr, bff.NewServer(routes)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
 	}
-}
-
-// withDevCORS allows the frontend (a different origin/port from this API) to
-// call it directly from the browser. This is a local-prototype convenience,
-// not a production CORS policy — it reflects back any localhost origin
-// rather than "*", but a real deployment would derive this from
-// configuration instead of a hard-coded allowlist rule.
-//
-// A single hard-coded port (originally just the Vite dev server's 5173) is
-// exactly wrong once the frontend can run from more than one: the installed
-// PWA build (`vite preview`, port 4173) failed every fetch with a real CORS
-// error in this browser's console the moment it was installed, because the
-// server only ever answered with the one port baked in. Reflecting any
-// http(s)://localhost:<port> origin fixes that without opening this up to
-// non-local origins the way "*" would.
-func withDevCORS(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if origin := r.Header.Get("Origin"); isLocalhostOrigin(origin) {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Vary", "Origin")
-		}
-		// Every method any route on this mux actually accepts: GET (most
-		// read endpoints), POST (ask, business-insight, usage,
-		// client-errors, cost-sheet preview/commit, promotions create),
-		// PUT (GET/PUT /api/profile — see httpapi.HandleProfile), and
-		// OPTIONS for the preflight itself. No route uses DELETE or PATCH;
-		// when one does, add it here too, since a missing method here
-		// fails silently in the browser (a blocked CORS preflight, not a
-		// visible 405) while a direct curl/Postman request to the same
-		// handler succeeds — that gap is exactly what let PUT
-		// /api/profile ship broken from the real frontend despite the
-		// handler itself working.
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-// isLocalhostOrigin reports whether origin is an http(s) origin on
-// localhost or 127.0.0.1, at any port — deliberately not a bare substring
-// check (which "http://localhost:5173.evil.example" would slip past).
-func isLocalhostOrigin(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
-		return false
-	}
-	return u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
 }
 
 // buildAskDeps wires httpapi.HandleAsk's dependencies: internal/llmclient's
@@ -338,20 +236,3 @@ func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercach
 // dateLayout matches internal/mcptools' own YYYY-MM-DD convention for every
 // date string this product hands to the model layer.
 const dateLayout = "2006-01-02"
-
-// methodSplit lets one route (/api/promotions) dispatch to two different
-// handlers by HTTP method — GET for the existing read-only listing, POST
-// for spec 002's new owner-created-promotion write path — rather than
-// registering a second URL for what is conceptually the same resource.
-// Each handler already refuses its own wrong-method case (405), so an
-// unrecognised method here just falls through to whichever handler was
-// picked and lets its own check report it.
-func methodSplit(get, post http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			post(w, r)
-			return
-		}
-		get(w, r)
-	}
-}
