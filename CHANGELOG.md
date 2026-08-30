@@ -12,6 +12,60 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — One catalog of what this product can do, and advice you can ask for
+
+- **Fixed the class of bug behind two shipped defects**, rather than the
+  defects themselves. Both the Help page's hardcoded "seven tools" (after an
+  eighth shipped) and `Chat/exampleQuestions.ts`'s still-missing eighth entry
+  had one cause: several independent hand-maintained capability lists, none of
+  which anything checked. `frontend/src/capabilities.ts` is now the one
+  catalog — the 8 typed MCP tools and the 5 business-insight kinds — and
+  `capabilities.test.ts` holds it against the real Go code, parsing
+  `internal/mcptools/*.go` for every registered `mcp.NewTool`,
+  `internal/advisor/advisor.go` for every insight `Kind` constant, and
+  `contracts/mcp-tools.md`, asserting agreement in both directions. A shared
+  TypeScript module alone would not have caught either bug — every consumer
+  would have agreed on the same incomplete list. Ship a ninth tool without
+  surfacing it and the frontend suite now goes red naming it. Deliberately a
+  drift alarm, not a codegen pipeline: the plain-language labels are human
+  copy no generator could write.
+- **Changed** `GUIDED_CATEGORIES` from a second hand-maintained list into a
+  derivation of that catalog. The Help page already imported it, so both
+  surfaces now read one list. Public names are unchanged.
+- **Added** a business-advice path to the guided composer. The Business
+  Insight Advisor was previously reachable only by asking an ordinary
+  question and hoping a teaser chip appeared; the composer now offers it
+  deliberately, one topic per insight kind, visually separated from the 8
+  computed categories and wearing `BusinessInsightChip`'s own dashed
+  warning surface, lightbulb, and "AI suggestion" label rather than a
+  second visual language invented for it.
+- **Recorded** the constraint that shaped it, since the obvious design is
+  wrong: advice cannot be requested directly. `HandleBusinessInsight`
+  refuses any request whose posted `tool_calls` don't re-derive to the
+  claimed kind (spec SC-005), and the chip may only fetch on an explicit
+  tap (FR-014). So the composer computes the pattern first — through the
+  same `/api/ask` flow and the same date-bounds gate as the other 8, using
+  literally the same `composeGuidedQuestion` output, so it cannot reach a
+  question the computed path wouldn't have — and leaves the billed call to
+  the owner's tap. Verified live against the real backend and Postgres:
+  the composer's own composed platform-comparison question for August 2024
+  returned iFood at a 22.62% effective rate with a `high_commission`
+  teaser, and the advice call returned real grounded guidance for $0.006568
+  on `claude-sonnet-5` (1,524 in / 352 out, 4.7s), disclaimed and priced on
+  screen. The two refusal paths were confirmed too: an ungrounded request
+  is a 400, and a clean `list_discrepancies` result is a 422 — the composer
+  has no route around grounding.
+- **Added** the honest empty outcome. A clean period produces no teaser,
+  which was previously indistinguishable from an advice request going
+  nowhere. An answer tagged with a requested insight kind but carrying no
+  teaser now says so in the advisory lane's own styling, at no cost.
+- **Known gap, disclosed:** `Chat/exampleQuestions.ts` still has no eighth
+  entry and still keeps its own list. Migrating it to the catalog is a
+  content decision (one example question per capability) deliberately left
+  as follow-up rather than folded into this change.
+
+---
+
 ## 2026-08-29 — Correction: date-range comparison was never the model's job
 
 A review of the model-swap entry below surfaced an architectural problem the
