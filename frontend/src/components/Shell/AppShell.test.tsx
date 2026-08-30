@@ -67,6 +67,87 @@ describe('AppShell scroll-to-top on navigation', () => {
   })
 })
 
+// Reported live: the fix for the test above (always reset scrollTop on
+// pathname change) broke the OPPOSITE case — pressing the browser's real
+// Back/Forward button also always landed at the top, even though a POP
+// navigation is exactly the case where a user expects their previous
+// position back. These prove `useNavigationType()` tells PUSH and POP apart.
+describe('AppShell scroll restore on POP navigation (browser Back/Forward)', () => {
+  it('restores the scroll position a page had before the owner navigated away, on a real Back press', async () => {
+    const { router } = renderShellAt('/')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollTop', { value: 0, writable: true })
+
+    // Owner scrolls down on Page One, then navigates away (a real scroll
+    // event, not just the property write, since AppShell's own recording
+    // effect listens for `scroll`, matching how a real mouse-wheel scroll
+    // behaves).
+    main.scrollTop = 300
+    main.dispatchEvent(new Event('scroll'))
+
+    // A genuine new-page navigation (PUSH) — Page Two correctly starts at
+    // the top, same as the test above.
+    await act(async () => {
+      await router.navigate('/two')
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page Two' })).toBeInTheDocument()
+    })
+    expect(main.scrollTop).toBe(0)
+
+    // The browser's real Back button is a POP navigation. Page One's
+    // previously recorded position (300) should come back — not 0, which is
+    // what forcing the reset unconditionally used to produce.
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(main.scrollTop).toBe(300)
+    })
+  })
+
+  it('leaves the scroll position alone on a POP navigation with nothing recorded for that page, rather than forcing it to 0', async () => {
+    const { router } = renderShellAt('/')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    const main = document.querySelector('main') as HTMLElement
+    Object.defineProperty(main, 'scrollTop', { value: 0, writable: true })
+
+    await act(async () => {
+      await router.navigate('/two')
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page Two' })).toBeInTheDocument()
+    })
+    expect(main.scrollTop).toBe(0)
+
+    // Simulate whatever the DOM update itself left `<main>` at — never
+    // recorded via a real `scroll` event, so there is nothing cached for
+    // '/' to restore.
+    main.scrollTop = 75
+
+    await act(async () => {
+      await router.navigate(-1)
+    })
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    // No recorded position for '/' — the fix's fallback is to leave this
+    // untouched, not to force it back to 0.
+    expect(main.scrollTop).toBe(75)
+  })
+})
+
 // WCAG 2.4.1 (Bypass Blocks): every route puts the sidebar's ~10 nav links
 // ahead of the actual page content in tab order. This proves the skip link
 // is real (reachable in one Tab, targets a genuine element) rather than

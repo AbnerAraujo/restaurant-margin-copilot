@@ -8,9 +8,9 @@ import PromotionsPage from './PromotionsPage'
 // PromotionsPage now calls useNavigate() (spec 008 FR-001, chart click-to-ask
 // navigates to /ask) — every render needs a Router ancestor, the same fix
 // PointsCard.test.tsx already applied for its own <Link>.
-function renderPage() {
+function renderPage(initialEntries: string[] = ['/promotions']) {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={initialEntries}>
       <PromotionsPage />
     </MemoryRouter>,
   )
@@ -529,5 +529,55 @@ describe('PromotionsPage', () => {
       screen.getAllByRole('button', { name: /clear filters/i })[0],
     )
     expect(await screen.findByRole('table')).toBeInTheDocument()
+  })
+
+  it('restores search and platform filters from the URL — the browser-Back-to-a-filtered-view case (spec 008 FR-001)', async () => {
+    // Stands in for the real, designed flow this bug broke: narrow the
+    // table, click a chart point through to `/ask`, then press the
+    // browser's real Back button. That POP navigation remounts this page
+    // against whatever URL was already in history for `/promotions` — with
+    // `useTableFilter` now sourcing state from `useSearchParams` (and every
+    // filter write using `{ replace: true }`), that's the SAME entry the
+    // filters were written into, not a fresh unfiltered one.
+    stubFetch({
+      promotions: [
+        ...PROMOTIONS_RESPONSE.promotions,
+        {
+          platform: 'Just Eat Takeaway',
+          campaign_id: 'JET-CAMP-A',
+          period: { start: '2026-08-01', end: '2026-08-07' },
+          spend: '100.00',
+          attributed_incremental_orders: 1,
+          attributed_incremental_revenue: '150.00',
+          roi: '50.00',
+          flagged_negative: false,
+          source_row_refs: [{ file: 'data/live/promotion_ad_spend_export.csv', row: 10 }],
+        },
+      ],
+    })
+    renderPage(['/promotions?tf-search=boost&platform=iFood'])
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    expect(screen.getByLabelText('Search campaigns')).toHaveValue('boost')
+    expect(screen.getByLabelText('Filter by platform')).toHaveValue('iFood')
+    expect(screen.getByText('1 of 3 campaigns shown')).toBeInTheDocument()
+
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+    expect(within(table).queryByText('IFOOD-CAMP-WEEKEND')).not.toBeInTheDocument()
+    expect(within(table).queryByText('JET-CAMP-A')).not.toBeInTheDocument()
+  })
+
+  it('starts unfiltered on a plain /promotions URL — an ordinary in-app navigation (e.g. the sidebar link), not a restored one', async () => {
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage(['/promotions'])
+
+    await screen.findAllByText('IFOOD-CAMP-BOOST01')
+
+    expect(screen.getByLabelText('Search campaigns')).toHaveValue('')
+    expect(screen.getByLabelText('Filter by platform')).toHaveValue('')
+    const table = screen.getByRole('table')
+    expect(within(table).getByText('IFOOD-CAMP-WEEKEND')).toBeInTheDocument()
   })
 })

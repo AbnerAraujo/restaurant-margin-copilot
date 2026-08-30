@@ -10,6 +10,7 @@ import HelpPage from '@/components/Help/HelpPage'
 // stub, reused as-is per redesign-spec.md §3.
 import HomePage from '@/components/Home/HomePage'
 import { clearThreadStorage } from '@/lib/chatStorage'
+import NotFoundPage from '@/components/NotFound/NotFoundPage'
 import PlatformsPage from '@/components/Platforms/PlatformsPage'
 import PointsPage from '@/components/Points/PointsPage'
 import ProfilePage from '@/components/Profile/ProfilePage'
@@ -74,6 +75,12 @@ export const routes: RouteObject[] = [
       { path: 'profile', element: withBoundary('Profile', <ProfilePage />) },
       { path: 'settings', element: withBoundary('Settings', <SettingsPage />) },
       { path: 'help', element: withBoundary('Help', <HelpPage />) },
+      // Catch-all: any URL that doesn't match one of the routes above (a
+      // typo, a stale bookmark) renders NotFoundPage instead of falling
+      // through to the root `errorElement` above — see that component's doc
+      // comment. Must stay last: React Router matches route order, and a
+      // bare `*` ahead of a real path would shadow it.
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]
