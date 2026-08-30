@@ -4,9 +4,15 @@ import { BadgeCheck, ChevronDown, ShieldCheck, type LucideIcon } from 'lucide-re
 import { cn } from '@/lib/utils'
 
 /**
- * Reconciliation category only, per docs/product-strategy.md's built-now
- * scope. Growth, Engagement, and Campaign-Creation categories are named
- * there as roadmap-only and are deliberately not represented here.
+ * Reconciliation category only — NOT because the other categories (Growth,
+ * Engagement, Campaign Creation; see `docs/product-strategy.md` and
+ * `backend/internal/badges/badges.go`, all shipped under spec
+ * `002-badge-expansion`) are unbuilt, but because this component renders
+ * badges attached to a single calendar day's `DailyReconciliation` (see
+ * `ClosePage.tsx`, its only caller). Only the two Reconciliation badges are
+ * day-scoped in that sense; Growth/Engagement/Campaign-Creation badges are
+ * milestones over promotions/usage/campaigns, not a given day's close, and
+ * are rendered instead on `PointsPage.tsx`'s rules table.
  */
 export type ReconciliationBadgeType = 'clean_close' | 'discrepancy_catcher'
 
@@ -60,9 +66,23 @@ const TONE_CLASSES: Record<ReconciliationBadgeType, string> = {
 }
 
 function formatBadgeDate(iso: string): string {
-  const parsed = new Date(`${iso}T00:00:00`)
+  // QA round 6: parse and format as UTC together, matching every other date
+  // formatter in this codebase (Charts/MarginTrendChart.tsx,
+  // Charts/EffectiveRateTrendChart.tsx, Provenance/ProvenanceTag.tsx,
+  // Chat/comparePeriod.ts — see Chat/guidedQuestion.ts's doc comment for the
+  // named failure class this avoids: pairing a UTC-midnight parse with a
+  // browser-local-timezone format can shift the displayed day by one for
+  // anyone west of UTC). This file previously paired a local-timezone parse
+  // (`T00:00:00` with no `Z`) with a local-timezone format, which happened
+  // to still show the right day but was one "helpful" edit away from
+  // reintroducing that exact bug — now explicit and consistent instead.
+  const parsed = new Date(`${iso}T00:00:00Z`)
   if (Number.isNaN(parsed.getTime())) return iso
-  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+  return parsed.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 /** One badge's own visual row — a compact pill, or a single-line subtle

@@ -208,8 +208,8 @@ export default function PointsPage() {
             How every point is earned
           </h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Exactly two ways, both recomputed from your reconciled days on every
-            page load.
+            Recomputed from your real activity — reconciled days, promotion
+            ROI, app usage, and logged campaigns — on every page load.
           </p>
         </div>
 

@@ -455,3 +455,28 @@ func TestGate_Classify_DateGroundingRegression(t *testing.T) {
 		})
 	}
 }
+
+// TestBuildSystemPrompt_MonthHasADeterministicAnchor is QA round 6's fix for
+// a gap the existing "this week" grounding (and its dedicated
+// TestGate_Classify_DateGroundingRegression above) never covered: the
+// "Date grounding" paragraph gave "this week"/"last week" an explicit,
+// unambiguous anchor (a trailing window ending dataEnd) after the real
+// live defect recorded above, but had no equivalent rule for "this
+// month"/"last month" at all — leaving the gate free to interpret "this
+// month" as, say, a trailing 30-day window, while
+// internal/httpapi/comparison_period.go and platforms_trend.go both use a
+// real CALENDAR-month convention for the exact same phrase elsewhere in
+// this product. A chat answer and the period-comparison/platform-trend
+// pages could then legitimately disagree about which days "this month"
+// covers for the same underlying data. This is a plain offline string
+// check (no live model call, no API key needed) on the generated prompt
+// text itself — the same discipline is mirrored in
+// internal/explain/explain_internal_test.go for the narration step's own
+// copy of this rule.
+func TestBuildSystemPrompt_MonthHasADeterministicAnchor(t *testing.T) {
+	prompt := buildSystemPrompt(testDataStart, testDataEnd)
+
+	require.Contains(t, prompt, `"This month" is the calendar month`,
+		`the Date grounding section must give "this month" the same explicit calendar-month anchor comparison_period.go/platforms_trend.go already use, not leave it to model judgment`)
+	require.Contains(t, prompt, `"Last month" is the FULL prior calendar month`)
+}
