@@ -39,9 +39,9 @@ describe('App', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps the session cost pill visible across every route', () => {
+  it('keeps the model spend pill visible across every route', () => {
     render(<App />)
 
-    expect(screen.getByRole('button', { name: /session cost/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /model spend/i })).toBeInTheDocument()
   })
 })

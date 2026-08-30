@@ -163,7 +163,7 @@ governs *reconciliation* figures specifically (sales, margin, commissions,
 refunds, week-over-week deltas) — numbers with a server-side source of
 truth where a client re-derivation would be a second, possibly-divergent
 implementation of the same math. It documents its own one exception by
-name, `CostPanel`'s running session-cost total, and points at that file's
+name, `CostPanel`'s running model-spend total, and points at that file's
 `sumCostUsd` for why that specific sum is allowed to stay client-side (see
 "Lessons learned" below — this is also where the real violation was found).
 
@@ -321,6 +321,71 @@ explicit that this second layer is "the general-purpose defense for the
 next time a shape changes and a version bump is missed — belt and
 suspenders, not a substitute for versioning."
 
+**Storage is the source of truth; React state is a view of it.** This was
+inverted after a state-persistence QA pass found three defects that turned
+out to be one defect. `localStorage` had been treated as a mirror of
+whatever snapshot a component happened to be holding, written back
+wholesale, and that model loses data three ways:
+
+1. A question was persisted before its request resolved, but the fact that
+   an answer was *coming* lived only in React state. Reloading — or just
+   navigating to another page and waiting — unmounted `ChatPanel` before the
+   continuation ran, so a completed, HTTP 200, genuinely billed answer was
+   discarded and the thread was left showing an orphaned question with no
+   answer, no error and no retry, forever.
+2. Two tabs each wrote their own mount-time snapshot, so the last one to
+   write silently erased the other's history. There was no `storage`
+   listener and no merge.
+3. The running cost total lived in shell component state, so it reset to
+   $0.000 on reload while the answers that had cost the money were still on
+   screen — and two tabs showed two different totals, neither of them real.
+
+The current model fixes all three with one mechanism:
+
+- **Every mutation is a transaction against live storage.**
+  `commitThreadMessages` re-reads the key, folds in the caller's view,
+  applies the change, writes, and notifies subscribers. A stale writer can
+  no longer clobber a fresh one.
+- **Commits are plain module functions, not state updaters,** so a commit
+  made from a settled promise lands whether or not the component that
+  started the request is still mounted.
+- **Merges reconcile, they never overwrite.** Divergent stores union by
+  message id, and a resolution lattice — `pending` < interrupted-`error` <
+  a real verdict — decides conflicts. Messages are append-only and only move
+  forward through that lattice, so a union is always the correct merge. The
+  lattice is also what makes the interruption recovery safe to run eagerly:
+  if another tab is in fact still waiting on a request this one marked lost,
+  the real answer supersedes the marker automatically, with no timeout,
+  heartbeat, or cross-tab lock.
+- **A `pending` assistant message is persisted with the question, before the
+  request starts.** On mount, `reconcileInterruptedMessages` turns any
+  pending message this document is not actually waiting on into a retryable
+  error whose copy says plainly that the question ran and may already have
+  been charged. A document-scoped in-flight registry (deliberately not
+  persisted — it survives an in-page navigation and is empty after a reload)
+  is what distinguishes a dead request from a live one.
+- **Spend is durable because the conversation is durable.**
+  `mbs.chat.spend.v1` is an append-only, message-attributed ledger written
+  by the same commit that writes the answer it paid for, deduplicated by a
+  deterministic `${messageId}#${index}` id. `AppShell` reads it through
+  `useSpendLedger`, so the pill (now labelled **Model spend**, since it no
+  longer resets) survives a reload, is identical in every tab, and cannot be
+  inflated by a remount. It deliberately outlives both thread eviction and
+  the chat-crash `Reset`: a total that can go *down* is under-reporting by
+  another name.
+
+Two of these were only findable by driving a real browser. Reloading
+mid-request does not merely orphan the request — the browser *aborts* it,
+and that rejection reaches the catch block before the page tears down, so
+the interruption was being written as a "couldn't reach your data"
+transport error, which is false and which destroyed the pending record the
+next load needed. A `beforeunload`/`pagehide` flag suppresses that write
+(`pagehide` alone loses the race; `beforeunload` wins it), and `pageshow`
+clears it so a cancelled navigation goes back to reporting real failures.
+Separately, two tabs opening on an empty key each minted their own thread
+id, so `materialiseThreadStore` now writes a freshly created store on mount
+and the second tab joins the first one's thread.
+
 ### The shared API client — `frontend/src/lib/api.ts`
 
 Three helpers — `getJson`, `postJson`, `postMultipart` — and one rule the
@@ -452,17 +517,26 @@ hidden until this was corrected).
 
 ### The shell and cross-route state — `frontend/src/components/Shell/AppShell.tsx`
 
-`AppShell` mounts once at the router root and owns two pieces of state that
-must survive navigation between routes: the running `interactions:
-CostInteraction[]` list (so `CostPanel`, pinned at the shell level, keeps
-its total across a visit to `/close` and back) and the usage ping fired
-exactly once per shell mount (not per page view — the comment is explicit
-that this guards against ordinary in-app navigation inflating a
-"distinct days used" badge metric). Routed pages read and write this state
-through `useShellOutletContext()`, a thin wrapper over React Router's
-`useOutletContext` typed as `ShellOutletContext { interactions,
-logInteractions }` — `AskPage` is the only page that currently calls
-`logInteractions`, once per `/api/ask` response that actually ran a model.
+`AppShell` mounts once at the router root. It reads the running
+`interactions: CostInteraction[]` list from the durable spend ledger through
+`useSpendLedger()` — so `CostPanel`, pinned at the shell level, keeps its
+total across a visit to `/close` and back *and* across a reload, and reads
+identically in every open tab — and it fires the usage ping exactly once per
+shell mount (not per page view — the comment is explicit that this guards
+against ordinary in-app navigation inflating a "distinct days used" badge
+metric).
+
+Routed pages read that state through `useShellOutletContext()`, a thin
+wrapper over React Router's `useOutletContext`, now typed as
+`ShellOutletContext { interactions }` — read-only. The previous
+`logInteractions` reporting channel was removed deliberately: it was how
+`/ask` pushed spend upward as a side effect into component state, which is
+exactly why the total reset to $0.000 on every reload while the answers that
+had cost the money were still on screen. Spend is now written durably by the
+same commit that writes the answer it paid for (see *Chat persistence*
+above), so the figure has one definition rather than a persistent half and
+an ephemeral half — and the cost of an answer that completes *after* the
+page unmounted is recorded rather than billed invisibly.
 
 ### Testing conventions
 
@@ -518,9 +592,11 @@ actually shipped and were then corrected:
 
 1. **Client-side arithmetic on a reconciliation-adjacent figure**
    (`CostPanel.tsx`, fixed in commit `4e4fedc`). `stat.tsx`'s rule says a
-   presentation component never computes; `CostPanel`'s running session-cost
-   total is the one *documented* exception, because it sums an ephemeral,
-   browser-only session state the backend has no matching concept of. But
+   presentation component never computes; `CostPanel`'s running model-spend
+   total is the one *documented* exception, because it sums a browser-local
+   ledger the backend has no matching concept of (`SumEstimatedCostUSD` sums
+   the entire, unscoped `question_interaction` table and is not reachable
+   from any endpoint this page calls). But
    the exception's implementation itself had a latent defect: it originally
    summed the raw `estimated_cost_usd` floats directly
    (`sum(interactions.map(i => i.estimated_cost_usd))`), which can

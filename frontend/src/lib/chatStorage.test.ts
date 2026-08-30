@@ -1,22 +1,52 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatMessage } from '@/components/Chat/ChatPanel'
 import {
   MAX_THREADS,
   activeThread,
   addSavedPrompt,
+  clearRequestInFlight,
   clearThreadStorage,
+  commitThreadMessages,
   deriveThreadTitle,
   loadSavedPrompts,
+  loadSpendLedger,
   loadThreadStore,
+  markRequestInFlight,
+  mergeThreadStores,
   openThread,
   persistActiveThread,
+  reconcileInterruptedMessages,
+  recordSpend,
   removeSavedPrompt,
+  replaceMessage,
   startNewThread,
+  subscribeToThreadStore,
 } from './chatStorage'
 
 function userMessage(text: string): ChatMessage {
   return { id: text, role: 'user', text, askedAt: '2026-08-27T10:00:00Z' }
+}
+
+function pendingMessage(id: string, question: string): ChatMessage {
+  return {
+    id,
+    role: 'assistant',
+    kind: 'pending',
+    question,
+    askedAt: '2026-08-27T10:00:01Z',
+  }
+}
+
+function answerMessage(id: string, text: string): ChatMessage {
+  return {
+    id,
+    role: 'assistant',
+    kind: 'answer',
+    text,
+    provenance: [],
+    askedAt: '2026-08-27T10:00:02Z',
+  }
 }
 
 describe('chatStorage', () => {
@@ -132,5 +162,237 @@ describe('chatStorage', () => {
     prompts = removeSavedPrompt(prompts, prompts[0].id)
     expect(prompts).toHaveLength(0)
     expect(loadSavedPrompts()).toHaveLength(0)
+  })
+})
+
+describe('chatStorage cross-tab reconciliation', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  /**
+   * The exact reported repro, at the layer where it happened. Two tabs load
+   * the same thread; each then writes. The old code wrote each tab's whole
+   * mount-time snapshot, so tab 2's write erased tab 1's question outright.
+   */
+  it('does not let a second tab with a stale snapshot destroy the first tab\'s history', () => {
+    // Both tabs mount against the same, initially empty store.
+    const tabOne = loadThreadStore()
+    persistActiveThread(tabOne, [])
+    const threadId = tabOne.activeId
+    const tabTwo = loadThreadStore()
+    expect(tabTwo.activeId).toBe(threadId)
+
+    // Tab 1 asks. Tab 2 knows nothing about it — its `tabTwo` snapshot is now
+    // stale, which is precisely the state that used to be fatal.
+    commitThreadMessages(threadId, (messages) => [...messages, userMessage('from tab one')])
+
+    // Tab 2 asks, committing against its OWN stale snapshot.
+    commitThreadMessages(
+      threadId,
+      (messages) => [...messages, userMessage('from tab two')],
+      tabTwo,
+    )
+
+    // What a reload of either tab now sees.
+    const reloaded = activeThread(loadThreadStore())?.messages ?? []
+    expect(reloaded.map((message) => message.id)).toEqual([
+      'from tab one',
+      'from tab two',
+    ])
+  })
+
+  it('merges two divergent stores without dropping either side, keeping this tab on its own thread', () => {
+    const shared = loadThreadStore()
+    const threadId = shared.activeId
+
+    const tabOne = {
+      activeId: threadId,
+      threads: [
+        {
+          id: threadId,
+          title: 'x',
+          updatedAt: '2026-08-27T10:00:00Z',
+          messages: [userMessage('q1'), answerMessage('a1', 'answer one')],
+        },
+      ],
+    }
+    const tabTwo = {
+      activeId: 'other-thread',
+      threads: [
+        {
+          id: threadId,
+          title: 'x',
+          updatedAt: '2026-08-27T10:05:00Z',
+          messages: [userMessage('q1'), userMessage('q2')],
+        },
+        {
+          id: 'other-thread',
+          title: 'y',
+          updatedAt: '2026-08-27T10:06:00Z',
+          messages: [userMessage('q3')],
+        },
+      ],
+    }
+
+    const merged = mergeThreadStores(tabTwo, tabOne, threadId)
+
+    expect(merged.threads.map((thread) => thread.id)).toEqual([
+      threadId,
+      'other-thread',
+    ])
+    expect(merged.threads[0].messages.map((message) => message.id)).toEqual([
+      'q1',
+      'q2',
+      'a1',
+    ])
+    // `activeId` is per-tab view state: a background tab must keep looking at
+    // the thread its own reader chose.
+    expect(merged.activeId).toBe(threadId)
+  })
+
+  it('notifies subscribers with what was actually written, not what was asked for', () => {
+    const store = loadThreadStore()
+    const seen: string[][] = []
+    const unsubscribe = subscribeToThreadStore((next) => {
+      seen.push((activeThread(next)?.messages ?? []).map((message) => message.id))
+    })
+
+    commitThreadMessages(store.activeId, () => [userMessage('q1')], store)
+    commitThreadMessages(store.activeId, (messages) => [...messages, userMessage('q2')])
+
+    unsubscribe()
+    commitThreadMessages(store.activeId, (messages) => [...messages, userMessage('q3')])
+
+    expect(seen).toEqual([['q1'], ['q1', 'q2']])
+  })
+})
+
+describe('chatStorage interrupted-request recovery', () => {
+  const inFlightIds: string[] = []
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  afterEach(() => {
+    for (const id of inFlightIds.splice(0)) clearRequestInFlight(id)
+  })
+
+  it('resolves a question left pending by a previous page load into a retryable state', () => {
+    const store = loadThreadStore()
+    commitThreadMessages(
+      store.activeId,
+      () => [
+        userMessage('How did we do yesterday?'),
+        pendingMessage('p1', 'How did we do yesterday?'),
+      ],
+      store,
+    )
+
+    // A fresh page load: nothing is in flight in THIS document.
+    const reconciled = reconcileInterruptedMessages()
+    const messages = activeThread(reconciled)?.messages ?? []
+
+    expect(messages).toHaveLength(2)
+    expect(messages[1]).toMatchObject({
+      id: 'p1',
+      kind: 'error',
+      cause: 'interrupted',
+      question: 'How did we do yesterday?',
+    })
+    // Persisted, not merely returned — the next load must not re-derive it.
+    expect(activeThread(loadThreadStore())?.messages[1]).toMatchObject({
+      kind: 'error',
+      cause: 'interrupted',
+    })
+  })
+
+  it('leaves a request this document is still waiting on alone', () => {
+    const store = loadThreadStore()
+    markRequestInFlight('p2')
+    inFlightIds.push('p2')
+    commitThreadMessages(store.activeId, () => [pendingMessage('p2', 'still running')], store)
+
+    const messages = activeThread(reconcileInterruptedMessages())?.messages ?? []
+    expect(messages[0]).toMatchObject({ kind: 'pending' })
+  })
+
+  /**
+   * The self-healing property the eager reconciliation depends on: another
+   * tab may mark a request "lost" while the tab that owns it is still
+   * waiting, so a real verdict has to outrank that guess.
+   */
+  it('lets a real answer supersede an interrupted marker for the same question', () => {
+    const interrupted: ChatMessage = {
+      id: 'p3',
+      role: 'assistant',
+      kind: 'error',
+      cause: 'interrupted',
+      text: 'lost',
+      question: 'q',
+      askedAt: '2026-08-27T10:00:01Z',
+    }
+    const withAnswer = replaceMessage([interrupted], 'p3', answerMessage('p3', 'the real answer'))
+    expect(withAnswer[0]).toMatchObject({ kind: 'answer', text: 'the real answer' })
+
+    // And never the other way round.
+    const stillAnswered = replaceMessage(withAnswer, 'p3', interrupted)
+    expect(stillAnswered[0]).toMatchObject({ kind: 'answer' })
+  })
+})
+
+describe('chatStorage spend ledger', () => {
+  const gate = {
+    model_used: 'claude-sonnet-5',
+    input_tokens: 420,
+    output_tokens: 18,
+    estimated_cost_usd: 0.00051,
+    latency_ms: 310,
+  }
+  const explain = {
+    model_used: 'claude-sonnet-5',
+    input_tokens: 1180,
+    output_tokens: 240,
+    estimated_cost_usd: 0.00476,
+    latency_ms: 1420,
+  }
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('survives a reload, so the total matches the answers still on screen', () => {
+    recordSpend('t1', 'a1', [gate, explain])
+
+    // A fresh load — what a page reload does.
+    const total = loadSpendLedger().reduce(
+      (sum, entry) => sum + entry.estimated_cost_usd,
+      0,
+    )
+    expect(total).toBeCloseTo(gate.estimated_cost_usd + explain.estimated_cost_usd, 8)
+  })
+
+  it('never double-counts a replayed commit', () => {
+    recordSpend('t1', 'a1', [gate, explain])
+    recordSpend('t1', 'a1', [gate, explain])
+    expect(loadSpendLedger()).toHaveLength(2)
+  })
+
+  it('keeps spend when the thread that earned it is evicted, so the total never drops', () => {
+    recordSpend('t1', 'a1', [explain])
+    let store = loadThreadStore()
+    for (let i = 0; i < MAX_THREADS + 4; i++) {
+      store = persistActiveThread(store, [userMessage(`thread ${i}`)])
+      store = startNewThread(store)
+    }
+    expect(store.threads.length).toBeLessThanOrEqual(MAX_THREADS)
+    expect(loadSpendLedger()).toHaveLength(1)
+  })
+
+  it('is left alone by the chat-crash reset, which must never hide real spend', () => {
+    recordSpend('t1', 'a1', [gate])
+    clearThreadStorage()
+    expect(loadSpendLedger()).toHaveLength(1)
   })
 })
