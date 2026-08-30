@@ -1056,15 +1056,15 @@
        ============================================================== -->
   <div role="tabpanel" id="panel-architecture" aria-labelledby="tab-architecture" hidden>
 
-    <p class="prose lede">One Go process, one Postgres database, one React app, and two Claude models used for exactly two jobs. Below is all of it, including the parts that are not built.</p>
+    <p class="prose lede">One Go process, one Postgres database, one React app, and two Claude models across three separate model pathways: the ask pipeline (gate, conditional writer, explanation), the paraphrase check in front of the cache, and the opt-in business-insight advisor behind its own endpoint and its own ledger. Below is all of it, including the parts that are not built.</p>
 
     <section style="margin-top:44px;">
       <h2>The system, top to bottom</h2>
-      <p class="prose">Three UI surfaces sit on three HTTP surfaces, and all three read the same Postgres. Only one of them has a model anywhere in its request path.</p>
+      <p class="prose">Three groups of UI surface sit on three groups of HTTP surface, and all of them read the same Postgres. Only the first group has a model anywhere in its request path &mdash; and inside that group, the two endpoints are drawn apart, because one is the ask pipeline and the other is the opt-in advisor, which is a different kind of thing and bills separately.</p>
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1280 736" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page, the Close and Promotions pages, the Platforms page, and the Home page. Second layer, HTTP: POST /api/ask, which is the only endpoint with any model in its path; GET /api/reconciliation, GET /api/promotions, GET /api/platforms and GET /api/platforms/trend; and GET /api/badges. Third layer: a single PostgreSQL database holding six tables — daily_reconciliation, promotion_roi_record, question_interaction, answer_cache, answer_cache_hit and usage_event. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
+        <svg viewBox="0 0 1280 792" role="img" aria-label="Layered diagram. Top layer, clients: the Ask chat page; the Close, Promotions and Platforms pages; and the Home and Profile pages. Second layer, HTTP: POST /api/ask, the ask pipeline, which runs a deterministic Go date-range pre-check before the cache and the Sonnet 5 gate; below it and drawn with a dashed boundary, POST /api/business-insight, an opt-in advisory call that runs only when the owner taps the teaser the ask call returned; GET /api/reconciliation, GET /api/promotions, GET /api/platforms and GET /api/platforms/trend; and GET /api/badges plus GET and PUT /api/profile. Third layer: a single PostgreSQL database holding ten tables — daily_reconciliation, promotion_roi_record, question_interaction, business_insight_interaction, answer_cache, answer_cache_hit, paraphrase_match, usage_event, restaurant_profile and client_error_report. Bottom: a manually run ingestion command writes to that database, clearing the answer cache first.">
           <defs>
             <marker id="aArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1075,7 +1075,7 @@
           <rect x="40" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
           <text x="64" y="96" font-size="13.5" font-weight="600" fill="currentColor">Ask &mdash; the chat page</text>
           <text x="64" y="120" font-size="11.5" fill="var(--muted)">The only surface with a model behind it.</text>
-          <text x="64" y="138" font-size="11.5" fill="var(--muted)">Answer, chart, provenance, running cost.</text>
+          <text x="64" y="138" font-size="11.5" fill="var(--muted)">Answer, chart, provenance, cost, teaser.</text>
 
           <rect x="450" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
           <text x="474" y="96" font-size="13.5" font-weight="600" fill="currentColor">Close &middot; Promotions &middot; Platforms</text>
@@ -1083,9 +1083,9 @@
           <text x="474" y="138" font-size="11.5" fill="var(--muted)">and platform economics. No chat, no model.</text>
 
           <rect x="860" y="64" width="380" height="88" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
-          <text x="884" y="96" font-size="13.5" font-weight="600" fill="currentColor">Home</text>
-          <text x="884" y="120" font-size="11.5" fill="var(--muted)">Reconciliation badges and Steward</text>
-          <text x="884" y="138" font-size="11.5" fill="var(--muted)">Points. No chat, no model.</text>
+          <text x="884" y="96" font-size="13.5" font-weight="600" fill="currentColor">Home &middot; Profile</text>
+          <text x="884" y="120" font-size="11.5" fill="var(--muted)">Reconciliation badges, Steward Points,</text>
+          <text x="884" y="138" font-size="11.5" fill="var(--muted)">and the restaurant&rsquo;s own profile. No model.</text>
 
           <line x1="230" y1="152" x2="230" y2="196" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
           <line x1="640" y1="152" x2="640" y2="196" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
@@ -1094,9 +1094,16 @@
           <text x="40" y="186" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">HTTP</text>
           <rect x="40" y="200" width="380" height="100" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
           <text x="64" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">POST /api/ask</text>
-          <text x="64" y="252" font-size="11.5" fill="currentColor">Cache &rarr; Sonnet 5 gate &rarr; typed Go tools</text>
-          <text x="64" y="270" font-size="11.5" fill="currentColor">&rarr; Sonnet 5 narration &rarr; Go chart choice.</text>
+          <text x="64" y="252" font-size="11.5" fill="currentColor">Go date-range pre-check &rarr; cache &rarr; gate</text>
+          <text x="64" y="270" font-size="11.5" fill="currentColor">&rarr; typed Go tools &rarr; narration &rarr; Go chart.</text>
           <text x="64" y="290" font-size="11" fill="var(--prob)">Detailed below.</text>
+
+          <line x1="230" y1="300" x2="230" y2="318" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <text x="244" y="314" font-size="10.5" fill="var(--det)">teaser, if any</text>
+          <rect x="40" y="322" width="380" height="72" rx="9" fill="var(--prob-soft)" stroke="var(--prob)" stroke-dasharray="4 3"/>
+          <text x="64" y="348" font-family="var(--font-mono)" font-size="13" fill="currentColor">POST /api/business-insight</text>
+          <text x="64" y="370" font-size="11.5" fill="currentColor">Opt-in. One Sonnet 5 advisory call, only</text>
+          <text x="64" y="386" font-size="11.5" fill="currentColor">if the owner taps. Advice, not a figure.</text>
 
           <rect x="450" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="474" y="222" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/reconciliation</text>
@@ -1105,54 +1112,63 @@
           <text x="474" y="283" font-size="11" fill="currentColor">result shapes &mdash; one rendering, so nothing drifts.</text>
 
           <rect x="860" y="200" width="380" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
-          <text x="884" y="228" font-family="var(--font-mono)" font-size="13" fill="currentColor">GET /api/badges</text>
-          <text x="884" y="252" font-size="11.5" fill="currentColor">No model. Badges and points are derived</text>
-          <text x="884" y="270" font-size="11.5" fill="currentColor">per request from the reconciled days &mdash;</text>
-          <text x="884" y="290" font-size="11.5" fill="currentColor">a pure function, never stored.</text>
+          <text x="884" y="224" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET /api/badges</text>
+          <text x="884" y="241" font-family="var(--font-mono)" font-size="12.5" fill="currentColor">GET &middot; PUT /api/profile</text>
+          <text x="884" y="263" font-size="11" fill="currentColor">No model. Badges and points are derived</text>
+          <text x="884" y="280" font-size="11" fill="currentColor">per request; the profile is plain CRUD on</text>
+          <text x="884" y="294" font-size="11" fill="currentColor">one row. Neither ever calls a model.</text>
 
-          <line x1="230" y1="300" x2="230" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
-          <line x1="640" y1="300" x2="640" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
-          <line x1="1050" y1="300" x2="1050" y2="392" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="230" y1="394" x2="230" y2="424" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="640" y1="300" x2="640" y2="424" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="1050" y1="300" x2="1050" y2="424" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
 
-          <text x="40" y="382" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">STORE</text>
-          <rect x="40" y="396" width="1200" height="128" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
-          <line x1="40" y1="414" x2="1240" y2="414" stroke="var(--det)" stroke-width="1"/>
-          <text x="64" y="438" font-size="13.5" font-weight="600" fill="currentColor">PostgreSQL 16 &mdash; the single source of truth for all three surfaces</text>
-          <text x="64" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">daily_reconciliation</text>
-          <text x="64" y="484" font-size="10" fill="var(--muted)">one row per day</text>
-          <text x="253" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">promotion_roi_record</text>
-          <text x="253" y="484" font-size="10" fill="var(--muted)">one row per campaign period</text>
-          <text x="442" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">question_interaction</text>
-          <text x="442" y="484" font-size="10" fill="var(--muted)">one row per real model call</text>
-          <text x="631" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache</text>
-          <text x="631" y="484" font-size="10" fill="var(--muted)">exact-match question &rarr; response</text>
-          <text x="820" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache_hit</text>
-          <text x="820" y="484" font-size="10" fill="var(--muted)">cost avoided, kept separate</text>
-          <text x="1009" y="466" font-family="var(--font-mono)" font-size="11" fill="var(--det)">usage_event</text>
-          <text x="1009" y="484" font-size="10" fill="var(--muted)">one row per distinct day used</text>
-          <text x="64" y="508" font-size="11" fill="var(--muted)">One container: margin-copilot-postgres. One database. One volume. No replica, no failover &mdash; see the honesty note below.</text>
+          <text x="40" y="420" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">STORE</text>
+          <rect x="40" y="428" width="1200" height="172" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="40" y1="446" x2="1240" y2="446" stroke="var(--det)" stroke-width="1"/>
+          <text x="64" y="470" font-size="13.5" font-weight="600" fill="currentColor">PostgreSQL 16 &mdash; the single source of truth for every surface above</text>
+          <text x="64" y="500" font-family="var(--font-mono)" font-size="11" fill="var(--det)">daily_reconciliation</text>
+          <text x="64" y="518" font-size="10" fill="var(--muted)">one row per day</text>
+          <text x="294" y="500" font-family="var(--font-mono)" font-size="11" fill="var(--det)">promotion_roi_record</text>
+          <text x="294" y="518" font-size="10" fill="var(--muted)">one row per campaign period</text>
+          <text x="524" y="500" font-family="var(--font-mono)" font-size="11" fill="var(--det)">question_interaction</text>
+          <text x="524" y="518" font-size="10" fill="var(--muted)">one row per ask-pipeline call</text>
+          <text x="754" y="500" font-family="var(--font-mono)" font-size="11" fill="var(--prob)">business_insight_interaction</text>
+          <text x="754" y="518" font-size="10" fill="var(--muted)">advisor spend, ledgered apart</text>
+          <text x="984" y="500" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache</text>
+          <text x="984" y="518" font-size="10" fill="var(--muted)">exact-match question &rarr; response</text>
+          <text x="64" y="544" font-family="var(--font-mono)" font-size="11" fill="var(--det)">answer_cache_hit</text>
+          <text x="64" y="562" font-size="10" fill="var(--muted)">cost avoided, kept separate</text>
+          <text x="294" y="544" font-family="var(--font-mono)" font-size="11" fill="var(--det)">paraphrase_match</text>
+          <text x="294" y="562" font-size="10" fill="var(--muted)">Haiku verdicts, logged</text>
+          <text x="524" y="544" font-family="var(--font-mono)" font-size="11" fill="var(--det)">usage_event</text>
+          <text x="524" y="562" font-size="10" fill="var(--muted)">one row per distinct day used</text>
+          <text x="754" y="544" font-family="var(--font-mono)" font-size="11" fill="var(--det)">restaurant_profile</text>
+          <text x="754" y="562" font-size="10" fill="var(--muted)">the owner&rsquo;s saved profile, one row</text>
+          <text x="984" y="544" font-family="var(--font-mono)" font-size="11" fill="var(--det)">client_error_report</text>
+          <text x="984" y="562" font-size="10" fill="var(--muted)">frontend errors, reported back</text>
+          <text x="64" y="586" font-size="11" fill="var(--muted)">One container: margin-copilot-postgres. One database. One volume. No replica, no failover &mdash; see the honesty note below.</text>
 
-          <line x1="640" y1="600" x2="640" y2="528" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
+          <line x1="640" y1="676" x2="640" y2="604" stroke="var(--det)" stroke-width="1.5" marker-end="url(#aArrow)"/>
 
-          <text x="440" y="586" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">WRITER</text>
-          <rect x="440" y="600" width="400" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)" stroke-dasharray="5 4"/>
-          <text x="464" y="628" font-family="var(--font-mono)" font-size="12" fill="currentColor">-ingest / -ingest-promo</text>
-          <text x="464" y="652" font-size="11.5" fill="currentColor">Clears answer_cache, then writes the two</text>
-          <text x="464" y="670" font-size="11.5" fill="currentColor">reconciliation tables. Run by hand from the</text>
-          <text x="464" y="688" font-size="11.5" fill="currentColor">CLI &mdash; there is no scheduler in this build.</text>
+          <text x="440" y="662" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">WRITER</text>
+          <rect x="440" y="676" width="400" height="100" rx="9" fill="var(--det-soft)" stroke="var(--det)" stroke-dasharray="5 4"/>
+          <text x="464" y="704" font-family="var(--font-mono)" font-size="12" fill="currentColor">-ingest / -ingest-promo</text>
+          <text x="464" y="728" font-size="11.5" fill="currentColor">Clears answer_cache, then writes the two</text>
+          <text x="464" y="746" font-size="11.5" fill="currentColor">reconciliation tables. Run by hand from the</text>
+          <text x="464" y="764" font-size="11.5" fill="currentColor">CLI &mdash; there is no scheduler in this build.</text>
         </svg>
         </div>
-        <figcaption>The second row is the whole reason the split is credible: two of the three HTTP surfaces have no model in their request path at all, and the third one's model never sees a raw row. <code>GET /api/reconciliation</code>, <code>GET /api/promotions</code>, <code>GET /api/platforms</code> and <code>GET /api/platforms/trend</code> (the Platforms page's effective-rate history, added alongside the others in the 2026-08-29 dashboard-intelligence batch) deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day (or the same platform) cannot drift apart, because there is only one of them.</figcaption>
+        <figcaption>The second row is the whole reason the split is credible: every HTTP surface but the two purple ones has no model in its request path at all, and neither purple one's model ever sees a raw row. The two purple boxes are drawn apart, and the lower one dashed, because they are not the same kind of thing: <code>/api/ask</code> answers a question about the restaurant's own computed figures, while <code>/api/business-insight</code> returns general advice, is reached only when the owner taps a teaser the ask call already derived in Go for free, and is ledgered in its own table so advisory spend never inflates the answer-spend total. <code>GET /api/reconciliation</code>, <code>GET /api/promotions</code>, <code>GET /api/platforms</code> and <code>GET /api/platforms/trend</code> (the Platforms page's effective-rate history, added alongside the others in the 2026-08-29 dashboard-intelligence batch) deliberately return <code>internal/mcptools</code>' own result shapes rather than a second rendering &mdash; one conversion means a number on the Close page and the number the model narrates for the same day (or the same platform) cannot drift apart, because there is only one of them.</figcaption>
       </figure>
     </section>
 
     <section>
       <h2>Inside <code>POST /api/ask</code></h2>
-      <p class="prose">Five named steps. The gate and Explain are always-model steps; the MCP tool layer and chart-type decision are always plain Go. The Answer cache step is mostly plain Go too &mdash; a free exact-text lookup on every call &mdash; but conditionally makes one small, real, billed Haiku call of its own on a miss, to check for a paraphrase before falling through to the gate. That call is disclosed the same way every other model call is: logged, costed, and never presented as free. The boundary in this system is not a line on a map but a rule about what each step is permitted to do.</p>
+      <p class="prose">Six named steps. The gate and Explain are always-model steps; the date-range pre-check, the MCP tool layer and the chart-type decision are always plain Go. The Answer cache step is mostly plain Go too &mdash; a free exact-text lookup on every call &mdash; but conditionally makes one small, real, billed Haiku call of its own on a miss, to check for a paraphrase before falling through to the gate. That call is disclosed the same way every other model call is: logged, costed, and never presented as free. The boundary in this system is not a line on a map but a rule about what each step is permitted to do.</p>
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1360 566" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the Claude Sonnet 5 ambiguity gate (moved off Claude Haiku 4.5 on 2026-08-29 after a multi-year date-comparison bug). If the gate lands on ambiguous or unanswerable, a second, conditional Claude Sonnet 5 call writes the final clarifying-question or refusal text — the gate's classification is structurally final by then, since that second call's reply schema has no classification field at all — and the result returns straight to the user, with the main explanation step never running. Otherwise the question passes to the Go MCP tool layer, which reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI.">
+        <svg viewBox="0 0 1360 706" role="img" aria-label="Diagram of the ask pipeline. A React UI sends a question to an exact-match answer cache in Postgres; a hit returns the stored response with no model call and nothing billed. A miss reaches the ambiguity gate, but a deterministic Go date-range pre-check runs first, drawn directly above the gate: an explicit out-of-range date is refused there with zero model calls, and in-range verdicts are handed to the gate as settled fact. The gate itself is Claude Sonnet 5 (moved off Claude Haiku 4.5 on 2026-08-29 after a multi-year date-comparison bug). If the gate lands on ambiguous or unanswerable, a second, conditional Claude Sonnet 5 call writes the final clarifying-question or refusal text — the gate's classification is structurally final by then, since that second call's reply schema has no classification field at all — and the result returns straight to the user, with the main explanation step never running. Otherwise the question passes to the Go MCP tool layer, which reads Postgres through typed tools only, and returns numbers with provenance to the Claude Sonnet 5 explanation step, whose narration then passes through a deterministic Go chart-type decision before the answer, chart and provenance reach the UI. A separate band at the bottom shows a third model pathway: a zero-cost Go function derives an insight teaser from the tool results this answer already computed, and only if the owner taps does a distinct, dashed Claude Sonnet 5 business-insight advisor call run, logged in its own business_insight_interaction table rather than question_interaction.">
           <defs>
             <marker id="bDet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
               <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
@@ -1166,15 +1182,25 @@
           <rect x="230" y="56" width="1045" height="74" rx="10" fill="var(--paper-raised)" stroke="var(--det)" stroke-width="1.5"/>
           <line x1="230" y1="72" x2="1275" y2="72" stroke="var(--det)" stroke-width="1"/>
           <text x="254" y="94" font-size="13" font-weight="600" fill="currentColor">PostgreSQL &mdash; the one store behind every box below</text>
-          <text x="254" y="116" font-family="var(--font-mono)" font-size="10.5" fill="var(--muted)">answer_cache &#183; answer_cache_hit &#183; paraphrase_match &#183; business_insight_interaction &#183; daily_reconciliation &#183; promotion_roi_record &#183; question_interaction &#183; usage_event</text>
+          <text x="254" y="116" font-family="var(--font-mono)" font-size="10" fill="var(--muted)">answer_cache &#183; answer_cache_hit &#183; paraphrase_match &#183; business_insight_interaction &#183; daily_reconciliation &#183; promotion_roi_record &#183; question_interaction &#183; usage_event</text>
 
           <line x1="320" y1="248" x2="320" y2="134" stroke="var(--det)" stroke-width="1.5" marker-start="url(#bDet)" marker-end="url(#bDet)"/>
-          <text x="334" y="196" font-size="11" fill="var(--det)">reads + writes answer_cache</text>
+          <text x="316" y="196" text-anchor="end" font-size="11" fill="var(--det)">reads + writes answer_cache</text>
           <line x1="790" y1="248" x2="790" y2="134" stroke="var(--det)" stroke-width="1.5" marker-start="url(#bDet)" marker-end="url(#bDet)"/>
           <text x="804" y="196" font-size="11" fill="var(--det)">typed reads only &mdash; no open SQL, ever</text>
 
+          <!-- deterministic date-range pre-check: runs inside internal/ambiguity
+               BEFORE the gate's model call, so an explicit out-of-range date
+               never costs a token. Drawn in solid det teal, above the gate. -->
+          <rect x="440" y="140" width="240" height="68" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="560" y="166" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">Date-range pre-check &mdash; Go</text>
+          <text x="560" y="184" text-anchor="middle" font-size="10.5" fill="currentColor">an explicit out-of-range date is</text>
+          <text x="560" y="198" text-anchor="middle" font-size="10.5" fill="var(--alert)">refused here &mdash; zero model calls</text>
+          <line x1="560" y1="208" x2="560" y2="246" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <text x="552" y="230" text-anchor="end" font-size="10.5" fill="var(--det)">verdicts, as fact</text>
+
           <!-- main row -->
-          <text x="560" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
+          <text x="572" y="240" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
           <text x="995" y="240" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
 
           <rect x="40" y="250" width="170" height="90" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
@@ -1194,7 +1220,7 @@
 
           <rect x="705" y="250" width="170" height="90" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
           <text x="790" y="284" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">seven typed Go tools,</text>
+          <text x="790" y="304" text-anchor="middle" font-size="11" fill="var(--muted)">eight typed Go tools,</text>
           <text x="790" y="320" text-anchor="middle" font-size="11" fill="var(--muted)">5s timeout, 8-call cap</text>
 
           <rect x="915" y="250" width="160" height="90" rx="9" fill="var(--prob-soft)" stroke="var(--prob)"/>
@@ -1224,8 +1250,9 @@
           <rect x="445" y="400" width="230" height="98" rx="9" fill="var(--alert-soft)" stroke="var(--alert)"/>
           <text x="560" y="422" text-anchor="middle" font-size="12.5" fill="currentColor">Refuse, or ask a</text>
           <text x="560" y="440" text-anchor="middle" font-size="12.5" fill="currentColor">clarifying question</text>
-          <text x="560" y="460" text-anchor="middle" font-size="10.5" fill="var(--prob)">Claude Sonnet 5 writes this text</text>
-          <text x="560" y="475" text-anchor="middle" font-size="10" fill="var(--alert)">can't override the gate's call &middot; explain never runs</text>
+          <text x="560" y="458" text-anchor="middle" font-size="10.5" fill="var(--prob)">Claude Sonnet 5 writes this text</text>
+          <text x="560" y="474" text-anchor="middle" font-size="10" fill="var(--alert)">can&rsquo;t override the gate&rsquo;s call</text>
+          <text x="560" y="488" text-anchor="middle" font-size="10" fill="var(--alert)">explain never runs</text>
 
           <!-- returns -->
           <path d="M320,340 L320,375 L130,375 L130,345" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
@@ -1236,9 +1263,38 @@
 
           <path d="M1195,340 L1195,520 L20,520 L20,295 L36,295" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
           <text x="620" y="512" font-size="11" fill="var(--det)">answer + chart + provenance</text>
+
+          <!-- The third model pathway. Deliberately a separate band with no
+               arrow into the row above: it is not a step in /api/ask. The
+               teaser is derived in Go on every answered question; the advice
+               is a distinct, billed call behind a distinct endpoint. Solid
+               det teal for the derivation, dashed prob purple for the model
+               call: the same two treatments the tool layer and the gate
+               diamond already use in this diagram. -->
+          <text x="40" y="572" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">A THIRD PATHWAY &#183; SEPARATE ENDPOINT</text>
+          <rect x="40" y="584" width="420" height="104" rx="9" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="64" y="612" font-size="13" font-weight="600" fill="currentColor">Insight teaser &mdash; plain Go, zero cost</text>
+          <text x="64" y="636" font-size="11.5" fill="currentColor">deriveBusinessInsightTeaser inspects the same</text>
+          <text x="64" y="654" font-size="11.5" fill="currentColor">tool results this answer already computed. Most</text>
+          <text x="64" y="672" font-size="11.5" fill="currentColor">answers get nothing &mdash; no generic filler.</text>
+
+          <line x1="460" y1="636" x2="576" y2="636" stroke="var(--det)" stroke-width="1.5" marker-end="url(#bDet)"/>
+          <text x="518" y="624" text-anchor="middle" font-size="10.5" fill="var(--det)">owner taps</text>
+
+          <text x="790" y="572" text-anchor="middle" font-size="11" fill="var(--prob)">Claude Sonnet 5</text>
+          <rect x="580" y="584" width="420" height="104" rx="9" fill="var(--prob-soft)" stroke="var(--prob)" stroke-dasharray="4 3"/>
+          <text x="604" y="612" font-size="13" font-weight="600" fill="currentColor">Business Insight advisor</text>
+          <text x="604" y="636" font-size="11.5" fill="currentColor">internal/advisor. One bounded call, only when</text>
+          <text x="604" y="654" font-size="11.5" fill="currentColor">the owner taps. General practice connected to</text>
+          <text x="604" y="672" font-size="11.5" fill="currentColor">the computed pattern &mdash; advice, not a figure.</text>
+
+          <text x="1030" y="612" font-size="11.5" fill="var(--muted)">Never written to question_interaction:</text>
+          <text x="1030" y="630" font-size="11.5" fill="var(--muted)">advisory spend is ledgered apart from</text>
+          <text x="1030" y="648" font-size="11.5" fill="var(--muted)">answer spend, so neither total lies.</text>
+          <text x="1030" y="672" font-family="var(--font-mono)" font-size="11" fill="var(--prob)">business_insight_interaction</text>
         </svg>
         </div>
-        <figcaption>Two deterministic steps bracket the model layer: a cache in front of it, so a repeated <em>or paraphrased</em> question spends little to nothing, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Sonnet 5 call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat. The paraphrase check inside the cache box is itself a small, real, billed Haiku call &mdash; disclosed as spend, never presented as free.</figcaption>
+        <figcaption>The box sitting on top of the gate is the newest and the most load-bearing: comparing an explicit date against the data's known window is <em>arithmetic</em>, so <code>internal/ambiguity/daterange.go</code> now does it in Go before the gate's model call exists. An explicit out-of-range date is refused there for zero tokens; an in-range one is handed down as settled fact rather than re-derived. It leaves on the same refusal path the gate uses, which is why no second arrow is drawn for it. Two more deterministic steps bracket the model layer: a cache in front of it, so a repeated <em>or paraphrased</em> question spends little to nothing, and a chart-type decision behind it, so which chart an answer gets is derived in Go from the tool result rather than asked of a second model. The gate is a real, billed Sonnet 5 call, which is exactly why the cache probe sits <em>before</em> it &mdash; checking afterwards would still spend money on every repeat. The paraphrase check inside the cache box is itself a small, real, billed Haiku call &mdash; disclosed as spend, never presented as free.</figcaption>
       </figure>
 
       <div class="legend">
@@ -1249,11 +1305,11 @@
     </section>
 
     <section>
-      <h2>Two models, two jobs, and why each one</h2>
+      <h2>Two models, and every job each one is trusted with</h2>
       <div class="cols">
         <div class="card soft">
           <h3>Claude Sonnet 5 &mdash; the ambiguity gate <span style="font-weight:400;color:var(--muted);font-size:0.7em;">(moved off Haiku 4.5, 2026-08-29)</span></h3>
-          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at 512 output tokens. (This same package also makes a conditional second Sonnet 5 call to write the final prose &mdash; see the callout below.)</p>
+          <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at <strong>1536 output tokens</strong> &mdash; raised twice from the original 512 (512&nbsp;&rarr;&nbsp;768&nbsp;&rarr;&nbsp;1536), each time after a <em>real live truncation</em>, not as precautionary headroom: first on a compound multi-part question, then on a question whose refusal reason is composed inside this same call, which has to classify <em>and</em> write a specific explanation of what is missing within one budget. A response that still hits the cap is caught explicitly by a <code>stop_reason</code> check, never silently trusted. The conditional writer pass keeps its own, smaller 768 cap. (That second Sonnet 5 call is described in the callout below.)</p>
           <ul style="font-size:14.5px;padding-left:18px;">
             <li><strong>Why not the cheap model anymore:</strong> this ran on Haiku 4.5 for the original single-year window, where classification didn't need frontier reasoning. Once the live dataset grew to span 2024&ndash;2026, Haiku repeatedly misclassified fully in-range, explicitly-dated questions (e.g. &ldquo;July 2026&rdquo;) as unanswerable &mdash; a real date-comparison failure across a year boundary, not a prompt-wording issue. Three prompt-only fixes were tried and verified <em>not</em> to fix it; swapping this one call to Sonnet 5 fixed it immediately. Full rationale in <code>internal/llmclient/cost.go</code>'s doc comment.</li>
             <li><strong>Why it cannot leak a number:</strong> the package has no import path to <code>internal/storage</code> or <code>internal/mcptools</code> at all. It sees question text and nothing else. The one exception is deliberate and narrow &mdash; it is handed the data's real min/max date range as two plain strings, so &ldquo;today&rdquo; grounds against what the data covers rather than the host machine's clock.</li>
@@ -1275,6 +1331,9 @@
       </div>
       <p class="prose" style="margin-top:20px;">Both go through one shared client (<code>internal/llmclient</code>) with a 30-second bound on every call, so no model call anywhere in the system is untimed, uninstrumented, or unbounded. Pricing is held in one table there: $2/$10 per MTok for Sonnet 5 (the gate, its conditional writer pass, the explanation step, and spec 009&rsquo;s opt-in business-insight advisor in <code>internal/advisor</code> &mdash; a per-tap call behind a deterministic Go trigger, ledgered in its own <code>business_insight_interaction</code> table), $1/$5 for Haiku 4.5 (the paraphrase-match cache check only, in <code>internal/paraphrase</code>) &mdash; and an unrecognised model id is an error, not a silent zero.</p>
       <div class="callout" style="margin-top:20px;">
+        <strong>A third pathway, and the only one that produces something other than a fact.</strong> The Business Insight advisor (<code>internal/advisor</code>, <code>internal/httpapi/business_insight.go</code>) is split down the middle by the same line as everything else here, and the split is the point. <em>Whether</em> an insight exists, and <em>what</em> it is about, is decided by <code>deriveBusinessInsightTeaser</code> &mdash; a plain Go function that runs on every answered question, over the tool results already in scope, at zero cost and with no model call. Most answers get nothing, which is the correct outcome, not a gap to fill with a generic tip. Only when the owner explicitly taps does a separate, real, billed Claude Sonnet 5 call run behind <code>POST /api/business-insight</code>, and its trigger is re-verified in Go against the posted payload so no client can talk the advisor into advising on a pattern the data does not show. Two things keep it honest: the output is <strong>general industry practice connected to a computed pattern &mdash; probabilistic advice, never a computed figure</strong>, which is why the diagram draws it dashed in the probabilistic purple rather than in the deterministic teal every number on this page uses; and it is logged to its own <code>business_insight_interaction</code> table, never <code>question_interaction</code>, so advisory spend can never be mistaken for the cost of answering a question.
+      </div>
+      <div class="callout" style="margin-top:20px;">
         <strong>A zero-cost fourth path: a meta-question never reaches either model.</strong> "What do you do?", "how can you help me?" used to reach the ambiguity gate, get correctly judged out-of-scope for the restaurant's data, and refused &mdash; honest, but the worst possible first impression. <code>internal/httpapi/capability.go</code> pattern-matches a fixed set of real meta-question phrasings <em>before</em> the cache probe or either model call, and answers directly from a hand-written, tool-grounded capability description &mdash; the same discipline as never asking a model to describe its own capabilities (it would happily invent one that doesn't exist). Zero tokens, zero latency, and gated on there being no clarification already in flight, so a bare reply like "hi" answering an unrelated clarifying question is never mistaken for a fresh meta-question.
       </div>
       <p class="prose" style="margin-top:12px;font-size:14.5px;color:var(--muted);">This project's whole ambiguity/refusal discipline &mdash; classify cheaply first, refuse rather than fabricate, pair every non-answer with a concrete next step &mdash; is generalised into a reusable Claude Code skill, <code>.claude/skills/question-recovery-design</code>, so the same recovery-design pattern can be applied to a future chat or agent surface beyond this product. Its sibling, <code>.claude/skills/proactive-guidance-design</code>, covers the other half: what a chat surface should offer <em>before</em> the first question and <em>after</em> a successful one &mdash; the zero-state capability list and the follow-up suggestions above are its worked example in this exact codebase. The meta-question path above is <code>question-recovery-design</code>'s newest worked example, folded into that skill's Move 5.</p>
@@ -1295,7 +1354,9 @@
             <tr><td class="mono">internal/badges</td><td class="mono">reconcile, storage</td><td class="no">no</td><td class="yes">read-only</td></tr>
             <tr><td class="mono">internal/ambiguity</td><td class="mono">llmclient, instrumentation</td><td class="yes">Sonnet 5 (gate) + Sonnet 5 (writer, conditional)</td><td class="no"><strong>no import path exists</strong></td></tr>
             <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
-            <tr><td class="mono">internal/httpapi</td><td class="mono">ambiguity, explain, answercache, mcptools, instrumentation, llmclient, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
+            <tr><td class="mono">internal/advisor</td><td class="mono">llmclient</td><td class="yes">Sonnet 5 (opt-in, per tap)</td><td class="no"><strong>no import path exists</strong></td></tr>
+            <tr><td class="mono">internal/paraphrase</td><td class="mono">llmclient, answercache</td><td class="yes">Haiku 4.5 (cache miss only)</td><td class="no">no &mdash; candidates are handed in</td></tr>
+            <tr><td class="mono">internal/httpapi</td><td class="mono">advisor, ambiguity, explain, answercache, paraphrase, mcptools, instrumentation, llmclient, ingest, pipeline, livedata, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
           </tbody>
         </table>
       </div>
@@ -1332,6 +1393,7 @@
             <tr><td class="mono">get_promotion_roi<br>list_negative_roi_promotions</td><td>Bar, or table for one</td><td>2+ campaigns is a magnitude comparison across named categories. A single campaign becomes a table: the content is its several columns of detail, and a one-bar bar chart is an anti-pattern.</td></tr>
             <tr><td class="mono">get_daily_summary</td><td>Nothing / bar / pie</td><td>Nothing for a single day &mdash; the sentence already carries the figure. 2+ days becomes a bar of margin per day. One day splitting across 3&ndash;6 sources becomes a pie of gross sales by source, the one genuine part-to-whole here. A two-slice pie is never produced.</td></tr>
             <tr><td class="mono">compare_platform_economics</td><td>Bar, four marks</td><td>Two platforms &times; two cost views (commission-only, commission&thinsp;+&thinsp;promo) is a magnitude comparison across named categories, the same job as <code>get_margin_delta</code>. A platform's <code>effective_rate</code> is <code>null</code>, never a fabricated 0%, when it has zero sales &mdash; that platform still draws as a real, visible zero-height bar for gross sales, just not a rate.</td></tr>
+            <tr><td class="mono">get_expense_pattern_by_day_of_month</td><td>Nothing, so far</td><td>The eighth tool ships with no case in <code>visualization.go</code>, so a day-of-month expense question renders as narration alone. Recorded here rather than quietly omitted: the ranked-average shape it returns is a genuine bar-chart candidate, and the gap is a known one, not a decision that it should never have a chart.</td></tr>
             <tr><td class="mono">get_period_totals</td><td>Pie</td><td>The whole period's gross sales by source, gated 3&ndash;6 slices exactly like <code>get_daily_summary</code>'s single-day pie &mdash; the same part-to-whole shape, just summed instead of one day's figures. Shipped without a case at first; a period-totals question fell through to an empty default and rendered no chart until this was added.</td></tr>
           </tbody>
         </table>
@@ -1345,7 +1407,7 @@
       <div class="cols" style="margin-top:20px;">
         <div class="card soft">
           <h3>Grounded, not generic</h3>
-          <p style="font-size:14.5px;">Every generated suggestion is built from the real date or period the answering tool was actually called with, clamped to the real min/max date range the product has data for &mdash; never a placeholder, never a date outside real coverage. All 7 tools have at least one template; a tool combination with nothing sensible to suggest returns an empty list, which is treated as a normal, honest outcome, not a bug to paper over.</p>
+          <p style="font-size:14.5px;">Every generated suggestion is built from the real date or period the answering tool was actually called with, clamped to the real min/max date range the product has data for &mdash; never a placeholder, never a date outside real coverage. Seven of the eight tools have at least one template &mdash; <code>get_expense_pattern_by_day_of_month</code>, the newest, has none yet, and a tool combination with nothing sensible to suggest returns an empty list, which is treated as a normal, honest outcome, not a bug to paper over.</p>
         </div>
         <div class="card soft">
           <h3>One hop of conversation, not a transcript</h3>
@@ -1361,7 +1423,7 @@
           <h3>Hard limits</h3>
           <ul>
             <li>Refuses rather than estimates when data is missing or incomplete. A confidently wrong margin figure is worse than a refusal.</li>
-            <li>No open SQL, no free-form computation. Seven defined, typed MCP tools, and nothing else.</li>
+            <li>No open SQL, no free-form computation. Eight defined, typed MCP tools, and nothing else.</li>
             <li>5-second timeout on every tool call and a hard 8-call cap per interaction, enforced in mcp-go's own dispatch middleware &mdash; not something an individual handler has to remember. Exceeding either returns a typed error the model can see and self-correct from, rather than crashing or truncating the interaction.</li>
             <li>30-second bound on every model call.</li>
             <li>Chart selection is deterministic Go &mdash; never a second model call deciding how a financial figure is drawn.</li>
@@ -1420,7 +1482,7 @@
         </div>
         <div class="card">
           <h3>No multi-agent architecture</h3>
-          <p style="font-size:14.5px;">Two model calls with two clearly different jobs is not a multi-agent system, and calling it one would be dressing up a pipeline. There is no orchestrator, no agent-to-agent messaging, and nothing that would benefit from either.</p>
+          <p style="font-size:14.5px;">A handful of model calls with clearly different jobs &mdash; classify, write a refusal, narrate, match a paraphrase, advise on request &mdash; is not a multi-agent system, and calling it one would be dressing up a pipeline. Each is a single bounded call made by one Go function; there is no orchestrator, no agent-to-agent messaging, and nothing that would benefit from either.</p>
         </div>
         <div class="card">
           <h3>No open-ended semantic search</h3>

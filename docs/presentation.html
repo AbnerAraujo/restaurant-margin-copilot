@@ -704,12 +704,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <polyline points="160,450 160,548 280,548" fill="none" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
       <text x="168" y="497" font-size="10.5" fill="var(--det)">out of range —</text>
       <text x="168" y="511" font-size="10.5" fill="var(--det)">refused, 0 tokens</text>
-      <text x="172" y="470" font-size="10.5" fill="var(--det)">verdicts pass to the gate as fact</text>
+      <text x="172" y="470" font-size="10.5" fill="var(--det)">in-range verdicts pass as fact</text>
       <line x1="270" y1="415" x2="278" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
       <polygon points="400,370 520,415 400,460 280,415" fill="var(--prob-soft)" stroke="var(--prob)" stroke-width="1.5" stroke-dasharray="4 3"/>
       <text x="400" y="411" text-anchor="middle" font-size="12" fill="currentColor">Answerable &amp;</text>
       <text x="400" y="426" text-anchor="middle" font-size="12" fill="currentColor">unambiguous?</text>
-      <text x="400" y="480" text-anchor="middle" font-size="10.5" fill="var(--text-secondary)">Claude Sonnet 5</text>
+      <text x="392" y="488" text-anchor="end" font-size="10.5" fill="var(--text-secondary)">Claude Sonnet 5</text>
       <line x1="400" y1="460" x2="400" y2="518" stroke="var(--negative)" stroke-width="1.5" marker-end="url(#arrowAlert)"/>
       <text x="416" y="495" font-size="11" fill="var(--negative)">ambiguous /</text>
       <text x="416" y="509" font-size="11" fill="var(--negative)">unanswerable</text>
@@ -722,7 +722,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <text x="564" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
       <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
       <text x="690" y="410" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-      <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, 7 typed tools)</text>
+      <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, 8 typed tools)</text>
       <line x1="770" y1="415" x2="818" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
       <rect x="820" y="380" width="180" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
       <text x="910" y="410" text-anchor="middle" font-size="13" fill="currentColor">Claude Sonnet 5</text>
@@ -741,19 +741,19 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 11 · Ports & adapters -->
-<div class="slide wide" data-notes="Same boundary, enforced structurally: the package dependency graph makes the rule physical. internal/reconcile has zero outgoing calls; internal/ambiguity has no path to real data at all; internal/explain crosses only through the typed port.">
+<div class="slide wide" data-notes="Same boundary, enforced structurally: the package dependency graph makes the rule physical. internal/reconcile has zero outgoing calls; internal/ambiguity and internal/advisor have no path to real data at all; internal/explain crosses only through the typed port. The two dashed boxes on the right are the calls that never see a row — the gate classifies question text, and the advisor is handed an already-computed tool result and asked only to connect it to general practice. Whether an insight exists at all is decided in Go, for free, before the advisor is ever called.">
   <div class="a tag">Architecture &middot; ports &amp; adapters</div>
   <h2 class="a md">The boundary is a dependency graph, not a rule to remember</h2>
   <figure class="a arch">
-    <svg viewBox="0 0 1240 520" role="img" aria-label="internal/ingest and cmd/server call into internal/reconcile, the pure domain core with zero outgoing calls. internal/mcptools queries internal/storage read-only. A dashed boundary marks the only crossing point: internal/explain calls internal/mcptools; internal/ambiguity has no path to real data. Both log to internal/instrumentation.">
+    <svg viewBox="0 0 1240 520" role="img" aria-label="internal/ingest and cmd/server call into internal/reconcile, the pure domain core with zero outgoing calls. internal/mcptools queries internal/storage read-only. A dashed boundary marks the only crossing point: internal/explain calls internal/mcptools; internal/ambiguity and internal/advisor, both drawn with dashed outlines, have no path to real data at all. internal/advisor is the opt-in business-insight advisor, whose output is advice rather than a computed figure. internal/ambiguity and internal/explain log to internal/instrumentation.">
       <defs>
         <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
         <marker id="arrow2Det" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/></marker>
       </defs>
       <line x1="775" y1="88" x2="775" y2="272" stroke="var(--negative)" stroke-width="1.5" stroke-dasharray="6 4"/>
       <line x1="775" y1="318" x2="775" y2="480" stroke="var(--negative)" stroke-width="1.5" stroke-dasharray="6 4"/>
-      <text x="775" y="52" text-anchor="middle" font-size="11.5" fill="var(--negative)">Principle III boundary —</text>
-      <text x="775" y="68" text-anchor="middle" font-size="11.5" fill="var(--negative)">the only crossing point</text>
+      <text x="775" y="46" text-anchor="middle" font-size="11.5" fill="var(--negative)">Principle III boundary —</text>
+      <text x="775" y="62" text-anchor="middle" font-size="11.5" fill="var(--negative)">the only crossing point</text>
       <rect x="30" y="70" width="180" height="70" rx="8" fill="var(--surface)" stroke="var(--det)"/>
       <text x="120" y="100" text-anchor="middle" font-size="13" fill="currentColor">internal/ingest</text>
       <text x="120" y="117" text-anchor="middle" font-size="11" fill="var(--text-secondary)">parses CSV exports</text>
@@ -777,7 +777,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <text x="615" y="117" text-anchor="middle" font-size="11" fill="var(--text-secondary)">sqlc + pgx</text>
       <rect x="520" y="260" width="190" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
       <text x="615" y="290" text-anchor="middle" font-size="13" fill="currentColor">internal/mcptools</text>
-      <text x="615" y="307" text-anchor="middle" font-size="11" fill="var(--text-secondary)">typed tool port · 7 tools</text>
+      <text x="615" y="307" text-anchor="middle" font-size="11" fill="var(--text-secondary)">typed tool port · 8 tools</text>
       <line x1="615" y1="140" x2="615" y2="255" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrow2Det)"/>
       <text x="630" y="200" font-size="10.5" fill="var(--det)">queries, read-only</text>
       <line x1="710" y1="295" x2="845" y2="295" stroke="var(--prob)" stroke-width="1.5" marker-end="url(#arrow2)"/>
@@ -786,6 +786,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <text x="945" y="97" text-anchor="middle" font-size="13" fill="currentColor">internal/ambiguity</text>
       <text x="945" y="114" text-anchor="middle" font-size="11" fill="var(--text-secondary)">Claude Sonnet 5</text>
       <text x="945" y="129" text-anchor="middle" font-size="9.5" fill="var(--text-tertiary)">+ Sonnet writer, conditional</text>
+      <rect x="850" y="158" width="190" height="68" rx="8" fill="var(--prob-soft)" stroke="var(--prob)" stroke-dasharray="4 3"/>
+      <text x="945" y="185" text-anchor="middle" font-size="13" fill="currentColor">internal/advisor</text>
+      <text x="945" y="202" text-anchor="middle" font-size="11" fill="var(--text-secondary)">Claude Sonnet 5 &middot; opt-in</text>
+      <text x="945" y="217" text-anchor="middle" font-size="9.5" fill="var(--text-tertiary)">advice, never a computed figure</text>
       <rect x="850" y="260" width="190" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
       <text x="945" y="290" text-anchor="middle" font-size="13" fill="currentColor">internal/explain</text>
       <text x="945" y="307" text-anchor="middle" font-size="11" fill="var(--text-secondary)">Claude Sonnet 5</text>
@@ -906,9 +910,11 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         <tr><td>Ambiguity gate</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Clarify/refuse wording <span style="color:var(--text-tertiary)">(conditional)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Explanation</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
-        <tr><td><b>Arithmetic, capability questions, out-of-range dates</b></td><td><b>&mdash; none &mdash;</b></td><td class="num-cell">$0</td></tr>
+        <tr><td>Business-insight advice <span style="color:var(--text-tertiary)">(opt-in, per tap)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
+        <tr><td>Paraphrase-match cache check <span style="color:var(--text-tertiary)">(on a miss)</span></td><td>Haiku 4.5</td><td class="num-cell">$1 / $5</td></tr>
+        <tr><td><b>Arithmetic, capability questions, out-of-range dates, insight triggers, chart choice</b></td><td><b>&mdash; none &mdash;</b></td><td class="num-cell">$0</td></tr>
       </table>
-      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 7 typed tools, <b>no agent framework</b>. "What do you do?" is pattern-matched &mdash; and an explicit date outside the data window is refused by a deterministic Go pre-check &mdash; before either model runs. Zero tokens, either way.</p>
+      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 8 typed tools, <b>no agent framework</b>. Whether a business insight is worth offering is decided in Go for free; only the advice <i>text</i> costs anything, only if the owner taps, and it bills into its own ledger. "What do you do?" is pattern-matched &mdash; and an explicit date outside the data window is refused by a deterministic Go pre-check &mdash; before either model runs. Zero tokens, either way.</p>
       <p style="margin-top:6px;font-size:13px;color:var(--text-secondary)">The gate moved off Haiku 4.5 on 2026-08-29 after a cross-year date-comparison bug at scale &mdash; and the honest postscript is that the swap treated a symptom: comparing an explicit date against a known window is <b>arithmetic</b>, so it was hoisted into Go entirely. Sonnet 5 stays for what is genuinely a language job &mdash; vague/relative dates and the classification itself. The paraphrase-match cache classifier stays on Haiku 4.5 &mdash; it never showed the bug.</p>
     </div>
     <div class="refundcard">
@@ -999,10 +1005,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 <!-- 20b · MCP tools and skills, named -->
 <div class="slide wide" data-notes="Every tool and skill named directly, so this isn't a vague 'AI helped build this' claim — each is a real, checkable line item: a typed MCP tool with a file path, or a Claude Code skill named in a real commit message. Full detail in docs/mcp-and-skills.md and README.md.">
   <div class="a tag">Built with &mdash; named, not vague</div>
-  <h2 class="a lg">The 7 tools and the skills, by name</h2>
+  <h2 class="a lg">The 8 tools and the skills, by name</h2>
   <div class="a cols2eq">
     <div class="refundcard">
-      <h3>The 7 MCP tools &mdash; the model's entire reach</h3>
+      <h3>The 8 MCP tools &mdash; the model's entire reach</h3>
       <table class="data-table" style="margin-top:8px;max-width:none">
         <tr><th>Tool</th><th>Answers</th></tr>
         <tr><td class="mono" style="font-size:12.5px">get_daily_summary</td><td style="font-size:12.5px">One day's full reconciliation</td></tr>
@@ -1012,6 +1018,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         <tr><td class="mono" style="font-size:12.5px">list_negative_roi_promotions</td><td style="font-size:12.5px">Every losing campaign</td></tr>
         <tr><td class="mono" style="font-size:12.5px">compare_platform_economics</td><td style="font-size:12.5px">iFood vs. JET, side by side</td></tr>
         <tr><td class="mono" style="font-size:12.5px">get_period_totals</td><td style="font-size:12.5px">Period totals + best/worst day</td></tr>
+        <tr><td class="mono" style="font-size:12.5px">get_expense_pattern_by_day_of_month</td><td style="font-size:12.5px">Which day of the month costs most</td></tr>
       </table>
     </div>
     <div class="refundcard">
