@@ -292,12 +292,17 @@ function edgeAwareTextAnchor(
   return { x, textAnchor: 'middle' }
 }
 
-// Rough px-per-character at the 9.5px tick font — no real text metrics are
+// Px-per-character at the 9.5px tick font — no real text metrics are
 // available here (no canvas measureText, no DOM ref timing that would
-// survive SSR-free but still synchronous render), so this trades precision
-// for "good enough to avoid the actual reported collision" the same way
-// MIN_SLOT_WIDTH and the other real-scale constants above do.
-const AXIS_LABEL_CHAR_WIDTH_PX = 5.6
+// survive SSR-free but still synchronous render), so a constant stands in.
+//
+// 5.6 was a guess, and it under-measured: the last two campaign-id ticks
+// still touched. Measured against the rendered SVG (`getBBox().width` on
+// every live campaign-id tick, 2026-08-30): 6.08-6.24 px/char, mean 6.16.
+// 6.3 rounds UP on purpose — over-estimating a label's width drops one tick
+// too many, which reads fine; under-estimating collides two labels, which
+// is the bug this exists to prevent.
+const AXIS_LABEL_CHAR_WIDTH_PX = 6.3
 // Minimum breathing room between two adjacent tick labels' estimated edges.
 const AXIS_LABEL_GAP_PX = 6
 
