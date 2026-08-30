@@ -10,10 +10,12 @@ import HelpPage from './HelpPage'
 // The authoritative list of real page paths, derived from the same route
 // table the app itself renders from — never hand-copied — so this test can
 // never drift the way HelpPage.tsx itself once did. `/help` is excluded: the
-// Help page doesn't walk through a link to itself.
+// Help page doesn't walk through a link to itself. `*` (the 404 catch-all)
+// is excluded too: it isn't a real page to send an owner to, it's what
+// renders when they end up somewhere that ISN'T one.
 const REAL_PAGE_PATHS = (routes[0].children ?? [])
   .map((route) => (route.index ? '/' : `/${route.path}`))
-  .filter((path) => path !== '/help')
+  .filter((path) => path !== '/help' && path !== '/*')
 
 const COVERAGE_RESPONSE = { start: '2024-08-01', end: '2026-08-14', days: [] }
 
