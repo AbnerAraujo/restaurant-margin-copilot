@@ -35,6 +35,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/mcptools"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/paraphrase"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/pipeline"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
 
@@ -162,6 +163,24 @@ func main() {
 		mux.HandleFunc("/api/ingest/cost-sheet/commit", httpapi.HandleCommitCostSheet(store, cache))
 		mux.HandleFunc("/api/ingest/cost-sheet/template", httpapi.HandleCostSheetTemplate)
 
+		// specs/010-platform-connector-proxy: delivery-platform revenue
+		// pulled from iFood and Just Eat Takeaway instead of from an
+		// exported CSV. Both upstreams are SIMULATED — this project has no
+		// partner-API credentials for either platform — and every response
+		// on these three routes says so in its own body. The proxy is
+		// constructed once here, like the llmclient below, so all three
+		// handlers share one registration of the two connectors.
+		//
+		// No model anywhere in this path: the fetch is seeded pseudorandom
+		// Go, the normalization is Go, and the sync re-runs the same
+		// internal/pipeline the -ingest flag above runs. It needs the same
+		// concrete *storage.Queries and the same answer cache the
+		// cost-sheet commit does, for the same reasons.
+		connectors := platformconnector.NewSimulatedProxy()
+		mux.HandleFunc("/api/connectors/platforms", httpapi.HandleConnectorPlatforms(connectors))
+		mux.HandleFunc("/api/connectors/sync/preview", httpapi.HandleConnectorSyncPreview(connectors))
+		mux.HandleFunc("/api/connectors/sync", httpapi.HandleConnectorSync(connectors, store, cache))
+
 		// One shared llmclient.Client for every model call this process
 		// makes — the ask pipeline (gate/explain/paraphrase) and the
 		// business-insight advisor alike — so all of them share one
@@ -189,7 +208,7 @@ func main() {
 			Store:   store,
 		}))
 
-		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, GET/PUT /api/profile, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
+		log.Printf("serving GET /api/badges, GET /api/reconciliation, GET/POST /api/promotions, GET /api/platforms, GET /api/platforms/trend, POST /api/usage, POST /api/client-errors, GET/PUT /api/profile, POST /api/ingest/cost-sheet/{preview,commit}, GET /api/ingest/cost-sheet/template, GET /api/connectors/platforms, POST /api/connectors/sync/{preview,}, POST /api/ask, and POST /api/business-insight on %s — Ctrl+C to stop", *serveAddr)
 		if err := http.ListenAndServe(*serveAddr, withDevCORS(mux)); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}

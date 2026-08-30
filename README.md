@@ -43,6 +43,7 @@ Queried live against the running Postgres database on 2026-08-30:
 | Earned Steward points | **12,345** (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
 | MCP tools exposed to the model | **8** typed, read-only tools — no open SQL, no free-form computation |
 | Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Settings |
+| Delivery-revenue sources | **2** — an uploaded CSV export, or the simulated platform connector proxy (iFood + Just Eat Takeaway), both producing the identical record type |
 
 A note on units, because the earlier version of this table blurred them: a
 row in `question_interaction` is one **model call**, not one question. An
@@ -57,8 +58,15 @@ Steward points instead of cash, at a fixed 10¢/point rate — see
 **deterministic capability-question path** (answers "what do you do?" with a
 hand-written, tool-grounded answer, before any model call runs, at zero
 cost), a warmer chat tone (green refusal styling instead of red, warm
-narration), a **Settings page**, and the two-year synthetic dataset described
-below. A larger v2 spec (`specs/008-dashboard-chat-intelligence-v2`,
+narration), a **Settings page**, the two-year synthetic dataset described
+below, and a **platform connector proxy** — one internal interface over two
+deliberately incompatible mock partner APIs (iFood and Just Eat Takeaway),
+normalizing both into the same record the CSV parser produces so
+`internal/reconcile` has a zero-line diff from it. **Both connectors are
+simulated**: this project has no partner-API credentials for either platform,
+and the emulation is stated in the tab label, a persistent notice, each
+platform row, every API response body, and the `simulated://` provenance on
+every record it writes. A larger v2 spec (`specs/008-dashboard-chat-intelligence-v2`,
 comparisons and proactive chat guidance built on top of that new history) is
 drafted but not yet implemented — see the [spec table](#user-stories-and-specs-spec-driven-development).
 
@@ -203,6 +211,8 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/005-multi-tenant`](specs/005-multi-tenant/spec.md) | Multi-tenant support (Segment 2 expansion) | Spec + RFC only — not built, deliberately gated |
 | [`specs/007-cost-sheet-upload`](specs/007-cost-sheet-upload/spec.md) | Cost-sheet upload UI — validation, preview, template, commit-and-reconcile | Shipped |
 | [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Spec drafted (2026-08-29) — not yet planned or built |
+| [`specs/009-business-insight-advisor`](specs/009-business-insight-advisor/spec.md) | Business Insight Advisor — a deterministic Go-derived teaser plus an opt-in, separately-ledgered Claude Sonnet 5 advice call | Shipped |
+| [`specs/010-platform-connector-proxy`](specs/010-platform-connector-proxy/spec.md) | Platform Connector Proxy — one internal interface over two **simulated** iFood and Just Eat Takeaway partner APIs, normalizing both into the CSV path's own record type | Shipped (connectors emulated — no real partner-API access) |
 
 ## Real evaluation results
 
