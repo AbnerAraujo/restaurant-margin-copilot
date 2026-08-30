@@ -6,12 +6,12 @@ info:
     a daily-close and margin-alert copilot for an independent restaurant.
 
     This spec documents every route actually registered in
-    `backend/cmd/server/main.go`. It was written by reading the Go handler
-    source for each route (`backend/internal/httpapi/*.go`,
-    `backend/internal/badges/badges.go`) and cross-checked against `curl`
-    calls to a live instance of this backend seeded from
-    `backend/data/live/` — request/response shapes are not guessed from
-    route names.
+    `backend/internal/bff`'s route table (`routes.go`, specs/013-bff-layer).
+    It was written by reading the Go handler source for each route
+    (`backend/internal/httpapi/*.go`, `backend/internal/badges/badges.go`)
+    and cross-checked against `curl` calls to a live instance of this
+    backend seeded from `backend/data/live/` — request/response shapes are
+    not guessed from route names.
 
     ### The deterministic / probabilistic split
     Every endpoint except `POST /api/ask` and `POST /api/business-insight`
@@ -68,7 +68,7 @@ servers:
     description: Local backend (go run ./backend/cmd/server -serve :8080)
 
 # This is a single-owner local prototype with no auth anywhere in
-# cmd/server/main.go's route registration — every handler in
+# internal/bff's route table — every handler in
 # backend/internal/httpapi and backend/internal/badges is reachable
 # unauthenticated (see backend/internal/httpapi/client_errors.go's own doc
 # comment: "Deliberately unauthenticated and un-rate-limited, matching
