@@ -173,7 +173,7 @@ export default function ProfilePage() {
 
     const name = form.name.trim()
     if (!name) {
-      setSubmitError("Enter your restaurant's name — it's shown throughout the app and can't be blank.")
+      setSubmitError("Enter your restaurant's name — it's shown in the sidebar and can't be blank.")
       return
     }
 
@@ -245,7 +245,8 @@ export default function ProfilePage() {
       <Panel className="p-5 sm:p-6">
         <PanelHeader eyebrow="Restaurant details" title="Tell customers about your restaurant" />
         <p className="mt-1 text-xs text-muted-foreground">
-          Shown throughout the app. Only the restaurant name is required.
+          Your name and photo appear in the sidebar on every page. Only the
+          restaurant name is required.
         </p>
 
         <form
