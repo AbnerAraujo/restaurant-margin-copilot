@@ -2,8 +2,9 @@
 #
 # 15 questions with golden answers quoted VERBATIM from
 # docs/live-integration-test-scenarios.md, which in turn quotes them
-# directly from backend/fixtures/README.md's independently-computed
-# reference tables (no hand-derived sums, per that doc's own note).
+# directly from backend/cmd/gendata/opening/README.md's independently-
+# computed reference tables for the dataset's hand-authored opening window
+# (2024-08-01..14 — no hand-derived sums here, per that doc's own note).
 # See evaluation/golden/accuracy.yaml for the golden-answer record.
 #
 # Target: the live backend's POST /api/ask (real Anthropic API calls
@@ -11,6 +12,10 @@
 # moved off Haiku 4.5 on 2026-08-29, see internal/llmclient/cost.go — no
 # mocking). Start the server first:
 #   go run ./cmd/server -serve :8092   (from backend/)
+#
+# Every question carries an explicit year: the dataset runs 2024-08-01
+# through today, so a year-less "August 1st" would ground to the most
+# recent August, not the opening window.
 #
 # Grading note: a "correct" answer here means status == "answered" AND
 # the answer text contains the golden figure. A clarification_needed or
@@ -20,7 +25,7 @@
 # safely". Both are worth reporting, which is why gate/refusal behavior
 # is captured separately by refusal.yaml and manually noted here too.
 
-description: "Accuracy: 15 questions with known-correct fixture-derived answers"
+description: "Accuracy: 15 questions with known-correct answers from the hand-authored opening window"
 
 prompts:
   - "{{question}}"
@@ -44,111 +49,118 @@ defaultTest:
 tests:
   - description: "A1"
     vars:
-      question: "Delivery revenue on 2026-08-01?"
+      question: "Delivery revenue on 2024-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /145\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /374\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A2"
     vars:
-      question: "Delivery revenue on 2026-08-03? (tests duplicate-order dedup)"
+      question: "Delivery revenue on 2024-08-03? (tests duplicate-order dedup)"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /120\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /501\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A3"
     vars:
-      question: "POS revenue on 2026-08-08?"
+      question: "POS revenue on 2024-08-10?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /487\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /1[,]?204\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A4"
     vars:
-      question: "Supplier cost total for the two-week period?"
+      question: "Supplier cost total for 2024-08-01 through 2024-08-14?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /4[,]?335\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /5[,]?002\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A5"
     vars:
-      question: "iFood's share of delivery revenue on 2026-08-01?"
+      question: "iFood's share of delivery revenue on 2024-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /69\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /196\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A6"
     vars:
-      question: "Just Eat Takeaway's share on 2026-08-01?"
+      question: "Just Eat Takeaway's share on 2024-08-01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /76\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /178\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
+  # A7's second assertion checks the SIGN, not the word "flagged": the
+  # previous suite failed a correct answer purely because it disclaimed
+  # the flag in a sentence containing the word ("Not flagged as negative
+  # ROI") — a documented grading-regex false negative this rebuild fixes.
   - description: "A7"
     vars:
       question: "ROI on campaign IFOOD-CAMP-BOOST01?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /34\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /62\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
-        value: "!/-\\$?34\\.00/.test(output?.answer_text ?? '') && !/flagged/i.test(output?.answer_text ?? '')"
+        value: "!/-\\$?62\\.75/.test(output?.answer_text ?? '')"
 
   - description: "A8"
     vars:
       question: "ROI on campaign JET-CAMP-LUNCHFIX?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /165\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /450\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
-        value: "/-\\$?165\\.00|negative|loss|underperform/i.test(output?.answer_text ?? '')"
+        value: "/-\\$?450\\.75|negative|loss|underperform/i.test(output?.answer_text ?? '')"
 
   - description: "A9"
     vars:
       question: "ROI on campaign JET-CAMP-NEWMENU?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /19\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /33\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
       - type: javascript
-        value: "!/-\\$?19\\.50/.test(output?.answer_text ?? '')"
+        value: "!/-\\$?33\\.75/.test(output?.answer_text ?? '')"
 
+  # A10 is period-bounded on purpose: the full multi-year dataset has its
+  # own negative-ROI campaigns in later months, so only the opening window
+  # has a single known-correct answer.
   - description: "A10"
     vars:
-      question: "Which campaigns should be flagged as underperforming?"
+      question: "Which campaigns should be flagged as underperforming between 2024-08-01 and 2024-08-14?"
     assert:
       - type: javascript
         value: "output?.status === 'answered' && /LUNCHFIX/i.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A11"
     vars:
-      question: "Delivery revenue on 2026-08-04?"
+      question: "Delivery revenue on 2024-08-04?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /125\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /395\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A12"
     vars:
-      question: "Delivery revenue on 2026-08-14?"
+      question: "Delivery revenue on 2024-08-14?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /140\\.50/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /367\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A13"
     vars:
-      question: "iFood's share on 2026-08-14?"
+      question: "iFood's share on 2024-08-14?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /66\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /187\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A14"
     vars:
-      question: "Just Eat Takeaway's share on 2026-08-05?"
+      question: "Just Eat Takeaway's share on 2024-08-05?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /71\\.25/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /141\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
 
   - description: "A15"
     vars:
-      question: "Delivery revenue on 2026-08-02, net of the refund?"
+      question: "Delivery revenue on 2024-08-02, net of the refund?"
     assert:
       - type: javascript
-        value: "output?.status === 'answered' && /119\\.75/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"
+        value: "output?.status === 'answered' && /384\\.00/.test(output?.answer_text ?? '') && (output?.provenance_refs?.length ?? 0) > 0"

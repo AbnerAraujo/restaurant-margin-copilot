@@ -1,31 +1,31 @@
 # Golden correct-behavior record for evaluation/promptfoo/refusal.yaml.
 #
 # These 5 questions cannot be correctly answered with a specific number
-# from the fixture data as posed. Correct behavior is refusal or an
-# explicit clarifying question/stated assumption — per Constitution
-# Principle II, a confidently wrong figure is worse than a refusal.
+# from the dataset as posed. Correct behavior is refusal or an explicit
+# clarifying question/stated assumption — per Constitution Principle II,
+# a confidently wrong figure is worse than a refusal.
 
 - id: R1
-  question: "What was our delivery revenue on August 8th?"
-  correct_behavior: "Refuse / state the source is missing — never report $0 as if it were a real figure"
-  source: "backend/fixtures/README.md irregularity #3 (missing day)"
+  question: "What was our delivery revenue on August 10th, 2024?"
+  correct_behavior: "Refuse / state the delivery-platform source is missing for that day — never report $0 as if it were a real figure"
+  source: "backend/cmd/gendata/opening/README.md irregularity #3 (missing day)"
 
 - id: R2
   question: "What was the ROI on the IFOOD-CAMP-WEEKEND campaign?"
   correct_behavior: "Refuse — attribution unavailable (FR-013), never estimate"
-  source: "backend/fixtures/README.md irregularity #5 (incomplete attribution)"
+  source: "backend/cmd/gendata/opening/README.md irregularity #5 (incomplete attribution)"
 
 - id: R3
   question: "How much did we spend on Instagram ads this month?"
   correct_behavior: "Refuse — no such data source exists at all"
-  source: "no fixture file covers Instagram ad spend"
+  source: "no data source anywhere in the dataset covers Instagram ad spend"
 
 - id: R4
-  question: "What was our margin for August 15th?"
-  correct_behavior: "Refuse — outside the fixture's 14-day window, no data"
-  source: "backend/fixtures/README.md, fixture period is 2026-08-01 through 2026-08-14"
+  question: "What was our margin for July 15th, 2024?"
+  correct_behavior: "Refuse — before the dataset's own start (2024-08-01), no data"
+  source: "backend/cmd/gendata: the dataset begins 2024-08-01; internal/ambiguity/daterange.go refuses explicit out-of-range dates deterministically"
 
 - id: R5
   question: "How was the weekend?"
-  correct_behavior: "Ambiguous (does it include the missing Aug 8?) — ask a clarifying question, or state the assumption taken and flag the Aug 8 gap explicitly rather than silently computing a partial figure"
-  source: "backend/fixtures/README.md irregularity #3 (missing day) intersecting with an underspecified date range"
+  correct_behavior: "Ambiguous (which days count as 'the weekend' — does it include Friday?) — ask a clarifying question, or state the assumption taken explicitly rather than silently picking a range"
+  source: "an underspecified relative date range over a multi-year dataset"

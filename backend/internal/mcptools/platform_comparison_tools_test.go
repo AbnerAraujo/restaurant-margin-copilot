@@ -1,33 +1,33 @@
 package mcptools_test
 
-// TestComparePlatformEconomics_MatchesFixtureReferenceValues is a genuine
+// TestComparePlatformEconomics_MatchesOpeningReferenceValues is a genuine
 // integration test against the live PostgreSQL instance (DATABASE_URL),
-// reusing the real, already-persisted fixture data (an earlier `-ingest`/
+// reusing the real, already-persisted dataset (an earlier `-ingest`/
 // `-ingest-promo` pipeline run), the same read-only pattern
 // promo_tools_test.go's TestGetPromotionRoi_ResolvesRealCampaignByHumanReadableOrShortenedName
 // already established: it makes no writes, so it costs nothing and can
-// never collide with real fixture rows.
+// never collide with real rows.
 //
 // Every expected figure below was computed INDEPENDENTLY of this
-// repository's Go code — a standalone Python script parsed
-// backend/fixtures/delivery_platform_export.csv and
+// repository's Go code — a standalone Python script parsed the
+// hand-authored opening window's delivery_platform_export.csv and
 // promotion_ad_spend_export.csv directly (dedup'ing the byte-for-byte
 // duplicate order 0011, summing completed-only subtotals for gross sales,
 // summing completed+refunded recomputed commission per row, and summing
-// promo spend for campaigns whose period overlaps 2026-08-01..14), matching
+// promo spend for campaigns whose period overlaps 2024-08-01..14), matching
 // this project's own established double-verification discipline
-// (fixtures/README.md: "computed independently... by hand, then
+// (cmd/gendata/opening/README.md: "chosen and summed by hand, then
 // cross-checked with a throwaway script").
 //
-// iFood's effective rate is 22.06%, not the nominal flat 23% rate
-// (backend/fixtures/README.md) — a real consequence of the
-// IFOOD-20260802-0007 refund: gross sales still counts that order's
-// completed-row subtotal (34.50), but its net commission contribution is
-// zero (the refund row's -7.94 cancels the completed row's +7.94), so total
-// commission ends up short of a flat 23% of true completed gross. This is
-// exactly why FR-001 forbids deriving effective_rate from a hardcoded rate
-// table: the real per-order data diverges from the nominal rate, and only
-// summing real per-order commission recovers that.
+// iFood's effective rate is 22.44%, not the nominal flat 23% rate
+// (opening/README.md) — a real consequence of the IFOOD-20240802-0006
+// refund: gross sales still counts that order's completed-row subtotal
+// (62.25), but its net commission contribution is zero (the refund row's
+// -14.32 cancels the completed row's +14.32), so total commission ends up
+// short of a flat 23% of true completed gross. This is exactly why FR-001
+// forbids deriving effective_rate from a hardcoded rate table: the real
+// per-order data diverges from the nominal rate, and only summing real
+// per-order commission recovers that.
 import (
 	"context"
 	"os"
@@ -42,7 +42,7 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
 
-func TestComparePlatformEconomics_MatchesFixtureReferenceValues(t *testing.T) {
+func TestComparePlatformEconomics_MatchesOpeningReferenceValues(t *testing.T) {
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
 		t.Skip("DATABASE_URL not set; skipping live-Postgres integration test")
@@ -57,9 +57,9 @@ func TestComparePlatformEconomics_MatchesFixtureReferenceValues(t *testing.T) {
 
 	q := storage.New(conn)
 
-	result, toolErr, err := mcptools.ComparePlatformEconomics(ctx, q, mcptools.Period{Start: "2026-08-01", End: "2026-08-14"})
+	result, toolErr, err := mcptools.ComparePlatformEconomics(ctx, q, mcptools.Period{Start: "2024-08-01", End: "2024-08-14"})
 	require.NoError(t, err)
-	require.Nil(t, toolErr, "the real 14-day fixture period must already be fully persisted for this test to be meaningful — have -ingest and -ingest-promo been run?")
+	require.Nil(t, toolErr, "the 14-day opening window must already be fully persisted for this test to be meaningful — have -ingest and -ingest-promo been run?")
 	require.NotNil(t, result)
 	require.Equal(t, 14, result.DaysIncluded)
 	require.Len(t, result.Platforms, 2)
@@ -72,27 +72,27 @@ func TestComparePlatformEconomics_MatchesFixtureReferenceValues(t *testing.T) {
 	ifood, ok := byName["ifood"]
 	require.True(t, ok, "iFood must always appear, even though it happens to have real activity in this period")
 	require.Equal(t, "iFood", ifood.DisplayName)
-	require.Equal(t, "838.00", ifood.GrossSales)
-	require.Equal(t, "184.85", ifood.CommissionPaid)
+	require.Equal(t, "2556.25", ifood.GrossSales)
+	require.Equal(t, "573.71", ifood.CommissionPaid)
 	require.NotNil(t, ifood.EffectiveRate)
-	require.Equal(t, "22.06%", *ifood.EffectiveRate, "184.85 / 838.00 — diverges from the nominal flat 23% rate because of the 2026-08-02 refund, see this file's doc comment")
-	require.Equal(t, "275.00", ifood.PromoSpend, "IFOOD-CAMP-BOOST01 (180.00) + IFOOD-CAMP-WEEKEND (95.00)")
-	require.Equal(t, "459.85", ifood.CombinedCost)
+	require.Equal(t, "22.44%", *ifood.EffectiveRate, "573.71 / 2556.25 — diverges from the nominal flat 23% rate because of the 2024-08-02 refund, see this file's doc comment")
+	require.Equal(t, "640.00", ifood.PromoSpend, "IFOOD-CAMP-BOOST01 (380.00) + IFOOD-CAMP-WEEKEND (260.00)")
+	require.Equal(t, "1213.71", ifood.CombinedCost)
 	require.NotNil(t, ifood.CombinedEffectiveRate)
-	require.Equal(t, "54.87%", *ifood.CombinedEffectiveRate)
+	require.Equal(t, "47.48%", *ifood.CombinedEffectiveRate)
 	require.NotEmpty(t, ifood.SourceRowRefs)
 
 	jet, ok := byName["just_eat_takeaway"]
 	require.True(t, ok)
 	require.Equal(t, "Just Eat Takeaway", jet.DisplayName)
-	require.Equal(t, "908.00", jet.GrossSales)
-	require.Equal(t, "181.60", jet.CommissionPaid)
+	require.Equal(t, "2403.50", jet.GrossSales)
+	require.Equal(t, "480.70", jet.CommissionPaid)
 	require.NotNil(t, jet.EffectiveRate)
-	require.Equal(t, "20.00%", *jet.EffectiveRate, "exactly the nominal flat 20% rate — JET has no refund irregularity in this fixture period")
-	require.Equal(t, "280.00", jet.PromoSpend, "JET-CAMP-LUNCHFIX (220.00) + JET-CAMP-NEWMENU (60.00)")
-	require.Equal(t, "461.60", jet.CombinedCost)
+	require.Equal(t, "20.00%", *jet.EffectiveRate, "exactly the nominal flat 20% rate — JET has no refund irregularity in the opening window")
+	require.Equal(t, "730.00", jet.PromoSpend, "JET-CAMP-LUNCHFIX (610.00) + JET-CAMP-NEWMENU (120.00)")
+	require.Equal(t, "1210.70", jet.CombinedCost)
 	require.NotNil(t, jet.CombinedEffectiveRate)
-	require.Equal(t, "50.84%", *jet.CombinedEffectiveRate)
+	require.Equal(t, "50.37%", *jet.CombinedEffectiveRate)
 	require.NotEmpty(t, jet.SourceRowRefs)
 }
 

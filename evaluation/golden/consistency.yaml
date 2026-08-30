@@ -2,44 +2,47 @@
 #
 # Each set is 3 phrasings of the same question; the target is what ALL
 # THREE must agree on. Provenance: docs/live-integration-test-scenarios.md,
-# grounded in backend/fixtures/README.md's independently-computed values.
+# grounded in backend/cmd/gendata/opening/README.md's independently-computed
+# values for the dataset's hand-authored opening window (2024-08-01..14).
+# Phrasings carry the year explicitly — the dataset spans 2024-08-01
+# through today, so a year-less date grounds to the most recent match.
 
 - id: C1
   phrasings:
-    - "What was the delivery revenue on August 1st?"
-    - "How much did delivery bring in on Aug 1?"
-    - "Delivery total for 2026-08-01?"
-  target: "$145.75"
-  source: "backend/fixtures/README.md, 2026-08-01"
+    - "What was the delivery revenue on August 1st, 2024?"
+    - "How much did delivery bring in on Aug 1, 2024?"
+    - "Delivery total for 2024-08-01?"
+  target: "$374.75"
+  source: "backend/cmd/gendata/opening/README.md, 2024-08-01"
 
 - id: C2
   phrasings:
-    - "Did order IFOOD-20260803-0011 get counted twice?"
-    - "Is there a duplicate order on August 3rd?"
-    - "Check for duplicate orders around Aug 3."
-  target: "Counted once; $120.50 for the day"
-  source: "backend/fixtures/README.md irregularity #1 (duplicate order) + 2026-08-03 total"
+    - "Did order IFOOD-20240803-0011 get counted twice?"
+    - "Is there a duplicate order on August 3rd, 2024?"
+    - "Check for duplicate orders around Aug 3, 2024."
+  target: "The duplicate was caught and counted once — all three phrasings must agree on that; the day total ($501.50) is A2's accuracy question, not this set's consistency claim"
+  source: "backend/cmd/gendata/opening/README.md irregularity #1 (duplicate order)"
 
 - id: C3
   phrasings:
     - "Is the LUNCHFIX campaign profitable?"
     - "Should we stop the JET-CAMP-LUNCHFIX promotion?"
     - "What's the ROI on our Just Eat lunch fixed-price campaign?"
-  target: "Negative ROI, -$165.00, flagged"
-  source: "backend/fixtures/README.md Promotion ROI table, JET-CAMP-LUNCHFIX"
+  target: "Negative ROI, -$450.75, flagged"
+  source: "backend/cmd/gendata/opening/README.md Promotion ROI table, JET-CAMP-LUNCHFIX"
 
 - id: C4
   phrasings:
-    - "What was iFood's delivery revenue on August 2nd?"
-    - "How much did iFood bring in on the 2nd?"
-    - "iFood revenue, Aug 2 2026?"
-  target: "$72.50 (gross, pre-refund-net — refund is a separate line item, not part of iFood's per-platform breakdown)"
-  source: "backend/fixtures/README.md daily gross delivery subtotal table, 2026-08-02, iFood column"
+    - "What was iFood's delivery revenue on August 2nd, 2024?"
+    - "How much did iFood bring in on the 2nd of August 2024?"
+    - "iFood revenue, Aug 2 2024?"
+  target: "$231.75 (gross, pre-refund-net — refund is a separate line item, not part of iFood's per-platform breakdown)"
+  source: "backend/cmd/gendata/opening/README.md daily gross delivery subtotal table, 2024-08-02, iFood column"
 
 - id: C5
   phrasings:
-    - "Do we have delivery data for August 8th?"
-    - "Was anything from the delivery platform recorded on Aug 8?"
-    - "Show me iFood and Just Eat orders for 2026-08-08."
+    - "Do we have delivery data for August 10th, 2024?"
+    - "Was anything from the delivery platform recorded on Aug 10, 2024?"
+    - "Show me iFood and Just Eat orders for 2024-08-10."
   target: "Consistently states no delivery-platform data exists for that day — never fabricates a $0 or omits the gap silently"
-  source: "backend/fixtures/README.md irregularity #3 (missing day)"
+  source: "backend/cmd/gendata/opening/README.md irregularity #3 (missing day)"
