@@ -87,8 +87,24 @@ function errorMessage(caught: unknown): string {
   return String(caught)
 }
 
-function formatMegabytes(bytes: number): string {
-  return (bytes / (1024 * 1024)).toFixed(1)
+/**
+ * Describes a photo already known to exceed `limitBytes`, for the "that
+ * photo is over the limit" message — guaranteeing the displayed size never
+ * reads as at-or-under the limit. Plain one-decimal rounding turns a file
+ * exactly 1 byte over a whole-MB cap (e.g. 5,242,881 bytes against a 5MB
+ * cap) into "5.0MB", which self-contradicts "...over the 5MB limit" (QA
+ * finding). Ordinary oversized files still get the familiar "6.0MB" form;
+ * only the boundary case falls back to an honest "just over" phrasing
+ * rather than showing a misleadingly precise decimal.
+ */
+function describeOversizedPhoto(bytes: number, limitBytes: number): string {
+  const megabytes = bytes / (1024 * 1024)
+  const limitMegabytes = limitBytes / (1024 * 1024)
+  const oneDecimal = megabytes.toFixed(1)
+  if (parseFloat(oneDecimal) > limitMegabytes) {
+    return `${oneDecimal}MB`
+  }
+  return `just over ${limitMegabytes}MB`
 }
 
 /** Reads a File as a base64 data URI — the exact wire format PUT /api/profile expects. */
@@ -161,7 +177,7 @@ export default function ProfilePage() {
     }
     if (file.size > MAX_PHOTO_BYTES) {
       setPhotoError(
-        `That photo is ${formatMegabytes(file.size)}MB, which is over the 5MB limit — choose a smaller image or compress it first.`,
+        `That photo is ${describeOversizedPhoto(file.size, MAX_PHOTO_BYTES)}, which is over the 5MB limit — choose a smaller image or compress it first.`,
       )
       return
     }
