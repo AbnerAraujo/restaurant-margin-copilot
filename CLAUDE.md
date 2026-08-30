@@ -67,7 +67,11 @@ This split must be documented and easy to point at in a demo.
   refuses explicit out-of-range dates before any model call and hands
   in-range verdicts to the gate as precomputed fact; Sonnet 5 stays only
   for the genuinely linguistic residual — see `internal/llmclient/cost.go`'s
-  doc comment for the full rationale.
+  doc comment for the full rationale. A sibling pre-check,
+  `internal/ambiguity/weekend.go`, catches a bare "the weekend" with no
+  days named and no explicit date and asks which days count — the exact
+  case named below, moved from a judgment call left to the gate to a
+  deterministic definition this product actually has.
 
 ## Pre-processing gate before execution
 Before anything runs, evaluate the question in isolation:
@@ -82,6 +86,11 @@ Before anything runs, evaluate the question in isolation:
 - Timeouts on any tool call. Explicit cap on loop iterations.
 - Every number shown must carry its provenance — which file, which rows, which
   period.
+- Every number the model narrates is checked, not trusted. `internal/answerverify`
+  extracts each money/percentage figure a narration states and requires it to
+  match a value the tool results returned (or one Go can rederive from two of
+  them in one operation) before the answer is served — a mismatch is a
+  refusal (`numeric_validation_failed`), never a served answer.
 
 A confidently wrong margin figure is worse than a refusal.
 

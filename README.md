@@ -42,7 +42,7 @@ Queried live against the running Postgres database on 2026-08-30:
 | Accuracy on the eval harness's known-answer questions | **14/15**, twice, with the cache disabled — the one failure is a real tool-contract gap, described in [Real evaluation results](#real-evaluation-results) |
 | Earned Steward points | **12,345** (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
 | MCP tools exposed to the model | **8** typed, read-only tools — no open SQL, no free-form computation |
-| Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Settings |
+| Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Profile, Settings, Help |
 | Delivery-revenue sources | **2** — an uploaded CSV export, or the simulated platform connector proxy (iFood + Just Eat Takeaway), both producing the identical record type |
 
 A note on units, because the earlier version of this table blurred them: a
@@ -213,6 +213,7 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Spec drafted (2026-08-29) — not yet planned or built |
 | [`specs/009-business-insight-advisor`](specs/009-business-insight-advisor/spec.md) | Business Insight Advisor — a deterministic Go-derived teaser plus an opt-in, separately-ledgered Claude Sonnet 5 advice call | Shipped |
 | [`specs/010-platform-connector-proxy`](specs/010-platform-connector-proxy/spec.md) | Platform Connector Proxy — one internal interface over two **simulated** iFood and Just Eat Takeaway partner APIs, normalizing both into the CSV path's own record type | Shipped (connectors emulated — no real partner-API access) |
+| [`specs/011-inline-grounded-advice`](specs/011-inline-grounded-advice/spec.md) | Inline Grounded Advice — widens spec 009's advisor with a second avenue triggered by an explicit ask inside the question itself ("how can I improve my margin?"), still grounded exclusively in that turn's own tool results, no new MCP tool | Shipped |
 | [`specs/012-pos-connector-dedup`](specs/012-pos-connector-dedup/spec.md) | POS connector plus deterministic cross-source deduplication — an integrated POS records a delivery platform's orders as its own tickets, so the same order arrives twice; a two-tier matcher resolves what it can and **refuses to guess** at the rest, because a wrong merge deletes real revenue as surely as a missed one double-counts it | Shipped (POS emulated — no real terminal access) |
 | [`specs/013-bff-layer`](specs/013-bff-layer/spec.md) | A named BFF boundary for the owner app — `internal/bff` declares the whole API surface as one route table, so the CORS preflight, the 405 policy, and the startup log are all *derived* from it instead of hand-maintained beside it (the bug that motivated this: `PUT /api/profile`'s preflight never advertised PUT, so it failed silently from the browser but worked via `curl`); also unifies file-upload and simulated-connector ingestion into one `GET /api/sources` vocabulary | Shipped |
 
