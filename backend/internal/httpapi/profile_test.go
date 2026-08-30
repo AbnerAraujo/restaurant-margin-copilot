@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -44,11 +45,25 @@ func (s *fakeProfileStore) GetRestaurantProfile(context.Context) (storage.Restau
 	return *s.row, nil
 }
 
+// UpsertRestaurantProfile mirrors the real query's optimistic-concurrency
+// WHERE clause (see restaurant_profile.sql's doc comment): when a row
+// already exists, the write only applies if arg.ExpectedUpdatedAt equals
+// that row's current UpdatedAt exactly — anything else, including an
+// invalid/NULL ExpectedUpdatedAt, is a mismatch and surfaces as
+// pgx.ErrNoRows, same as the real ON CONFLICT ... WHERE ... RETURNING
+// returning zero rows. A row that doesn't exist yet is a plain insert, no
+// check needed, matching Postgres's own INSERT-vs-ON-CONFLICT branching.
 func (s *fakeProfileStore) UpsertRestaurantProfile(_ context.Context, arg storage.UpsertRestaurantProfileParams) (storage.RestaurantProfile, error) {
 	s.upserts++
 	s.lastArg = arg
 	if s.upsertErr != nil {
 		return storage.RestaurantProfile{}, s.upsertErr
+	}
+	if s.row != nil {
+		current := s.row.UpdatedAt
+		if !arg.ExpectedUpdatedAt.Valid || !current.Valid || !arg.ExpectedUpdatedAt.Time.Equal(current.Time) {
+			return storage.RestaurantProfile{}, pgx.ErrNoRows
+		}
 	}
 	row := storage.RestaurantProfile{
 		ID:               1,
@@ -59,7 +74,7 @@ func (s *fakeProfileStore) UpsertRestaurantProfile(_ context.Context, arg storag
 		Description:      arg.Description,
 		PhotoData:        arg.PhotoData,
 		PhotoContentType: arg.PhotoContentType,
-		UpdatedAt:        pgtype.Timestamptz{Valid: true},
+		UpdatedAt:        pgtype.Timestamptz{Time: time.Now(), Valid: true},
 	}
 	s.row = &row
 	return row, nil
@@ -235,13 +250,15 @@ func TestHandleProfile_PutAcceptsValidProfileWithPhotoAndUpserts(t *testing.T) {
 }
 
 func TestHandleProfile_PutOmittingPhotoClearsIt(t *testing.T) {
+	loadedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
 	store := &fakeProfileStore{row: &storage.RestaurantProfile{
 		Name:             "Old Name",
 		PhotoData:        []byte("existing-photo"),
 		PhotoContentType: pgtype.Text{String: "image/png", Valid: true},
+		UpdatedAt:        pgtype.Timestamptz{Time: loadedAt, Valid: true},
 	}}
 
-	rec := doPutProfile(store, `{"name":"New Name"}`)
+	rec := doPutProfile(store, `{"name":"New Name","updated_at":"`+loadedAt.Format(time.RFC3339Nano)+`"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
 	}
@@ -304,6 +321,29 @@ func TestHandleProfile_PutRejectsOversizedPhoto(t *testing.T) {
 	}
 }
 
+// TestHandleProfile_PutRejectsPhotoOneByteOverLimitWithoutSelfContradiction
+// is the QA self-contradiction fix's proof: a photo exactly 1 byte over the
+// 5MB cap must never be described with a rounded size ("5.0MB") that reads
+// as satisfying, rather than violating, "...over the 5MB limit".
+func TestHandleProfile_PutRejectsPhotoOneByteOverLimitWithoutSelfContradiction(t *testing.T) {
+	store := &fakeProfileStore{}
+	oneByteOver := make([]byte, maxProfilePhotoBytes+1)
+	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(oneByteOver)
+
+	body, err := json.Marshal(ProfileRequest{Name: "Cafe Test", Photo: &dataURI})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	rec := doPutProfile(store, string(body))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "5.0MB") {
+		t.Errorf("body = %s, must never describe a photo that's over the limit as exactly \"5.0MB\" — self-contradicts \"over the 5MB limit\"", rec.Body.String())
+	}
+}
+
 func TestHandleProfile_PutRejectsRequestBodyOverTheOuterCap(t *testing.T) {
 	store := &fakeProfileStore{}
 	// Bigger than maxProfileRequestBodyBytes even before JSON/base64
@@ -338,5 +378,72 @@ func TestHandleProfile_PutRejectsInvalidJSON(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "invalid_body") {
 		t.Errorf("body = %s, want invalid_body error code", rec.Body.String())
+	}
+}
+
+// TestHandleProfile_PutRejectsStaleUpdatedAtWithConflict is the QA
+// two-tab lost-update fix's core proof: a PUT whose updated_at no longer
+// matches the row's current value (because a save from elsewhere landed in
+// between) must be refused with 409, never silently applied over that
+// newer save.
+func TestHandleProfile_PutRejectsStaleUpdatedAtWithConflict(t *testing.T) {
+	originallyLoadedAt := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	someoneElseSavedAt := time.Date(2026, 8, 20, 12, 5, 0, 0, time.UTC)
+	store := &fakeProfileStore{row: &storage.RestaurantProfile{
+		Name:      "Whatever Someone Else Just Saved",
+		Phone:     "+1 555 999 0000",
+		UpdatedAt: pgtype.Timestamptz{Time: someoneElseSavedAt, Valid: true},
+	}}
+
+	// This tab loaded the profile back when updated_at was still
+	// originallyLoadedAt, and is now trying to save unaware that another
+	// tab has since saved (moving updated_at to someoneElseSavedAt).
+	rec := doPutProfile(store, `{"name":"Stale Tab Address Edit","updated_at":"`+originallyLoadedAt.Format(time.RFC3339Nano)+`"}`)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "profile_conflict") {
+		t.Errorf("body = %s, want profile_conflict error code", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "updated elsewhere") {
+		t.Errorf("body = %s, want a clear explanation that the profile changed elsewhere", rec.Body.String())
+	}
+	if store.row.Name != "Whatever Someone Else Just Saved" {
+		t.Errorf("row.Name = %q, want the other tab's save left untouched — a 409 must never apply the stale write", store.row.Name)
+	}
+}
+
+// TestHandleProfile_PutWithEmptyUpdatedAtConflictsIfProfileAlreadyExists
+// covers the other half of the mismatch: a client that loaded the profile
+// before it had ever been saved (updated_at == "") must still be refused
+// if, by the time it saves, someone else has since created the profile —
+// an empty/NULL expectation must never be treated as "no check needed"
+// once a real row exists.
+func TestHandleProfile_PutWithEmptyUpdatedAtConflictsIfProfileAlreadyExists(t *testing.T) {
+	store := &fakeProfileStore{row: &storage.RestaurantProfile{
+		Name:      "Someone Beat You To The First Save",
+		UpdatedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true},
+	}}
+
+	rec := doPutProfile(store, `{"name":"My First Save"}`)
+
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409 (body: %s)", rec.Code, rec.Body.String())
+	}
+}
+
+// TestHandleProfile_PutRejectsMalformedUpdatedAt proves a garbled
+// updated_at (never something a real client sends, but never trusted
+// blindly either) is a clean 400, not a panic or a silently-ignored check.
+func TestHandleProfile_PutRejectsMalformedUpdatedAt(t *testing.T) {
+	store := &fakeProfileStore{}
+	rec := doPutProfile(store, `{"name":"Cafe Test","updated_at":"not-a-timestamp"}`)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if store.upserts != 0 {
+		t.Errorf("upserts = %d, want 0 — a malformed updated_at must never reach the store", store.upserts)
 	}
 }

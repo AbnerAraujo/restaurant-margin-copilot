@@ -322,6 +322,53 @@ describe('QuestionComposer', () => {
     expect(dialog.closest('[inert]')).toBeNull()
   })
 
+  it('closes on Escape from the initial screen', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape after a category click moves focus to document.body (QA regression)', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.click(screen.getByText('Check a single day'))
+    // The clicked category button unmounted on the step change — focus
+    // fell to document.body, exactly the state a container-scoped
+    // `onKeyDown` handler can never see a keydown from.
+    expect(document.activeElement).toBe(document.body)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape after clicking the in-dialog Back button (same focus-loss failure mode)', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.click(screen.getByText('Check a single day'))
+    await user.click(screen.getByRole('button', { name: /back/i }))
+    expect(document.activeElement).toBe(document.body)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops listening for Escape once closed, and does not double-fire across remounts', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const { rerender } = render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    rerender(<QuestionComposer open={false} onClose={onClose} onAsk={vi.fn()} />)
+    await user.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('shows a loading state while campaigns are in flight', async () => {
     const user = userEvent.setup()
     const { promise } = deferred<{ campaignId: string; platform: string }[]>()
@@ -338,5 +385,190 @@ describe('QuestionComposer', () => {
 
     await user.click(screen.getByText("Check a promotion's return"))
     expect(screen.getByText(/loading your campaigns/i)).toBeInTheDocument()
+  })
+})
+
+/**
+ * The advisory path — the composer's one route to something that is not a
+ * computed fact. These tests hold the two properties that make it safe to
+ * offer at all: it is visually and structurally separate from the eight
+ * computed categories at every step, and the question it composes is one of
+ * those eight categories' own questions, so it inherits their answerability
+ * and their date-bounds gate rather than getting new ones.
+ */
+describe('QuestionComposer — business advice path', () => {
+  /** Walks Step 1 → advisory topic list. */
+  async function openAdvisoryTopics(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: /get business advice/i }))
+  }
+
+  it('hides the advisory path entirely when the host cannot resolve advice', () => {
+    render(<QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} />)
+    expect(
+      screen.queryByRole('button', { name: /get business advice/i }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/ai suggestion/i)).not.toBeInTheDocument()
+  })
+
+  it('offers the advisory path apart from the 8 categories, flagged as an AI suggestion', () => {
+    render(
+      <QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} onRequestAdvice={vi.fn()} />,
+    )
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+    // The 8 computed categories are all still there, unchanged.
+    expect(within(dialog).getByText('Check a single day')).toBeInTheDocument()
+    expect(within(dialog).getByText('Find your priciest day of the month')).toBeInTheDocument()
+    // And the advisory entry carries the chip's own visual language.
+    expect(
+      within(dialog).getByRole('button', { name: /get business advice/i }),
+    ).toBeInTheDocument()
+    expect(within(dialog).getByText(/^ai suggestion$/i)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/get_/)).not.toBeInTheDocument()
+  })
+
+  it('lists every advisory topic in plain language, never an insight kind', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} onRequestAdvice={vi.fn()} />,
+    )
+    await openAdvisoryTopics(user)
+
+    expect(screen.getByText('Advice on recurring discrepancies')).toBeInTheDocument()
+    expect(screen.getByText('Advice on a promotion that lost money')).toBeInTheDocument()
+    expect(screen.getByText('Advice on a high commission rate')).toBeInTheDocument()
+    expect(screen.getByText('Advice on a costly day of the month')).toBeInTheDocument()
+    expect(screen.getByText('Advice on a margin decline')).toBeInTheDocument()
+    expect(screen.queryByText(/high_commission|margin_decline/)).not.toBeInTheDocument()
+  })
+
+  it('walks a topic to a distinct advice request, never through onAsk', async () => {
+    const user = userEvent.setup()
+    const onAsk = vi.fn()
+    const onRequestAdvice = vi.fn()
+    render(
+      <QuestionComposer
+        open
+        onClose={vi.fn()}
+        onAsk={onAsk}
+        onRequestAdvice={onRequestAdvice}
+      />,
+    )
+
+    await openAdvisoryTopics(user)
+    await user.click(screen.getByText('Advice on a high commission rate'))
+
+    const continueButton = screen.getByRole('button', { name: /continue/i })
+    expect(continueButton).toBeDisabled()
+    await user.type(screen.getByLabelText('Start date'), '2026-08-01')
+    await user.type(screen.getByLabelText('End date'), '2026-08-14')
+    expect(continueButton).toBeEnabled()
+    await user.click(continueButton)
+
+    await user.click(screen.getByRole('button', { name: /compute this and offer advice/i }))
+
+    expect(onRequestAdvice).toHaveBeenCalledWith({
+      insightKind: 'high_commission',
+      question:
+        'Which platform costs me more in commission — iFood or Just Eat Takeaway — between 2026-08-01 and 2026-08-14?',
+    })
+    // The whole point of the separate callback: advice is never mistaken for
+    // an ordinary question by whatever is listening.
+    expect(onAsk).not.toHaveBeenCalled()
+  })
+
+  it('shows the grounding question read-only, with the two-stage cost disclosed', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} onRequestAdvice={vi.fn()} />,
+    )
+
+    await openAdvisoryTopics(user)
+    await user.click(screen.getByText('Advice on recurring discrepancies'))
+    await user.type(screen.getByLabelText('Start date'), '2026-08-01')
+    await user.type(screen.getByLabelText('End date'), '2026-08-14')
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+
+    // A discrepancy PATTERN is a recurrence, so the grounding question is the
+    // period one, never the single-day one.
+    expect(
+      screen.getByText('Which days had discrepancies between 2026-08-01 and 2026-08-14?'),
+    ).toBeInTheDocument()
+    // Not editable: an edited question could stop producing the pattern the
+    // advice request claims to be about.
+    expect(screen.queryByLabelText('Your question')).not.toBeInTheDocument()
+    expect(screen.getByText(/billed model call/i)).toBeInTheDocument()
+  })
+
+  it('asks for two periods when advising on a margin decline', async () => {
+    const user = userEvent.setup()
+    const onRequestAdvice = vi.fn()
+    render(
+      <QuestionComposer
+        open
+        onClose={vi.fn()}
+        onAsk={vi.fn()}
+        onRequestAdvice={onRequestAdvice}
+      />,
+    )
+
+    await openAdvisoryTopics(user)
+    await user.click(screen.getByText('Advice on a margin decline'))
+
+    const starts = screen.getAllByLabelText('Start date')
+    const ends = screen.getAllByLabelText('End date')
+    expect(starts).toHaveLength(2)
+
+    await user.type(starts[0], '2026-08-01')
+    await user.type(ends[0], '2026-08-07')
+    await user.type(starts[1], '2026-08-08')
+    await user.type(ends[1], '2026-08-14')
+    await user.click(screen.getByRole('button', { name: /continue/i }))
+    await user.click(screen.getByRole('button', { name: /compute this and offer advice/i }))
+
+    expect(onRequestAdvice).toHaveBeenCalledWith({
+      insightKind: 'margin_decline',
+      question:
+        'Compare total margin for 2026-08-01 to 2026-08-07 against 2026-08-08 to 2026-08-14',
+    })
+  })
+
+  it('blocks a date outside the live data window, exactly like the computed path', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer
+        open
+        onClose={vi.fn()}
+        onAsk={vi.fn()}
+        onRequestAdvice={vi.fn()}
+        minDate="2026-08-01"
+        maxDate="2026-08-14"
+      />,
+    )
+
+    await openAdvisoryTopics(user)
+    await user.click(screen.getByText('Advice on a costly day of the month'))
+    await user.type(screen.getByLabelText('Start date'), '2026-07-01')
+    await user.type(screen.getByLabelText('End date'), '2026-08-14')
+
+    expect(screen.getByRole('button', { name: /continue/i })).toBeDisabled()
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      /choose a date between Aug 1, 2026 and Aug 14, 2026/i,
+    )
+  })
+
+  it('walks Back out of the advisory path to the category list', async () => {
+    const user = userEvent.setup()
+    render(
+      <QuestionComposer open onClose={vi.fn()} onAsk={vi.fn()} onRequestAdvice={vi.fn()} />,
+    )
+
+    await openAdvisoryTopics(user)
+    await user.click(screen.getByText('Advice on a high commission rate'))
+    // params -> topic list
+    await user.click(screen.getByRole('button', { name: /back/i }))
+    expect(screen.getByText('Advice on a margin decline')).toBeInTheDocument()
+    // topic list -> the 8 categories
+    await user.click(screen.getByRole('button', { name: /back/i }))
+    expect(screen.getByText('Check a single day')).toBeInTheDocument()
   })
 })

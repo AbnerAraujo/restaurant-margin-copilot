@@ -23,9 +23,9 @@ const explanationCall: CostInteraction = {
 }
 
 describe('CostPanel', () => {
-  it('shows a zeroed session cost with no interactions yet', () => {
+  it('shows a zeroed model-spend total with no interactions yet', () => {
     render(<CostPanel interactions={[]} />)
-    expect(screen.getByText('Session cost')).toBeInTheDocument()
+    expect(screen.getByText('Model spend')).toBeInTheDocument()
     expect(screen.getByText('$0.000')).toBeInTheDocument()
   })
 
@@ -57,16 +57,16 @@ describe('CostPanel', () => {
 
   it('keeps the detail panel (tokens/latency) collapsed until the pill is clicked', () => {
     render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
-    expect(screen.queryByRole('group', { name: /session cost detail/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /model spend detail/i })).not.toBeInTheDocument()
   })
 
   it('expands to show interaction count, total tokens, and average latency', async () => {
     const user = userEvent.setup()
     render(<CostPanel interactions={[ambiguityGateCall, explanationCall]} />)
 
-    await user.click(screen.getByRole('button', { name: /session cost/i }))
+    await user.click(screen.getByRole('button', { name: /model spend/i }))
 
-    const panel = screen.getByRole('group', { name: /session cost detail/i })
+    const panel = screen.getByRole('group', { name: /model spend detail/i })
     expect(panel).toHaveTextContent('Interactions')
     expect(panel).toHaveTextContent('2')
     // total tokens: (420+18) + (1180+240) = 1858
@@ -79,15 +79,15 @@ describe('CostPanel', () => {
     const user = userEvent.setup()
     render(<CostPanel interactions={[]} />)
 
-    await user.click(screen.getByRole('button', { name: /session cost/i }))
-    expect(screen.getByRole('group', { name: /session cost detail/i })).toHaveTextContent('—')
+    await user.click(screen.getByRole('button', { name: /model spend/i }))
+    expect(screen.getByRole('group', { name: /model spend detail/i })).toHaveTextContent('—')
   })
 
   it('toggles aria-expanded and collapses the detail panel on a second click', async () => {
     const user = userEvent.setup()
     render(<CostPanel interactions={[ambiguityGateCall]} />)
 
-    const trigger = screen.getByRole('button', { name: /session cost/i })
+    const trigger = screen.getByRole('button', { name: /model spend/i })
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(trigger)
@@ -95,6 +95,6 @@ describe('CostPanel', () => {
 
     await user.click(trigger)
     expect(trigger).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByRole('group', { name: /session cost detail/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('group', { name: /model spend detail/i })).not.toBeInTheDocument()
   })
 })

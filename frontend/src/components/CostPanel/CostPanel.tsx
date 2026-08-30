@@ -71,9 +71,17 @@ function sumCostUsd(costsUsd: number[]): number {
 
 /**
  * The running-cost stat required by FR-009: a small, always-visible corner
- * pill (never a hero element, per design-tokens.md §4) showing session cost
+ * pill (never a hero element, per design-tokens.md §4) showing model spend
  * at a glance, with tokens/latency detail available on demand without
  * competing for attention with the day's margin figure.
+ *
+ * Labelled "Model spend", not "Session cost". The figure behind it used to
+ * be a per-mount, per-tab in-memory sum, and calling that a session cost was
+ * generous even then — two tabs showed two different totals and neither was
+ * real. It is now the durable ledger of every model call this browser has
+ * paid for (`chatStorage`'s spend ledger, surfaced by `useSpendLedger`),
+ * consistent with the chat threads it earned and identical in every tab, so
+ * the label had to stop implying it resets.
  *
  * Forwards a ref to its own root (rather than a plain function component)
  * so `AppShell` can measure this element's REAL rendered height — which
@@ -112,7 +120,7 @@ const CostPanel = forwardRef<HTMLDivElement, CostPanelProps>(function CostPanel(
         <div
           id={detailId}
           role="group"
-          aria-label="Session cost detail"
+          aria-label="Model spend detail"
           className="w-52 rounded-md border border-border bg-popover p-3 shadow-sm"
         >
           <dl className="space-y-1.5">
@@ -145,7 +153,7 @@ const CostPanel = forwardRef<HTMLDivElement, CostPanelProps>(function CostPanel(
         onClick={() => setOpen((wasOpen) => !wasOpen)}
         className="flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-1.5 shadow-sm backdrop-blur-sm hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <span className="text-xs text-muted-foreground">Session cost</span>
+        <span className="text-xs text-muted-foreground">Model spend</span>
         <span className="text-sm font-semibold tabular-nums text-foreground">
           {formatUsd(totalCostUsd)}
         </span>

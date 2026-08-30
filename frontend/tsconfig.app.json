@@ -4,7 +4,13 @@
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     "module": "esnext",
-    "types": ["vite/client"],
+    /* "node" is here for ONE reason: src/capabilities.test.ts reads the real
+       Go tool registry off disk to prove the frontend capability catalog
+       hasn't gone stale. That check has to touch node:fs, and it has to live
+       under `src` so vitest picks it up with the rest of the suite. Nothing
+       shipped to the browser may import a node builtin — the bundler, not the
+       type checker, is what actually enforces that. */
+    "types": ["vite/client", "node"],
     "allowArbitraryExtensions": true,
     "skipLibCheck": true,
 

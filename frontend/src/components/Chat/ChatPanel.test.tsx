@@ -1,13 +1,41 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  activeThread,
+  loadSpendLedger,
+  loadThreadStore,
+  type ThreadStore,
+} from '@/lib/chatStorage'
 import ChatPanel, {
   derivePendingClarification,
   derivePreviousExchange,
   type AssistantChatMessage,
   type ChatMessage,
 } from './ChatPanel'
+
+const THREADS_KEY = 'mbs.chat.threads.v2'
+
+/** What `loadThreadStore()` would return after a reload, right now. */
+function persistedMessages(): ChatMessage[] {
+  return activeThread(loadThreadStore())?.messages ?? []
+}
+
+/**
+ * Simulates ANOTHER TAB writing the shared key. Writing storage directly and
+ * dispatching the browser's own `storage` event is the only faithful
+ * simulation available in jsdom: a same-document commit would go through the
+ * in-process notifier and prove nothing about the cross-tab path.
+ */
+function simulateOtherTabWrite(mutate: (store: ThreadStore) => ThreadStore): void {
+  const next = mutate(loadThreadStore())
+  const newValue = JSON.stringify(next)
+  window.localStorage.setItem(THREADS_KEY, newValue)
+  window.dispatchEvent(
+    new StorageEvent('storage', { key: THREADS_KEY, newValue }),
+  )
+}
 
 // jsdom has no ResizeObserver; Radix's ScrollArea needs one to mount. This
 // stub is local to this file rather than the shared test setup so it stays
@@ -183,9 +211,9 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
     // Two source rows back this answer, so the shared ProvenanceTag trigger
     // (FR-005 — the same component used everywhere else in the app) renders
-    // its "N sources" form rather than a single inline citation.
+    // its "N source files" form rather than a single inline citation.
     expect(
-      screen.getByRole('button', { name: '2 sources' }),
+      screen.getByRole('button', { name: '2 source files' }),
     ).toBeInTheDocument()
   })
 
@@ -263,7 +291,7 @@ describe('ChatPanel', () => {
     const user = userEvent.setup()
     render(<ChatPanel />)
 
-    const citation = screen.getByRole('button', { name: '2 sources' })
+    const citation = screen.getByRole('button', { name: '2 source files' })
     expect(
       screen.queryByRole('group', { name: /source citations/i }),
     ).not.toBeInTheDocument()
@@ -867,6 +895,152 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
   })
 
+  it('drives the composer’s advice path through the same ask flow and surfaces the chip', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-advice',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'iFood’s effective commission rate was 23.00%.',
+        provenance: [],
+        toolCalls: [{ name: 'compare_platform_economics', result_json: {} }],
+        businessInsight: {
+          kind: 'high_commission',
+          title: 'That commission rate is in the platforms’ premium band',
+        },
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /build a question/i }))
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+    await user.click(within(dialog).getByRole('button', { name: /get business advice/i }))
+    await user.click(within(dialog).getByText('Advice on a high commission rate'))
+    await user.type(within(dialog).getByLabelText('Start date'), '2026-08-01')
+    await user.type(within(dialog).getByLabelText('End date'), '2026-08-14')
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
+    await user.click(
+      within(dialog).getByRole('button', { name: /compute this and offer advice/i }),
+    )
+
+    // The pattern is computed through the ordinary, guaranteed-answerable ask
+    // flow — there is no second submission path, and no advice call has been
+    // billed yet.
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'Which platform costs me more in commission — iFood or Just Eat Takeaway — between 2026-08-01 and 2026-08-14?',
+      expect.any(Array),
+      undefined,
+      undefined,
+    )
+    expect(
+      await screen.findByText('iFood’s effective commission rate was 23.00%.'),
+    ).toBeInTheDocument()
+    // The advice itself is still one explicit tap away (spec FR-014).
+    expect(
+      screen.getByText('That commission rate is in the platforms’ premium band'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/no advice needed/i)).not.toBeInTheDocument()
+  })
+
+  it('says so honestly when the requested pattern simply is not in the data', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-no-advice',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'No discrepancies were flagged between 2026-08-01 and 2026-08-14.',
+        provenance: [],
+        toolCalls: [{ name: 'list_discrepancies', result_json: { days: [] } }],
+        // No businessInsight: a clean period genuinely has no pattern to
+        // advise on, and Go returns no teaser for one.
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(
+      <ChatPanel
+        initialMessages={[]}
+        resolveAnswer={resolveAnswer}
+        resolveBusinessInsight={vi.fn()}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /build a question/i }))
+    const dialog = screen.getByRole('dialog', { name: /build a question/i })
+    await user.click(within(dialog).getByRole('button', { name: /get business advice/i }))
+    await user.click(within(dialog).getByText('Advice on recurring discrepancies'))
+    await user.type(within(dialog).getByLabelText('Start date'), '2026-08-01')
+    await user.type(within(dialog).getByLabelText('End date'), '2026-08-14')
+    await user.click(within(dialog).getByRole('button', { name: /continue/i }))
+    await user.click(
+      within(dialog).getByRole('button', { name: /compute this and offer advice/i }),
+    )
+
+    expect(
+      await screen.findByText(
+        'No discrepancies were flagged between 2026-08-01 and 2026-08-14.',
+      ),
+    ).toBeInTheDocument()
+    // Without this, the owner cannot tell "clean data" from "the advice
+    // request quietly went nowhere".
+    expect(screen.getByText(/no advice needed/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/nothing was flagged in this period/i),
+    ).toBeInTheDocument()
+  })
+
+  it('never claims a clean result for an ordinary question that got no teaser', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<
+        (
+          question: string,
+          history: ChatMessage[],
+        ) => Promise<AssistantChatMessage>
+      >()
+      .mockResolvedValue({
+        id: 'test-answer-plain',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin on 2026-08-07 was $375.82.',
+        provenance: [],
+        askedAt: '2026-08-27T12:00:00Z',
+      })
+
+    render(<ChatPanel initialMessages={[]} resolveAnswer={resolveAnswer} />)
+    await user.type(
+      screen.getByRole('textbox', { name: /ask a question about your margin/i }),
+      'How did we do on 2026-08-07?',
+    )
+    await user.click(screen.getByRole('button', { name: /send question/i }))
+
+    expect(
+      await screen.findByText('Margin on 2026-08-07 was $375.82.'),
+    ).toBeInTheDocument()
+    // Most answers carry no teaser; that is the norm, not an advisory outcome.
+    expect(screen.queryByText(/no advice needed/i)).not.toBeInTheDocument()
+  })
+
   it('keeps the scroll area able to shrink below its content height', () => {
     // Regression guard for the measured layout defect: a `flex-1` column
     // child's automatic minimum size is its CONTENT height, so without
@@ -1434,5 +1608,325 @@ describe('ChatPanel', () => {
     await user.click(chip)
     expect(await within(bubble).findByText(/reconcile daily/i)).toBeInTheDocument()
     expect(resolveBusinessInsight).toHaveBeenCalledTimes(2)
+  })
+})
+
+// Bug fix: the "Recent conversations" history panel's per-thread message
+// count had no singular branch (`${thread.messages.length} messages`), so a
+// one-message thread read "1 messages".
+describe('ChatPanel — thread history message-count pluralization (bug fix)', () => {
+  const THREADS_KEY = 'mbs.chat.threads.v2'
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  function userMessage(id: string, text: string): ChatMessage {
+    return { id, role: 'user', text, askedAt: '2026-08-27T10:00:00Z' }
+  }
+
+  it('reads "1 message" (not "1 messages") for a one-message thread, and "N messages" otherwise', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(
+      THREADS_KEY,
+      JSON.stringify({
+        activeId: 'thread-active',
+        threads: [
+          {
+            id: 'thread-active',
+            title: 'Active thread',
+            updatedAt: '2026-08-27T10:00:00Z',
+            messages: [userMessage('m1', 'How did today close?')],
+          },
+          {
+            id: 'thread-one',
+            title: 'One-message thread',
+            updatedAt: '2026-08-26T10:00:00Z',
+            messages: [userMessage('m2', 'What changed this week?')],
+          },
+          {
+            id: 'thread-three',
+            title: 'Three-message thread',
+            updatedAt: '2026-08-25T10:00:00Z',
+            messages: [
+              userMessage('m3', 'a'),
+              userMessage('m4', 'b'),
+              userMessage('m5', 'c'),
+            ],
+          },
+        ],
+      }),
+    )
+
+    render(<ChatPanel persistConversation />)
+
+    await user.click(screen.getByRole('button', { name: /recent/i }))
+    const list = screen.getByRole('list', { name: /recent conversations/i })
+
+    expect(within(list).getByText('One-message thread')).toBeInTheDocument()
+    expect(within(list).getByText('1 message')).toBeInTheDocument()
+    expect(within(list).queryByText('1 messages')).not.toBeInTheDocument()
+
+    expect(within(list).getByText('Three-message thread')).toBeInTheDocument()
+    expect(within(list).getByText('3 messages')).toBeInTheDocument()
+  })
+})
+
+/**
+ * The three defects the state-persistence QA pass found were one defect:
+ * React state was treated as the source of truth and storage as a mirror of
+ * it. These exercise each reported repro against the inverted model.
+ */
+describe('ChatPanel durable conversation state', () => {
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  it('keeps an answer that resolves after the panel has unmounted', async () => {
+    const user = userEvent.setup()
+    const { promise, resolve } = deferred<AssistantChatMessage>()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockReturnValue(promise)
+
+    const view = render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do yesterday?{Enter}')
+    expect(screen.getByText(/checking the reconciled numbers/i)).toBeInTheDocument()
+
+    // The reported repro: navigate away (or reload) while the request is in
+    // flight. The backend completes it regardless, and bills for it.
+    view.unmount()
+
+    await act(async () => {
+      resolve({
+        id: 'ignored-resolver-id',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin for that period was $1,842.60.',
+        provenance: [],
+        interactions: [
+          {
+            model_used: 'claude-sonnet-5',
+            input_tokens: 1180,
+            output_tokens: 240,
+            estimated_cost_usd: 0.00476,
+            latency_ms: 1420,
+          },
+        ],
+        askedAt: '2026-08-27T10:00:02Z',
+      })
+      await promise
+    })
+
+    // The answer must be in storage even though nothing was mounted to
+    // receive it, and it must have replaced the pending record rather than
+    // being appended beside it.
+    await waitFor(() => {
+      const messages = persistedMessages()
+      expect(messages).toHaveLength(2)
+      expect(messages[1]).toMatchObject({
+        kind: 'answer',
+        text: 'Margin for that period was $1,842.60.',
+      })
+    })
+
+    // And the spend it incurred was recorded, not billed invisibly.
+    expect(loadSpendLedger()).toHaveLength(1)
+
+    // Coming back to the page shows the real answer, not a "lost" placeholder.
+    render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+    expect(
+      await screen.findByText('Margin for that period was $1,842.60.'),
+    ).toBeInTheDocument()
+  })
+
+  it('turns a question orphaned by a reload into an honest, retryable state instead of silent limbo', async () => {
+    // What storage looks like after a reload interrupted a live request: the
+    // question is there, the pending record is there, no answer ever came.
+    window.localStorage.setItem(
+      THREADS_KEY,
+      JSON.stringify({
+        activeId: 't-reload',
+        threads: [
+          {
+            id: 't-reload',
+            title: 'How did we do yesterday?',
+            updatedAt: '2026-08-27T10:00:01Z',
+            messages: [
+              {
+                id: 'u-1',
+                role: 'user',
+                text: 'How did we do yesterday?',
+                askedAt: '2026-08-27T10:00:00Z',
+              },
+              {
+                id: 'a-1',
+                role: 'assistant',
+                kind: 'pending',
+                question: 'How did we do yesterday?',
+                askedAt: '2026-08-27T10:00:01Z',
+              },
+            ],
+          },
+        ],
+      }),
+    )
+
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValue({
+        id: 'retry-answer',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Answer after retry.',
+        provenance: [],
+        askedAt: '2026-08-27T10:05:00Z',
+      })
+
+    render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+
+    // Not a spinner that never stops, and not nothing at all.
+    expect(screen.queryByText(/checking the reconciled numbers/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/this answer never made it back to you/i)).toBeInTheDocument()
+    // Honest about the money, per this project's instrumentation principle:
+    // the request very likely ran, so it very likely cost something.
+    expect(
+      screen.getByText(/may already be counted in the running model-spend total/i),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /try again/i }))
+
+    expect(await screen.findByText('Answer after retry.')).toBeInTheDocument()
+    expect(resolveAnswer).toHaveBeenCalledWith(
+      'How did we do yesterday?',
+      expect.anything(),
+      undefined,
+      undefined,
+    )
+  })
+
+  it('merges another tab\'s write instead of overwriting it, in both directions', async () => {
+    const user = userEvent.setup()
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockResolvedValue({
+        id: 'tab-one-answer',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Tab one answer.',
+        provenance: [],
+        askedAt: '2026-08-27T10:00:02Z',
+      })
+
+    render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'Tab one question{Enter}')
+    expect(await screen.findByText('Tab one answer.')).toBeInTheDocument()
+
+    // Another tab asks its own question against the same thread.
+    act(() => {
+      simulateOtherTabWrite((store) => ({
+        ...store,
+        threads: store.threads.map((thread) =>
+          thread.id === store.activeId
+            ? {
+                ...thread,
+                messages: [
+                  ...thread.messages,
+                  {
+                    id: 'other-tab-question',
+                    role: 'user',
+                    text: 'Tab two question',
+                    askedAt: '2026-08-27T10:01:00Z',
+                  },
+                ],
+              }
+            : thread,
+        ),
+      }))
+    })
+
+    // This tab absorbs it rather than ignoring it...
+    expect(await screen.findByText('Tab two question')).toBeInTheDocument()
+    // ...and its own history is untouched.
+    expect(screen.getByText('Tab one question')).toBeInTheDocument()
+
+    // ...and this tab's NEXT write preserves the other tab's message rather
+    // than writing back its own mount-time snapshot over it.
+    await user.type(input, 'Tab one follow-up{Enter}')
+    await waitFor(() => {
+      expect(persistedMessages().map((message) => message.id)).toContain(
+        'other-tab-question',
+      )
+    })
+    const texts = persistedMessages().map((message) =>
+      message.role === 'user' ? message.text : '',
+    )
+    expect(texts).toContain('Tab one question')
+    expect(texts).toContain('Tab two question')
+    expect(texts).toContain('Tab one follow-up')
+  })
+
+  /**
+   * Found by driving a real browser, not by reading the code: reloading
+   * mid-request makes the browser abort the fetch, and that rejection is
+   * delivered to the catch block BEFORE the page tears down. Reported as a
+   * transport failure it said something false ("I couldn't reach your data"
+   * — the request had already been sent, and the backend goes on to complete
+   * and bill it) and, worse, it overwrote the pending record that the next
+   * page load needs in order to recognise the interruption at all.
+   */
+  it('does not report a fetch aborted by page teardown as a transport failure', async () => {
+    const user = userEvent.setup()
+    let rejectRequest!: (reason: Error) => void
+    const request = new Promise<AssistantChatMessage>((_, reject) => {
+      rejectRequest = reject
+    })
+
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockReturnValue(request)
+
+    const view = render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do last week?{Enter}')
+    expect(screen.getByText(/checking the reconciled numbers/i)).toBeInTheDocument()
+
+    // The browser announces the teardown, then cancels the request.
+    window.dispatchEvent(new Event('beforeunload'))
+    await act(async () => {
+      rejectRequest(new TypeError('Failed to fetch'))
+      await request.catch(() => undefined)
+    })
+
+    // The pending record must survive: it is the only evidence the next load
+    // has that a question was asked and never answered.
+    const stored = persistedMessages()
+    expect(stored[1]).toMatchObject({ kind: 'pending' })
+
+    view.unmount()
+    // The document is alive again (cancelled navigation / bfcache restore),
+    // so later failures are once more real transport failures.
+    window.dispatchEvent(new Event('pageshow'))
+
+    // What the reader sees after the reload actually completes.
+    render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+    expect(
+      screen.getByText(/this answer never made it back to you/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/couldn't reach your data just now/i),
+    ).not.toBeInTheDocument()
   })
 })

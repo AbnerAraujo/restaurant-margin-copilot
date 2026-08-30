@@ -105,6 +105,10 @@ func TestUpsertRestaurantProfile_RoundTripsFieldsAndPhoto(t *testing.T) {
 		Description:      "Family-run Italian kitchen since 1998.",
 		PhotoData:        photo,
 		PhotoContentType: pgtype.Text{String: "image/png", Valid: true},
+		// No row exists yet — matches a client that GET'd the empty
+		// first-run profile (updated_at == "") — so the INSERT branch
+		// applies unconditionally regardless of ExpectedUpdatedAt.
+		ExpectedUpdatedAt: pgtype.Timestamptz{Valid: false},
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, created.ID, "the table is pinned to exactly one row, id=1")
@@ -121,15 +125,20 @@ func TestUpsertRestaurantProfile_RoundTripsFieldsAndPhoto(t *testing.T) {
 
 	// A second PUT (ON CONFLICT DO UPDATE) replaces the row in place — the
 	// singleton stays id=1, and a cleared photo actually clears, proving
-	// PUT's full-replace semantics all the way down to the database.
+	// PUT's full-replace semantics all the way down to the database. It
+	// passes back exactly the updated_at `created` just returned, matching
+	// a real client that read it from the first PUT's response — this is
+	// the legitimate, non-conflicting case for the optimistic-concurrency
+	// WHERE clause.
 	updated, err := q.UpsertRestaurantProfile(ctx, storage.UpsertRestaurantProfileParams{
-		Name:             "TEST-SENTINEL Trattoria Bellavista Renamed",
-		Address:          "456 Side St",
-		Phone:            "",
-		Email:            "",
-		Description:      "",
-		PhotoData:        nil,
-		PhotoContentType: pgtype.Text{Valid: false},
+		Name:              "TEST-SENTINEL Trattoria Bellavista Renamed",
+		Address:           "456 Side St",
+		Phone:             "",
+		Email:             "",
+		Description:       "",
+		PhotoData:         nil,
+		PhotoContentType:  pgtype.Text{Valid: false},
+		ExpectedUpdatedAt: created.UpdatedAt,
 	})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, updated.ID, "still exactly one row, not a second insert")
@@ -144,6 +153,70 @@ func TestUpsertRestaurantProfile_RoundTripsFieldsAndPhoto(t *testing.T) {
 	var n int
 	require.NoError(t, count.Scan(&n))
 	require.Equal(t, 1, n, "the singleton CHECK/PK must keep this table at exactly one row")
+}
+
+// TestUpsertRestaurantProfile_StaleExpectedUpdatedAtIsRejected proves the
+// optimistic-concurrency WHERE clause against a REAL Postgres instance, not
+// just the fake store in internal/httpapi: a second UpsertRestaurantProfile
+// call whose ExpectedUpdatedAt no longer matches the row's current
+// updated_at (because a first call already moved it on) must apply
+// nothing and surface as pgx.ErrNoRows — exactly the two-tab lost-update
+// scenario QA found, reproduced at the SQL layer.
+func TestUpsertRestaurantProfile_StaleExpectedUpdatedAtIsRejected(t *testing.T) {
+	conn, q, ctx := connectOrSkip(t)
+	captureAndRestoreRestaurantProfile(t, conn, ctx)
+
+	_, err := conn.Exec(ctx, "DELETE FROM restaurant_profile WHERE id = 1")
+	require.NoError(t, err)
+
+	// Tab 1 loads the empty profile, then saves — establishing the row and
+	// its first real updated_at.
+	tab1Save, err := q.UpsertRestaurantProfile(ctx, storage.UpsertRestaurantProfileParams{
+		Name:              "TEST-SENTINEL Tab One's Restaurant",
+		Phone:             "+1 555 000 0001",
+		ExpectedUpdatedAt: pgtype.Timestamptz{Valid: false},
+	})
+	require.NoError(t, err)
+
+	// Tab 2 loaded the SAME empty profile as tab 1 (before either had
+	// saved), so it also believes there is no row yet — but by the time it
+	// saves, tab 1 has already created one. This must conflict, never
+	// silently overwrite tab 1's save.
+	_, err = q.UpsertRestaurantProfile(ctx, storage.UpsertRestaurantProfileParams{
+		Name:              "TEST-SENTINEL Tab Two's Overwrite",
+		Address:           "Tab two's address edit",
+		ExpectedUpdatedAt: pgtype.Timestamptz{Valid: false},
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows, "a stale/empty ExpectedUpdatedAt against an existing row must be refused, not silently applied")
+
+	// Tab 1's save must be untouched by tab 2's rejected attempt.
+	current, err := q.GetRestaurantProfile(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "TEST-SENTINEL Tab One's Restaurant", current.Name, "a rejected stale write must never overwrite the real current row")
+
+	// A write whose ExpectedUpdatedAt DOES still match the row's real
+	// current value must succeed — proving the check isn't overzealous,
+	// only genuinely stale writes are refused.
+	tab1SecondSave, err := q.UpsertRestaurantProfile(ctx, storage.UpsertRestaurantProfileParams{
+		Name:              "TEST-SENTINEL Tab One's Second Edit",
+		ExpectedUpdatedAt: tab1Save.UpdatedAt,
+	})
+	require.NoError(t, err, "a write whose ExpectedUpdatedAt still matches the row's real current value must succeed")
+
+	// And now tab 1's OWN first updated_at (from its very first save) is
+	// stale too, since its second save just moved updated_at on again —
+	// same rejection, proving the check applies to every write, not just
+	// the "row didn't exist yet" case.
+	_, err = q.UpsertRestaurantProfile(ctx, storage.UpsertRestaurantProfileParams{
+		Name:              "TEST-SENTINEL Stale Retry Of An Old Save",
+		ExpectedUpdatedAt: tab1Save.UpdatedAt,
+	})
+	require.ErrorIs(t, err, pgx.ErrNoRows, "retrying a write with an updated_at that's since been superseded must still be refused")
+
+	// Confirm tab 1's second save is the one that actually stuck.
+	final, err := q.GetRestaurantProfile(ctx)
+	require.NoError(t, err)
+	require.Equal(t, tab1SecondSave.Name, final.Name)
 }
 
 func TestRestaurantProfile_PhotoDataAndContentTypeMustBeSetTogether(t *testing.T) {

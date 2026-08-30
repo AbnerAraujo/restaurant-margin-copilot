@@ -202,6 +202,50 @@ func TestParseCostSheet_ParsesAllInvoices(t *testing.T) {
 	require.Equal(t, int64(500275), total, "opening/README.md's independently-verified supplier cost total is 5,002.75")
 }
 
+// Regression test for a reported HIGH-severity defect: a header-only CSV
+// (no data rows at all) parsed to zero records with NO error, since
+// readAllRows' "is empty" guard only fires on a truly empty/zero-byte file
+// (len(rows) == 0) — a header-only file parses to len(rows) == 1. Left
+// unfixed, this let a 0-row upload preview and commit successfully, which
+// HandleCommitCostSheet writes as a full REPLACE of the live cost-sheet
+// file (FR-008): confirming it would wipe the entire multi-year cost
+// history and re-derive every margin to zero input cost. spec.md's own
+// Edge Cases section states this must be refused ("header row only").
+func TestParseCostSheet_HeaderOnlyFileIsRefused(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,category,amount,notes\n"
+	_, err := ParseCostSheet(strings.NewReader(csvData), "header_only.csv")
+	require.Error(t, err, "a header-only cost sheet must be refused, not accepted as a valid 0-row upload")
+	require.Contains(t, err.Error(), "no data rows found")
+	require.NotContains(t, err.Error(), "is empty",
+		"a header-only file is not the same failure as a zero-byte file — the message must name the real problem")
+}
+
+// A file whose only "data" rows are blank lines is the same failure mode as
+// header-only: zero actual invoice records.
+func TestParseCostSheet_HeaderPlusBlankLinesIsRefused(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,category,amount,notes\n\n,,,,,\n"
+	_, err := ParseCostSheet(strings.NewReader(csvData), "blank_rows.csv")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no data rows found")
+}
+
+// Regression test for a reported HIGH-severity defect: a CSV whose bytes
+// start with the UTF-8 byte-order-mark (EF BB BF) — exactly what Microsoft
+// Excel on Windows produces by default when saving as "CSV UTF-8" — failed
+// with "required column \"invoice_id\" not found", pointing the user at a
+// column plainly visible in the file. The 3 BOM bytes were glued onto the
+// first header cell, so it never matched any known invoice_id alias.
+func TestParseCostSheet_BOMPrefixedFileParsesSuccessfully(t *testing.T) {
+	bomPrefixed := "\xEF\xBB\xBFinvoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-1,2026-08-02,Acme Foods,produce,125.50,Weekly delivery\n"
+	records, err := ParseCostSheet(strings.NewReader(bomPrefixed), "bom.csv")
+	require.NoError(t, err, "a leading UTF-8 BOM must be stripped, not treated as part of the header")
+	require.Len(t, records, 1)
+	require.Equal(t, "INV-1", records[0].InvoiceID)
+	require.Equal(t, "Acme Foods", records[0].Supplier)
+	require.Equal(t, int64(12550), records[0].AmountCents)
+}
+
 // Real-file compatibility (research.md): ingestion must tolerate realistic
 // column-name variance, not just the opening window's exact headers. This
 // constructs an in-memory delivery export using differently named, reordered,

@@ -20,16 +20,47 @@ Independent restaurants and bars can't see, daily, whether they made money — r
 
 **Success Metrics** (this build; see also post-launch metrics in `product-strategy.md`):
 
-| Metric | Baseline | Target | Measurement |
-|---|---|---|---|
-| Accuracy (KR1) | N/A — not yet run | Measured & reported, incl. failures | `evaluation/promptfoo/accuracy.yaml`, ~15–20 questions |
-| Consistency (KR1) | N/A | Measured & reported | 5 questions × 3 phrasings |
-| Refusal-correctness (KR1) | N/A | 100% on ~5 unanswerable questions | Refusal harness |
-| Reconciliation correctness (KR2) | N/A | Zero silent data loss on the deliberately messy test data | Table-driven tests + quickstart validation |
-| Promo-ROI flagging (KR3) | N/A | ≥1 negative-ROI promo correctly flagged end-to-end | quickstart validation |
-| Cost per interaction (KR4) | N/A | Under a stated threshold (e.g. $0.05), instrumented | Instrumentation log |
+| Metric | Baseline | Target | Measurement | Measured (2026-08-30) |
+|---|---|---|---|---|
+| Accuracy (KR1) | N/A — not yet run | Measured & reported, incl. failures | `evaluation/promptfoo/accuracy.yaml`, ~15–20 questions | **14/15 and 14/15** |
+| Consistency (KR1) | N/A | Measured & reported | 5 questions × 3 phrasings | **13/15 and 15/15** |
+| Refusal-correctness (KR1) | N/A | 100% on ~5 unanswerable questions | Refusal harness | **5/5 and 4/5** (9/10) |
+| Reconciliation correctness (KR2) | N/A | Zero silent data loss on the deliberately messy test data | Table-driven tests + quickstart validation | **0 defects**, now asserted by `TestOpeningWindow_PersistedWithZeroSilentDataLoss` |
+| Promo-ROI flagging (KR3) | N/A | ≥1 negative-ROI promo correctly flagged end-to-end | quickstart validation | **1 flagged** (−$450.75), now asserted by `TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance` |
+| Cost per interaction (KR4) | N/A | Under a stated threshold (e.g. $0.05), instrumented | Instrumentation log | **$0.0313/question** — 70 questions, 142 model calls, $2.1931 |
 
 No target is pre-committed for KR1's exact percentages — per Constitution Principle V, real numbers are reported including failures, not asserted in advance.
+
+**How the measured column was obtained, and why two figures per row.** The
+full harness was run twice end to end against a dedicated backend on `:8092`
+started with `cmd/server -eval-no-answer-cache`. The flag matters: without
+it the harness instance shares the product's `answer_cache` table and a
+re-run is served largely from the previous run's cached answers (25 of 35
+questions, measured), which grades the cache rather than the model and makes
+the apparent cost per question a fraction of the real one. Both runs are
+reported rather than the better one, because the model layer is not
+deterministic and a single run presented as a result is a measurement error.
+
+Every failure behind those numbers was hand-read from the raw JSON, and none
+is a wrong number. The one that matters is **A15** ("delivery revenue on
+2024-08-02, net of the refund?"), which failed in every uncached run: the
+model returns gross $446.25 and the $62.25 refund with provenance, then
+declines to net them to $384.00 because no tool returns a net-of-refund
+delivery figure and it will not present its own arithmetic as a computed
+result. That is Constitution Principle I working as designed, and it names a
+real **gap in the tool contract** — `get_daily_summary` exposes gross and
+refunds separately and nothing exposes the net. Open, not fixed. The other
+three are one genuine consistency divergence (C1a) and two cases of a
+grading regex rejecting a correct answer (C3, R1), both deliberately left
+unfixed: tuning a grader after watching it fail is how a number stops
+meaning anything.
+
+Cumulative real API spend across the whole build, both ledgers, on the same
+date: **$12.6855** across **1,006** logged model calls ($12.6387 over 999
+`question_interaction` rows, $0.0468 over 7 `business_insight_interaction`
+rows). Note the unit — a row is one *model call*, and an answered question
+writes two (gate, then explain), so the KR4 figure above is measured over a
+known question count rather than by averaging the ledger.
 
 ## 2. Users & Use Cases
 

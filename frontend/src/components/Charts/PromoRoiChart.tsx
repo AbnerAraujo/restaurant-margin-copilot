@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 
+import { buildLinearTickScale, formatAxisCurrency } from '@/lib/chartScale'
 import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import PinnedValueAxis from './PinnedValueAxis'
 
 // ---------------------------------------------------------------------------
 // Data — the exact 4 campaigns of the dataset's hand-authored opening
@@ -171,8 +173,15 @@ const CHART_HEIGHT = 300
 // campaign-id ticks (mirroring "Net (USD)" on the y-axis) — the reported
 // "the x-axis has no meaning" gap was partly that nothing named what the
 // bars even ARE, not just that too few of them were labeled.
-const MARGIN = { top: 44, right: 16, bottom: 56, left: 48 }
+// `left` is both the plot's own left inset AND the pixel width of the pinned
+// value-axis gutter beside it — the two must stay equal so the first gridline
+// begins exactly where the gutter ends. 48 -> 56 for the compacted currency
+// labels the nice-number axis now emits.
+const MARGIN = { top: 44, right: 16, bottom: 56, left: 56 }
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
+/** Roughly the rendered height of the hover tooltip, used to decide whether
+ *  it has room to sit above a bar's tip or must flip below it. */
+const TOOLTIP_HEIGHT = 76
 
 const BAR_WIDTH = 24
 const BAR_RADIUS = 4
@@ -283,12 +292,17 @@ function edgeAwareTextAnchor(
   return { x, textAnchor: 'middle' }
 }
 
-// Rough px-per-character at the 9.5px tick font — no real text metrics are
+// Px-per-character at the 9.5px tick font — no real text metrics are
 // available here (no canvas measureText, no DOM ref timing that would
-// survive SSR-free but still synchronous render), so this trades precision
-// for "good enough to avoid the actual reported collision" the same way
-// MIN_SLOT_WIDTH and the other real-scale constants above do.
-const AXIS_LABEL_CHAR_WIDTH_PX = 5.6
+// survive SSR-free but still synchronous render), so a constant stands in.
+//
+// 5.6 was a guess, and it under-measured: the last two campaign-id ticks
+// still touched. Measured against the rendered SVG (`getBBox().width` on
+// every live campaign-id tick, 2026-08-30): 6.08-6.24 px/char, mean 6.16.
+// 6.3 rounds UP on purpose — over-estimating a label's width drops one tick
+// too many, which reads fine; under-estimating collides two labels, which
+// is the bug this exists to prevent.
+const AXIS_LABEL_CHAR_WIDTH_PX = 6.3
 // Minimum breathing room between two adjacent tick labels' estimated edges.
 const AXIS_LABEL_GAP_PX = 6
 
@@ -336,26 +350,29 @@ function selectVisibleTickIndices(
  * [-200, 60] domain was tuned to one sample; against live /api/promotions
  * rows a campaign outside it would be CLAMPED to the axis edge and drawn
  * smaller than the loss it represents.
+ *
+ * The step now comes from `buildLinearTickScale`'s nice-number algorithm
+ * rather than the 50/200/500 ladder this used to carry — see
+ * `lib/chartScale.ts`, where that maths is unit-tested directly across every
+ * span the live data reaches. Exported so the geometry is testable without
+ * rendering an SVG.
  */
-function buildScale(data: PromotionRoiDatum[]) {
+export function buildScale(data: PromotionRoiDatum[]) {
   const values = data
     .map((datum) => datum.net)
     .filter((value): value is number => value !== null)
-  const rawMin = Math.min(0, ...values)
-  const rawMax = Math.max(0, ...values)
-  const span = rawMax - rawMin || 1
-  const step = span > 2000 ? 500 : span > 800 ? 200 : 50
-  const min = Math.floor(rawMin / step) * step
-  const max = Math.ceil(rawMax / step) * step
-
-  const ticks: number[] = []
-  for (let tick = min; tick <= max; tick += step) ticks.push(tick)
+  // Always zero-baselined: a net-ROI bar only means anything read against
+  // zero, and profit/loss is which side of zero the bar sits on.
+  const { min, max, step, ticks } = buildLinearTickScale(
+    Math.min(0, ...values),
+    Math.max(0, ...values),
+  )
 
   const yToPixel = (value: number) => {
     const clamped = Math.min(Math.max(value, min), max)
     return MARGIN.top + ((max - clamped) / (max - min || 1)) * PLOT_HEIGHT
   }
-  return { ticks, yToPixel, baselineY: yToPixel(0) }
+  return { ticks, step, yToPixel, baselineY: yToPixel(0) }
 }
 
 function roundedBarPath(
@@ -541,9 +558,18 @@ function PromoRoiChart({
     ? REFUSAL_BOX_WIDTH
     : Math.min(REFUSAL_BOX_WIDTH, Math.max(COMPACT_REFUSAL_BOX_SIZE, slotWidth - 4))
   const refusalBoxHeight = labelEveryBar ? REFUSAL_BOX_HEIGHT : COMPACT_REFUSAL_BOX_SIZE
-  const { ticks, yToPixel, baselineY } = buildScale(chartableData)
+  const { ticks, step, yToPixel, baselineY } = buildScale(chartableData)
   const bars = buildBars(chartableData, yToPixel, plotWidth)
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
+  // The tip of the hovered mark, in viewBox units: where the tooltip points.
+  const tooltipAnchorX = hovered?.slotCenterX ?? 0
+  const tooltipAnchorY = hovered
+    ? Math.min(
+        hovered.isRefused ? baselineY - refusalBoxHeight / 2 : hovered.barY,
+        baselineY,
+      ) - 4
+    : 0
+  const tooltipBelow = tooltipAnchorY < TOOLTIP_HEIGHT
   // The tickLabelStep-selected candidates, further pruned for estimated
   // overlap — see selectVisibleTickIndices's doc comment. Labeling every
   // bar (<= LABEL_ALL_MAX) skips this: tight, uniform slot widths there are
@@ -569,7 +595,12 @@ function PromoRoiChart({
   return (
     <figure
       aria-label="Promotion ROI"
-      className={cn('rounded-lg border border-border bg-card p-4 sm:p-5', className)}
+      // See MarginTrendChart: min-w-0 keeps a definite-width plot from
+      // widening an `auto` grid track and scrolling the whole page.
+      className={cn(
+        'min-w-0 rounded-lg border border-border bg-card p-4 sm:p-5',
+        className,
+      )}
     >
       <figcaption className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -590,55 +621,53 @@ function PromoRoiChart({
           the moment a bar chart with 20+ campaigns grows past CHART_WIDTH
           and starts scrolling, so every overlay would render squeezed
           into the visible viewport instead of tracking its actual bar. */}
-      <div ref={containerRef} className="w-full overflow-x-auto">
+      <div
+        ref={containerRef}
+        className="flex w-full overflow-x-auto overscroll-x-contain"
+      >
+        <PinnedValueAxis
+          ticks={ticks}
+          step={step}
+          yToPixel={yToPixel}
+          chartHeight={CHART_HEIGHT}
+          width={MARGIN.left}
+          title="Net (USD)"
+          formatTick={formatAxisCurrency}
+        />
         <div
-          className="relative"
-          style={chartWidth > CHART_WIDTH ? { width: chartWidth } : undefined}
+          className="relative shrink-0"
+          style={{ width: plotWidth + MARGIN.right }}
         >
         <svg
-          viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
+          // Cropped to start where the frozen axis gutter ends, so every
+          // coordinate below stays in the original whole-chart space.
+          viewBox={`${MARGIN.left} 0 ${plotWidth + MARGIN.right} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
           // per-campaign targets below (axe nested-interactive).
           role="group"
           aria-label={`Bar chart of net ROI across ${chartableData.length} promotion campaign${
             chartableData.length === 1 ? '' : 's'
           }${refusedCount > 0 ? `, with ${refusedCount} flagged as unattributable and refused` : ''}`}
-          // See MarginTrendChart: capped at its design width, which itself
-          // grows with campaign count so bars get real room past the
-          // 4-campaign sample instead of overlapping or floating in dead
-          // space to the right of a canvas that never grew to fit them. Past
-          // the base 560px, a fixed pixel width (not `w-full`) is what makes
-          // the wrapper's `overflow-x-auto` actually scroll instead of
-          // silently rescaling every bar back down to the panel's width.
-          style={
-            chartWidth > CHART_WIDTH ? { width: chartWidth } : { maxWidth: chartWidth }
-          }
-          className={cn(
-            'h-auto min-w-[360px]',
-            chartWidth > CHART_WIDTH ? '' : 'w-full',
-          )}
+          // Rendered 1:1 in real pixels rather than scaled to fit: that is
+          // what keeps the frozen axis's labels aligned with their own
+          // gridlines at any panel width, and keeps 10px type at 10px.
+          width={plotWidth + MARGIN.right}
+          height={CHART_HEIGHT}
+          className="block"
         >
+          {/* Y gridlines — recessive solid hairlines, one step off the
+              surface. Their labels live in the frozen axis beside this SVG. */}
           {ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={MARGIN.left}
-                x2={chartWidth - MARGIN.right}
-                y1={yToPixel(tick)}
-                y2={yToPixel(tick)}
-                stroke="var(--border)"
-                strokeWidth={1}
-                opacity={tick === 0 ? 0 : 0.6}
-              />
-              <text
-                x={MARGIN.left - 8}
-                y={yToPixel(tick)}
-                textAnchor="end"
-                dominantBaseline="middle"
-                className="fill-muted-foreground text-[10px] tabular-nums"
-              >
-                {tick}
-              </text>
-            </g>
+            <line
+              key={tick}
+              x1={MARGIN.left}
+              x2={chartWidth - MARGIN.right}
+              y1={yToPixel(tick)}
+              y2={yToPixel(tick)}
+              stroke="var(--border)"
+              strokeWidth={1}
+              opacity={tick === 0 ? 0 : 0.6}
+            />
           ))}
 
           <line
@@ -758,18 +787,10 @@ function PromoRoiChart({
             )
           })}
 
-          <text
-            x={chartWidth - MARGIN.right}
-            y={MARGIN.top - 16}
-            textAnchor="end"
-            className="fill-muted-foreground text-[10px]"
-          >
-            Net (USD)
-          </text>
-
-          {/* X-axis title — same role as "Net (USD)" above, naming what the
-              bars ARE (one per campaign) rather than leaving the axis to be
-              inferred from whichever ids happen to be labeled. */}
+          {/* X-axis title — the counterpart to the frozen "Net (USD)" label
+              on the value axis, naming what the bars ARE (one per campaign)
+              rather than leaving the axis to be inferred from whichever ids
+              happen to be labeled. */}
           <text
             x={(MARGIN.left + chartWidth - MARGIN.right) / 2}
             y={CHART_HEIGHT - 8}
@@ -798,10 +819,14 @@ function PromoRoiChart({
             <div
               key={bar.datum.campaignId}
               className="pointer-events-none absolute flex -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-1"
+              // Real pixels against the 1:1 plot layer. These used to be
+              // percentages of `chartWidth` resolved against the scroll
+              // VIEWPORT, so on a scrolling chart every marker drifted off
+              // the campaign it belongs to.
               style={{
-                left: `${(bar.slotCenterX / chartWidth) * 100}%`,
-                top: `${(baselineY / CHART_HEIGHT) * 100}%`,
-                width: `${(refusalBoxWidth / chartWidth) * 100}%`,
+                left: bar.slotCenterX - MARGIN.left,
+                top: baselineY,
+                width: refusalBoxWidth,
               }}
             >
               <div
@@ -824,11 +849,14 @@ function PromoRoiChart({
         {hovered ? (
           <div
             role="status"
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
-            style={{
-              left: `${(hovered.slotCenterX / chartWidth) * 100}%`,
-              top: `${(Math.min(hovered.isRefused ? baselineY - refusalBoxHeight / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
-            }}
+            // Real pixels against the 1:1 plot layer, and flipped below the
+            // tip when a tall bar leaves no room above it — percentages here
+            // resolved against the scroll viewport, not the scrolled content.
+            className={cn(
+              'pointer-events-none absolute z-20 w-max -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md',
+              tooltipBelow ? 'translate-y-2' : '-translate-y-full',
+            )}
+            style={{ left: tooltipAnchorX - MARGIN.left, top: tooltipAnchorY }}
           >
             <p className="font-medium text-muted-foreground">
               {hovered.datum.campaignName}

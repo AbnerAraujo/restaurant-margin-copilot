@@ -175,6 +175,29 @@ describe('UploadPage', () => {
     expect(screen.queryByText(/\$0\.00/)).not.toBeInTheDocument()
   })
 
+  // Defense in depth for a fixed HIGH-severity defect: the backend now
+  // refuses a 0-data-row upload outright (ingest.ParseCostSheet's "no data
+  // rows found" check), so this response shape shouldn't occur in practice
+  // — but this page must never let it look like an ordinary preview with
+  // Confirm & Ingest quietly enabled underneath it, in case some future
+  // parser path ever produces row_count: 0 without erroring.
+  it('disables Confirm & Ingest and warns when a preview somehow carries zero rows', async () => {
+    stubFetchOnce(true, {
+      row_count: 0,
+      total_amount: '0.00',
+      rows: [],
+    })
+    renderPage()
+
+    await selectFile(testFile())
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/no data rows/i)
+    expect(screen.getByRole('button', { name: /confirm & ingest/i })).toBeDisabled()
+    // Never the ordinary "nothing has been saved yet, N rows parsed" copy.
+    expect(screen.queryByText(/rows? parsed/i)).not.toBeInTheDocument()
+  })
+
   it('offers a template download link pointing at the real backend endpoint', () => {
     renderPage()
 

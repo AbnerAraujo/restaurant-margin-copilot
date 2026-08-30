@@ -196,6 +196,88 @@ func TestIsCampaignFlaggedNegative(t *testing.T) {
 	require.False(t, unknown, "a campaign_id with no record at all must never read as flagged")
 }
 
+// TestIsCampaignAlreadyReplaced backs the fix for a QA-found double-award
+// currency bug: a flagged campaign stayed offered in the frontend's
+// "replaces" dropdown after it had already been replaced once, and
+// submitting it again minted a second Campaign Launcher badge/points award
+// for one real replacement. POST /api/promotions now re-verifies this
+// exact live fact before accepting a "replaces" claim (mirroring
+// TestIsCampaignFlaggedNegative's own re-verify-at-submission discipline
+// for the sibling check right above it) — true once ANY other persisted
+// record names campaignID as replaced, false before that, and false for a
+// campaign_id with no record naming it at all.
+func TestIsCampaignAlreadyReplaced(t *testing.T) {
+	conn, q, ctx := connectOrSkip(t)
+
+	sentinelStart := time.Date(1999, 4, 10, 0, 0, 0, 0, time.UTC)
+	sentinelEnd := time.Date(1999, 4, 12, 0, 0, 0, 0, time.UTC)
+
+	targetID := "TEST-SENTINEL-ALREADY-REPLACED-TARGET"
+	replacementID := "TEST-SENTINEL-ALREADY-REPLACED-REPLACEMENT"
+	neverReplacedID := "TEST-SENTINEL-NEVER-REPLACED-TARGET"
+	t.Cleanup(func() {
+		_, err := conn.Exec(context.Background(),
+			"DELETE FROM promotion_roi_record WHERE campaign_id IN ($1, $2, $3)",
+			targetID, replacementID, neverReplacedID)
+		if err != nil {
+			t.Logf("cleanup: failed to delete test rows: %v", err)
+		}
+	})
+
+	roiNeg := int64(-5000)
+	_, err := storage.SavePromotionRoiRecord(ctx, q, reconcile.PromotionRoiRecord{
+		Platform:                          "TestPlatform",
+		CampaignID:                        targetID,
+		PeriodStart:                       sentinelStart,
+		PeriodEnd:                         sentinelEnd,
+		SpendCents:                        10000,
+		AttributedIncrementalOrders:       intPtr(1),
+		AttributedIncrementalRevenueCents: int64Ptr(5000),
+		ROICents:                          &roiNeg,
+		FlaggedNegative:                   true,
+	})
+	require.NoError(t, err)
+
+	_, err = storage.SavePromotionRoiRecord(ctx, q, reconcile.PromotionRoiRecord{
+		Platform:                          "TestPlatform",
+		CampaignID:                        neverReplacedID,
+		PeriodStart:                       sentinelStart,
+		PeriodEnd:                         sentinelEnd,
+		SpendCents:                        10000,
+		AttributedIncrementalOrders:       intPtr(1),
+		AttributedIncrementalRevenueCents: int64Ptr(5000),
+		ROICents:                          &roiNeg,
+		FlaggedNegative:                   true,
+	})
+	require.NoError(t, err)
+
+	notYetReplaced, err := storage.IsCampaignAlreadyReplaced(ctx, q, targetID)
+	require.NoError(t, err)
+	require.False(t, notYetReplaced, "a flagged campaign with no record naming it must not read as already replaced")
+
+	_, err = storage.CreateOwnerPromotion(ctx, q, storage.NewOwnerPromotion{
+		Platform:           "TestPlatform",
+		CampaignID:         replacementID,
+		PeriodStart:        sentinelStart,
+		PeriodEnd:          sentinelEnd,
+		SpendCents:         5000,
+		ReplacesCampaignID: &targetID,
+	})
+	require.NoError(t, err)
+
+	nowReplaced, err := storage.IsCampaignAlreadyReplaced(ctx, q, targetID)
+	require.NoError(t, err)
+	require.True(t, nowReplaced, "once ANY record names this campaign_id as replaced, it must read as already replaced")
+
+	stillNotReplaced, err := storage.IsCampaignAlreadyReplaced(ctx, q, neverReplacedID)
+	require.NoError(t, err)
+	require.False(t, stillNotReplaced, "a different flagged campaign that nothing replaces must stay false")
+
+	unknown, err := storage.IsCampaignAlreadyReplaced(ctx, q, "TEST-SENTINEL-DOES-NOT-EXIST")
+	require.NoError(t, err)
+	require.False(t, unknown)
+}
+
 // TestRecordUsageEvent_DedupesWithinTheSameUTCDay is spec 002 User Story 2
 // Acceptance Scenario 3's real mechanism under test: two pings on the same
 // UTC calendar day must collapse to exactly one usage_event row, enforced

@@ -1,7 +1,8 @@
 import * as React from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, Sparkles, X } from 'lucide-react'
+import { ArrowLeft, Lightbulb, Sparkles, X } from 'lucide-react'
 
+import { ADVISORY_CAPABILITIES, type BusinessInsightKind } from '@/capabilities'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,26 +10,44 @@ import { getJson } from '@/lib/api'
 import {
   GUIDED_CATEGORIES,
   KNOWN_PLATFORMS,
+  advisoryPeriodCount,
+  composeAdviceRequest,
   composeGuidedQuestion,
   dateRangeErrorMessage,
   toGuidedParams,
   type DateRange,
+  type GuidedAdviceRequest,
   type GuidedCampaign,
   type GuidedCategoryId,
   type GuidedDraft,
 } from '@/components/Chat/guidedQuestion'
 
 // ---------------------------------------------------------------------------
-// A guided, step-by-step way to build a well-formed question, for an owner
-// staring at a blank composer with no idea what's answerable. Purely a
-// frontend affordance: it never calls a model and never adds a backend
-// endpoint — it only assembles a natural-language STRING from structured
-// choices and hands that string to the exact same `/api/ask` flow every
-// typed or example question already goes through (see ChatPanel's
-// `submitQuestion`, wired via `onAsk`). The 8 categories in Step 1 map
-// one-to-one onto the fixed MCP tool set in contracts/mcp-tools.md, so this
-// flow can never compose a question the backend will just refuse for naming
-// a capability that doesn't exist.
+// A guided, step-by-step way to reach anything this product can do, for an
+// owner staring at a blank composer with no idea what's available. What it
+// can offer is not decided here: Step 1 renders `@/capabilities`, the one
+// authoritative catalog, whose contract test holds it against the real Go
+// tool registry — so this dialog cannot quietly fall behind the product the
+// way the Help page's tool count and exampleQuestions.ts both did.
+//
+// The catalog has two kinds of entry, and this dialog keeps them separate all
+// the way down because they are different KINDS of thing, not two flavors of
+// the same thing:
+//
+//   * A COMPUTED capability (8 of them, one per typed MCP tool) assembles a
+//     natural-language STRING from structured choices and hands it to the
+//     exact same `/api/ask` flow every typed or example question already goes
+//     through (`onAsk` → ChatPanel's `submitQuestion`). Every one of those
+//     questions is answerable by construction.
+//
+//   * The ADVISORY capability (5 insight kinds) is not a data lookup at all —
+//     it is probabilistic guidance from one billed model call, and it emits a
+//     `GuidedAdviceRequest` through a SEPARATE callback (`onRequestAdvice`),
+//     never an `onAsk` string. It carries the established
+//     BusinessInsightChip visual language — dashed warning border, lightbulb,
+//     "AI suggestion" — from Step 1 onward, so an owner can tell before
+//     reading a word that this path ends somewhere other than a computed
+//     fact.
 // ---------------------------------------------------------------------------
 
 /**
@@ -236,6 +255,41 @@ function ScopeToggle<T extends string>({
   )
 }
 
+/**
+ * A tile for anything on the advisory path, carrying BusinessInsightChip's
+ * established visual language rather than a second one invented here: the
+ * dashed warning-tinted surface, the lightbulb, and the literal "AI
+ * suggestion" label. An owner who has already met the chip in an answer
+ * should recognise this as the same category of thing on sight — that
+ * recognition is the whole point of not inventing new styling for it.
+ */
+function AdvisoryTile({
+  label,
+  description,
+  onClick,
+}: {
+  label: string
+  description: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-full w-full flex-col items-start gap-1 rounded-lg border border-dashed border-warning/50 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+    >
+      <span className="flex items-center gap-1.5">
+        <Lightbulb className="size-3.5 shrink-0 text-warning-text" aria-hidden="true" />
+        <span className="text-micro font-semibold uppercase tracking-wide text-warning-text">
+          AI suggestion
+        </span>
+      </span>
+      <span className="text-sm font-medium text-foreground">{label}</span>
+      <span className="text-xs text-muted-foreground">{description}</span>
+    </button>
+  )
+}
+
 export interface QuestionComposerProps {
   open: boolean
   onClose: () => void
@@ -245,6 +299,17 @@ export interface QuestionComposerProps {
    * comment above.
    */
   onAsk: (question: string) => void
+  /**
+   * Hands off a request for business ADVICE — a deliberately separate
+   * callback from `onAsk`, not a variant of it, because it is a different
+   * action with a different destination (`POST /api/business-insight`, one
+   * billed model call, probabilistic output) reached through a grounding
+   * question rather than being one.
+   *
+   * Optional, and the advisory path is hidden entirely when it is absent: a
+   * host that cannot resolve advice must not advertise that it can.
+   */
+  onRequestAdvice?: (request: GuidedAdviceRequest) => void
   /** Bounds every date picker to the real, live data range (`useDataCoverage`). */
   minDate?: string | null
   maxDate?: string | null
@@ -252,7 +317,7 @@ export interface QuestionComposerProps {
   fetchCampaigns?: () => Promise<GuidedCampaign[]>
 }
 
-type Step = 'category' | 'params' | 'review'
+type Step = 'category' | 'advisory_topic' | 'params' | 'review'
 
 /**
  * "Build a question" — a guided, 3-step composer: pick what you want to
@@ -268,12 +333,19 @@ export default function QuestionComposer({
   open,
   onClose,
   onAsk,
+  onRequestAdvice,
   minDate,
   maxDate,
   fetchCampaigns = fetchKnownCampaigns,
 }: QuestionComposerProps) {
   const [step, setStep] = React.useState<Step>('category')
   const [categoryId, setCategoryId] = React.useState<GuidedCategoryId | null>(null)
+  // Mutually exclusive with `categoryId` by construction — selecting either
+  // one clears the other, so no state can ever describe both a computed and
+  // an advisory walk at once.
+  const [advisoryKind, setAdvisoryKind] = React.useState<BusinessInsightKind | null>(
+    null,
+  )
   const [draft, setDraft] = React.useState<GuidedDraft>({})
   const [questionText, setQuestionText] = React.useState('')
 
@@ -298,6 +370,7 @@ export default function QuestionComposer({
     if (!open) return
     setStep('category')
     setCategoryId(null)
+    setAdvisoryKind(null)
     setDraft({})
     setQuestionText('')
   }, [open])
@@ -344,6 +417,29 @@ export default function QuestionComposer({
       previouslyFocused?.focus?.()
     }
   }, [open, portalNode])
+
+  // Escape must close the dialog per the WAI-ARIA modal dialog pattern,
+  // regardless of where focus currently sits. A React `onKeyDown` on the
+  // dialog's own container only fires for a keydown that bubbles up
+  // through that container's subtree — but QA found that clicking a Step 1
+  // category button (or the in-dialog Back button) unmounts that button on
+  // the step change, which drops focus to `document.body`. A keydown on
+  // `body` never bubbles into the dialog's own container, so the
+  // container-scoped handler silently never sees it. Listening at the
+  // document level sidesteps that entirely: this fires for Escape no
+  // matter which element (or lack of one) currently has focus.
+  React.useEffect(() => {
+    if (!open) return
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleDocumentKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown)
+    }
+  }, [open, onClose])
 
   /** Tab/Shift+Tab cycling, scoped to the dialog's own focusable elements. */
   function trapTabKey(event: React.KeyboardEvent<HTMLDivElement>) {
@@ -405,20 +501,55 @@ export default function QuestionComposer({
   if (!open) return null
 
   const category = GUIDED_CATEGORIES.find((c) => c.id === categoryId) ?? null
+  const advisory =
+    ADVISORY_CAPABILITIES.find((c) => c.insightKind === advisoryKind) ?? null
   const params = categoryId
     ? toGuidedParams(categoryId, draft, { minDate, maxDate })
     : null
+  const adviceRequest = advisoryKind
+    ? composeAdviceRequest(advisoryKind, draft, { minDate, maxDate })
+    : null
+  // The one gate on Continue, whichever walk is in progress: a null here
+  // means the form is incomplete or carries a date the backend has no data
+  // for, exactly as before.
+  const canContinue = advisoryKind ? adviceRequest !== null : params !== null
 
   function selectCategory(id: GuidedCategoryId) {
     setCategoryId(id)
+    setAdvisoryKind(null)
     setDraft(defaultDraftFor(id))
     setStep('params')
   }
 
+  function selectAdvisoryTopic(kind: BusinessInsightKind) {
+    setAdvisoryKind(kind)
+    setCategoryId(null)
+    setDraft({})
+    setStep('params')
+  }
+
   function goToReview() {
+    if (advisoryKind) {
+      if (!adviceRequest) return
+      setQuestionText(adviceRequest.question)
+      setStep('review')
+      return
+    }
     if (!categoryId || !params) return
     setQuestionText(composeGuidedQuestion(params))
     setStep('review')
+  }
+
+  function goBack() {
+    if (step === 'review') {
+      setStep('params')
+      return
+    }
+    if (step === 'params') {
+      setStep(advisoryKind ? 'advisory_topic' : 'category')
+      return
+    }
+    setStep('category')
   }
 
   function handleAsk() {
@@ -427,16 +558,18 @@ export default function QuestionComposer({
     onAsk(trimmed)
   }
 
+  // Never `onAsk` with the grounding question: the caller has to know an
+  // advisory outcome was asked for, or it cannot tell the difference between
+  // "no pattern found" and "advice never requested".
+  function handleRequestAdvice() {
+    if (!adviceRequest || !onRequestAdvice) return
+    onRequestAdvice(adviceRequest)
+  }
+
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          onClose()
-          return
-        }
-        trapTabKey(event)
-      }}
+      onKeyDown={trapTabKey}
     >
       <div
         aria-hidden="true"
@@ -456,7 +589,7 @@ export default function QuestionComposer({
             {step !== 'category' ? (
               <button
                 type="button"
-                onClick={() => setStep(step === 'review' ? 'params' : 'category')}
+                onClick={goBack}
                 className="mb-1 flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
               >
                 <ArrowLeft className="size-3" aria-hidden="true" />
@@ -466,16 +599,24 @@ export default function QuestionComposer({
             <h2 id={titleId} className="text-base font-semibold text-foreground">
               {step === 'category'
                 ? 'Build a question'
-                : step === 'params'
-                  ? category?.label
-                  : 'Review your question'}
+                : step === 'advisory_topic'
+                  ? 'Get business advice'
+                  : step === 'params'
+                    ? (advisory?.label ?? category?.label)
+                    : advisory
+                      ? 'Review this advice request'
+                      : 'Review your question'}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {step === 'category'
                 ? 'What do you want to know?'
-                : step === 'params'
-                  ? category?.description
-                  : "This is exactly what we'll ask. Edit it if you'd like."}
+                : step === 'advisory_topic'
+                  ? 'What would you like advice about?'
+                  : step === 'params'
+                    ? (advisory?.description ?? category?.description)
+                    : advisory
+                      ? "We'll compute the pattern first — advice is yours to request after."
+                      : "This is exactly what we'll ask. Edit it if you'd like."}
             </p>
           </div>
           <button
@@ -490,24 +631,92 @@ export default function QuestionComposer({
 
         <div className="flex-1 overflow-y-auto px-5 py-4">
           {step === 'category' ? (
-            <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {GUIDED_CATEGORIES.map((c) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => selectCategory(c.id)}
-                    className="flex h-full w-full flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-                  >
-                    <span className="text-sm font-medium text-foreground">
-                      {c.label}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {c.description}
-                    </span>
-                  </button>
+            <div className="flex flex-col gap-4">
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {GUIDED_CATEGORIES.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => selectCategory(c.id)}
+                      className="flex h-full w-full flex-col items-start gap-1 rounded-lg border border-border bg-background p-3 text-left transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                    >
+                      <span className="text-sm font-medium text-foreground">
+                        {c.label}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {c.description}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              {/* The advisory path, kept below a rule and visually apart from
+                  the computed categories above it — the separation is the
+                  message. Hidden entirely without `onRequestAdvice`: a host
+                  that cannot resolve advice must not offer it. */}
+              {onRequestAdvice ? (
+                <div className="border-t border-border pt-4">
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Or ask for general business advice, grounded in a pattern
+                    we compute from your own numbers — a suggestion, not a
+                    calculated fact.
+                  </p>
+                  <AdvisoryTile
+                    label="Get business advice"
+                    description="What owners typically do about a pattern in your data."
+                    onClick={() => setStep('advisory_topic')}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {step === 'advisory_topic' ? (
+            <ul className="grid grid-cols-1 gap-2">
+              {ADVISORY_CAPABILITIES.map((c) => (
+                <li key={c.insightKind}>
+                  <AdvisoryTile
+                    label={c.label}
+                    description={c.description}
+                    onClick={() => selectAdvisoryTopic(c.insightKind)}
+                  />
                 </li>
               ))}
             </ul>
+          ) : null}
+
+          {step === 'params' && advisory ? (
+            <div className="flex flex-col gap-4">
+              {advisoryPeriodCount(advisory) === 2 ? (
+                <>
+                  <PeriodFields
+                    idPrefix="guided-advice-period-a"
+                    legend="First period"
+                    value={draft.periodA}
+                    minDate={minDate ?? undefined}
+                    maxDate={maxDate ?? undefined}
+                    onChange={(next) => setDraft((d) => ({ ...d, periodA: next }))}
+                  />
+                  <PeriodFields
+                    idPrefix="guided-advice-period-b"
+                    legend="Second period"
+                    value={draft.periodB}
+                    minDate={minDate ?? undefined}
+                    maxDate={maxDate ?? undefined}
+                    onChange={(next) => setDraft((d) => ({ ...d, periodB: next }))}
+                  />
+                </>
+              ) : (
+                <PeriodFields
+                  idPrefix="guided-advice-period"
+                  value={draft.period}
+                  minDate={minDate ?? undefined}
+                  maxDate={maxDate ?? undefined}
+                  onChange={(next) => setDraft((d) => ({ ...d, period: next }))}
+                />
+              )}
+            </div>
           ) : null}
 
           {step === 'params' && categoryId === 'daily_summary' ? (
@@ -673,7 +882,7 @@ export default function QuestionComposer({
             />
           ) : null}
 
-          {step === 'review' ? (
+          {step === 'review' && !advisory ? (
             <div className="flex flex-col gap-1.5">
               <FieldLabel htmlFor="guided-question-text">Your question</FieldLabel>
               <Textarea
@@ -684,13 +893,64 @@ export default function QuestionComposer({
               />
             </div>
           ) : null}
+
+          {/* The advisory review deliberately does NOT offer the computed
+              path's editable textarea. This question is machinery, not the
+              owner's words: it exists to compute the pattern the advice must
+              be grounded in, and an edited version could stop producing that
+              pattern while the request still claimed it. Shown read-only
+              because the owner is still entitled to see exactly what will be
+              asked on their behalf. */}
+          {step === 'review' && advisory ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-foreground">
+                  First, we compute this
+                </span>
+                <p className="rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground">
+                  {questionText}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  A normal, provenance-backed answer with the source rows
+                  behind every number.
+                </p>
+              </div>
+              <div className="space-y-1.5 rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3.5 py-3">
+                <p className="flex items-center gap-1.5">
+                  <Lightbulb
+                    className="size-3.5 shrink-0 text-warning-text"
+                    aria-hidden="true"
+                  />
+                  <span className="text-micro font-semibold uppercase tracking-wide text-warning-text">
+                    AI suggestion
+                  </span>
+                </p>
+                <p className="text-xs leading-relaxed text-foreground">
+                  Then, if that answer shows the pattern, you can tap once for{' '}
+                  {advisory.label.replace(/^Advice on /i, 'advice on ')}. That
+                  step is a billed model call and shows its own cost — general
+                  industry practice connected to your numbers, never a computed
+                  fact about your business.
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  If the pattern isn&apos;t there, we&apos;ll say so and
+                  nothing extra is charged.
+                </p>
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        {step !== 'category' ? (
+        {step === 'params' || step === 'review' ? (
           <div className="flex items-center justify-end gap-2 border-t border-border px-5 py-3">
             {step === 'params' ? (
-              <Button type="button" onClick={goToReview} disabled={!params}>
+              <Button type="button" onClick={goToReview} disabled={!canContinue}>
                 Continue
+              </Button>
+            ) : advisory ? (
+              <Button type="button" onClick={handleRequestAdvice} disabled={!adviceRequest}>
+                <Lightbulb aria-hidden="true" />
+                Compute this and offer advice
               </Button>
             ) : (
               <Button

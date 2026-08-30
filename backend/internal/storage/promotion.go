@@ -288,6 +288,30 @@ func IsCampaignFlaggedNegative(ctx context.Context, q Querier, campaignID string
 	return false, nil
 }
 
+// IsCampaignAlreadyReplaced reports whether ANY persisted
+// promotion_roi_record already names campaignID as the campaign it replaces
+// (replaces_campaign_id) — the real, current fact POST /api/promotions'
+// FR-007 re-check must also enforce, mirroring IsCampaignFlaggedNegative's
+// own re-verify-at-submission-time discipline. Backs the fix for a QA-found
+// bug: a flagged campaign stayed offered in the "replaces" dropdown after it
+// had already been replaced once, and submitting it again double-awarded a
+// Campaign Launcher badge (and its points) for the same real replacement.
+// Loads every promotion record and scans in Go rather than adding a new
+// indexed query, matching IsCampaignFlaggedNegative's own style — this table
+// is small and this check runs once per POST, not on a hot read path.
+func IsCampaignAlreadyReplaced(ctx context.Context, q Querier, campaignID string) (bool, error) {
+	records, err := LoadAllPromotionRoiRecords(ctx, q)
+	if err != nil {
+		return false, err
+	}
+	for _, r := range records {
+		if r.ReplacesCampaignID != nil && *r.ReplacesCampaignID == campaignID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // NewOwnerPromotion is the plain-Go input to CreateOwnerPromotion —
 // internal/httpapi's POST /api/promotions handler builds this after FR-007's
 // validation has already run; this function performs no validation of its

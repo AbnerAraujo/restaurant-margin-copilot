@@ -130,6 +130,14 @@ export default function PointsPage() {
     each: number
     icon: LucideIcon
     when: string
+    // What `earned.count` actually counts for THIS rule — bug fix: the
+    // "Earned" column used to hardcode "day(s)" for every rule, which is
+    // only true for the two Reconciliation badges (Clean Close/Discrepancy
+    // Catcher, one per calendar day). Growth and Campaign Launcher each
+    // count distinct CAMPAIGNS, and Week One counts distinct real usage
+    // days but fires as a single milestone, not once per day — "2 days" for
+    // two logged replacements on the same calendar day was actively wrong.
+    unit: string
   }[] = [
     {
       code: 'clean_close',
@@ -137,6 +145,7 @@ export default function PointsPage() {
       each: POINTS_PER_BADGE.clean_close,
       icon: BadgeCheck,
       when: 'A day reconciles with zero discrepancy flags.',
+      unit: 'day',
     },
     {
       code: 'discrepancy_catcher',
@@ -144,6 +153,7 @@ export default function PointsPage() {
       each: POINTS_PER_BADGE.discrepancy_catcher,
       icon: ShieldCheck,
       when: 'A day reconciles with at least one flag: a duplicate order, a missing source, a commission mismatch, or an anomaly.',
+      unit: 'day',
     },
     {
       code: 'growth',
@@ -151,6 +161,7 @@ export default function PointsPage() {
       each: POINTS_PER_BADGE.growth,
       icon: TrendingUp,
       when: 'A promotion closes with a positive, attributable ROI — spend paid for itself.',
+      unit: 'campaign',
     },
     {
       code: 'engagement',
@@ -158,6 +169,7 @@ export default function PointsPage() {
       each: POINTS_PER_BADGE.engagement,
       icon: CalendarCheck,
       when: 'You open the app on 7 distinct real calendar days — never simulated, never pre-seeded.',
+      unit: 'milestone',
     },
     {
       code: 'campaign_creation',
@@ -165,6 +177,7 @@ export default function PointsPage() {
       each: POINTS_PER_BADGE.campaign_creation,
       icon: Rocket,
       when: 'You log a new promotion marked as replacing one flagged negative-ROI — acting on the insight, not just logging a campaign.',
+      unit: 'campaign',
     },
   ]
 
@@ -263,7 +276,8 @@ export default function PointsPage() {
                             +{earned.points.toLocaleString('en-US')}
                           </span>
                           <span className="mt-0.5 block text-micro font-normal text-muted-foreground">
-                            {earned.count} {earned.count === 1 ? 'day' : 'days'}
+                            {earned.count} {rule.unit}
+                            {earned.count === 1 ? '' : 's'}
                           </span>
                         </>
                       ) : (

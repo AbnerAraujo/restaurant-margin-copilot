@@ -1,23 +1,36 @@
 import { useEffect, useRef, useState } from 'react'
-import { Outlet, useLocation, useOutletContext } from 'react-router-dom'
+import {
+  Outlet,
+  useLocation,
+  useNavigationType,
+  useOutletContext,
+} from 'react-router-dom'
 
 import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
 import FullscreenToggle from '@/components/Shell/FullscreenToggle'
 import Sidebar, { MobileNavBar } from '@/components/Shell/Sidebar'
 import SplashScreen from '@/components/Shell/SplashScreen'
 import { postJson } from '@/lib/api'
+import { useSpendLedger } from '@/lib/useSpendLedger'
 
 /**
- * What a routed page can read/do with the shell-level running-cost total.
+ * What a routed page can read of the shell-level running-cost total.
+ *
  * `CostPanel` is mounted once here (outside the router outlet, per
- * redesign-spec.md §1/§6) rather than per-page, so a page that logs new
- * interactions — today only `/ask`'s chat panel — reports them upward
- * through `useOutletContext` instead of each route owning its own cost
- * state and duplicating the pill.
+ * redesign-spec.md §1/§6) rather than per-page, so no route owns cost state
+ * or duplicates the pill.
+ *
+ * There is deliberately no `logInteractions` any more. It used to be how
+ * `/ask` reported spend upward, and it was the mechanism behind the QA
+ * finding that the total resets to $0.000 on reload while the answers that
+ * cost the money are still on screen: the report was a side effect into
+ * component state, so it lived and died with a mount. Spend is now written
+ * durably by the same commit that writes the answer it paid for
+ * (`chatStorage.recordSpend`) and read back here, which gives the total one
+ * definition instead of a persistent half and an ephemeral half.
  */
 export interface ShellOutletContext {
   interactions: CostInteraction[]
-  logInteractions: (newInteractions: CostInteraction[]) => void
 }
 
 /** Convenience hook for a routed page to read/report shell-level cost state. */
@@ -53,11 +66,42 @@ const COST_PANEL_INSET_PX = 16
  */
 const DEFAULT_COST_PANEL_HEIGHT_PX = 32
 
+/**
+ * Retry ceiling for the POP scroll-restore loop below — generous enough to
+ * cover a real (fast, local) fetch resolving and its page re-rendering
+ * (a handful of frames in practice), without retrying forever against a
+ * page that will genuinely never be tall enough to hold the position being
+ * restored.
+ */
+const MAX_RESTORE_ATTEMPTS = 30
+
 export default function AppShell() {
-  const [interactions, setInteractions] = useState<CostInteraction[]>([])
+  // Durable and cross-tab consistent, not per-mount: see useSpendLedger.
+  const interactions = useSpendLedger()
   const mainRef = useRef<HTMLElement>(null)
   const costPanelRef = useRef<HTMLDivElement>(null)
   const { pathname } = useLocation()
+  const navigationType = useNavigationType()
+  // Per-path scroll memory for the POP case below — a plain ref (not state):
+  // writes happen on every scroll tick, and none of them should ever
+  // trigger a re-render.
+  const scrollPositionsRef = useRef<Map<string, number>>(new Map())
+  // A POP restore that hasn't "stuck" yet — the routed page just remounted
+  // and is still loading (a skeleton, a pending fetch), so `<main>`'s
+  // `scrollHeight` is briefly too short to hold the deep scroll position
+  // being restored; the browser silently clamps the assignment back down
+  // the instant it's made. The retry loop below re-applies this once the
+  // real content has grown enough to hold it, or gives up after
+  // `MAX_RESTORE_ATTEMPTS` frames. `null` once nothing is pending.
+  const pendingRestoreRef = useRef<{ pathname: string; scrollTop: number } | null>(
+    null,
+  )
+  // Read by the retry loop's `requestAnimationFrame` callbacks, which are
+  // set up once per POP navigation and must bail out the instant the owner
+  // navigates again before they finish — a plain ref (not state) so it never
+  // itself triggers a render, updated on every render to stay current.
+  const currentPathnameRef = useRef(pathname)
+  currentPathnameRef.current = pathname
 
   // Reported live (QA pass): the fixed `CostPanel` sits in the bottom-right
   // corner of the viewport on every route, and grows a LOT taller the
@@ -141,23 +185,122 @@ export default function AppShell() {
     main.scrollTop = main.scrollHeight
   }, [costPanelHeight, isMainPinnedToBottom])
 
-  // Reported live: opening a new page kept whatever scroll position was
-  // left on the PREVIOUS page instead of starting at the top. React
-  // Router's own <ScrollRestoration> doesn't fit here — it manages
-  // `window.scrollTo`, but this shell's `<html>`/`<body>`/`window` never
-  // scroll at all (see the h-screen/overflow-hidden comment below); `<main>`
-  // is the one real scroll container, so this resets ITS scrollTop instead,
-  // once per route change. A plain assignment, not smooth-scroll: a fresh
-  // page should just start at the top, not visibly animate there.
+  // Continuously records `<main>`'s scroll position under the CURRENT
+  // pathname, independent of the reset/restore effect below. This is what
+  // makes the POP case below able to restore a real position rather than
+  // just leaving whatever the browser happened to do: by the time the owner
+  // clicks away to another page, the position they scrolled to on this one
+  // is already recorded (no last-second "save on unmount" step needed).
   useEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.scrollTop = 0
+    const main = mainRef.current
+    if (!main) return
+
+    function recordScrollPosition() {
+      if (main) scrollPositionsRef.current.set(pathname, main.scrollTop)
     }
+
+    main.addEventListener('scroll', recordScrollPosition, { passive: true })
+    return () => main.removeEventListener('scroll', recordScrollPosition)
   }, [pathname])
 
-  const logInteractions = (newInteractions: CostInteraction[]) => {
-    setInteractions((previous) => [...previous, ...newInteractions])
-  }
+  // Reported live, two bugs in one effect:
+  //
+  // 1. Originally: opening a new page kept whatever scroll position was left
+  //    on the PREVIOUS page instead of starting at the top. React Router's
+  //    own <ScrollRestoration> doesn't fit here — it manages
+  //    `window.scrollTo`, but this shell's `<html>`/`<body>`/`window` never
+  //    scroll at all (see the h-screen/overflow-hidden comment below);
+  //    `<main>` is the one real scroll container, so this resets ITS
+  //    scrollTop instead.
+  //
+  // 2. Fixing (1) unconditionally then broke the opposite case: pressing the
+  //    browser's real Back/Forward button also always landed at the top,
+  //    even though a POP navigation is exactly the case where a user expects
+  //    their previous position back (what native browser history does for
+  //    an ordinary page load). `useNavigationType()` tells the two apart —
+  //    only a genuine new-page navigation (PUSH/REPLACE, e.g. clicking a nav
+  //    link or `navigate()`) resets to the top; a POP restores whatever this
+  //    shell itself recorded for that path above, or — if the owner never
+  //    actually scrolled that page before leaving it, or the record is
+  //    otherwise missing — leaves `<main>`'s scrollTop exactly as the DOM
+  //    update left it rather than forcing it to 0, so the browser's own
+  //    restoration behavior gets a chance to work rather than being fought.
+  //
+  // A plain assignment, not smooth-scroll, in the PUSH/REPLACE case: a fresh
+  // page should just start at the top, not visibly animate there.
+  //
+  // Measured live: a first version of the POP branch set `scrollTop` exactly
+  // once, here, and it still landed at 0 on a real Back press to a page that
+  // fetches its own data (Promotions, Points, ...). Root cause: this effect
+  // fires the instant the route's new element commits — BEFORE that page's
+  // own `useEffect` data fetch has resolved — so `<main>`'s `scrollHeight` at
+  // this exact moment is still whatever the loading skeleton takes up, often
+  // shorter than the position being restored. The browser doesn't queue a
+  // deep `scrollTop` assignment against a not-yet-tall-enough container; it
+  // silently clamps it back down right away, and nothing here fires again
+  // once the real content finally renders. The retry loop below (bounded to
+  // `MAX_RESTORE_ATTEMPTS` frames) re-applies the same assignment on
+  // successive frames until it actually sticks — i.e. until the real content
+  // has grown tall enough to hold it — or gives up.
+  useEffect(() => {
+    const main = mainRef.current
+    if (!main) return
+
+    if (navigationType === 'POP') {
+      const restoredPosition = scrollPositionsRef.current.get(pathname)
+      if (restoredPosition === undefined) {
+        pendingRestoreRef.current = null
+        return
+      }
+
+      main.scrollTop = restoredPosition
+      if (main.scrollTop === restoredPosition) {
+        // Stuck immediately — content already tall enough (a page with no
+        // data fetch of its own, e.g. Settings/Help). Nothing left to do.
+        pendingRestoreRef.current = null
+        return
+      }
+
+      pendingRestoreRef.current = { pathname, scrollTop: restoredPosition }
+      let attempt = 0
+      const retry = () => {
+        const pending = pendingRestoreRef.current
+        // Bail out the moment this is stale: the owner navigated again, or
+        // some OTHER attempt already finished/cancelled this one.
+        if (
+          !pending ||
+          pending.pathname !== currentPathnameRef.current ||
+          pending.pathname !== pathname
+        ) {
+          return
+        }
+        const currentMain = mainRef.current
+        if (!currentMain) return
+
+        currentMain.scrollTop = pending.scrollTop
+        if (currentMain.scrollTop === pending.scrollTop) {
+          pendingRestoreRef.current = null
+          return
+        }
+
+        attempt += 1
+        if (attempt < MAX_RESTORE_ATTEMPTS) {
+          requestAnimationFrame(retry)
+        } else {
+          // Gave up — the browser is clamping to a REAL max (this page will
+          // genuinely never be tall enough to hold that position), not a
+          // transient loading state. Leave it at whatever the last attempt
+          // landed on rather than looping forever.
+          pendingRestoreRef.current = null
+        }
+      }
+      requestAnimationFrame(retry)
+      return
+    }
+
+    pendingRestoreRef.current = null
+    main.scrollTop = 0
+  }, [pathname, navigationType])
 
   // The real usage-event ping backing Engagement badges (spec
   // 002-badge-expansion, FR-003). Fired once per mount of the SHELL, not per
@@ -236,7 +379,7 @@ export default function AppShell() {
           // button) can never end up underneath it, collapsed or expanded.
           style={{ paddingBottom: costPanelHeight + COST_PANEL_INSET_PX * 2 }}
         >
-          <Outlet context={{ interactions, logInteractions } satisfies ShellOutletContext} />
+          <Outlet context={{ interactions } satisfies ShellOutletContext} />
         </main>
       </div>
       <CostPanel ref={costPanelRef} interactions={interactions} />
