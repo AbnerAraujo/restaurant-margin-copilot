@@ -217,31 +217,41 @@ ornamental. This is why badges extend beyond the Reconciliation category
 into being the home screen's actual information architecture, not just an
 achievement strip bolted onto a separate dashboard.
 
-**Built now** (Day 4, proof of mechanism — kept small on purpose given the
-deadline):
-- **Reconciliation category only**: "Clean Close" (a day reconciled with
-  zero discrepancies) and "Discrepancy Catcher" (the system caught and
-  flagged a duplicate, refund, or anomaly) — both fire directly off
+**Built** (originally Day 4's Reconciliation-only proof of mechanism, since
+expanded under spec `002-badge-expansion` — see that spec and
+`backend/internal/badges/badges.go` for the full implementation):
+- **Reconciliation category**: "Clean Close" (a day reconciled with zero
+  discrepancies) and "Discrepancy Catcher" (the system caught and flagged a
+  duplicate, refund, or anomaly) — both fire directly off
   `DailyReconciliation.discrepancy_flags`, no new computation needed beyond
   what KR2 already produces.
+- **Growth category** ("Growth," tied to KR3): fires when a promotion closes
+  with a positive, attributable ROI — spend that paid for itself.
+- **Engagement category** ("Week One"): fires once the owner has opened the
+  app on 7 distinct real calendar days — never simulated, never pre-seeded,
+  so the badge stays honest about actual usage rather than synthesizing a
+  streak the data can't back.
+- **Campaign Creation category** ("Campaign Launcher"): fires when the owner
+  logs a new promotion explicitly marked as replacing one KR3 flagged
+  negative-ROI — closing the loop from *insight* to *action* inside this
+  product's own promotion-logging flow, without requiring the deeper
+  integration into Prosus's own promotional tooling (e.g. via ToqanClaw
+  automations) that a live "launch it for me" version would eventually want.
 
-**Roadmap — named, explicitly not built in this take-home**:
-- **Growth category** ("Smart Spender," "Margin Guardian" — tied to KR3):
-  deferred because it needs UI time beyond Day 4's "functional over
-  polished" bar, not because the underlying data isn't there.
-- **Engagement category** ("Week One," "Consistency Streak"): needs real
-  multi-day usage to mean anything — a synthetic-data demo can't organically
-  produce a streak, only simulate one, which would be exactly the kind of
-  fabricated signal this project's honesty discipline exists to avoid.
-- **Campaign Creation category** ("Campaign Launcher" — awarded for
-  creating a promotional campaign that connects to Prosus's own promotional
-  tooling, e.g. via ToqanClaw automations): the most strategically
-  interesting one, because it closes the loop from *insight* to *action* —
-  KR3 flags a negative-ROI promotion, and this badge is the natural next
-  step, "launch a better one," directly through tools Prosus already owns.
-  Not built here because it requires an actual integration this take-home
-  has no API access to build against — named as a roadmap direction, not
-  faked as a working feature.
+**Roadmap — named, explicitly not built**:
+- **Smart Spender / Margin Guardian** (deeper Growth-category variants):
+  further Growth-category badges beyond the single "positive ROI" trigger
+  above — e.g. sustained spend efficiency across several campaigns — are a
+  natural next cut once there's real multi-campaign history to grade against.
+- **Consistency Streak** (deeper Engagement-category variant): a genuine
+  day-over-day streak badge, distinct from "Week One"'s one-time 7-distinct-
+  days milestone — needs enough real usage history to mean something, which
+  this take-home's timeline doesn't have.
+- **Direct promotional-tooling integration** for Campaign Launcher: today's
+  badge rewards *logging* the replacement campaign in this product; actually
+  launching it through Prosus's own tooling (ToqanClaw automations or
+  similar) is the natural next step, not built here because this take-home
+  has no API access to build against it.
 
 ## Vision
 

@@ -264,6 +264,23 @@ func TestLooksLikeCurrencyAmount(t *testing.T) {
 	}
 }
 
+// TestBuildSystemPrompt_MonthHasADeterministicAnchor is the narration
+// step's half of QA round 6's fix — internal/ambiguity/gate_test.go's test
+// of the same name covers the gate's copy of this rule. Before this fix,
+// this package's "Data grounding" paragraph named "today"/"this week"/
+// "last week" explicitly but said nothing about "this month"/"last month"
+// at all, leaving the model free to narrate "this month" as, say, a
+// trailing 30-day window while internal/httpapi's period-comparison and
+// platform-trend endpoints use a real calendar-month convention for the
+// same phrase — a real risk of a chat answer disagreeing with what those
+// pages show for identical underlying data.
+func TestBuildSystemPrompt_MonthHasADeterministicAnchor(t *testing.T) {
+	prompt := buildSystemPrompt("2026-08-01", "2026-08-14")
+
+	require.Contains(t, prompt, `"This month" is the calendar month`)
+	require.Contains(t, prompt, `"last month" is the FULL prior calendar month`)
+}
+
 // --- Explain's tool-calling loop, against the fake llmCaller --------------
 
 func costFor(t *testing.T, inputTokens, outputTokens int64) float64 {

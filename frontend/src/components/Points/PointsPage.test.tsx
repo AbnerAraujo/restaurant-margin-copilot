@@ -254,3 +254,32 @@ describe('PointsPage rules table — earned-count units (bug fix)', () => {
     expect(await screen.findByText('1 milestone')).toBeInTheDocument()
   })
 })
+
+// QA round 6: the "How every point is earned" subtitle used to read "Exactly
+// two ways..." — stale copy left over from before spec 002-badge-expansion
+// added Growth, Week One, and Campaign Launcher, directly contradicted by
+// the five-row table it introduces. Regression: assert every rule name
+// actually renders (so the count the subtitle implies, if it ever names a
+// number again, cannot silently drift below the real row count) and that
+// the stale "two ways" claim never comes back.
+describe('PointsPage rules table subtitle stays honest about the rule count', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('never claims "two ways" while five rules are rendered', async () => {
+    stubFetch({ promotions: [] })
+    renderPage()
+
+    for (const name of [
+      'Clean Close',
+      'Discrepancy Catcher',
+      'Growth',
+      'Week One',
+      'Campaign Launcher',
+    ]) {
+      expect(await screen.findByText(name)).toBeInTheDocument()
+    }
+    expect(screen.queryByText(/exactly two ways/i)).not.toBeInTheDocument()
+  })
+})

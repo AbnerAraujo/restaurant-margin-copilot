@@ -12,6 +12,156 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — QA round 6: stale badge/roadmap copy, a chat month-boundary gap, and an untested loop-cap
+
+A sixth overnight QA pass, scoped to four fresh angles the prior five rounds
+hadn't covered: the badges/points UI surface itself (not just its API),
+timezone/date-boundary correctness end to end, whether the chat's
+documented tool-call timeout/loop-cap is actually implemented and tested
+(not just described), and a full realistic Playwright session — upload,
+close, three chat questions, promotions, points, profile, every nav
+destination — watched for any console error, unhandled rejection, or React
+warning. Run against an isolated backend (`:8990`), ephemeral Postgres
+(`docker run` on `:8995`), and an isolated frontend (`:8993`) in a dedicated
+worktree; the shared `:8080`/`:5173`/`:5432` instances were never touched.
+
+- **Fixed** `frontend/src/components/Points/PointsPage.tsx`'s "How every
+  point is earned" panel subtitle claiming *"Exactly two ways, both
+  recomputed from your reconciled days"* directly beneath a five-row rules
+  table (Clean Close, Discrepancy Catcher, Growth, Week One, Campaign
+  Launcher) — stale copy left over from before spec `002-badge-expansion`
+  added the last three categories, and wrong on a second count too
+  ("reconciled days" doesn't describe Growth/Week One/Campaign Launcher,
+  which key off promotion ROI, app usage, and logged campaigns
+  respectively). Reworded to name the real activity categories rather than
+  a count that will drift again the next time a rule is added. New test:
+  `PointsPage.test.tsx`'s "rules table subtitle stays honest about the rule
+  count" — asserts all five rule names render and the stale "two ways"
+  string never comes back.
+- **Fixed** `docs/product-strategy.md`'s "Roadmap — named, explicitly not
+  built in this take-home" section, which still listed the Growth,
+  Engagement, and Campaign Creation badge categories as unbuilt — they
+  shipped under spec `002-badge-expansion` (`backend/internal/badges/badges.go`,
+  rendered live on `/points`). The same doc-drift class this project has
+  already fixed three times elsewhere (the "7 tools" count), just a
+  different doc/topic instance, and materially misleading for anyone
+  reading the reasoning document expecting it to reflect the shipped state.
+  Moved the built categories out of "roadmap" into "built," and kept only
+  the genuinely-still-unbuilt sub-ideas (deeper Growth/Engagement variants,
+  a real Prosus/ToqanClaw promotional-tooling integration) under roadmap.
+  Also fixed the adjacent stale justification in
+  `frontend/src/components/Badges/BadgeDisplay.tsx`'s doc comment, which
+  cited the now-corrected "roadmap-only" claim as the reason
+  `ReconciliationBadgeType` excludes the other three categories — the
+  actual (and correct) reason is that `BadgeDisplay` renders a single
+  calendar day's badges (`ClosePage.tsx`, its only caller), and
+  Growth/Engagement/Campaign-Creation badges are milestones over
+  promotions/usage/campaigns, not a given day's close.
+- **Fixed (defense-in-depth, no proven live bug)** `BadgeDisplay.tsx`'s
+  `formatBadgeDate` was the one date formatter in this codebase pairing a
+  LOCAL-timezone parse (`new Date(\`${iso}T00:00:00\`)`, no `Z`) with a
+  LOCAL-timezone format (`toLocaleDateString` with no `timeZone`) — every
+  other formatter (`MarginTrendChart.tsx`, `EffectiveRateTrendChart.tsx`,
+  `ProvenanceTag.tsx`, `comparePeriod.ts`) pairs a UTC parse with a UTC
+  format, the defense against the exact off-by-one-day failure class
+  `guidedQuestion.ts` documents by name. Because both halves here were
+  paired (not mixed), no browser timezone actually produces a wrong day
+  today — but it was one "helpful" edit (adding `Z` without also adding
+  `timeZone: 'UTC'`) away from reintroducing that bug. Made explicit and
+  consistent with the rest of the app.
+- **Fixed** a real gap in the chat's date-grounding rules:
+  `internal/ambiguity/gate.go`'s "Date grounding" paragraph gives "this
+  week"/"last week" an explicit, deterministic anchor (a trailing window
+  ending `dataEnd`) — added after a real, documented live defect — but had
+  no equivalent rule for "this month"/"last month" at all, leaving the gate
+  free to resolve it as, say, a trailing 30-day window, while
+  `internal/httpapi/comparison_period.go` and `platforms_trend.go` both use
+  a real CALENDAR-month convention for the same phrase elsewhere in this
+  product. A chat answer about "this month" could legitimately disagree
+  with what those pages show for the same underlying data. Added an
+  explicit rule to both `internal/ambiguity/gate.go`'s gate prompt and
+  `internal/explain/explain.go`'s narration prompt: "this month" is the
+  calendar month containing `dataEnd`, truncated at `dataEnd`; "last month"
+  is the full prior calendar month. New offline (no API key needed) tests:
+  `TestBuildSystemPrompt_MonthHasADeterministicAnchor` in both packages,
+  asserting the generated prompt text actually carries the rule.
+- **Verified, not fixed — a real test-coverage gap, now closed**: CLAUDE.md's
+  hard limit "Explicit cap on loop iterations" is enforced by
+  `internal/mcptools`' `CallBudget` + `timeoutAndBudgetMiddleware`
+  (`limits.go`), wired into every tool via `RegisterMCPServer`'s `s.Use(...)`,
+  and `internal/explain.Explain` installs exactly one budget per interaction
+  — but grepping the whole backend tree found `NewCallBudget`/
+  `WithCallBudget`/`ErrToolCallCapExceeded` used ONLY in `limits.go`'s own
+  definition and `explain.go`'s single production call site: the
+  cap-exceeded branch had ZERO test coverage anywhere. `limits_test.go`
+  already tested that same middleware's timeout/cancellation branches
+  directly but was never extended to the budget check sitting right above
+  them. A regression here (an off-by-one in `take()`, the budget failing to
+  thread through the in-process MCP transport's context) would only ever
+  surface in production as a runaway or over-billed chat interaction. New
+  file `backend/internal/mcptools/callbudget_integration_test.go` — three
+  tests exercising the cap over the REAL wire protocol
+  (`client.NewInProcessClient` over `RegisterMCPServer`, the same path
+  `internal/explain.New` uses): the Nth call within budget goes through
+  untouched, the (N+1)th is refused gracefully and typed
+  (`tool_call_cap_exceeded`, never a panic or hang) without itself
+  consuming budget, the cap is shared across different tool names (a
+  genuinely per-INTERACTION cap, not per-tool), and 30 concurrent calls
+  against a cap of 5 (run under `-race`) let through exactly 5 — all three
+  pass against the real mechanism. The per-tool-call timeout and the
+  `explain.Explain` loop's own `MaxTurns` exhaustion path were already
+  covered by existing tests (`limits_test.go`,
+  `TestExplain_MaxTurnsExhaustion`) and re-verified working.
+- **Verified, not fixed**: the Business Insight Advisor's two-stage-only
+  reachability (specs/009), after all the recent chat/composer changes.
+  Traced the one frontend call site that ever posts to
+  `/api/business-insight` (`AskPage.tsx`) back through
+  `QuestionComposer.tsx`'s `onRequestAdvice` — its own `GuidedAdviceRequest`
+  carries only an `insightKind` and a natural-language `question` STRING,
+  never a `tool_calls` payload (`guidedQuestion.ts`'s `composeAdviceRequest`
+  doc comment: "there is no 'POST the kind and get advice' path to
+  model"). `ChatPanel.tsx` submits that question through the exact same
+  `/api/ask` → real ambiguity gate → real tool-calling loop every other
+  question goes through, and only a resulting real teaser's tap ever calls
+  the advice endpoint, with that same answer's real `tool_calls`. The
+  backend backstop (`HandleBusinessInsight` re-deriving the teaser kind
+  from the posted `tool_calls` via the same `deriveBusinessInsightTeaser`
+  `/api/ask` uses, refusing on any mismatch) is unchanged and intact. No
+  direct-POST path exists on either side.
+- **Verified, not fixed**: a full realistic Playwright session (upload a
+  cost sheet → commit → Close → three chat questions → Promotions → Points
+  → edit Profile → Platforms → Settings → Help → Home), watching for any
+  console error, unhandled rejection, or React warning. Found two apparent
+  issues, both traced to non-product causes rather than the app: the three
+  `/api/ask` calls came back as a graceful `502 gate_failed` because this
+  sandbox has no `ANTHROPIC_API_KEY` configured (disclosed, not skipped
+  silently — the frontend's own error handling, `explainRequestFailure`,
+  behaved correctly); and an early pass's own script bug (a button-text
+  regex that never matched the real "Replace cost sheet" label) left an
+  upload preview uncommitted, correctly triggering the app's OWN "discard
+  this preview?" navigation guard for the rest of that run — confirmed via
+  a targeted repro that the guard's copy and backdrop-dismiss-as-cancel
+  behavior are exactly as designed. With the script corrected, the full
+  session produced zero real console errors, warnings, page errors, or
+  unexpected 5xx responses. **Blocked, disclosed rather than skipped
+  silently**: verifying the three chat questions actually get real,
+  narrated answers (rather than just failing gracefully) requires a live
+  `ANTHROPIC_API_KEY`, unavailable in this sandbox — same disclosed gap as
+  QA rounds 4 and 5.
+- Also checked and found genuinely clean: every badge type's icon and
+  description against its exact backend condition (no generic/placeholder
+  icons); redemption-history sort order (correct, no pagination to have a
+  bug in); earnability of all five badge types against the real generated
+  2-year dataset (none structurally unreachable); backend timezone
+  assumptions (zero `time.Local` usage anywhere; every "today" anchor is
+  `dataEnd`, always UTC); the Home page's "this week" card resolving
+  consistently with the chat gate's own week rule; and month/year-boundary
+  math (leap-year Feb 29, Dec→Jan rollover) in both
+  `comparison_period.go` and its frontend port `comparePeriod.ts`, already
+  leap-year-tested and matching each other exactly.
+
+---
+
 ## 2026-08-30 — QA round 5: a mobile layout bug, three double-submit races, and an ingestion validation gap
 
 A fifth overnight QA pass, scoped to five fresh angles the prior four rounds
