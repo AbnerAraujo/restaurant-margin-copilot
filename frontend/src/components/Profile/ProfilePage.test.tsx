@@ -237,4 +237,131 @@ describe('ProfilePage', () => {
       expect(screen.getByRole('alert')).toHaveTextContent(/6\.0MB/i)
     })
   })
+
+  it('echoes back the loaded updated_at on save, for optimistic-concurrency checking', async () => {
+    const fetchMock = stubFetch([
+      {
+        ok: true,
+        body: { ...EMPTY_PROFILE, name: 'Cafe Luz', updated_at: '2026-08-20T12:00:00.123456Z' },
+      },
+      {
+        ok: true,
+        body: { ...EMPTY_PROFILE, name: 'Cafe Luz', updated_at: '2026-08-27T09:00:00Z' },
+      },
+    ])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    await screen.findByDisplayValue('Cafe Luz')
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
+    await screen.findByText(/profile saved/i)
+
+    const putCall = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')
+    const body = JSON.parse(putCall![1]!.body as string) as { updated_at: string }
+    expect(body.updated_at).toBe('2026-08-20T12:00:00.123456Z')
+  })
+
+  it('shows a clear, actionable message when a stale tab tries to save over a newer save (409 conflict) rather than a raw error or a silent success', async () => {
+    stubFetch([
+      { ok: true, body: { ...EMPTY_PROFILE, name: 'Cafe Luz', updated_at: '2026-08-20T12:00:00Z' } },
+      {
+        ok: false,
+        status: 409,
+        body: {
+          error: 'profile_conflict',
+          detail:
+            'this profile was updated elsewhere since you loaded it — reload to see the latest before saving your changes',
+        },
+      },
+    ])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    await user.type(await screen.findByLabelText(/^address$/i), '9 Ocean Ave')
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/updated elsewhere/i)
+    expect(alert).toHaveTextContent(/reload/i)
+    // Never a silent success for what is actually a lost-update refusal.
+    expect(screen.queryByText(/profile saved/i)).not.toBeInTheDocument()
+  })
+
+  it('clears a stale field error from a previous submit once a new submit attempt begins, even one blocked by native validation', async () => {
+    stubFetch([
+      { ok: true, body: EMPTY_PROFILE },
+      {
+        ok: false,
+        status: 400,
+        body: {
+          error: 'invalid_input',
+          detail: 'enter a valid phone number, using only digits, spaces, and + - ( )',
+        },
+      },
+    ])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
+    await user.type(screen.getByLabelText(/^phone$/i), 'call-us-maybe')
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/valid phone number/i)
+
+    // Fix the phone, then introduce an email the browser's own native
+    // `type="email"` validation will block — the exact QA repro.
+    const phoneInput = screen.getByLabelText(/^phone$/i)
+    await user.clear(phoneInput)
+    await user.type(phoneInput, '+1 555 123 4567')
+    const emailInput = screen.getByLabelText(/^email$/i)
+    await user.type(emailInput, 'not-an-email')
+    expect(emailInput).toBeInvalid()
+
+    await user.click(screen.getByRole('button', { name: /save profile/i }))
+
+    // The stale phone error must not survive this second, blocked attempt
+    // — it now describes a field that's already fixed, and would
+    // otherwise leave the owner with no visible link between the blocked
+    // submit and the actual (email) problem.
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('rejects a photo exactly 1 byte over the limit without a self-contradictory size in the message', async () => {
+    stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    const user = userEvent.setup()
+    render(<ProfilePage />)
+
+    await screen.findByLabelText(/restaurant name/i)
+    // 1 byte over 5MB: naive one-decimal rounding renders this as "5.0MB",
+    // which reads as satisfying "...over the 5MB limit" rather than
+    // violating it.
+    const boundary = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'boundary.png', {
+      type: 'image/png',
+    })
+    const fileInput = screen.getByLabelText(/choose a restaurant photo/i)
+    await user.upload(fileInput, boundary)
+
+    const message = await screen.findByText(/over the 5MB limit/i)
+    expect(message).not.toHaveTextContent(/5\.0MB/i)
+  })
+
+  it('caps the About textarea height and scrolls internally rather than growing without bound', async () => {
+    stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    render(<ProfilePage />)
+
+    const textarea = await screen.findByLabelText(/about/i)
+    expect(textarea.className).toMatch(/max-h-/)
+    expect(textarea.className).toMatch(/overflow-y-auto/)
+  })
+
+  it('sets maxLength on every profile field, matching the backend limits', async () => {
+    stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    render(<ProfilePage />)
+
+    expect(await screen.findByLabelText(/restaurant name/i)).toHaveAttribute('maxLength', '200')
+    expect(screen.getByLabelText(/^address$/i)).toHaveAttribute('maxLength', '300')
+    expect(screen.getByLabelText(/^phone$/i)).toHaveAttribute('maxLength', '40')
+    expect(screen.getByLabelText(/^email$/i)).toHaveAttribute('maxLength', '254')
+    expect(screen.getByLabelText(/about/i)).toHaveAttribute('maxLength', '1000')
+  })
 })
