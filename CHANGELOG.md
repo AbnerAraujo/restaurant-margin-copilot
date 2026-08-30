@@ -12,6 +12,95 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — QA round 9 (final): the interactive API docs were missing a real endpoint
+
+A ninth and final planned overnight QA pass, focused on every OTHER
+evaluator-facing doc surface beyond the README Quickstart (round 8 already
+fixed and independently re-verified that one): `docs/prd.md`,
+`docs/product-strategy.md`, `docs/technical-rfc.md`, `docs/why-ai.md`,
+`docs/mcp-and-skills.md`, `docs/openapi.yaml`/`docs/api.html`,
+`docs/architecture.html`, `docs/presentation.html`, `.env.example`, every
+cross-doc relative link, and `frontend/package.json`'s scripts — plus a
+second, deeper fresh-clone dry run that went one step past round 8: after
+the Quickstart's fixed command sequence brought up an isolated backend and
+Postgres, the frontend was actually loaded in headless Chromium (Playwright)
+to confirm the Home page renders real data with zero console/page errors,
+not just that the backend process stayed up. Run against an isolated backend
+(`:8996`), an isolated frontend (`:8995`), and an ephemeral Postgres
+(`docker run` on `:8998`) in a dedicated worktree; the shared
+`:8080`/`:5173`/`:5432` instances were never touched.
+
+- **Fixed** `docs/openapi.yaml` and its checked-in, embedded-spec twin
+  `docs/api.html`: both were missing `GET`/`PUT /api/profile` entirely —
+  a real, non-trivial endpoint (`backend/internal/httpapi/profile.go`,
+  optimistic-concurrency-checked, backing the real Profile/Settings page)
+  registered in `backend/cmd/server/main.go` alongside every other
+  documented route. The README lists "interactive Swagger UI, every
+  backend endpoint" as one of only three headline "Live" links at the very
+  top of the file — exactly the kind of first-impression surface this round
+  was scoped to check — and it was quietly short one real, shipped feature.
+  Added a `Profile` tag, the full `GET`/`PUT /api/profile` path (request/
+  response bodies, all real status codes: 200/400/405/409/413/500, matching
+  the handler's actual behavior) and `ProfileView`/`ProfileRequest` schemas
+  to `docs/openapi.yaml`; regenerated `docs/api.html`'s embedded
+  `OPENAPI_SPEC` JSON literal from the corrected YAML (via `js-yaml`, since
+  the file's existing `\uXXXX`-escaped-non-ASCII style needed matching) so
+  the checked-in copy stops drifting from the spec it claims to render.
+  Verified the new path/schemas parse and appear correctly in both files.
+  The three live Swagger UI/architecture/presentation artifact URLs
+  themselves are unaffected by a worktree commit — they need a separate
+  republish, left for the final wrap-up pass that already plans one.
+- **Fixed** `.env.example`'s `ANTHROPIC_API_KEY` comment, which still said
+  the key was "required for the ambiguity gate (Haiku 4.5) and explanation
+  step (Sonnet 5)" — the exact model assignment `CLAUDE.md` and `README.md`
+  both document as having moved (the gate is Sonnet 5 as of 2026-08-29;
+  Haiku 4.5 is now only the paraphrase-match cache classifier, per
+  `internal/llmclient/cost.go`). Since `cp .env.example .env` is the very
+  first line of the Getting Started block, this was a small but real
+  chance for an evaluator's first read of the model architecture to be
+  wrong. Corrected to match the current, documented assignment.
+- **Audited, no bug found**: every other doc's cross-references and
+  claimed file paths (README, `CLAUDE.md`, `docs/*.md`, every `specs/**/*.md`)
+  — every relative markdown link resolves, every `backend/`/`frontend/`/
+  `docs/`/`specs/`-rooted path named in backticks exists (except
+  `backend/data/live/`, which is correctly documented as git-ignored and
+  generated on demand). `docs/openapi.yaml`'s `servers:` URL, every port
+  number named across README/docs/`evaluation/promptfoo/*.yaml` (`:8080`,
+  `:5173`, `:8092`), and the `-eval-no-answer-cache` flag it depends on all
+  check out against the real registered routes and real `main.go` flags.
+  `frontend/package.json`'s scripts (`dev`/`build`/`lint`/`format`/
+  `format:check`/`preview`/`test`/`test:watch`) match every `npm run`/
+  `npm test`/`npx tsc`/`npx vite` invocation named anywhere in the docs or
+  specs — no stale script reference, no Makefile to drift. Grepped
+  `os.Getenv`/`import.meta.env` across both codebases: the only backend var
+  (`DATABASE_URL`) and the only optional frontend override
+  (`VITE_API_BASE_URL`, defaulted to `http://localhost:8080` and irrelevant
+  to the documented setup path) are both accounted for;
+  `ANTHROPIC_API_KEY` is resolved by the Anthropic SDK itself, not read
+  directly, and is already documented.
+- **Audited, no bug found**: a full second fresh-clone dry run one level
+  past round 8's. `cp .env.example .env` → `migrate ... up` → `go run
+  ./cmd/gendata` → `-ingest` → `-ingest-promo` → `-serve :8996` (isolated
+  Postgres on `:8998`) all ran clean exactly as documented, then
+  `VITE_API_BASE_URL=http://localhost:8996 npx vite --port 8995
+  --strictPort` served the real frontend against it. Playwright loaded
+  `http://localhost:8995/` headless: the Home page rendered real,
+  correct figures (latest margin `$3,225.06` on 2026-08-29, matching the
+  live `GET /api/reconciliation` response byte for byte; 12,345 Steward
+  points; the real badge/points breakdown; the real recent-closes table)
+  with zero console errors and zero page errors — no error state, no stuck
+  loading spinner, no placeholder data.
+- No `ANTHROPIC_API_KEY` was available in this sandbox, so the model-backed
+  `/api/ask` and `/api/business-insight` paths were not exercised live in
+  this round (consistent with every prior round's disclosure) — the Home
+  page check above only needed the deterministic REST endpoints, which is
+  everything a first-run evaluator sees before ever opening the chat.
+
+This was the last round before final morning wrap-up. Two real, if modest,
+documentation-completeness bugs were found and fixed; the deeper fresh-clone
+dry run this round was scoped to run (opening the actual frontend against a
+real backend, not just confirming the backend booted) came back clean.
+
 ## 2026-08-30 — QA round 8: a silently-swallowed real chat race, and a README Quickstart that didn't actually run
 
 An eighth overnight QA pass, scoped to four genuinely fresh angles: two
