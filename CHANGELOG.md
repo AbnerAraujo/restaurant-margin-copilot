@@ -12,6 +12,40 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Fixed a chat refusal that promised data it never delivered
+
+Reported live: asking "what should I change about staffing, menu, or
+promotions to replicate the margin from Aug 22 on other days?" got flatly
+refused, 10/10 tries in a fresh reproduction — even though the question
+always has a genuinely data-answerable core (what actually happened on
+Aug 22). Worse, the gate's own writing pass produced a polished refusal
+that explicitly *promised* that data ("I can show you what drove Aug 22's
+margin...") without the system ever delivering it in the same reply,
+forcing a separate follow-up question to get an answer the first response
+already claimed it could give.
+
+Root cause: `internal/ambiguity/gate.go`'s answerable/ambiguous/unanswerable
+classification is whole-question and binary, with no instruction for a
+question that mixes a data-answerable core with a request for advice
+(staffing, menu, pricing, marketing strategy) this product's tools were
+never built to give — so "unanswerable" for the entire thing became a
+plausible-but-wrong classification.
+
+Fixed with a new "Mixed data-plus-advice questions" section in the gate's
+system prompt (classify "answerable" whenever a data-answerable core
+exists, reserving "unanswerable" for questions with no such core at all)
+plus a new rule in `internal/explain/explain.go`'s system prompt (always
+answer the data-answerable part in full via a real tool call first, then
+plainly decline only the advice-shaped part in the same reply — no
+hedging, no undelivered promise). `internal/advisor`'s business-insight
+teaser was checked and correctly left out of this fix: its five insight
+kinds are all negative/problem patterns, none fits "replicate a good day."
+
+Independently re-verified against a fresh, cache-disabled instance with
+real API credentials: 5/5 fresh tries of the exact reproducing question
+now answer in full followed by an honest, direct decline — the bare
+"how can I replicate..." phrasing (no named lever) shows no regression.
+
 ## 2026-08-30 — Close's Period view no longer opens to a blank state
 
 Requested directly: Period should always show results for whatever range is
