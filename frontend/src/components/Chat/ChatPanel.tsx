@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
@@ -1648,10 +1649,11 @@ export default function ChatPanel({
           role: 'assistant',
           kind: 'error',
           cause: 'transport',
-          text:
-            error instanceof Error
-              ? error.message
-              : 'The request failed before an answer could be computed.',
+          // Was `error.message` — the browser's own "Failed to fetch", or
+          // `/api/ask returned 500: {…}`, rendered as the sentence the owner
+          // reads under "I couldn't reach your data just now". Same shared
+          // describer every page uses now.
+          text: explainRequestFailure(error),
           question: text,
           askedAt: new Date().toISOString(),
         })

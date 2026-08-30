@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
-import { ApiError, getJson, putJson } from '@/lib/api'
+import { getJson, putJson } from '@/lib/api'
+import { explainRequestFailure, isNetworkFailure } from '@/lib/requestFailure'
 
 // ---------------------------------------------------------------------------
 // The restaurant owner's own company information and photo — a single-row
@@ -64,27 +65,21 @@ const EMPTY_FORM: ProfileFormState = {
   description: '',
 }
 
-// isNetworkFailure reports whether `caught` is the raw error `fetch()`
-// itself throws when the request never reached a server at all — DNS
-// failure, connection refused, or (as QA found for PUT /api/profile) a
-// blocked CORS preflight. Browsers disagree on the wording ("Failed to
-// fetch" in Chrome, "NetworkError when attempting to fetch resource" in
-// Firefox, "Load failed" in Safari) and none of them explain why, so this
-// checks the type fetch() actually throws (a TypeError, distinct from the
-// `ApiError`/`Error` that getJson/putJson construct from a real HTTP
-// response) rather than matching message text, which would silently stop
-// working on a browser that phrases it differently.
-function isNetworkFailure(caught: unknown): boolean {
-  return caught instanceof TypeError
-}
-
-function errorMessage(caught: unknown): string {
-  if (caught instanceof ApiError) return caught.message
+/**
+ * This page's network-failure handling (QA found a blocked CORS preflight on
+ * PUT /api/profile surfacing as the browser's bare "Failed to fetch") is now
+ * `lib/requestFailure`, shared by every page — the fix that started here,
+ * generalized, so no surface is left showing a raw Go error or a browser
+ * string. Only SAVE failures take the "to save your changes" clause this
+ * page's own wording had — the load path below uses the shared describer
+ * directly, since telling someone a load failed "to save your changes" is
+ * simply the wrong sentence.
+ */
+function saveErrorMessage(caught: unknown): string {
   if (isNetworkFailure(caught)) {
     return "We couldn't reach the server to save your changes. Check your connection and try again."
   }
-  if (caught instanceof Error) return caught.message
-  return String(caught)
+  return explainRequestFailure(caught)
 }
 
 /**
@@ -153,7 +148,7 @@ export default function ProfilePage() {
         setUpdatedAt(data.updated_at)
       })
       .catch((caught) => {
-        if (!cancelled) setLoadError(errorMessage(caught))
+        if (!cancelled) setLoadError(explainRequestFailure(caught))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -235,7 +230,7 @@ export default function ProfilePage() {
       setUpdatedAt(response.updated_at)
       setSaved(true)
     } catch (caught) {
-      setSubmitError(errorMessage(caught))
+      setSubmitError(saveErrorMessage(caught))
     } finally {
       setSubmitting(false)
     }
@@ -257,9 +252,13 @@ export default function ProfilePage() {
     return (
       <PageContainer className="flex flex-col gap-5">
         <PageHeader eyebrow="Company info" title="Profile" />
+        {/* `loadError` used to be read as a boolean here and its message
+            thrown away, so an unreachable server and a failing query gave
+            byte-identical copy — the one page whose load error said nothing
+            about what actually went wrong. */}
         <p role="alert" className="flex items-start gap-1.5 text-sm text-destructive-text">
           <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
-          We couldn't load your profile. Try refreshing in a moment.
+          We couldn&apos;t load your profile. {loadError}
         </p>
       </PageContainer>
     )
@@ -318,7 +317,7 @@ export default function ProfilePage() {
                 {photo ? (
                   <Button type="button" variant="ghost" size="sm" onClick={removePhoto}>
                     <Trash2 aria-hidden="true" />
-                    Remove
+                    Remove photo
                   </Button>
                 ) : null}
               </div>

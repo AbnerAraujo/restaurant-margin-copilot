@@ -245,14 +245,37 @@ describe('ClosePage', () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        text: async () => 'query_failed',
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: canceling statement due to user request (SQLSTATE 57014)',
+          }),
       }),
     )
     renderPage()
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/couldn't load reconciled days/i)
-    expect(alert).toHaveTextContent(/query_failed/)
+  })
+
+  it('gives a failed load a next step instead of a raw Postgres error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: canceling statement due to user request (SQLSTATE 57014)',
+          }),
+      }),
+    )
+    renderPage()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/reload this page/i)
+    expect(alert).not.toHaveTextContent(/SQLSTATE/i)
   })
 
   it('says plainly when nothing has been ingested yet', async () => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowDownNarrowWide,
@@ -32,6 +32,7 @@ import {
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
@@ -228,6 +229,7 @@ export default function PromotionsPage() {
   // rather than actionable. Same discipline as BadgeDisplay's
   // BadgeSummaryRow collapsing repeated Discrepancy Catcher days.
   const [needsActionExpanded, setNeedsActionExpanded] = useState(false)
+  const roiSortLabelId = useId()
 
   const loadPromotions = useCallback(() => {
     return getJson<PromotionsApiResponse>('/api/promotions')
@@ -236,7 +238,7 @@ export default function PromotionsPage() {
         setError(null)
       })
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : String(caught))
+        setError(explainRequestFailure(caught))
       })
   }, [])
 
@@ -247,9 +249,7 @@ export default function PromotionsPage() {
         if (!cancelled) setPromotions(response.promotions)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
+        if (!cancelled) setError(explainRequestFailure(caught))
       })
     return () => {
       cancelled = true
@@ -369,8 +369,8 @@ export default function PromotionsPage() {
 
       {error ? (
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
-          Couldn&apos;t load campaigns from the backend, so there are no ROI
-          figures to show: <span className="font-mono text-xs">{error}</span>
+          We couldn&apos;t load your campaigns, so there are no ROI figures to
+          show. {error}
         </Panel>
       ) : null}
 
@@ -455,9 +455,24 @@ export default function PromotionsPage() {
               below render — one ordering, not two. Unattributable/not-yet-
               attributed campaigns stay at the end in EITHER direction; see
               sortPromotionsByRoi's doc comment for why. */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-            <span className="text-xs font-medium text-muted-foreground">
-              Sort by ROI:
+          {/* The visible label names the pair of toggles, and now names them
+              programmatically too: HomePage's status filter already wraps its
+              equivalent chip pair in a labelled `role="group"`, and this one
+              predated that convention — two buttons sitting loose next to a
+              <span> that nothing associated them with. Labelled by the span
+              itself rather than a duplicated `aria-label`, so the two can
+              never drift apart. The trailing colon is gone with it (labels
+              take no terminal punctuation). */}
+          <div
+            role="group"
+            aria-labelledby={roiSortLabelId}
+            className="flex flex-wrap items-center gap-2 border-t border-border pt-4"
+          >
+            <span
+              id={roiSortLabelId}
+              className="text-xs font-medium text-muted-foreground"
+            >
+              Sort by ROI
             </span>
             <Button
               type="button"

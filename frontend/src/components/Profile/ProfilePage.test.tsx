@@ -148,7 +148,11 @@ describe('ProfilePage', () => {
 
     const preview = await screen.findByAltText(/restaurant photo preview/i)
     expect(preview).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
-    expect(screen.getByRole('button', { name: /remove/i })).toBeInTheDocument()
+    // Names its object, so it reads on its own out of the accessibility tree
+    // — a bare "Remove" leaves "remove what?" to the surrounding layout.
+    expect(
+      screen.getByRole('button', { name: 'Remove photo' }),
+    ).toBeInTheDocument()
   })
 
   it('rejects an oversized photo client-side without ever touching the file reader result', async () => {

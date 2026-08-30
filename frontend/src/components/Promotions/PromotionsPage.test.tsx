@@ -176,14 +176,37 @@ describe('PromotionsPage', () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        text: async () => 'query_failed',
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "promotions" does not exist (SQLSTATE 42P01)',
+          }),
       }),
     )
     renderPage()
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/couldn't load campaigns/i)
-    expect(alert).toHaveTextContent(/query_failed/)
+    expect(alert).toHaveTextContent(/couldn't load your campaigns/i)
+  })
+
+  it('hands a failed campaign load a next step rather than the raw Go error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "promotions" does not exist (SQLSTATE 42P01)',
+          }),
+      }),
+    )
+    renderPage()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/reload this page/i)
+    expect(alert).not.toHaveTextContent(/SQLSTATE/i)
   })
 
   it('says plainly when no promotions have been ingested yet', async () => {
@@ -585,5 +608,22 @@ describe('PromotionsPage', () => {
     expect(screen.getByLabelText('Filter by platform')).toHaveValue('')
     const table = screen.getByRole('table')
     expect(within(table).getByText('IFOOD-CAMP-WEEKEND')).toBeInTheDocument()
+  })
+
+  it('groups the two ROI sort toggles under their visible label, the way the Home status filter already does', async () => {
+    // The pair used to sit loose beside a <span> that nothing associated them
+    // with, so "Highest first" reached assistive tech with no hint of what it
+    // sorted. Labelled by that same span rather than a duplicated aria-label,
+    // so the visible and accessible names can never drift apart.
+    stubFetch(PROMOTIONS_RESPONSE)
+    renderPage()
+
+    const group = await screen.findByRole('group', { name: 'Sort by ROI' })
+    expect(
+      within(group).getByRole('button', { name: /highest first/i }),
+    ).toBeInTheDocument()
+    expect(
+      within(group).getByRole('button', { name: /lowest first/i }),
+    ).toBeInTheDocument()
   })
 })

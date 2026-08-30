@@ -12,7 +12,8 @@ import { Button } from '@/components/ui/button'
 import DataGrid from '@/components/Charts/DataGrid'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
-import { API_BASE, ApiError, postMultipart } from '@/lib/api'
+import { API_BASE, postMultipart } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useUnsavedChangesGuard } from '@/lib/useUnsavedChangesGuard'
 
 // ---------------------------------------------------------------------------
@@ -66,12 +67,6 @@ type Stage =
   | { name: 'commit_error'; file: File; preview: PreviewCostSheetApi; message: string }
   | { name: 'committed'; result: CommitCostSheetApi }
 
-function errorMessage(caught: unknown): string {
-  if (caught instanceof ApiError) return caught.message
-  if (caught instanceof Error) return caught.message
-  return String(caught)
-}
-
 function formatUsd(decimal: string): string {
   return Number(decimal).toLocaleString('en-US', {
     style: 'currency',
@@ -122,7 +117,7 @@ export default function UploadPage() {
       )
       setStage({ name: 'previewed', file, preview })
     } catch (caught) {
-      setStage({ name: 'preview_error', file, message: errorMessage(caught) })
+      setStage({ name: 'preview_error', file, message: explainRequestFailure(caught) })
     }
   }
 
@@ -137,7 +132,7 @@ export default function UploadPage() {
       )
       setStage({ name: 'committed', result })
     } catch (caught) {
-      setStage({ name: 'commit_error', file, preview, message: errorMessage(caught) })
+      setStage({ name: 'commit_error', file, preview, message: explainRequestFailure(caught) })
     }
   }
 
@@ -163,7 +158,7 @@ export default function UploadPage() {
   // should never actually carry row_count 0. This guard exists so that if
   // it ever does — a future parser change, a file shaped in some way this
   // page hasn't anticipated — the UI never lets a 0-row preview look like
-  // an ordinary one with Confirm & Ingest quietly enabled underneath it.
+  // an ordinary one with the commit button quietly enabled underneath it.
   const previewHasNoRows = preview !== null && preview.row_count === 0
 
   // "Meaningful in-progress content" for this page: anything staged past a
@@ -222,8 +217,11 @@ export default function UploadPage() {
           }`}
         >
           <UploadCloud className="size-8 text-muted-foreground" aria-hidden="true" />
+          {/* Was "Click to browse": this target is reachable by keyboard
+              (Enter/Space, see onKeyDown above) and by touch, so naming the
+              mouse was both wrong and the only instruction on offer. */}
           <p className="text-sm font-medium text-foreground">
-            Click to browse, or drag a CSV file here
+            Choose a file, or drag a CSV here
           </p>
           {currentFile ? (
             <p className="text-xs text-muted-foreground">Selected: {currentFile.name}</p>
@@ -274,7 +272,14 @@ export default function UploadPage() {
                   {stage.name === 'committing' ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : null}
-                  Confirm & Ingest
+                  {/* Was "Confirm & Ingest": Title Case, an ampersand, and a
+                      bare verb that never said what would be confirmed. The
+                      outcome this button actually produces is that the cost
+                      sheet on file is replaced by this file — which is what
+                      the warning above it already warns about, so the two now
+                      use the same words (ux-writing: a confirm restates the
+                      action AND the object). */}
+                  Replace cost sheet
                 </Button>
               </div>
             }
@@ -291,7 +296,8 @@ export default function UploadPage() {
             <p className="mt-1 text-xs text-muted-foreground">
               Nothing has been saved yet — {preview.row_count} row
               {preview.row_count === 1 ? '' : 's'} parsed, totalling{' '}
-              {formatUsd(preview.total_amount)}. Review before confirming.
+              {formatUsd(preview.total_amount)}. Review the rows below, then
+              replace the cost sheet on file with them.
             </p>
           )}
 

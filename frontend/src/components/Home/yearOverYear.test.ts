@@ -39,7 +39,7 @@ describe('deriveYearOverYear', () => {
       thisPeriodUsd: 480, // 150 + 130 + 200
       priorYearUsd: 310, // 100 + 120 + 90
       deltaUsd: 170,
-      label: '08/01–08/03',
+      label: 'Aug 1–3',
     })
   })
 
@@ -60,13 +60,26 @@ describe('deriveYearOverYear', () => {
       thisPeriodUsd: 350, // 150 + 200
       priorYearUsd: 190, // 100 + 90
       deltaUsd: 160,
-      label: '08/01–08/03',
+      label: 'Aug 1–3',
     })
   })
 
   it('labels a single-day window without a redundant range', () => {
     const days = [day('2025-08-01', '100.00'), day('2026-08-01', '150.00')]
     const result = deriveYearOverYear(days)
-    expect(result?.label).toBe('08/01')
+    expect(result?.label).toBe('Aug 1')
+  })
+
+  it('spells the month, so the label is not read as a different date outside the US', () => {
+    // "08/01" is 1 August to a US reader and 8 January to most others — on a
+    // tile whose whole job is comparing one date range against the same range
+    // a year earlier, and the only date on Home not in the app's own format.
+    const days = [day('2025-01-08', '100.00'), day('2026-01-08', '150.00')]
+    expect(deriveYearOverYear(days)?.label).toBe('Jan 8')
+  })
+
+  it('uses a December window without falling off the end of the month table', () => {
+    const days = [day('2025-12-05', '100.00'), day('2026-12-05', '150.00')]
+    expect(deriveYearOverYear(days)?.label).toBe('Dec 5')
   })
 })

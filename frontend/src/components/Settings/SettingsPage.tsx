@@ -56,9 +56,13 @@ export default function SettingsPage() {
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">Full screen</p>
             <p className="mt-0.5 max-w-prose-measure text-xs leading-relaxed text-muted-foreground">
+              {/* Was "the toggle pinned to the top-right corner": a control
+                  identified only by where it sits, which is no help to
+                  anyone who can't see the layout (ux-writing / WCAG 1.3.3).
+                  Named by its accessible label instead. */}
               Fill the viewport with no browser chrome — the same real,
-              OS-level Fullscreen API as the toggle pinned to the top-right
-              corner on every page, given a labeled home here too.
+              OS-level Fullscreen API as the &ldquo;Enter full screen&rdquo;
+              toggle on every page, given a labeled home here too.
             </p>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={toggle} aria-pressed={isFullscreen}>
