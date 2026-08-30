@@ -12,6 +12,43 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Home page's "Recent closes" tooltip had the same raw-flag-dump bug as Close, in a second, independent copy
+
+Reported live within minutes of the Close page's own version of this bug
+being fixed: hovering the flag-count chip in Home's "Recent closes" table
+showed the exact same wall of raw technical text — `day.discrepancy_flags
+.map((flag) => flag.detail).join(' · ')`, unchanged, in `HomePage.tsx`,
+completely independent of `ClosePage.tsx`'s `toBadges`. A grep for the fixed
+pattern before that fix landed would have caught this; the fix instead
+touched only the file the report named.
+
+Root cause of the recurrence, not just the bug: `summarizeFlags` — grouped
+by flag type, ordered by owner-actionability, capped at two phrases with a
+plain "N more things flagged" fold-in — was a private function inside
+`ClosePage.tsx`. Fixing the Close page's copy left Home's independent copy
+of the identical anti-pattern untouched, because there was nothing to import
+from.
+
+**Fix:** extracted `summarizeFlags` into `frontend/src/lib/discrepancyFlags.ts`
+— the one place this logic now lives — and pointed both `ClosePage.tsx` and
+`HomePage.tsx`'s tooltip at it. Grepped the whole frontend for
+`flag) => flag.detail` and `.detail).join(`; these were the only two
+occurrences, both now fixed from the same source. Verified against today's
+real 2026-08-30 data (32 duplicates, 6 amount mismatches, 1 void, 1 anomaly):
+Home's tooltip now reads "6 orders with a promotion-driven amount
+difference, an unusual change in revenue, and 2 more things flagged" —
+identical to Close's badge, since both now derive from the same function.
+
+Added a dedicated `discrepancyFlags.test.ts` (5 cases) so this behavior is
+tested independent of either page's rendering, plus a new `HomePage.test.tsx`
+case reproducing the exact 32-duplicate live scenario and asserting no
+`simulated://` or row-id text reaches the tooltip. Updated one existing
+`HomePage.test.tsx` case that had pinned the old raw-join text as its
+expected output. `npx tsc -b --noEmit` clean; full suite 624/624 passing
+(619 baseline + 5 new).
+
+---
+
 ## 2026-08-30 — The Close page stopped dumping every discrepancy flag's raw detail into one badge
 
 Reported live: a day with a POS-heavy connector sync (2026-08-30, 40 flags —

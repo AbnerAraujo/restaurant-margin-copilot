@@ -344,7 +344,7 @@ describe('HomePage', () => {
     })
     await userEvent.hover(singleFlagHint)
     expect(
-      await screen.findByText('Duplicate order removed'),
+      await screen.findByText('1 duplicate order removed'),
     ).toBeInTheDocument()
 
     const multiFlagHint = screen.getByRole('button', {
@@ -353,9 +353,37 @@ describe('HomePage', () => {
     await userEvent.hover(multiFlagHint)
     expect(
       await screen.findByText(
-        'Refund netted to sale date · Margin outside the usual range',
+        'An unusual change in revenue and 1 other item flagged',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('summarizes many flags of the same type instead of joining each one\'s raw technical detail', async () => {
+    // Reported live: a POS-heavy sync day can carry 40+ duplicate flags
+    // alone, and this tooltip used to join every one's raw `detail`
+    // sentence (internal type names, simulated:// provenance URIs, row
+    // numbers) into one unreadable wall of text.
+    const manyDuplicates = Array.from({ length: 32 }, (_, i) => ({
+      type: 'cross_source_duplicate_removed',
+      detail: `POS ticket POS-SIM-${i} carries iFood's own order reference...`,
+    }))
+    stubFetchByUrl([
+      {
+        date: '2026-08-30',
+        margin: '4470.70',
+        discrepancy_flags: manyDuplicates,
+      },
+    ])
+    renderHomePageWithRoutes()
+
+    await screen.findByText('Recent closes')
+    await userEvent.hover(
+      screen.getByRole('button', { name: 'What flagged 2026-08-30?' }),
+    )
+    expect(
+      await screen.findByText('32 duplicates counted once'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/POS-SIM-/)).not.toBeInTheDocument()
   })
 
   it('narrows the Recent closes table to flagged days only via the status chip', async () => {
