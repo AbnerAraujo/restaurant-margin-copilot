@@ -9,22 +9,31 @@ import { getJson, postJson } from '@/lib/api'
 import { explainRequestFailure } from '@/lib/requestFailure'
 
 // ---------------------------------------------------------------------------
-// specs/010-platform-connector-proxy: pulling delivery revenue from iFood and
-// Just Eat Takeaway instead of waiting for a CSV export from each merchant
-// portal.
+// specs/010-platform-connector-proxy and specs/012-pos-connector-dedup:
+// pulling revenue from iFood, Just Eat Takeaway and the in-house POS instead
+// of waiting for a CSV export from each one.
 //
-// Both connections are SIMULATED. This project has no partner-API credentials
-// for either platform, so the backend stands in two mock APIs with genuinely
-// different wire formats and normalizes them through one proxy into the same
-// record type the CSV path produces.
+// All three connections are SIMULATED. This project has no partner-API
+// credentials for either platform and no POS terminal to poll, so the backend
+// stands in three mock APIs with genuinely different wire formats and
+// normalizes them through one proxy into the same record types the CSV path
+// produces.
 //
 // That fact is stated four separate times on the way to a number: in the tab
 // label this component renders inside, in the notice below (which is the first
-// thing in the panel and cannot be dismissed), on every platform row, and in
+// thing in the panel and cannot be dismissed), on every source row, and in
 // the sync button's own words. The redundancy is deliberate — a cropped
 // screenshot, a scrolled-past banner, or a glance at just the results table
 // each still carry the disclosure. Zero model involvement in this flow: the
 // endpoints it calls are deterministic Go end to end.
+//
+// The second thing this surface has to be honest about is deduplication. A POS
+// that takes delivery orders through an integration records them as its own
+// tickets, so a combined sync can see the same order twice. The backend
+// resolves what it can and REFUSES to guess at the rest, and both outcomes are
+// shown here — the removals as a count, the unresolved overlaps as a warning
+// naming what to check. Reporting only the removals would let this panel claim
+// a clean result the product did not achieve.
 // ---------------------------------------------------------------------------
 
 interface ConnectorPlatformApi {
@@ -51,6 +60,18 @@ interface ConnectorDayTotalsApi {
   gross_sales: string
   refunds: string
   commissions: string
+  duplicates_removed: number
+  unresolved_overlaps: number
+}
+
+interface ConnectorDedupDecisionApi {
+  kind: string
+  resolved: boolean
+  date: string
+  platform: string
+  pos_order_id: string
+  platform_order_id?: string
+  detail: string
 }
 
 interface ConnectorSyncPreviewApi {
@@ -62,6 +83,9 @@ interface ConnectorSyncPreviewApi {
   gross_sales: string
   refunds: string
   commissions: string
+  duplicates_removed: number
+  unresolved_overlaps: number
+  dedup: ConnectorDedupDecisionApi[]
   days: ConnectorDayTotalsApi[]
 }
 
@@ -78,6 +102,10 @@ interface ConnectorSyncApi {
   days_affected: number
   orders_synced: number
   refunds_synced: number
+  tickets_synced: number
+  duplicates_removed: number
+  unresolved_overlaps: number
+  dedup: ConnectorDedupDecisionApi[]
   before: MarginSnapshotApi
   after: MarginSnapshotApi
 }
@@ -107,8 +135,23 @@ function toTableRows(days: ConnectorDayTotalsApi[]): string[][] {
     String(day.order_count),
     formatUsd(day.gross_sales),
     day.refund_count === 0 ? '—' : `${formatUsd(day.refunds)} (${day.refund_count})`,
-    formatUsd(day.commissions),
+    // The POS charges no commission at all, so an em dash rather than
+    // "$0.00" — a zero here would read as a platform that happens to be
+    // free, which is a different and wrong claim.
+    day.platform === 'pos' ? '—' : formatUsd(day.commissions),
+    dedupCell(day),
   ])
+}
+
+/** One cell summarizing what deduplication did to this source on this day.
+ * The unresolved count is shown alongside the removals rather than hidden,
+ * because an overlap the backend declined to resolve is a possible
+ * double-count sitting inside the gross figure in the same row. */
+function dedupCell(day: ConnectorDayTotalsApi): string {
+  const parts = []
+  if (day.duplicates_removed > 0) parts.push(`${day.duplicates_removed} removed`)
+  if (day.unresolved_overlaps > 0) parts.push(`${day.unresolved_overlaps} unresolved`)
+  return parts.length === 0 ? '—' : parts.join(', ')
 }
 
 /** The default range: the seven days ending today, in the owner's own clock. */
@@ -118,6 +161,79 @@ function defaultRange(): { from: string; to: string } {
   start.setDate(start.getDate() - 6)
   const iso = (d: Date) => d.toISOString().slice(0, 10)
   return { from: iso(start), to: iso(today) }
+}
+
+/**
+ * What deduplication did, and — the half that matters more — what it
+ * declined to do.
+ *
+ * The removals are the good news and are stated plainly. The unresolved
+ * overlaps are shown as a warning, not folded into the same sentence,
+ * because they mean something different in kind: the gross figure beside
+ * them may still count an order twice, and the owner is the only one who
+ * can settle it. A panel that reported "12 duplicates removed" and stayed
+ * silent about the 4 it could not place would be claiming a clean close it
+ * did not achieve.
+ */
+function DedupSummary({
+  removed,
+  unresolved,
+  decisions,
+}: {
+  removed: number
+  unresolved: number
+  decisions: ConnectorDedupDecisionApi[]
+}) {
+  if (!removed && !unresolved) return null
+
+  // Tolerant of a missing list: the counts are the load-bearing part, and a
+  // response that reported "4 unresolved" without the itemization must still
+  // show the warning rather than crash the panel that carries it.
+  const unresolvedDetails = (decisions ?? [])
+    .filter((d) => d.kind.startsWith('unresolved_'))
+    .map((d) => d.detail)
+
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {removed > 0 ? (
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success-text" aria-hidden="true" />
+          <span>
+            {removed} POS ticket{removed === 1 ? '' : 's'} matched an order that also came through
+            a delivery platform, so {removed === 1 ? 'it is' : 'they are'} counted once rather
+            than twice. The platform&apos;s record is the one kept, so its commission is still
+            charged against your margin.
+          </span>
+        </p>
+      ) : null}
+
+      {unresolved > 0 ? (
+        <div
+          role="note"
+          className="rounded-md border border-warning/25 bg-warning/10 p-2.5 text-xs"
+        >
+          <p className="flex items-start gap-1.5 text-warning-text">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            <span>
+              {unresolved} POS ticket{unresolved === 1 ? '' : 's'} look
+              {unresolved === 1 ? 's' : ''} like {unresolved === 1 ? 'it' : 'they'} came through a
+              delivery platform, but the evidence didn&apos;t single out which order.{' '}
+              {unresolved === 1 ? 'It was' : 'They were'} left in rather than guessed at, so these
+              days may count {unresolved === 1 ? 'that order' : 'those orders'} twice.
+            </span>
+          </p>
+          <ul className="mt-1.5 flex list-disc flex-col gap-1 pl-8 text-muted-foreground">
+            {unresolvedDetails.slice(0, 3).map((detail) => (
+              <li key={detail}>{detail}</li>
+            ))}
+            {unresolvedDetails.length > 3 ? (
+              <li>and {unresolvedDetails.length - 3} more, each flagged on its own day.</li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  )
 }
 
 export default function ConnectedPlatformsTab() {
@@ -194,10 +310,11 @@ export default function ConnectedPlatformsTab() {
               These connections are simulated
             </h2>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-              No real iFood or Just Eat Takeaway account is connected. This prototype has no
-              partner-API access to either platform, so the orders below are generated locally
-              to show how the connector works. Anything you sync from here reaches your margin
-              as simulated revenue, and it stays labeled that way everywhere it appears.
+              No real iFood account, Just Eat Takeaway account or POS terminal is connected.
+              This prototype has no partner-API access to any of them, so the orders below are
+              generated locally to show how the connector works. Anything you sync from here
+              reaches your margin as simulated revenue, and it stays labeled that way
+              everywhere it appears.
             </p>
           </div>
         </div>
@@ -229,7 +346,11 @@ export default function ConnectedPlatformsTab() {
                 <Chip tone="warning" icon={FlaskConical}>
                   Simulated connection
                 </Chip>
-                <Chip>{platform.commission_rate_pct}% commission</Chip>
+                {platform.commission_rate_pct ? (
+                  <Chip>{platform.commission_rate_pct}% commission</Chip>
+                ) : (
+                  <Chip>No commission</Chip>
+                )}
               </div>
               <p className="mt-1.5 text-xs text-muted-foreground">
                 Normalized from: {platform.wire_format}
@@ -333,10 +454,16 @@ export default function ConnectedPlatformsTab() {
             </p>
           )}
 
+          <DedupSummary
+            removed={preview.duplicates_removed}
+            unresolved={preview.unresolved_overlaps}
+            decisions={preview.dedup}
+          />
+
           <DataGrid
             className="mt-4"
-            title="Simulated orders by platform and day"
-            columns={['Date', 'Platform', 'Orders', 'Gross sales', 'Refunds', 'Commission']}
+            title="Simulated orders by source and day"
+            columns={['Date', 'Source', 'Orders', 'Gross sales', 'Refunds', 'Commission', 'Duplicates']}
             rows={toTableRows(preview.days)}
           />
         </Panel>
@@ -347,10 +474,17 @@ export default function ConnectedPlatformsTab() {
           <PanelHeader eyebrow="Done" title="Simulated orders synced" />
           <p className="mt-1 flex items-center gap-1.5 text-sm text-success-text">
             <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
-            {stage.result.orders_synced} simulated order
-            {stage.result.orders_synced === 1 ? '' : 's'} replaced the delivery revenue on file for{' '}
+            {stage.result.orders_synced} simulated delivery order
+            {stage.result.orders_synced === 1 ? '' : 's'} and {stage.result.tickets_synced} POS
+            ticket{stage.result.tickets_synced === 1 ? '' : 's'} replaced the revenue on file for{' '}
             {stage.result.from} to {stage.result.to}, and the full reconciliation re-ran.
           </p>
+
+          <DedupSummary
+            removed={stage.result.duplicates_removed}
+            unresolved={stage.result.unresolved_overlaps}
+            decisions={stage.result.dedup}
+          />
           <dl className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-md border border-border bg-muted/30 p-3">
               <dt className="text-micro font-medium uppercase tracking-wider text-muted-foreground">
@@ -372,7 +506,9 @@ export default function ConnectedPlatformsTab() {
           <p className="mt-3 text-xs text-muted-foreground">
             Those days now read from the simulated connectors. Every row carries a{' '}
             <code className="font-mono">simulated://</code> source, so nothing here can be
-            mistaken for a real platform settlement.
+            mistaken for a real platform settlement — and every duplicate resolved or left
+            unresolved above is recorded as a discrepancy flag on the day it affected, where you
+            can find it again after this panel is gone.
           </p>
           <Button
             className="mt-4"
