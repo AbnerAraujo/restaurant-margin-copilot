@@ -42,6 +42,19 @@ func main() {
 	ingestDir := flag.String("ingest", "", "run the ingest -> reconcile -> persist pipeline against the delivery/POS/cost-sheet exports in this directory, then exit (see quickstart.md)")
 	ingestPromoDir := flag.String("ingest-promo", "", "run User Story 4's promotion ingest -> reconcile -> persist pipeline against the promotion/ad-spend + delivery-platform exports in this directory, then exit (tasks.md T029-T030)")
 	serveAddr := flag.String("serve", "", "if set, start an HTTP server on this address (e.g. :8080) exposing GET /api/badges (T032) and POST /api/ask (T020/T023), then block until interrupted")
+	// The evaluation harness (evaluation/promptfoo/*.yaml) points at its own
+	// backend instance on :8092 precisely so it never disturbs the app the
+	// owner is using. Without this flag that instance still shares the one
+	// answer_cache table, so a harness re-run silently serves most of its 35
+	// questions from a previous run's cached answers: the suite then reports
+	// a pass rate for the CACHE, not for the model path it exists to grade,
+	// and the per-question cost it appears to measure is near-zero for
+	// reasons that have nothing to do with token discipline. Disabling the
+	// cache for the harness instance keeps every graded answer a real gate +
+	// explain round trip. It is deliberately NOT a way to clear the shared
+	// cache — it only makes this process behave as httpapi.Deps already
+	// documents for a nil Cache, leaving other instances untouched.
+	evalNoAnswerCache := flag.Bool("eval-no-answer-cache", false, "serve POST /api/ask with the answer cache disabled for THIS process only, so an evaluation run grades (and prices) the real model path rather than previously cached answers; the shared cache is left untouched")
 	flag.Parse()
 
 	if *ingestDir == "" && *ingestPromoDir == "" && *serveAddr == "" {
@@ -156,7 +169,12 @@ func main() {
 		// package doc).
 		llm := llmclient.New()
 
-		askDeps, err := buildAskDeps(ctx, store, cache, llm)
+		askCache := cache
+		if *evalNoAnswerCache {
+			askCache = nil
+			log.Println("-eval-no-answer-cache: POST /api/ask will bypass the answer cache in this process; every question costs a real gate + explain round trip")
+		}
+		askDeps, err := buildAskDeps(ctx, store, askCache, llm)
 		if err != nil {
 			log.Fatalf("wiring POST /api/ask: %v", err)
 		}

@@ -2217,3 +2217,174 @@ The word "fixture" no longer appears in current-state code or
 documentation; dated entries above (including this document's own history)
 keep their original wording as the record of what was true when they were
 written.
+
+## 2026-08-30 — The harness was grading its own cache: every KR number re-measured, and two of them got tests
+
+**Why this entry exists.** Every KR, accuracy, cost and points figure in
+`README.md`, `docs/prd.md` and `docs/presentation.html` was re-derived from
+the real database and a real harness run on 2026-08-30. Several moved
+downward. This project's standing discipline is to disclose real numbers
+*including how they were obtained*, so the method comes first — because in
+this case the method is the finding.
+
+**The defect in the measurement.** The evaluation harness points at its own
+backend on `:8092`, deliberately, so it never disturbs the app the owner is
+using. But that instance still shared the product's own `answer_cache`
+table. So a re-run was served largely from the *previous* run's cached
+answers: **25 of 35 questions came back from cache**, and two of the three
+suites finished in **0s**. The suite was reporting a pass rate for the
+cache, not for the model path it exists to grade — and the per-question cost
+it appeared to measure was near-zero for reasons that had nothing to do with
+token discipline. The 2026-08-29 entry above already noted, honestly, that
+*part* of that day's consistency re-run was cache-served. What was not
+realised then is that this was structural and applied to every suite, not a
+one-off.
+
+**The fix.** `cmd/server` now takes `-eval-no-answer-cache`, which wires
+`POST /api/ask` with a nil `Cache` for that process only — a mode
+`httpapi.Deps` already documented and supported. It never clears the shared
+cache, so the running app is untouched. Everything below was measured with
+it on, so every graded answer is a real gate + explain round trip.
+
+**Method.** Two full end-to-end runs of all three suites
+(`promptfoo eval --no-cache -c evaluation/promptfoo/{refusal,accuracy,consistency}.yaml`)
+against a backend started as
+`go run ./cmd/server -serve :8092 -eval-no-answer-cache` on the same live
+Postgres. Both runs are reported, not the better one: the model layer is not
+deterministic, and presenting one run as *the* result is a measurement error
+dressed as a finding. (Four earlier refusal-suite runs were also taken while
+characterising the truncation defect below; they are the basis for the
+"twice in four attempts" figure.)
+
+**Results, as graded.**
+
+| Suite | Run A | Run B | Previously reported |
+|---|---|---|---|
+| Accuracy (15) | 14/15 | 14/15 | 15/15 |
+| Consistency (15) | 13/15 | 15/15 | 15/15 |
+| Refusal (5) | 5/5 | 4/5 | 5/5 |
+| Cost | 70 questions · 142 model calls · $2.1931 · **$0.0313/question** | | ~$0.025/question |
+
+**Every failure, hand-read from the raw JSON. None is a wrong number.**
+
+1. **A15 — "Delivery revenue on 2024-08-02, net of the refund?"** Failed in
+   *every* uncached run, and it is the most valuable thing this
+   re-measurement produced. The model returns gross $446.25 and the $62.25
+   refund, both with provenance, and then explicitly declines to net them to
+   $384.00, saying so: netting them "would be doing my own math, which I
+   want to avoid stating as if the system computed it." That is Constitution
+   Principle I behaving exactly as designed — the model never computes. The
+   defect is therefore **in the tool contract, not the model**:
+   `get_daily_summary` exposes gross and refunds separately and nothing
+   exposes the net, so a perfectly reasonable question has no tool that can
+   answer it. Left **open and named** rather than quietly fixed before the
+   deadline; the honest framing is that the harness found a missing tool
+   field, which is what a harness is for. Note also that the 2026-08-29
+   entry recorded A15 as passing — it was, from cache.
+2. **R1 — the missing-delivery day.** The answer states the delivery source
+   is missing and explicitly disclaims the `$0.00` as an absence rather than
+   a real zero, which is precisely the required behavior, and still trips
+   `refusal.yaml`'s blanket "no `$0.00` anywhere" guard. That exact guard
+   was diagnosed and removed from `consistency.yaml`'s C5 on 2026-08-29;
+   `refusal.yaml` never received the matching fix, so the same artifact was
+   fixed in one file and left in another.
+3. **C1a.** One of three phrasings asked a clarifying question ("both
+   platforms, or one?") where the other two answered $374.75. A genuine
+   consistency divergence — exactly what this suite exists to catch. Did not
+   recur in run B.
+4. **C3.** A correct, provenanced answer (−$450.75 on $610.00 spend against
+   $159.25 attributed revenue) that says the campaign "lost money", which
+   the assertion's `negative|not profitable|loss|underperform` vocabulary
+   does not match. A lexical gap in the grader.
+
+**On not fixing 2 and 4.** Both are grading artifacts, both are
+hand-verified as correct behavior, and this project has precedent for fixing
+exactly this class. They were still **left alone**. Editing a grader
+immediately after watching it fail — even correctly — is how a number stops
+meaning anything to the person reading it, and the resulting 5/5 would have
+been indistinguishable from a 5/5 that was earned. The as-graded number is
+what is reported everywhere; the hand-read analysis sits beside it. A
+reviewer can accept or reject that analysis on its merits, which is the
+point.
+
+**One defect found and fixed.** On the pre-fix runs, "How was the weekend?"
+— the canonical ambiguity example in `CLAUDE.md` — returned a 502
+`gate_failed` **twice in four attempts**, because the ambiguity gate's
+response hit its 1536-token output cap mid-clarification
+(`stop_reason=max_tokens`). An ambiguous verdict is the gate's true worst
+case: it must classify, then compose both a clarifying question *and* its
+options inside one budget — strictly more output than an answerable verdict,
+or than the unanswerable verdict that forced the previous raise. The cap is
+now 2560 (`internal/ambiguity/gate.go`, the third such measured raise, same
+policy each time: raised on evidence, never precautionarily, with the
+`stop_reason` check still turning any overrun into a loud failure). It has
+not recurred in the two post-fix runs. The failure mode itself is worth
+keeping in mind: the gate's cost is driven by the *verdict*, not the
+question, and the cheapest-looking question can be the most expensive one.
+
+**Two key results stopped being true by construction.** KR2 and KR3 were
+both facts about the dataset that no test asserted — nothing would have
+failed if the real data stopped satisfying them.
+
+- **KR3** had only `TestListNegativeRoiPromotions_Fake`, which seeds a fake
+  querier and proves the *filter*. Added
+  `TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance`
+  (`internal/mcptools`): against live Postgres, the opening window still
+  yields ≥1 flagged record, it is JET-CAMP-LUNCHFIX at the hand-computed
+  −$450.75, it carries non-empty file+row provenance, and FR-013's
+  unattributable IFOOD-CAMP-WEEKEND is never smuggled into the list.
+- **KR2** was covered thoroughly *in memory* — `internal/ingest` and
+  `internal/reconcile` each assert every deliberate irregularity straight
+  off the checked-in CSVs. What nothing asserted is the step KR2 is actually
+  stated over: that those results survive **persistence**. That gap is not
+  hypothetical — the worst defect of this whole build was precisely a
+  persisted-state loss (13 of 14 opening days in Postgres, short by $152.50,
+  every in-memory test still green, caught only by a hand-run `psql` query).
+  Added `TestOpeningWindow_PersistedWithZeroSilentDataLoss`
+  (`internal/storage`), which is that `psql` query made permanent: all 14
+  days present exactly once, plus one direct assertion per irregularity
+  against the persisted row — duplicate counted once *and disclosed*, refund
+  netted at the original order date and not double-counted on its
+  `refund_date`, missing delivery source absent-and-flagged rather than
+  zeroed, and the DD/MM/YYYY POS rows landed on the right days. Both tests
+  are read-only, make no model calls, and skip rather than fake when
+  `DATABASE_URL` is unset.
+
+**A unit error the old figures rested on.** A row in `question_interaction`
+is one **model call**, not one question — an answered question writes two
+(the gate, then the explanation). "$7.3698 across 635 logged interactions"
+therefore conflated the two, and averaging that ledger understates the cost
+of a *question* by roughly half. Per-question cost is now measured over a
+known question count (70 questions → 142 calls → $2.1931 → $0.0313), and
+every doc says which unit it means. The old cumulative figure also omitted
+the `business_insight_interaction` ledger entirely.
+
+**Live facts, all re-queried the same day.**
+
+| Fact | Value | How |
+|---|---|---|
+| Reconciled days | 759, 2024-08-01 → 2026-08-29 | `SELECT count(*), min(date), max(date) FROM daily_reconciliation;` |
+| Logged model calls / spend | 999 / $12.6387 | `SELECT count(*), sum(estimated_cost_usd) FROM question_interaction;` |
+| Business-insight calls / spend | 7 / $0.0468 | same over `business_insight_interaction` |
+| **Total tracked spend** | **$12.6855 across 1,006 calls** | sum of the two ledgers |
+| Promotion records / flagged negative | 29 / 12 | `SELECT count(*), count(*) FILTER (WHERE flagged_negative) FROM promotion_roi_record;` |
+| Earned points | 12,345 (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth | `GET /api/badges` |
+| Real app-open days | 3 | `SELECT count(*) FROM usage_event;` |
+
+Two of those deserve a note. **12,345 really is what 4,580 + 7,525 + 240
+comes to** — it looks like a placeholder and is not, which is worth stating
+before a reader assumes otherwise. And it is two orders of magnitude above
+the 200 shown previously for an unglamorous reason: that figure dates from
+when the database held 14 days and it now holds 759. Nothing about the badge
+logic changed. `internal/badges`'s own doc comment quoted the 200 figure too
+and has been corrected — a comment that quotes a live number ages into a
+false one, which is exactly what happened, so it now points at this document
+rather than restating a balance. **Week One** (7 real usage days) and
+**Campaign Launcher** remain unearned at 3 real app-open days and 0
+owner-created replacement promotions; still earnable, still never simulated.
+
+**Verification.** `go build ./... && go vet ./... && go test ./...` fully
+green against the live Postgres, including both new tests. Port 8080 — the
+app the owner is running — was never started, stopped, or restarted at any
+point; every live check ran against a separate instance on `:8092` sharing
+the same database read-only.

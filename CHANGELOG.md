@@ -5,7 +5,7 @@ spirit of [Keep a Changelog](https://keepachangelog.com/), adapted for how this
 project actually shipped: a single continuous take-home build across two real
 dates, not versioned releases. Entries are grouped by date and then by
 milestone, reverse-chronological. Every entry below is derived from this
-repo's own `git log` (146 commits, 2026-08-27 through 2026-08-29) — nothing
+repo's own `git log` (2026-08-27 through 2026-08-30) — nothing
 here is invented, and honest bugs/regressions are named, not smoothed over,
 matching this project's own stated documentation discipline (Constitution
 Principle V: report what happened, including failures).
@@ -134,6 +134,69 @@ fixing any one of them narrowly would have made another worse.
   as follow-up rather than folded into this change.
 
 ---
+
+## 2026-08-30 — The evaluation harness had been grading its own cache
+
+Every KR, accuracy, cost and points figure in the README, PRD and deck was
+re-derived from the real database and real harness runs. Several moved
+downward, and the reason is itself the finding. Full method, every failure
+by name, and the reproducing SQL: `docs/product-strategy.md`, entry of the
+same date.
+
+- **Fixed** the measurement itself. The harness runs against its own backend
+  on `:8092` so it never disturbs the running app, but that instance still
+  shared the product's `answer_cache` table — so a re-run was served largely
+  from the *previous* run's cached answers (**25 of 35 questions**, two
+  suites finishing in **0s**). It was reporting a pass rate for the cache,
+  not for the model path it exists to grade. `cmd/server` now takes
+  **`-eval-no-answer-cache`**, wiring `POST /api/ask` with a nil `Cache` for
+  that process only — a mode `httpapi.Deps` already supported. It never
+  clears the shared cache.
+- **Changed** the reported numbers accordingly, from two full uncached runs
+  (both reported, not the better one, because the model layer is not
+  deterministic): accuracy **14/15 and 14/15** (was 15/15), consistency
+  **13/15 and 15/15** (was 15/15), refusal **5/5 and 4/5** (was 5/5), cost
+  **$0.0313/question** over 70 questions and 142 model calls (was ~$0.025),
+  against KR4's unchanged $0.05 bar.
+- **Fixed** a real 502 the uncached runs exposed: "How was the weekend?" —
+  the canonical ambiguity example in `CLAUDE.md` — failed **twice in four
+  attempts** with `gate_failed`, because the ambiguity gate hit its
+  1536-token output cap mid-clarification. An ambiguous verdict is the
+  gate's true worst case: it must classify, then write both a clarifying
+  question and its options in one budget. Cap raised to **2560**, the third
+  such raise and, as with the previous two, made on measured evidence rather
+  than precautionarily. Not recurred since.
+- **Added** regression guards for the two key results that were true only by
+  construction — nothing would have failed if the real data stopped
+  satisfying them. `TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance`
+  (KR3) asserts the live database still yields a flagged negative-ROI
+  campaign at the hand-computed −$450.75 with file+row provenance.
+  `TestOpeningWindow_PersistedWithZeroSilentDataLoss` (KR2) reads the
+  persisted opening window back and asserts all 14 days present exactly once
+  plus one check per deliberate irregularity — the permanent form of the
+  hand-run `psql` query that once caught 13 rows where there should have
+  been 14.
+- **Not fixed, and named instead.** Accuracy's **A15** failed in *every*
+  uncached run: asked for delivery revenue net of the refund, the model
+  returns gross $446.25 and the $62.25 refund with provenance and then
+  declines to net them to $384.00, because no tool returns that figure and
+  it will not present its own arithmetic as computed. That is Principle I
+  working; the defect is a **gap in the tool contract**, left open. Two
+  grading regexes that rejected correct answers (refusal R1's blanket
+  "$0.00" guard, consistency C3's wording list) were also **deliberately
+  left untuned** — editing a grader right after watching it fail makes the
+  resulting number unreadable.
+- **Corrected** a unit error the old figures rested on: a
+  `question_interaction` row is one **model call**, and an answered question
+  writes two, so "$7.3698 across 635 logged interactions" conflated calls
+  with questions and understated a question's cost by roughly half. It also
+  omitted the `business_insight_interaction` ledger. Current real totals:
+  **$12.6855 across 1,006 model calls**.
+- **Corrected** the live points figure everywhere, including a stale doc
+  comment in `internal/badges` that quoted it: **12,345 points from 775
+  badges** (458 Clean Close, 301 Discrepancy Catcher, 16 Growth), not the
+  200 shown previously — that figure dated from when the database held 14
+  days rather than 759. No badge logic changed.
 
 ## 2026-08-29 — Correction: date-range comparison was never the model's job
 
