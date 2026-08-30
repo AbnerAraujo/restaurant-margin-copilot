@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import {
   GUIDED_CATEGORIES,
   KNOWN_PLATFORMS,
@@ -476,9 +477,7 @@ export default function QuestionComposer({
         setCampaigns(result)
       })
       .catch((caught: unknown) => {
-        setCampaignsError(
-          caught instanceof Error ? caught.message : String(caught),
-        )
+        setCampaignsError(explainRequestFailure(caught))
       })
       .finally(() => {
         setCampaignsLoading(false)
@@ -833,8 +832,7 @@ export default function QuestionComposer({
                   ) : campaignsError ? (
                     <div className="flex flex-col items-start gap-1.5">
                       <p role="alert" className="text-xs text-destructive-text">
-                        We couldn&apos;t load your campaigns. Try again in a
-                        moment.
+                        We couldn&apos;t load your campaigns. {campaignsError}
                       </p>
                       <Button type="button" size="sm" variant="outline" onClick={loadCampaigns}>
                         Try again

@@ -43,9 +43,8 @@ export default function PointsCard({ className }: { className?: string }) {
       <div className="p-5 sm:p-6">
         {error ? (
           <p className="text-sm text-muted-foreground">
-            I couldn&apos;t reach your data just now, so there is no
-            balance to show. Rather than a placeholder number:{' '}
-            <span className="font-mono text-xs">{error}</span>
+            We couldn&apos;t load your points, so there is no balance to show
+            rather than a placeholder number. {error}
           </p>
         ) : (
           <>

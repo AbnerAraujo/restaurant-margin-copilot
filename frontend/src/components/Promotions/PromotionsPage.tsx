@@ -32,6 +32,7 @@ import {
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
@@ -236,7 +237,7 @@ export default function PromotionsPage() {
         setError(null)
       })
       .catch((caught: unknown) => {
-        setError(caught instanceof Error ? caught.message : String(caught))
+        setError(explainRequestFailure(caught))
       })
   }, [])
 
@@ -247,9 +248,7 @@ export default function PromotionsPage() {
         if (!cancelled) setPromotions(response.promotions)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
+        if (!cancelled) setError(explainRequestFailure(caught))
       })
     return () => {
       cancelled = true
@@ -369,8 +368,8 @@ export default function PromotionsPage() {
 
       {error ? (
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
-          Couldn&apos;t load campaigns from the backend, so there are no ROI
-          figures to show: <span className="font-mono text-xs">{error}</span>
+          We couldn&apos;t load your campaigns, so there are no ROI figures to
+          show. {error}
         </Panel>
       ) : null}
 

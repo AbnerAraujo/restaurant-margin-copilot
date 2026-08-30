@@ -9,6 +9,7 @@ import EffectiveRateTrendChart, {
 import { FilterBar, FilterEmptyState, FilterSearchInput } from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 
 // ---------------------------------------------------------------------------
@@ -140,9 +141,7 @@ export default function PlatformsPage() {
         if (!cancelled) setData(response)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
+        if (!cancelled) setError(explainRequestFailure(caught))
       })
     return () => {
       cancelled = true
@@ -192,8 +191,8 @@ export default function PlatformsPage() {
 
       {error ? (
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
-          Couldn&apos;t load the platform comparison from the backend:{' '}
-          <span className="font-mono text-xs">{error}</span>
+          We couldn&apos;t load the platform comparison, so there are no
+          figures to show. {error}
         </Panel>
       ) : null}
 

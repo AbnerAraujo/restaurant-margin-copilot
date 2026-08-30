@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
@@ -67,7 +68,7 @@ function useRedemptionHistory() {
       })
       .catch((caught: unknown) => {
         if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
+          setError(explainRequestFailure(caught))
         }
       })
     return () => {
@@ -337,10 +338,9 @@ export default function PointsPage() {
         ) : null}
 
         {redemptionsError ? (
-          <p className="p-5 text-sm text-muted-foreground sm:px-6">
-            I couldn&apos;t reach your data just now, so there is no history
-            to show:{' '}
-            <span className="font-mono text-xs">{redemptionsError}</span>
+          <p role="alert" className="p-5 text-sm text-muted-foreground sm:px-6">
+            We couldn&apos;t load your redemption history, so there is nothing
+            to show here. {redemptionsError}
           </p>
         ) : redemptions === null ? (
           <div className="flex flex-col gap-2 p-5 sm:px-6" aria-hidden="true">

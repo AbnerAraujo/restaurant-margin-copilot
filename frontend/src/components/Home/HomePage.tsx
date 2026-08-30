@@ -30,6 +30,7 @@ import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
@@ -217,9 +218,20 @@ function TrendIndicator({ trend }: { trend: MarginTrend }) {
  * the counts are counts of records, not arithmetic on money.
  */
 export default function HomePage() {
-  const { data: pointsData } = usePoints()
+  const { data: pointsData, error: pointsError } = usePoints()
   const [reconciliation, setReconciliation] =
     useState<ReconciliationApiResponse | null>(null)
+  // QA found the landing page was the only surface that swallowed its load
+  // failure entirely: the catch was a bare `() => undefined`, so a backend
+  // that was down left every tile in its skeleton state forever, with no
+  // error, no explanation, and nothing to click. A permanent fake loading
+  // state is a worse lie than the zeroes that catch existed to avoid — the
+  // skeletons still never resolve into fabricated figures, but the page now
+  // says why (Nielsen #1, and the same what → why → how every other page's
+  // error already followed).
+  const [reconciliationError, setReconciliationError] = useState<string | null>(
+    null,
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -227,9 +239,9 @@ export default function HomePage() {
       .then((response) => {
         if (!cancelled) setReconciliation(response)
       })
-      // A failed fetch leaves the strip in its skeleton state rather than
-      // rendering zeroes, which would read as real reconciled figures.
-      .catch(() => undefined)
+      .catch((caught: unknown) => {
+        if (!cancelled) setReconciliationError(explainRequestFailure(caught))
+      })
     return () => {
       cancelled = true
     }
@@ -286,6 +298,13 @@ export default function HomePage() {
         }
       />
 
+      {reconciliationError ? (
+        <Panel role="alert" className="p-4 text-sm text-muted-foreground">
+          We couldn&apos;t load your reconciled days, so the figures below are
+          missing rather than wrong. {reconciliationError}
+        </Panel>
+      ) : null}
+
       <Panel aria-label="At a glance" className="p-5 sm:p-6">
         {latest ? (
           <StatGroup>
@@ -323,7 +342,11 @@ export default function HomePage() {
                   ? pointsData.points.total.toLocaleString('en-US')
                   : null
               }
-              unavailableLabel="Loading"
+              // "Loading" only while a request is genuinely in flight. A
+              // failed /api/badges used to leave this tile reading "Loading"
+              // for good, which claimed a request was still running when
+              // none was.
+              unavailableLabel={pointsError ? 'Not available' : 'Loading'}
               icon={Coins}
               footer={
                 <Link
@@ -436,7 +459,15 @@ export default function HomePage() {
           </Link>
         </div>
         <div className="p-5 sm:p-6">
-          {pointsData ? (
+          {pointsError ? (
+            /* Same reason the reconciliation error above is rendered rather
+               than swallowed: without this, a failed /api/badges left
+               "Loading points…" on screen permanently. */
+            <p role="alert" className="text-sm text-muted-foreground">
+              We couldn&apos;t load your points, so there is no balance to
+              show. {pointsError}
+            </p>
+          ) : pointsData ? (
             pointsData.points.total > 0 ? (
               <CompositionBar
                 breakdown={pointsData.points.breakdown}

@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { humanizeSource } from '@/lib/sourceDisplayName'
 
 // ---------------------------------------------------------------------------
@@ -378,7 +379,7 @@ export default function ClosePage() {
         if (!isMountedRef.current || latestRequestId.current !== requestId) {
           return
         }
-        setError(caught instanceof Error ? caught.message : String(caught))
+        setError(explainRequestFailure(caught))
         setPeriodLoading(false)
       })
   }
@@ -602,8 +603,8 @@ export default function ClosePage() {
 
       {error ? (
         <Panel role="alert" className="p-4 text-sm text-muted-foreground">
-          Couldn&apos;t load reconciled days from the backend, so there are no
-          figures to show: <span className="font-mono text-xs">{error}</span>
+          We couldn&apos;t load reconciled days, so there are no figures to
+          show. {error}
         </Panel>
       ) : null}
 

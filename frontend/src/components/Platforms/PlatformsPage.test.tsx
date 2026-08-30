@@ -213,11 +213,40 @@ describe('PlatformsPage', () => {
   it('surfaces a fetch failure rather than rendering an empty comparison', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({ ok: false, status: 500, text: async () => 'boom' }),
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "reconciliations" does not exist (SQLSTATE 42P01)',
+          }),
+      }),
     )
     renderPage()
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/boom/i)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/couldn't load the platform comparison/i)
+  })
+
+  it('tells the owner how to recover from a failed load, without putting the raw Go error on screen', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "reconciliations" does not exist (SQLSTATE 42P01)',
+          }),
+      }),
+    )
+    renderPage()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/reload this page/i)
+    expect(alert).not.toHaveTextContent(/SQLSTATE/i)
   })
 
   it('shows the effective-rate trend chart with at least 2 real trailing months (spec 008 FR-007)', async () => {

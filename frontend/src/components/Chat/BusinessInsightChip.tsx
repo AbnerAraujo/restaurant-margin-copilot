@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Lightbulb, Loader2, Sparkles } from 'lucide-react'
 
 import type { ChatToolCall } from '@/components/Chat/ChatPanel'
+import { explainRequestFailure } from '@/lib/requestFailure'
 
 /**
  * Business Insight Advisor (specs/009-business-insight-advisor), frontend
@@ -92,13 +93,7 @@ export default function BusinessInsightChip({
       setState({ phase: 'loaded', advice })
       setOpen(true)
     } catch (error) {
-      setState({
-        phase: 'error',
-        message:
-          error instanceof Error
-            ? error.message
-            : 'The advice call failed before any suggestion was generated.',
-      })
+      setState({ phase: 'error', message: explainRequestFailure(error) })
     }
   }
 

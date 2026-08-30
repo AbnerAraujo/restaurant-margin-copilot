@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import { getJson } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 import { POINTS_PER_BADGE } from './pointValues'
 
 /**
@@ -76,9 +77,7 @@ export function usePoints(): PointsState {
         if (!cancelled) setData(response)
       })
       .catch((caught: unknown) => {
-        if (!cancelled) {
-          setError(caught instanceof Error ? caught.message : String(caught))
-        }
+        if (!cancelled) setError(explainRequestFailure(caught))
       })
     return () => {
       cancelled = true

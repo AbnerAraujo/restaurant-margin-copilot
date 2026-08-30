@@ -11,7 +11,8 @@ import {
 import { Button } from '@/components/ui/button'
 import DataGrid from '@/components/Charts/DataGrid'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
-import { API_BASE, ApiError, postMultipart } from '@/lib/api'
+import { API_BASE, postMultipart } from '@/lib/api'
+import { explainRequestFailure } from '@/lib/requestFailure'
 
 // ---------------------------------------------------------------------------
 // specs/007-cost-sheet-upload: the owner uploading a corrected/new supplier
@@ -64,12 +65,6 @@ type Stage =
   | { name: 'commit_error'; file: File; preview: PreviewCostSheetApi; message: string }
   | { name: 'committed'; result: CommitCostSheetApi }
 
-function errorMessage(caught: unknown): string {
-  if (caught instanceof ApiError) return caught.message
-  if (caught instanceof Error) return caught.message
-  return String(caught)
-}
-
 function formatUsd(decimal: string): string {
   return Number(decimal).toLocaleString('en-US', {
     style: 'currency',
@@ -120,7 +115,7 @@ export default function UploadPage() {
       )
       setStage({ name: 'previewed', file, preview })
     } catch (caught) {
-      setStage({ name: 'preview_error', file, message: errorMessage(caught) })
+      setStage({ name: 'preview_error', file, message: explainRequestFailure(caught) })
     }
   }
 
@@ -135,7 +130,7 @@ export default function UploadPage() {
       )
       setStage({ name: 'committed', result })
     } catch (caught) {
-      setStage({ name: 'commit_error', file, preview, message: errorMessage(caught) })
+      setStage({ name: 'commit_error', file, preview, message: explainRequestFailure(caught) })
     }
   }
 

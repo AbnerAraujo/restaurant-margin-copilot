@@ -2,6 +2,8 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '@/lib/api'
+
 import {
   activeThread,
   loadSpendLedger,
@@ -532,9 +534,12 @@ describe('ChatPanel', () => {
     expect(
       await screen.findByText(/couldn't reach your data/i),
     ).toBeInTheDocument()
+    // The owner gets a next step, not the request path and status code that
+    // this bubble used to print verbatim.
+    expect(screen.getByText(/reload this page/i)).toBeInTheDocument()
     expect(
-      screen.getByText('/api/ask returned 502: upstream down'),
-    ).toBeInTheDocument()
+      screen.queryByText('/api/ask returned 502: upstream down'),
+    ).not.toBeInTheDocument()
     // A transport failure must never be dressed up as the product's own
     // principled refusal.
     expect(
@@ -1578,7 +1583,13 @@ describe('ChatPanel', () => {
       .mockResolvedValueOnce(insightAnswer())
     const resolveBusinessInsight = vi
       .fn()
-      .mockRejectedValueOnce(new Error('the advice call failed; please try again'))
+      // The real rejection `postJson` produces for this backend refusal
+      // (httpapi's 502 `advice_failed`), not a bare Error — `advice_failed`
+      // carries prose written for the owner, so lib/requestFailure passes it
+      // through unchanged rather than replacing it with generic copy.
+      .mockRejectedValueOnce(
+        new ApiError('advice_failed', 'the advice call failed; please try again', 502),
+      )
       .mockResolvedValueOnce(adviceResponse)
 
     render(

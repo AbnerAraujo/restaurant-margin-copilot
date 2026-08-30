@@ -170,14 +170,37 @@ describe('PromotionsPage', () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        text: async () => 'query_failed',
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "promotions" does not exist (SQLSTATE 42P01)',
+          }),
       }),
     )
     renderPage()
 
     const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent(/couldn't load campaigns/i)
-    expect(alert).toHaveTextContent(/query_failed/)
+    expect(alert).toHaveTextContent(/couldn't load your campaigns/i)
+  })
+
+  it('hands a failed campaign load a next step rather than the raw Go error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: relation "promotions" does not exist (SQLSTATE 42P01)',
+          }),
+      }),
+    )
+    renderPage()
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/reload this page/i)
+    expect(alert).not.toHaveTextContent(/SQLSTATE/i)
   })
 
   it('says plainly when no promotions have been ingested yet', async () => {

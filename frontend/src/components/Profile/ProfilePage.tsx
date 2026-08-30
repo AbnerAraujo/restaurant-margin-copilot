@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
-import { ApiError, getJson, putJson } from '@/lib/api'
+import { getJson, putJson } from '@/lib/api'
+import { explainRequestFailure, isNetworkFailure } from '@/lib/requestFailure'
 
 // ---------------------------------------------------------------------------
 // The restaurant owner's own company information and photo — a single-row
@@ -64,27 +65,19 @@ const EMPTY_FORM: ProfileFormState = {
   description: '',
 }
 
-// isNetworkFailure reports whether `caught` is the raw error `fetch()`
-// itself throws when the request never reached a server at all — DNS
-// failure, connection refused, or (as QA found for PUT /api/profile) a
-// blocked CORS preflight. Browsers disagree on the wording ("Failed to
-// fetch" in Chrome, "NetworkError when attempting to fetch resource" in
-// Firefox, "Load failed" in Safari) and none of them explain why, so this
-// checks the type fetch() actually throws (a TypeError, distinct from the
-// `ApiError`/`Error` that getJson/putJson construct from a real HTTP
-// response) rather than matching message text, which would silently stop
-// working on a browser that phrases it differently.
-function isNetworkFailure(caught: unknown): boolean {
-  return caught instanceof TypeError
-}
-
+/**
+ * This page's network-failure handling (QA found a blocked CORS preflight on
+ * PUT /api/profile surfacing as the browser's bare "Failed to fetch") is now
+ * `lib/requestFailure`, shared by every page — the fix that started here,
+ * generalized, so no surface is left showing a raw Go error or a browser
+ * string. Save failures add the "to save your changes" clause this page's
+ * own wording had, since a failed save is not a failed load.
+ */
 function errorMessage(caught: unknown): string {
-  if (caught instanceof ApiError) return caught.message
   if (isNetworkFailure(caught)) {
     return "We couldn't reach the server to save your changes. Check your connection and try again."
   }
-  if (caught instanceof Error) return caught.message
-  return String(caught)
+  return explainRequestFailure(caught)
 }
 
 /**

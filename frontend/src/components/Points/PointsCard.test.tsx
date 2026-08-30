@@ -161,17 +161,40 @@ describe('PointsCard', () => {
       vi.fn().mockResolvedValue({
         ok: false,
         status: 500,
-        text: async () => 'query_failed',
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: connection refused (SQLSTATE 08006)',
+          }),
       }),
     )
     renderCard()
 
     expect(
-      await screen.findByText(/couldn't reach your data/i),
+      await screen.findByText(/couldn't load your points/i),
     ).toBeInTheDocument()
-    expect(screen.getByText(/query_failed/)).toBeInTheDocument()
     // A failed fetch must never fall back to a zero balance — that reads as
     // "you have earned nothing", a different and false statement.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('speaks as the product, not in the first person, and offers a next step instead of a SQLSTATE', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: async () =>
+          JSON.stringify({
+            error: 'query_failed',
+            detail: 'ERROR: connection refused (SQLSTATE 08006)',
+          }),
+      }),
+    )
+    renderCard()
+
+    expect(await screen.findByText(/reload this page/i)).toBeInTheDocument()
+    expect(screen.queryByText(/SQLSTATE/i)).not.toBeInTheDocument()
+    expect(screen.queryByText(/^I couldn't/i)).not.toBeInTheDocument()
   })
 })
