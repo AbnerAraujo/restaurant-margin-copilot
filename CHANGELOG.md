@@ -12,6 +12,25 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Close's Period totals no longer truncate to a plausible-looking wrong number
+
+Reported live: filtering Today's Close to a period showed a total margin cut
+off with an ellipsis (e.g. "$1,078,9…"). Root cause: `components/ui/stat.tsx`'s
+`Stat` value span used `truncate` (single-line, ellipsis-on-overflow) — fine
+for a single day's smaller figures, but a period total (summed across many
+days, sometimes into the millions) is a longer string than the stat grid's
+column width assumes. A truncated dollar amount reads as a plausible but
+DIFFERENT, wrong number — the same class of error this product refuses to
+show anywhere else (a confidently wrong figure is worse than an ugly one).
+Fixed the same way the label above it was already fixed for the identical
+reason (a prior live report about labels like "Days with a fl…"): wrap
+instead of hiding. Verified live with a 760-day period producing a
+$2,347,140.30 total and a $1,690,002.61 per-source figure — both now render
+in full. Audited every other `truncate` usage in the frontend: all remaining
+instances are on text labels (a restaurant name, a source name, a chart's
+row label) with the complete text available via a tooltip/title attribute —
+a legitimate, different use of truncation, left unchanged.
+
 ## 2026-08-30 — Owner-facing refusal wording, and the follow-up that triggered it
 
 Reported live: a follow-up like "how can I replicate it on other days?"

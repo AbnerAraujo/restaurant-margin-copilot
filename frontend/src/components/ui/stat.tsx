@@ -138,9 +138,17 @@ export function Stat({
             {unavailableLabel}
           </span>
         ) : (
+          // Reported live: a Period view's total (e.g. a full margin sum
+          // across many days) is a much longer figure than a single day's,
+          // and `truncate` silently cut it to "$1,078,9…" — a truncated
+          // dollar amount reads as a plausible but WRONG number, exactly
+          // the class of error this product refuses to show anywhere else
+          // (a confidently wrong figure is worse than an ugly one). Same
+          // fix as the label above: wrap rather than hide, so the owner
+          // always sees the real, complete number.
           <span
             className={cn(
-              'block truncate font-semibold tabular-nums tracking-tight',
+              'block text-wrap font-semibold tabular-nums tracking-tight',
               VALUE_SIZE[size],
               TONE_CLASS[tone],
             )}
