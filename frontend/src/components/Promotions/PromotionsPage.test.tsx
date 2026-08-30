@@ -1,19 +1,23 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PromotionsPage from './PromotionsPage'
 
 // PromotionsPage now calls useNavigate() (spec 008 FR-001, chart click-to-ask
 // navigates to /ask) — every render needs a Router ancestor, the same fix
-// PointsCard.test.tsx already applied for its own <Link>.
+// PointsCard.test.tsx already applied for its own <Link>. A real DATA
+// router (createMemoryRouter/RouterProvider), not the plain <MemoryRouter>
+// this used to be: PromotionsPage renders LogReplacementForm, which now
+// calls useBlocker (the unsaved-changes discard guard) — that hook throws
+// outside a data router, matching router.test.tsx's own pattern.
 function renderPage() {
-  return render(
-    <MemoryRouter>
-      <PromotionsPage />
-    </MemoryRouter>,
+  const router = createMemoryRouter(
+    [{ path: '/', element: <PromotionsPage /> }],
+    { initialEntries: ['/'] },
   )
+  return render(<RouterProvider router={router} />)
 }
 
 const PROMOTIONS_RESPONSE = {

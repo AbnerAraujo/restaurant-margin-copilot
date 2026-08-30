@@ -2,12 +2,14 @@ import { useState, type FormEvent } from 'react'
 import { AlertTriangle, CheckCircle2, Coins, Rocket } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input, Select } from '@/components/ui/input'
 import { Panel, PanelHeader } from '@/components/ui/page'
 import { ApiError, postJson } from '@/lib/api'
 import { usePoints } from '@/components/Points/usePoints'
 import { CENTS_PER_POINT } from '@/components/Points/pointValues'
 import { KNOWN_PLATFORMS } from '@/components/Chat/guidedQuestion'
+import { useUnsavedChangesGuard } from '@/lib/useUnsavedChangesGuard'
 
 /**
  * The minimal shape spec 002-badge-expansion's User Story 3 needs (plan.md's
@@ -76,6 +78,15 @@ export default function LogReplacementForm({
   // preview never drifts from what the balance actually is after spending.
   const { data: pointsData } = usePoints()
   const availablePoints = pointsData?.points?.available ?? 0
+
+  // "Meaningful in-progress content" for this form: any field the owner has
+  // actually touched away from its blank/default value. A genuinely
+  // untouched form (the whole reason this isn't just `true`) must never
+  // trigger the guard below — see LogReplacementForm.test.tsx.
+  const hasUnsavedChanges = Boolean(
+    platform || campaignId || periodStart || periodEnd || spend || replaces,
+  )
+  const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesGuard(hasUnsavedChanges)
 
   const spendNumberPreview = Number(spend)
   const pointsNeededPreview =
@@ -344,6 +355,15 @@ export default function LogReplacementForm({
           ) : null}
         </div>
       </form>
+
+      <ConfirmDialog
+        open={isBlocked}
+        title="Discard this campaign draft?"
+        description="The platform, campaign, period, and spend you've entered haven't been logged yet. Leaving this page now discards them."
+        confirmLabel="Discard draft"
+        onConfirm={confirmDiscard}
+        onCancel={cancelDiscard}
+      />
     </Panel>
   )
 }
