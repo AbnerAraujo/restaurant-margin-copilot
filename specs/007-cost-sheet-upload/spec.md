@@ -10,7 +10,7 @@
 
 ## Background
 
-Every other path onto this product's data today is the CLI `-ingest`/`-ingest-promo` flags (`backend/cmd/server/main.go`) — a fixture-directory scan a developer runs from a terminal. The owner this product is built for cannot run a CLI flag against a live server. The supplier cost sheet specifically is also the one input source this product cannot obtain any other way: delivery-platform and POS exports are *received* from the platforms/POS vendor, but the cost sheet is something the owner personally re-keys or exports themselves whenever supplier billing lands (`backend/fixtures/README.md`: "produce ~every 3 days, protein weekly, beverage weekly, packaging ~every 4-5 days" — irregular, owner-driven cadence, not a scheduled feed). Until this feature exists, updating input costs at all requires a developer with terminal access, which defeats the "opened and used by someone else" deliverable this project's constitution names as priority #1.
+Every other path onto this product's data today is the CLI `-ingest`/`-ingest-promo` flags (`backend/cmd/server/main.go`) — a data-directory scan a developer runs from a terminal. The owner this product is built for cannot run a CLI flag against a live server. The supplier cost sheet specifically is also the one input source this product cannot obtain any other way: delivery-platform and POS exports are *received* from the platforms/POS vendor, but the cost sheet is something the owner personally re-keys or exports themselves whenever supplier billing lands (`backend/cmd/gendata/opening/README.md`: irregular real-world supplier cadences — owner-driven, not a scheduled feed). Until this feature exists, updating input costs at all requires a developer with terminal access, which defeats the "opened and used by someone else" deliverable this project's constitution names as priority #1.
 
 `backend/internal/ingest.ParseCostSheet` and `backend/internal/pipeline.RunIngestionPipeline` already implement real, tolerant parsing/validation and a directory-based re-ingest that already handles a missing delivery/POS source gracefully. This spec is about exposing that already-correct deterministic logic to the owner through the web UI — not writing new validation or reconciliation logic.
 
@@ -28,13 +28,13 @@ An owner just received a new or corrected supplier invoice batch (a missed deliv
 
 1. **Given** a well-formed cost sheet CSV with a header alias `ParseCostSheet` already accepts (e.g. `invoice_number` instead of `invoice_id`), **When** the owner uploads it, **Then** the preview succeeds and shows every parsed row with its recognized fields, exactly as `ParseCostSheet` interpreted them.
 2. **Given** a valid preview is on screen, **When** the owner clicks "Confirm & Ingest", **Then** the file becomes the product's live cost sheet, the full ingestion pipeline re-runs, and the response states how many days were reconciled and what the period's total margin was before and after the change.
-3. **Given** a first-ever upload with no prior ingested data in the database, **When** the owner commits, **Then** the pipeline runs successfully against the seeded live-data directory (the checked-in fixtures, present as a starting baseline) and a before/after comparison is still shown, with "before" honestly reported as no prior data rather than a fabricated zero.
+3. **Given** a first-ever upload with no prior ingested data in the database, **When** the owner commits, **Then** the pipeline runs successfully against the generated dataset directory (present because `cmd/gendata` has been run) and a before/after comparison is still shown, with "before" honestly reported as no prior data rather than a fabricated zero.
 
 ---
 
 ### User Story 2 - Get a specific, actionable error on a bad file (Priority: P1)
 
-An owner uploads a CSV that's missing a required column, has a malformed date, or has unparsable currency in one row — the exact mess this product exists to catch elsewhere, now happening at the owner's own keyboard instead of in a fixture.
+An owner uploads a CSV that's missing a required column, has a malformed date, or has unparsable currency in one row — the exact mess this product exists to catch elsewhere, now happening at the owner's own keyboard instead of in curated test data.
 
 **Why this priority**: Equal priority to User Story 1 — a silent failure or a generic "something went wrong" here directly contradicts this project's "refuse rather than guess" constitution, and would make this exact feature worse than doing nothing (an owner who "fixes" the wrong thing based on a vague error has made their data worse, not better).
 
@@ -59,14 +59,14 @@ A new owner, or one troubleshooting a rejected upload, wants to see exactly what
 **Acceptance Scenarios**:
 
 1. **Given** the owner has not yet uploaded anything, **When** they request the template, **Then** they receive a downloadable CSV with the real column headers (`invoice_id,invoice_date,supplier,category,amount,notes`) and example rows, obtainable from the upload page without needing to have first attempted (and failed) an upload.
-2. **Given** the downloaded template, **When** it is uploaded back unmodified, **Then** it previews successfully (it is not a fixture-only convenience file — it is a genuinely valid input).
+2. **Given** the downloaded template, **When** it is uploaded back unmodified, **Then** it previews successfully (it is not a display-only convenience file — it is a genuinely valid input).
 
 ### Edge Cases
 
 - What happens when the uploaded file is empty (zero bytes, or header row only)? `ParseCostSheet` already refuses this ("is empty") — the UI surfaces that message rather than treating zero rows as a valid, if boring, upload.
 - What happens when the uploaded file is not a CSV at all (e.g. an Excel `.xlsx`, a PDF, an image)? The parser reads it as CSV regardless of extension; a non-CSV binary will fail with a parse error (Go's `encoding/csv` reader error, e.g. on a NUL byte or wildly inconsistent field count) — surfaced the same as any other parse failure, not specially detected upfront, since this product does not maintain a MIME/extension allowlist.
 - What happens if the same file is uploaded and committed twice in a row? The second commit re-validates and re-runs the pipeline against identical bytes; because `RunIngestionPipeline` is a full re-derivation from source files (not an incremental diff), the result is byte-identical to the first commit's result — a harmless no-op, not an error.
-- What happens if the live-data directory has never been touched before (first request after this feature ships)? It is seeded from the checked-in `backend/fixtures/` on first access so a commit always has a real delivery/POS baseline to reconcile the new cost sheet against, rather than failing with "no delivery export found" on an owner's very first use.
+- What happens if the dataset directory has never been generated (first request on a fresh clone)? The commit refuses with an explicit instruction to run `cmd/gendata` first — an upload committed into an empty directory would re-ingest a one-file "dataset", silently replacing the whole reconciled timeline, which is exactly the silent-data-loss failure mode this product refuses everywhere else. (Originally this seeded a baseline copy automatically; the contract changed when the product moved to one generated dataset.)
 - What happens if two uploads race (two commits in flight at once)? Out of scope for this spec — this is a single-owner prototype with no concurrent-user story anywhere else in the product (see `docs/rfc-multi-tenant.md`'s own scoping); the second commit's file write and pipeline re-run simply happen after the first's, whichever wins the race, consistent with this product's un-locked, single-operator posture everywhere else.
 
 ## Requirements *(mandatory)*
@@ -82,9 +82,9 @@ A new owner, or one troubleshooting a rejected upload, wants to see exactly what
 - **FR-007**: System MUST re-validate the file's actual bytes at commit time using the same `ParseCostSheet` logic, independent of whatever the client displayed during preview — a client-side "it was fine before" claim is never trusted.
 - **FR-008**: On a successful commit, system MUST replace the live cost sheet with the newly uploaded file and re-run the full ingestion pipeline (`pipeline.RunIngestionPipeline`) against the live-data directory, exactly as the CLI `-ingest` flag would.
 - **FR-009**: System MUST report, after a successful commit, how many days were reconciled and the period's total margin before and after the change, so the owner can see the concrete effect of what they just uploaded.
-- **FR-010**: System MUST NEVER write to, or otherwise modify, `backend/fixtures/` as a result of this feature — all uploads land in a separate, git-ignored live-data directory seeded from (but never re-writing) the checked-in fixtures.
-- **FR-011**: The live-data directory's path MUST be a fixed, hardcoded location, never derived from any request input (filename, header, query parameter) — eliminating path-traversal or fixture-overwrite as a possible outcome of a malicious or malformed request by construction, not by a runtime check.
-- **FR-012**: System MUST seed the live-data directory from the checked-in fixtures automatically the first time it is needed, if it does not already exist, so a first-ever commit has a real delivery/POS baseline to reconcile against.
+- **FR-010**: System MUST NEVER write to, or otherwise modify, the git-tracked hand-authored opening window (`backend/cmd/gendata/opening/`) as a result of this feature — all uploads land in the git-ignored generated dataset directory (`backend/data/live/`).
+- **FR-011**: The dataset directory's path MUST be a fixed, hardcoded location, never derived from any request input (filename, header, query parameter) — eliminating path traversal or overwriting checked-in data as a possible outcome of a malicious or malformed request by construction, not by a runtime check.
+- **FR-012**: System MUST verify the generated dataset directory exists and holds data before committing an upload, and refuse with an explicit, actionable instruction (`go run ./cmd/gendata -out data/live`) when it does not — never auto-create an empty directory a lone cost sheet could then be re-ingested from. (Superseded the original auto-seed-from-checked-in-copy behavior when the product unified on one generated dataset.)
 
 ### Key Entities
 
@@ -97,7 +97,7 @@ A new owner, or one troubleshooting a rejected upload, wants to see exactly what
 
 - **SC-001**: An owner can go from "has a corrected cost sheet CSV file" to "margin figures reflect it" using only the web UI, in under one minute, with zero terminal/CLI steps.
 - **SC-002**: 100% of malformed uploads (missing column, malformed date, malformed amount) are rejected with the same specific, row-referenced error message `ParseCostSheet` itself would produce for a CLI ingest of the same file — never a generic failure.
-- **SC-003**: `backend/fixtures/supplier_cost_sheet.csv` is byte-for-byte unchanged after any number of uploads, previews, or commits through this feature (verified by a running checksum comparison, not just code inspection).
+- **SC-003**: the git-tracked `backend/cmd/gendata/opening/*.csv` files are byte-for-byte unchanged after any number of uploads, previews, or commits through this feature — this feature only ever writes inside `backend/data/live/`.
 - **SC-004**: A downloaded template file, uploaded back unmodified, previews successfully 100% of the time.
 - **SC-005**: A commit's before/after margin comparison matches an independent re-query of `GET /api/reconciliation` for the same period, to the cent.
 

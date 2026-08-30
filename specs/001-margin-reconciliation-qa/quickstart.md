@@ -5,17 +5,17 @@
 - Go 1.27, Node/npm, PostgreSQL running (`docker compose up -d` once
   `docker-compose.yml` exists — not yet created)
 - `ANTHROPIC_API_KEY` set (Console API account, not the Claude Pro/Max subscription)
-- Fixture data generated in `backend/fixtures/` (Day 1 task, not yet done)
+- Hand-authored test data present (Day 1 task; today: `backend/cmd/gendata/opening/`, embedded into the generated `backend/data/live/`)
 
 ## Validate User Story 1 — reconciled margin
 
 ```
 migrate -path backend/migrations -database "$DATABASE_URL" up
-go run ./backend/cmd/server -ingest backend/fixtures/day-2026-08-01/
+go run ./backend/cmd/server -ingest backend/data/live
 ```
 
 Expected: a `DailyReconciliation` row for 2026-08-01 whose `margin` matches
-an independently hand-computed value from the same fixture files, with
+an independently hand-computed value from the same source files, with
 `source_row_refs` pointing at real rows — including correct handling of the
 day containing the deliberate duplicate order and refund.
 
@@ -33,7 +33,7 @@ number.
 
 ## Validate User Story 4 — promotion ROI flag
 
-Ask about a fixture promotion whose spend exceeds its attributed incremental
+Ask about a promotion whose spend exceeds its attributed incremental
 revenue. Expected: it's returned by `list_negative_roi_promotions` and the
 NL answer states the negative ROI with provenance.
 
@@ -50,7 +50,7 @@ target asserted in advance (Constitution Principle V, spec SC-001–SC-003).
 
 ## Full real-file trial (the "try with a real restaurant/bar" goal)
 
-Replace the fixture CSVs in `backend/fixtures/` with a real owner's actual
+Point `-ingest` at a directory of a real owner's actual
 delivery-platform, POS, and cost-sheet exports (promotion export optional).
 Re-run ingestion. If a real column shape breaks parsing, that's a finding
 for the "where the model/build got it wrong" section — log it in

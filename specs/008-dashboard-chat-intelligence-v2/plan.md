@@ -45,7 +45,7 @@ No violations requiring justification.
 
 ## Testing strategy
 
-Backend: table-driven Go tests for `flagBasedFollowUp` and `derivePriorPeriod`, mirroring `suggestions_test.go`'s existing style exactly (real tool-result fixtures, not mocks of internal state). Frontend: component tests per changed page (`HomePage.test.tsx`, `PromotionsPage.test.tsx`, `ChatPanel.test.tsx`, `PlatformsPage.test.tsx`) asserting both the populated-data case and the FR-013 omission case explicitly — every new proactive element needs a test proving it disappears cleanly on insufficient data, not just a test proving it appears on sufficient data.
+Backend: table-driven Go tests for `flagBasedFollowUp` and `derivePriorPeriod`, mirroring `suggestions_test.go`'s existing style exactly (real tool-result samples, not mocks of internal state). Frontend: component tests per changed page (`HomePage.test.tsx`, `PromotionsPage.test.tsx`, `ChatPanel.test.tsx`, `PlatformsPage.test.tsx`) asserting both the populated-data case and the FR-013 omission case explicitly — every new proactive element needs a test proving it disappears cleanly on insufficient data, not just a test proving it appears on sufficient data.
 
 ## Open questions for implementation review (not blocking, confirm during tasks)
 

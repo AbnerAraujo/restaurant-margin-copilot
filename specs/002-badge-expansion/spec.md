@@ -13,7 +13,7 @@
 `docs/product-strategy.md`'s "Badge system" section named three categories as roadmap, explicitly not built in the original take-home, each for a stated reason:
 
 - **Growth** ("Smart Spender", "Margin Guardian"): deferred for lack of UI time, not a data problem — the promo-ROI data these badges need already exists.
-- **Engagement** ("Week One", "Consistency Streak"): deferred because a fixture-data demo cannot organically produce a real usage streak, and fabricating one would be exactly the kind of invented signal this project's honesty discipline exists to refuse.
+- **Engagement** ("Week One", "Consistency Streak"): deferred because a synthetic-data demo cannot organically produce a real usage streak, and fabricating one would be exactly the kind of invented signal this project's honesty discipline exists to refuse.
 - **Campaign Creation** ("Campaign Launcher"): originally scoped as firing on a real integration with Prosus's own promotional tooling (e.g. via ToqanClaw automations) — an API this build has no access to.
 
 This feature builds all three for real, honoring the same constraint that blocked each originally:
@@ -30,7 +30,7 @@ An owner who ran a promotion that turned out to be profitable (positive ROI, per
 
 **Why this priority**: This is the most directly buildable of the three (data already exists via User Story 4 of the original feature) and closes a real gap: today, a positive-ROI promotion produces no acknowledgment at all, only a negative-ROI one does (via the discrepancy-style flag).
 
-**Independent Test**: Ingest the existing promotion fixtures, confirm `IFOOD-CAMP-BOOST01` (+$34.00) and `JET-CAMP-NEWMENU` (+$19.50) each produce a Growth badge on their attribution date, and that the existing negative-ROI campaign (`JET-CAMP-LUNCHFIX`, -$165.00) does not.
+**Independent Test**: Ingest the dataset's promotion export, confirm `IFOOD-CAMP-BOOST01` (+$62.75) and `JET-CAMP-NEWMENU` (+$33.75) each produce a Growth badge on their attribution date, and that the known negative-ROI campaign (`JET-CAMP-LUNCHFIX`, -$450.75) does not.
 
 **Acceptance Scenarios**:
 
@@ -103,7 +103,7 @@ An owner who sees a promotion flagged as losing money (via `list_negative_roi_pr
 
 ### Measurable Outcomes
 
-- **SC-001**: Every promotion in the existing fixture set with a real, positive, attributable ROI produces exactly one Growth badge, verifiable against the independently-computed reference values in `backend/fixtures/README.md`.
+- **SC-001**: Every promotion in the dataset's hand-authored opening window with a real, positive, attributable ROI produces exactly one Growth badge, verifiable against the independently-computed reference values in `backend/cmd/gendata/opening/README.md`.
 - **SC-002**: A freshly-provisioned instance with zero usage history shows zero Engagement badges and no non-zero placeholder streak value anywhere in the UI.
 - **SC-003**: An owner can go from viewing a flagged underperforming promotion to having logged its replacement and seeing a Campaign-Creation badge in under 2 minutes of interaction, with no step requiring data the owner doesn't already have on screen.
 - **SC-004**: 100% of badges shown anywhere in the product (all five categories combined) can be traced to a real, inspectable data condition — zero badges are ever awarded from a hardcoded, default, or simulated value.

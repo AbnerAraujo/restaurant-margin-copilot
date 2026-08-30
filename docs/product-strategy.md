@@ -45,10 +45,10 @@ protection.
    including failures.
 2. **KR2 — Margin protection**: Reconcile daily margin across POS,
    delivery-platform, and cost-sheet data with zero silent data loss on the
-   deliberately messy fixture set (duplicate orders, refunds, missing days),
-   producing a provenanced true-net-margin figure for every fixture day.
+   deliberately messy test data (duplicate orders, refunds, missing days),
+   producing a provenanced true-net-margin figure for every reconciled day.
 3. **KR3 — Revenue growth**: Identify and correctly flag at least one
-   negative-ROI promotion in the fixture data (incremental revenue below its
+   negative-ROI promotion in the test data (incremental revenue below its
    cost) end-to-end — ingestion through natural-language Q&A — proving the
    same deterministic-core/probabilistic-narration architecture extends to a
    growth lever, not just margin protection.
@@ -103,7 +103,7 @@ his own stated criteria, not an arbitrary add-on.
 Five distinct product shapes were scored against the Objective and the data
 above, not against each other in the abstract:
 
-| # | Product | Serves growth | Serves margin protection | Fixture-data realism | Differentiated from ToqanClaw | Buildable by Tuesday |
+| # | Product | Serves growth | Serves margin protection | Test-data realism | Differentiated from ToqanClaw | Buildable by Tuesday |
 |---|---|---|---|---|---|---|
 | **A** | **Margin & Growth Copilot** — daily reconciliation + promo-ROI flagging, one NL interface, refusal discipline, cost transparency | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **B** | Margin Reconciliation only (drop the growth lever) | ❌ | ✅ | ✅ | ✅ | ✅✅ |
@@ -114,8 +114,8 @@ above, not against each other in the abstract:
 **Ranking:**
 1. **A** — the only concept satisfying both halves of the Objective directly. Grounded in the strongest evidence in this document: the "deducted from payout without a clear line-item breakdown" finding applies to both the commission side (KR2) and the promo side (KR3) — one architecture answering one underlying opacity problem twice, not two features bolted together.
 2. **B** — safest to build, but directly reverts to option (a) in the OKR Objective section above, which was explicitly rejected: it only ever protects money already earned, never grows it.
-3. **C** — real growth angle, but alone it has no use for the deliberately messy fixture data (duplicates, refunds, missing days) central to demonstrating the deterministic core, and is a simpler analytics question with less inherent ambiguity — a thinner demonstration of the refusal/clarification discipline the evaluation framework weighs most heavily.
-4. **D** — the most strategically interesting idea (uniquely something only Prosus, owning both platforms, could build in good faith) — but needs two internally-consistent platform data models instead of one, a materially bigger fixture-engineering lift with four build days left, and doesn't map cleanly onto the daily North Star metric.
+3. **C** — real growth angle, but alone it has no use for the deliberately messy test data (duplicates, refunds, missing days) central to demonstrating the deterministic core, and is a simpler analytics question with less inherent ambiguity — a thinner demonstration of the refusal/clarification discipline the evaluation framework weighs most heavily.
+4. **D** — the most strategically interesting idea (uniquely something only Prosus, owning both platforms, could build in good faith) — but needs two internally-consistent platform data models instead of one, a materially bigger test-data-engineering lift with four build days left, and doesn't map cleanly onto the daily North Star metric.
 5. **E** — real, sourced pain, but fails the same feasibility test as growth-lever option #2 earlier: no real restaurant owner has a CSV of "ranking algorithm inputs" to hand us, so building it means fabricating data that isn't plausibly real.
 
 **Decision: build Product A.** This confirms, by structured comparison rather than momentum, that KR1–KR4 as already defined describe the right combined product — not a compromise between two half-measures.
@@ -188,7 +188,7 @@ Segment 1 — a different kind of metric, not to be conflated with the KRs:
 - **Realized profitability lift**: for adopters, a measured change in the
   North Star (time-to-reconciled-close) and, if Product A's growth lever is
   used, negative-ROI promotion spend actually redirected — the real-world
-  version of KR2/KR3, with real users instead of fixture data.
+  version of KR2/KR3, with real users instead of synthetic data.
 
 ## Badge system (UI gamification)
 
@@ -230,7 +230,7 @@ deadline):
   deferred because it needs UI time beyond Day 4's "functional over
   polished" bar, not because the underlying data isn't there.
 - **Engagement category** ("Week One," "Consistency Streak"): needs real
-  multi-day usage to mean anything — a fixture-data demo can't organically
+  multi-day usage to mean anything — a synthetic-data demo can't organically
   produce a streak, only simulate one, which would be exactly the kind of
   fabricated signal this project's honesty discipline exists to avoid.
 - **Campaign Creation category** ("Campaign Launcher" — awarded for
@@ -263,7 +263,7 @@ Give every independent restaurant or bar owner a same-day, trustworthy answer to
 | Consistency rate | Does rephrasing change the answer | Eval harness, 5 questions × 3 phrasings |
 | Refusal-correctness rate | Does it refuse instead of guess when it should | Eval harness, ~5 unanswerable questions |
 | Cost per interaction (USD) | Token discipline | Per-interaction instrumentation log |
-| Time-to-reconciled-close | The North Star itself | Measured against fixture data end-to-end |
+| Time-to-reconciled-close | The North Star itself | Measured against the test data end-to-end |
 
 ## Real evaluation results (T033/T034, run 2026-08-28)
 
@@ -2102,3 +2102,118 @@ is a real, confirmed flake — a bare `await router.navigate()` outside
 `act()` racing a passive effect — that never reflects a real product bug
 (a real browser flushes effects before paint) but is a genuine
 test-discipline defect worth a five-line fix.
+## 2026-08-29 — One dataset: the separate evaluation fixture is gone, its methodology moved into the dataset's own opening days
+
+**Why.** A live report from the running app: the Home and Close pages'
+"current" views showed a jarring magnitude cliff, because the small,
+toy-dollar 14-day evaluation dataset (2026-08-01..14, tens-to-hundreds of
+dollars a day) was loaded into the same database as the realistic-scale
+multi-year synthetic history ($34k–$125k/month gross) and sat at the most
+recent edge of the timeline — the first thing a reader saw. An earlier
+same-day fix papered over this with a chart annotation (a dashed boundary
+line labeled "EVAL FIXTURE WINDOW" / "2-YR SYNTHETIC HISTORY"). The user
+rejected that outright — in their own words: *"I dont want nothing fixed...
+There is no fixurate in the code I want this part work for real, you can
+fix and change all the documentation."* The label treated a data-
+architecture problem as a presentation problem. This change removes the
+architecture problem.
+
+**The tension this had to resolve honestly.** The old separate dataset
+existed for a real reason: `evaluation/golden/accuracy.yaml`'s own
+methodology note — golden answers computed by hand and cross-checked with a
+throwaway script BEFORE any Go reconciliation code existed, never
+back-computed from this system's own output. An accuracy test graded
+against the system's own answers can only catch narration bugs, never
+reconciliation bugs. Hand-verifying a 2-year, tens-of-thousands-of-rows
+dataset is infeasible; hand-verifying 14 days is not. **The resolution:**
+the deliberately messy, independently-verified 14 days still exist — they
+are now the literal opening days of the one continuous dataset
+(2024-08-01..14, checked in at `backend/cmd/gendata/opening/`, emitted
+verbatim by `cmd/gendata` at the top of its output), hand-authored at the
+SAME realistic dollar scale as the synthetic days that follow (~$34k/month
+gross, the growth curve's own starting point). `CLAUDE.md`'s build-order
+step 1 ("hand-authored test data first, including the deliberate mess") is
+still satisfied — the mess (a byte-identical duplicate order, a refund
+settling a week late, a missing delivery day on the window's biggest POS
+Saturday, a systematic DD/MM-vs-ISO date-format split) just lives at the
+start of the timeline instead of in a parallel dataset. Every reference
+value was written down and cross-checked with a throwaway script before the
+Go engine was run against the new files; the engine then matched all of
+them exactly (per-day margins, platform aggregates, all four campaign
+ROIs).
+
+**What changed concretely.**
+- `backend/fixtures/` is deleted. `backend/data/live/` is the only dataset:
+  759 days, 2024-08-01 through 2026-08-29 (today), regenerated by
+  `cmd/gendata` (deterministic seed, unchanged regime engine — all six
+  monthly loss regimes still land net-negative per the generator's own
+  verification printout; the newly generated 2026-08 continues the curve's
+  tail at ~$125k/month gross with no hand-forced regime).
+- One database, one ingestion path: the live app, the Go test suite, and
+  the promptfoo harness all read the same Postgres data. The live-serving
+  tables were cleared and re-ingested; the `question_interaction` /
+  `business_insight_interaction` spend ledgers and usage history were
+  deliberately preserved (they are real records of real API spend). The
+  owner-created promotion rows were not preserved — they referenced the
+  old timeline — which also means previously earned campaign-creation
+  badges reset; disclosed, not hidden.
+- The whole harness was rebuilt on the opening window
+  (`evaluation/golden/*`, `evaluation/promptfoo/*`): same three categories,
+  same 35-question shape, explicit years on every dated question (the
+  dataset now spans two years, so "August 1st" alone grounds to the most
+  recent August). Refusal questions now target real gaps of the unified
+  dataset: the missing delivery day (2024-08-10), the unattributable
+  IFOOD-CAMP-WEEKEND campaign, a nonexistent data source, a date before
+  the dataset begins (2024-07-15, refused deterministically by
+  `internal/ambiguity/daterange.go`), and the ambiguous "how was the
+  weekend".
+- The chart boundary marker (constant, dashed rule, labels, aria text, and
+  its tests) is deleted as dead code — there is no boundary left to
+  annotate.
+- `internal/livedata.EnsureSeeded` (copy the old fixture into `data/live`)
+  became `EnsureReady` (verify the generated dataset exists; refuse with
+  the exact `gendata` command otherwise) — auto-seeding from a checked-in
+  copy no longer has a source, and silently creating an empty directory
+  would let a cost-sheet upload re-ingest a one-file "dataset".
+- A behavior note the old toy-scale data hid: at realistic scale, ordinary
+  weekly seasonality legitimately crosses the 20%/3-day anomaly threshold
+  (the opening window's 2024-08-05 and 2024-08-12 Monday dips and
+  2024-08-09 Friday spike are flagged). The reconcile regression test now
+  pins exactly that set instead of asserting "no anomalies", which was only
+  ever a fact about the old tiny numbers.
+
+**Verification, with real numbers (2026-08-29, sequential `-j 1`, fresh
+cache, Sonnet 5 gate + explain, live backend on :8092).**
+- Refusal correctness: **5/5 (100%)** — the one pre-committed target,
+  unchanged.
+- Accuracy: **15/15 (100%)** — up from 13/15. A7's failure was a
+  grading-regex false negative (an answer disclaiming the flag — "not
+  flagged as negative ROI" — tripping a blanket `!flagged` guard); the
+  rebuilt assert checks the ROI's sign instead. A15 (delivery revenue net
+  of the refund) passes against the earlier refund-by-source attribution
+  fix (2026-08-28 entry).
+- Consistency: first pass **10/15** under the ported strict asserts; all
+  five failures were hand-read from the raw JSON and confirmed to be
+  CORRECT, mutually consistent answers tripping two measurement artifacts
+  (C2 demanding an unasked-for day total alongside the real "counted once"
+  claim; C5's blanket "no $0.00 anywhere" guard rejecting an answer that
+  showed $0.00 while explicitly disclaiming it as missing-not-zero). Both
+  asserts were fixed to grade the substantive claim and the re-run scored
+  **15/15** — the re-run was served partly by the product's own answer
+  cache, i.e. the identical first-run answers re-graded correctly, not
+  fresh model behavior. Both numbers are reported so the fix cannot be
+  mistaken for a silent goalpost move.
+- Harness cost: **$0.8882** across 57 logged interactions for the full
+  35-question rebuild session (~$0.025/question through the gate+explain
+  path). Cumulative project spend: $7.3698 across 635 interactions.
+- The live app: backend restarted against the reloaded database resolves
+  `storage.LoadDataDateRange` to **2024-08-01..2026-08-29** — through
+  today, no toy-scale segment anywhere, no magnitude cliff for any chart
+  window. `go build ./... && go vet ./... && go test ./...` fully green
+  against the live database; frontend `tsc -b` clean and 365/365 tests
+  passing.
+
+The word "fixture" no longer appears in current-state code or
+documentation; dated entries above (including this document's own history)
+keep their original wording as the record of what was true when they were
+written.

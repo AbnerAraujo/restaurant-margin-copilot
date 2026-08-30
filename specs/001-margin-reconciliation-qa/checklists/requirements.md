@@ -19,7 +19,7 @@
 - [x] Success criteria are technology-agnostic (no implementation details)
 - [x] All acceptance scenarios are defined
 - [x] Edge cases are identified
-- [x] Scope is clearly bounded (single restaurant, fixture data, explicit non-goals inherited from `CLAUDE.md`)
+- [x] Scope is clearly bounded (single restaurant, synthetic test data, explicit non-goals inherited from `CLAUDE.md`)
 - [x] Dependencies and assumptions identified
 
 ## Feature Readiness

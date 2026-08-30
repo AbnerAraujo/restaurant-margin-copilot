@@ -45,7 +45,7 @@ No violations requiring justification.
 
 ## Testing strategy
 
-Table-driven Go tests per badge category (mirroring `backend/internal/badges/badges_test.go`'s existing style) using synthetic promotion/usage-event fixtures with known expected badge outputs, plus the FR-007 refusal path tested explicitly (attempting to reference a non-flagged campaign as `replaces`). Frontend component tests for the new form and the updated Home tiles, matching the existing test density in `frontend/src/components/Points/*.test.tsx`.
+Table-driven Go tests per badge category (mirroring `backend/internal/badges/badges_test.go`'s existing style) using synthetic promotion/usage-event samples with known expected badge outputs, plus the FR-007 refusal path tested explicitly (attempting to reference a non-flagged campaign as `replaces`). Frontend component tests for the new form and the updated Home tiles, matching the existing test density in `frontend/src/components/Points/*.test.tsx`.
 
 ## Open questions for implementation review (not blocking, but worth confirming)
 

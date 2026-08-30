@@ -557,25 +557,25 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <div class="stat-target">Target &mdash; <b>100% refusal correctness</b></div>
       <div class="stat-value acc">5/5</div>
       <div class="stat-trend up">Every unanswerable question correctly refused</div>
-      <div class="kr-disclosed"><b>Disclosed, not committed</b>Accuracy 13/15 &middot; consistency 2/5 strict &mdash; full breakdown on the Evaluation slide</div>
+      <div class="kr-disclosed"><b>Disclosed, not committed</b>Accuracy 15/15 &middot; consistency 15/15 (first pass 10/15) &mdash; full breakdown on the Evaluation slide</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR2 &middot; Margin</div>
-      <div class="stat-target">Target &mdash; <b>zero</b> silent data loss on the messy fixture set</div>
+      <div class="stat-target">Target &mdash; <b>zero</b> silent data loss on the messy test data</div>
       <div class="stat-value acc">0</div>
-      <div class="stat-trend up">Defects found &mdash; all 14 fixture days reconciled correctly, mess included</div>
+      <div class="stat-trend up">Defects found &mdash; all 14 hand-authored opening days reconciled correctly, mess included</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR3 &middot; Growth</div>
       <div class="stat-target">Target &mdash; <b>&ge;1</b> negative-ROI promo flagged end-to-end</div>
       <div class="stat-value acc">1</div>
-      <div class="stat-trend up">Flagged with provenance &mdash; JET-CAMP-LUNCHFIX, ROI &minus;$165.00</div>
+      <div class="stat-trend up">Flagged with provenance &mdash; JET-CAMP-LUNCHFIX, ROI &minus;$450.75</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR4 &middot; Cost</div>
       <div class="stat-target">Target &mdash; <b>under $0.05</b> per interaction</div>
-      <div class="stat-value acc">$0.015</div>
-      <div class="stat-trend up">Per question, instrumented log &mdash; 3.3&times; under target</div>
+      <div class="stat-value acc">$0.025</div>
+      <div class="stat-trend up">Per question, instrumented log &mdash; 2&times; under target</div>
     </div>
   </div>
 </div>
@@ -594,7 +594,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 8 · Badges -->
-<div class="slide wide" data-notes="Gamification is the UX answer to complexity, not decoration — and since the strategy was written, all four badge categories have shipped as real code. 200 real points are live right now against the fixture data. Week One and Campaign Launcher are earnable but unearned — a streak needs real days, and we don't simulate signals.">
+<div class="slide wide" data-notes="Gamification is the UX answer to complexity, not decoration — and since the strategy was written, all four badge categories have shipped as real code. 200 real points are live right now against the live dataset. Week One and Campaign Launcher are earnable but unearned — a streak needs real days, and we don't simulate signals.">
   <div class="a tag">Gamification &middot; shipped</div>
   <h2 class="a md">Quiet badges &mdash; all four categories live, 200 real points</h2>
   <div class="a" style="display:grid;grid-template-columns:8fr 4fr;gap:20px;align-items:start;margin-top:24px">
@@ -801,13 +801,13 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 12 · Comparator -->
-<div class="slide" data-notes="Product D — the one only Prosus could build in good faith — has since shipped: a live platforms page and a sixth MCP tool. The numbers carry an honest story: iFood's effective rate is 22.06 percent, not its nominal 23 — because a real refund's negative commission flows through the deterministic computation. A hardcoded rate table would have missed it.">
+<div class="slide" data-notes="Product D — the one only Prosus could build in good faith — has since shipped: a live platforms page and a sixth MCP tool. The numbers carry an honest story: iFood's effective rate is 22.44 percent, not its nominal 23 — because a real refund's negative commission flows through the deterministic computation. A hardcoded rate table would have missed it.">
   <div class="num-bg">D</div>
   <div class="a tag">Shipped since the spec &middot; <code style="border:none;background:none;color:var(--accent)">compare_platform_economics</code></div>
   <h2 class="a lg">Product D is live: what each platform really costs</h2>
   <div class="a platgrid">
-    <div class="platcard pa"><div class="pname">iFood &mdash; nominal 23%</div><div class="prate">22.06%</div><div class="psub">effective commission &mdash; $184.85 on $838.00 gross &middot; 54.87% combined incl. $275.00 promo spend</div></div>
-    <div class="platcard pb"><div class="pname">Just Eat Takeaway &mdash; nominal 20%</div><div class="prate">20.00%</div><div class="psub">effective commission &mdash; $181.60 on $908.00 gross &middot; 50.84% combined incl. $280.00 promo spend</div></div>
+    <div class="platcard pa"><div class="pname">iFood &mdash; nominal 23%</div><div class="prate">22.44%</div><div class="psub">effective commission &mdash; $573.71 on $2,556.25 gross &middot; 47.48% combined incl. $640.00 promo spend</div></div>
+    <div class="platcard pb"><div class="pname">Just Eat Takeaway &mdash; nominal 20%</div><div class="prate">20.00%</div><div class="psub">effective commission &mdash; $480.70 on $2,403.50 gross &middot; 50.37% combined incl. $730.00 promo spend</div></div>
   </div>
   <p class="a livenote"><b>The honest beat:</b> iFood's true rate diverges from its nominal 23% because a real refund's negative commission flows through the deterministic computation &mdash; a hardcoded rate table would have missed it.</p>
 </div>
@@ -818,7 +818,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a tag">Evaluation harness</div>
   <h2 class="a md">Final numbers &mdash; failures included, on purpose</h2>
   <div class="a unitchart">
-    <div class="unitrow"><div class="rname"><b>Accuracy</b>15 fixture-grounded questions</div><div class="units" data-row="acc"></div></div>
+    <div class="unitrow"><div class="rname"><b>Accuracy</b>15 questions grounded in hand-authored data</div><div class="units" data-row="acc"></div></div>
     <div class="unitrow"><div class="rname"><b>Refusal correctness</b>5 unanswerable questions</div><div class="units" data-row="ref"></div></div>
     <div class="unitrow"><div class="rname"><b>Consistency</b>5 questions &times; 3 phrasings</div><div class="units" data-row="con"></div></div>
   </div>
@@ -831,13 +831,13 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 14 · Token discipline -->
-<div class="slide" data-notes="Token discipline as a value: the whole build — 430 live interactions and counting — has spent $3.56, tracked per-call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Cost per question rose after the grounding fixes; that trade-off is disclosed, not hidden.">
+<div class="slide" data-notes="Token discipline as a value: the whole build — 635 live interactions and counting — has spent $7.37, tracked per-call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Cost per question rose after the grounding fixes; that trade-off is disclosed, not hidden.">
   <div class="a tag">Token discipline</div>
   <h2 class="a lg">3.3&times; under the per-interaction cost target</h2>
   <div class="a stat-cards n3">
     <div class="stat-card"><div class="stat-label">Interactions</div><div class="stat-value">430</div><div class="stat-trend">Every live call instrumented in Postgres</div></div>
-    <div class="stat-card"><div class="stat-label">Tracked spend</div><div class="stat-value acc">$3.56</div><div class="stat-trend">+ disclosed, unmeasured local test spend on top</div></div>
-    <div class="stat-card"><div class="stat-label">Per question</div><div class="stat-value acc">$0.015</div><div class="stat-trend">vs. KR4's $0.05 target &mdash; final harness run average</div></div>
+    <div class="stat-card"><div class="stat-label">Tracked spend</div><div class="stat-value acc">$7.37</div><div class="stat-trend">+ disclosed, unmeasured local test spend on top</div></div>
+    <div class="stat-card"><div class="stat-label">Per question</div><div class="stat-value acc">$0.025</div><div class="stat-trend">vs. KR4's $0.05 target &mdash; 2026-08-29 harness rebuild average</div></div>
   </div>
   <div class="a costwrap">
     <div class="minibars" role="img" aria-label="Cost per question roughly $0.008 before the fixes, roughly $0.015 after — the disclosed price of richer grounding prompts">
@@ -879,12 +879,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <h2 class="a lg">Every target measured &mdash; then the scope grew</h2>
   <table class="a data-table">
     <tr><th>Metric</th><th>Target</th><th style="text-align:right">Result</th></tr>
-    <tr><td>Accuracy (KR1)</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">13/15 (87%)</td></tr>
-    <tr><td>Consistency (KR1)</td><td>Measured &amp; reported</td><td class="num-cell">2/5 strict &middot; 3/5 substance</td></tr>
+    <tr><td>Accuracy (KR1)</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">15/15 (100%)</td></tr>
+    <tr><td>Consistency (KR1)</td><td>Measured &amp; reported</td><td class="num-cell">15/15 &middot; first pass 10/15, grading artifacts disclosed</td></tr>
     <tr><td>Refusal correctness (KR1)</td><td>100% on unanswerable set</td><td class="num-cell">5/5 (100%)</td></tr>
     <tr><td>Reconciliation (KR2)</td><td>Zero silent data loss</td><td class="num-cell">0 defects found</td></tr>
-    <tr><td>Promo-ROI flag (KR3)</td><td>&ge;1 negative-ROI promo flagged</td><td class="num-cell">&minus;$165.00 flagged</td></tr>
-    <tr><td>Cost / interaction (KR4)</td><td>Under $0.05</td><td class="num-cell">~$0.015</td></tr>
+    <tr><td>Promo-ROI flag (KR3)</td><td>&ge;1 negative-ROI promo flagged</td><td class="num-cell">&minus;$450.75 flagged</td></tr>
+    <tr><td>Cost / interaction (KR4)</td><td>Under $0.05</td><td class="num-cell">~$0.025</td></tr>
   </table>
   <div class="a chips" style="margin-top:22px">
     <span class="chip" style="border-color:var(--positive);color:var(--positive)">spec 002 &middot; badges &mdash; shipped</span>
@@ -1033,7 +1033,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a tag">Where it went wrong &mdash; and how it was caught</div>
   <h2 class="a md">From the real mistakes log, kept as it happened</h2>
   <div class="a mistakes">
-    <div class="mistake"><h4>The sentinel-date collision that silently deleted $152.50</h4><p>A test used a real in-range date as its fixture key; its cleanup <code>DELETE</code> destroyed the pipeline's real row. The agent reported 14 days persisted. <b>Caught by an independent <code>psql</code> query</b> &mdash; 13 rows, short by exactly 152.50.</p></div>
+    <div class="mistake"><h4>The sentinel-date collision that silently deleted $152.50</h4><p>A test used a real in-range date as its own test key; its cleanup <code>DELETE</code> destroyed the pipeline's real row. The agent reported 14 days persisted. <b>Caught by an independent <code>psql</code> query</b> &mdash; 13 rows, short by exactly 152.50.</p></div>
     <div class="mistake"><h4>The model was quietly doing arithmetic &mdash; and passing tests for it</h4><p>No tool returned a combined delivery total; the model was summing the map itself &mdash; a Principle I violation that passing scores rewarded by accident. <b>The honest fix was a deterministic Go field</b>, not more prompt engineering.</p></div>
     <div class="mistake"><h4>My own <code>git add -A</code>, during an overnight session</h4><p>A "cleanup" commit swept a background agent's half-finished edits onto <code>main</code>; briefly, the tree didn't build. <b>Caught by running <code>go build</code> on principle.</b> The misleading commit message stays in history &mdash; disclosed, not rewritten.</p></div>
   </div>
@@ -1082,9 +1082,9 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <div class="stat-card"><div class="stat-label">Refusals &middot; KR1</div><div class="stat-value acc">5/5</div></div>
     <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">200</div></div>
     <div class="stat-card"><div class="stat-label">Interactions</div><div class="stat-value acc">430</div></div>
-    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$3.56</div></div>
+    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$7.37</div></div>
   </div>
-  <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">13/15 accuracy, 2/5 strict consistency &mdash; named and explained earlier, not repeated here</p>
+  <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">15/15 accuracy; consistency 15/15 after two disclosed grading fixes (first pass 10/15) &mdash; named and explained earlier, not repeated here</p>
   <div class="a sub" style="font-size:14px;margin-top:14px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
 </div>
 
@@ -1282,7 +1282,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       html:
         '<p><b>Objective:</b> grow revenue without eroding margin.</p>' +
         '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b></span><span class="target">Target: 100% refusal correctness</span></div>' +
-        '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b></span><span class="target">Target: zero silent data loss on the messy fixture set</span></div>' +
+        '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b></span><span class="target">Target: zero silent data loss on the messy test data</span></div>' +
         '<div class="step-kr-row"><span><b>KR3 &middot; Growth</b></span><span class="target">Target: &ge;1 negative-ROI promo flagged end-to-end</span></div>' +
         '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b></span><span class="target">Target: under $0.05 per interaction</span></div>' +
         '<p style="margin-top:12px">These four KRs are also the exact scoring criteria the next step (Develop) ranks all five candidate products against &mdash; the same bar, not a separate one.</p>'
@@ -1295,7 +1295,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         '<ul>' +
           '<li><b>Growth</b> &mdash; does it move the needle on KR3 (promo/revenue growth)?</li>' +
           '<li><b>Margin</b> &mdash; does it move the needle on KR2 (protecting margin)?</li>' +
-          '<li><b>Real data</b> &mdash; can it actually be evaluated against the real fixture data, not just argued for in theory?</li>' +
+          '<li><b>Real data</b> &mdash; can it actually be evaluated against the real test data, not just argued for in theory?</li>' +
           '<li><b>Prosus-unique</b> &mdash; does it fit the 724k-restaurant distribution thesis, or is it a generic tool anyone could ship?</li>' +
           '<li><b>Buildable in 4 days</b> &mdash; the real interview deadline, not a hypothetical one.</li>' +
         '</ul>' +
@@ -1308,8 +1308,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: 100% refusal correctness</span></span><span class="result">5/5</span></div>' +
         '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: zero silent data loss</span></span><span class="result">0 defects</span></div>' +
         '<div class="step-kr-row"><span><b>KR3 &middot; Growth</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: &ge;1 negative-ROI promo flagged</span></span><span class="result">1 flagged</span></div>' +
-        '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: under $0.05/interaction</span></span><span class="result">$0.015</span></div>' +
-        '<p style="margin-top:12px">KR3&rsquo;s flag carries real provenance: JET-CAMP-LUNCHFIX, ROI &minus;$165.00. KR1 also discloses, not just commits: 13/15 accuracy and 2/5 strict consistency are shown alongside the 5/5 refusal result rather than folded into it &mdash; see the Evaluation slide for the full breakdown.</p>'
+        '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: under $0.05/interaction</span></span><span class="result">$0.025</span></div>' +
+        '<p style="margin-top:12px">KR3&rsquo;s flag carries real provenance: JET-CAMP-LUNCHFIX, ROI &minus;$450.75. KR1 also discloses, not just commits: the consistency set\'s first pass (10/15) is shown alongside the fixed-assert 15/15 and the 5/5 refusal result rather than folded into it &mdash; see the Evaluation slide for the full breakdown.</p>'
     }
   };
 
@@ -1372,14 +1372,14 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   for (var i = 0; i < 11; i++) rows.acc.units.push({ s: 'pass', t: 'Correct answer, matched against an independently computed golden value.' });
   rows.acc.units.push({ s: 'pass', t: 'A4 — fixed: no tool summed a supplier-cost range before get_period_totals shipped; now answers directly instead of refusing or iterating per-day calls.' });
   rows.acc.units.push({ s: 'pass', t: 'A10 — fixed: the gate asked the user to define "underperforming" instead of calling list_negative_roi_promotions; the gate/explain prompts now route evaluative language to the tool that already defines it.' });
-  rows.acc.units.push({ s: 'fail', t: 'A7 — the model gives a correct, positive-ROI answer, but promptfoo\'s regex trips on the word "flagged" appearing in a disclaiming sentence ("Not flagged as negative ROI").' });
-  rows.acc.units.push({ s: 'fail', t: 'A15 — the model still correctly declines to state a refund-netted, platform-specific figure the data doesn\'t support attributing; refunds_by_source shipped since, a netted total field remains a named follow-up.' });
+  rows.acc.units.push({ s: 'pass', t: 'A7 — previously failed only on a grading regex tripping over a disclaiming "flagged"; the rebuilt assert grades the ROI\'s sign, and the answer is correct.' });
+  rows.acc.units.push({ s: 'pass', t: 'A15 — passes since refunds_by_source shipped; the rebuilt harness grades the refund-netted figure ($384.00) directly.' });
   for (var j = 0; j < 5; j++) rows.ref.units.push({ s: 'pass', t: 'Refused or asked a correct clarifying question instead of guessing (5 of 5 — including R1, which failed before the date-grounding fix).' });
-  rows.con.units.push({ s: 'pass', t: 'C3 (LUNCHFIX) — all 3 phrasings agree and match the golden value.' });
-  rows.con.units.push({ s: 'pass', t: 'C4 (year-omitted date) — all 3 phrasings agree after date-grounding.' });
-  rows.con.units.push({ s: 'partial', t: 'C5 — correct in substance across all 3 phrasings; an over-broad “$0.00” regex fails 2 of 3 on a legitimate figure. Strict 2/5, substance 3/5.' });
-  rows.con.units.push({ s: 'fail', t: 'C1 — correct per-platform figures, but no combined total stated.' });
-  rows.con.units.push({ s: 'fail', t: 'C2 — same combined-total miss; traced to a tool-contract gap and fixed in Go after this run.' });
+  rows.con.units.push({ s: 'pass', t: 'C1 — all 3 phrasings agree on the combined delivery total ($374.75).' });
+  rows.con.units.push({ s: 'pass', t: 'C2 — all 3 phrasings agree the duplicate was caught and counted once; the first pass failed all 3 on a grading artifact (demanding an unasked-for day total), disclosed and fixed.' });
+  rows.con.units.push({ s: 'pass', t: 'C3 (LUNCHFIX) — all 3 phrasings agree and match the golden value (−$450.75, flagged).' });
+  rows.con.units.push({ s: 'pass', t: 'C4 — all 3 phrasings agree on iFood\'s gross ($231.75), refund disclosed as a separate line.' });
+  rows.con.units.push({ s: 'pass', t: 'C5 — all 3 phrasings state the delivery source is missing; the first pass failed 2 of 3 on a blanket $0.00 regex rejecting a correctly-disclaimed figure, disclosed and fixed. First pass 10/15, re-run 15/15.' });
 
   var tooltip = document.getElementById('tooltip');
   Object.keys(rows).forEach(function(key){
@@ -1400,9 +1400,9 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     });
     var count = document.createElement('span');
     count.className = 'count';
-    if (key === 'acc') count.textContent = '13/15 · 87%';
+    if (key === 'acc') count.textContent = '15/15 · 100%';
     if (key === 'ref') count.textContent = '5/5 · 100%';
-    if (key === 'con') count.textContent = '2/5 strict · 3/5 substance';
+    if (key === 'con') count.textContent = '15/15 · first pass 10/15';
     host.appendChild(count);
   });
   function showTip(text, ev){ tooltip.textContent = text; tooltip.style.display = 'block'; moveTip(ev); }

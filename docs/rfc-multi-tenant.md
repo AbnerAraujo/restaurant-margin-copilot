@@ -68,7 +68,7 @@ Row-level is recommended **only** paired with a structural enforcement mechanism
 | Risk | Impact | Mitigation |
 |---|---|---|
 | A single missed call site leaks cross-tenant data | Critical — this is the one unacceptable outcome this whole document exists to prevent | The adversarial test suite (not manual review) is the actual gate; sqlc's compile-time-required parameter makes the most common failure mode (a forgotten filter) a build failure, not a runtime one |
-| Migration corrupts or loses existing prototype data | High — would break the evaluation harness, the presentation, and every existing test that depends on the current fixture data | Migration is additive and reversible (nullable column → backfill → NOT NULL, not a destructive rewrite); full harness re-run is a hard gate before considering the migration done |
+| Migration corrupts or loses existing prototype data | High — would break the evaluation harness, the presentation, and every existing test that depends on the currently persisted dataset | Migration is additive and reversible (nullable column → backfill → NOT NULL, not a destructive rewrite); full harness re-run is a hard gate before considering the migration done |
 | Scope creep into billing/auth-provider bikeshedding delays the actual isolation work | Medium | Non-goals section above is deliberately narrow; authentication mechanism is explicitly deferred as a swappable detail |
 | This RFC itself is implemented under the same time pressure that makes the "remember to filter" anti-pattern tempting | High | This is the reason implementation is explicitly gated on review of this document first, not folded into the same pass as specs 002–004 |
 

@@ -39,7 +39,7 @@ description: "Task list for Business Insight Advisor"
 
 ### Tests for User Story 1
 
-- [x] T005 [US1] Add `backend/internal/httpapi/business_insight_test.go`: table-driven `deriveBusinessInsightTeaser` coverage — each of the five kinds' fires case AND does-not-fire case (clean data, below-threshold rate, non-outlier pattern, improving margin), threshold boundary cases (exactly 20.00%, exactly 1.5×, exactly −5%), the fixed priority order when multiple tools ran, and nil for no/unknown/unparseable tool results — real tool-result-shaped JSON fixtures, `suggestions_test.go`'s style.
+- [x] T005 [US1] Add `backend/internal/httpapi/business_insight_test.go`: table-driven `deriveBusinessInsightTeaser` coverage — each of the five kinds' fires case AND does-not-fire case (clean data, below-threshold rate, non-outlier pattern, improving margin), threshold boundary cases (exactly 20.00%, exactly 1.5×, exactly −5%), the fixed priority order when multiple tools ran, and nil for no/unknown/unparseable tool results — real tool-result-shaped JSON samples, `suggestions_test.go`'s style.
 - [x] T006 [P] [US1] Extend `backend/internal/httpapi/ask_tool_calls_test.go`'s sibling coverage (new test in `business_insight_test.go` using `newAskHarness`): an answered question whose fake explain result carries a flagged `get_daily_summary` gets `business_insight` populated on the response; a clean one gets the field omitted; a refusal never carries it; `interactions` is unchanged in all cases (SC-001).
 
 ### Implementation for User Story 1

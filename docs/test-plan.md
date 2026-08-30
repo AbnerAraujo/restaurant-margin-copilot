@@ -30,7 +30,7 @@ are live, since they're the actual acceptance criteria, not just unit tests:
 
 1. **US1, Scenario 2** (`spec.md`): a day with a duplicate order and a refund — confirm the duplicate isn't double-counted and the refund is netted, *visibly*, in the provenance trail shown in the UI, not just correct in the database.
 2. **US2, Scenario 2**: ask the same underlying question in 3 phrasings — confirm all 3 agree.
-3. **US3, Scenario 1**: ask about data not present in any fixture file — confirm an explicit refusal naming what's missing, not a plausible number.
+3. **US3, Scenario 1**: ask about data not present in any source file — confirm an explicit refusal naming what's missing, not a plausible number.
 4. **US4, Scenario 3**: ask about a promotion with incomplete attribution — confirm refusal, not an estimated ROI.
 5. **SC-004**: pick any 3 numbers shown anywhere in the UI at random — confirm each has a checkable source citation, zero exceptions.
 

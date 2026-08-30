@@ -12,7 +12,7 @@ Product requirements: `docs/prd.md`. Full spec: `specs/001-margin-reconciliation
 - A fixed, typed MCP tool boundary as the *only* path from the LLM to real data (Principle III).
 - Refuse rather than guess; provenance on every number (Principles II, IV).
 - Full cost/token/latency instrumentation from the first API call (Principle VI).
-- Real-file-compatible ingestion, not fixture-column-hardcoded parsing.
+- Real-file-compatible ingestion, not hardcoded column parsing.
 
 ## Non-goals
 
@@ -76,11 +76,12 @@ Full per-decision alternatives (LLM vendor, MCP transport, DB access layer, eval
 
 ## Design decision: refund-netting convention
 
-`backend/fixtures/README.md` deliberately leaves open whether a refund nets
-against the original order's date or its settlement date (the order
-0007 case: ordered 2026-08-02, refunded 2026-08-09). **Decision: net against
-the original order date** (accrual convention) — 2026-08-02's delivery total
-is 154.25 - 34.50 = **119.75**, not the gross 154.25. **Rationale**: the
+The hand-authored test data deliberately left open whether a refund nets
+against the original order's date or its settlement date (today's case in
+`backend/cmd/gendata/opening/README.md`: order 0006, placed 2024-08-02,
+refunded 2024-08-09). **Decision: net against the original order date**
+(accrual convention) — 2024-08-02's delivery total is 446.25 - 62.25 =
+**384.00**, not the gross 446.25. **Rationale**: the
 product's whole premise is a same-day "did we make money today" figure
 (Vision, `product-strategy.md`); accrual-basis attributes economic reality to
 the day the sale actually happened, matching what an owner intuitively means
@@ -97,7 +98,7 @@ contradicts the "trustworthy, same-day" framing this product is built around.
 |---|---|
 | Model call inside `internal/explain` accidentally computes rather than narrates a number | Caught by table-driven tests on `internal/reconcile` proving the number independent of any model output; code review checks `explain.go` never does arithmetic on tool results, only formats them |
 | Ambiguity gate cost/latency goes unlogged when a request never reaches `explain` | Caught by `/speckit-analyze` during planning (see `tasks.md` T022/T026 note); fixed before implementation started |
-| Real restaurant export files don't match fixture column assumptions | `research.md`'s real-file-compatibility decision: generic column-name matching, not fixture-exact; failures logged to `docs/plan.md`'s mistakes log rather than silently patched |
+| Real restaurant export files don't match this project's own column assumptions | `research.md`'s real-file-compatibility decision: generic column-name matching, never exact-header-only; failures logged to `docs/plan.md`'s mistakes log rather than silently patched |
 
 ## Rollout
 

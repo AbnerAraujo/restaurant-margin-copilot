@@ -85,18 +85,22 @@ Surface a running total in the React UI.
 ## Evaluation plan (build it, don't just describe it)
 A test harness in `evaluation/` that produces real numbers for the write-up:
 - **Accuracy:** ~15–20 questions with known correct answers computed
-  independently from the fixture data.
+  independently of the system, from the hand-authored test data.
 - **Consistency:** ~5 questions asked in 3 phrasings each — do the answers agree?
 - **Refusal correctness:** ~5 questions that cannot be answered from the data —
   correct behavior is refusal, not a plausible guess.
 
 Report all three with actual numbers, including failures. Do not hide them.
 
-## Fixture data (`fixtures/`)
+## Test data (the dataset's hand-authored opening window)
 Realistic synthetic CSVs — delivery platform export, POS export, supplier cost
 sheet. Include the mess on purpose: a duplicate order, a refund, a missing day,
 an inconsistent date format. The mess is what makes the reconciliation logic
-worth showing.
+worth showing. This lives as the first 14 days of the product's one
+continuous dataset (`backend/cmd/gendata/opening/`, hand-authored and
+independently verified before any reconciliation code touched it), with the
+rest of the multi-year history generated behind it by `cmd/gendata` — one
+dataset, one ingestion path, same realistic dollar scale throughout.
 
 ## Deliverables, in order of importance
 1. A working prototype that can be opened and used.
@@ -106,7 +110,7 @@ worth showing.
 3. A short demo, including at least one case where the system refuses.
 
 ## Build order (do not reorder — this is the whole point)
-1. Fixture data first, including the deliberate mess.
+1. Hand-authored test data first, including the deliberate mess.
 2. Deterministic reconciliation layer in Go, proven with tests — before any LLM
    call exists.
 3. MCP server wrapping the reconciliation engine as typed tools.

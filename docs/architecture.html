@@ -978,7 +978,7 @@
 
     <section>
       <h2>The five discrepancy flags, in full</h2>
-      <p class="prose">The fixture data contains deliberate mess &mdash; a duplicate order, a refund, a missing day, an inconsistent date format &mdash; because the mess is what makes reconciliation logic worth showing. Each flag names what happened and which rows it happened to, so an adjustment is never silent.</p>
+      <p class="prose">The dataset&rsquo;s hand-authored opening window contains deliberate mess &mdash; a duplicate order, a refund, a missing day, an inconsistent date format &mdash; because the mess is what makes reconciliation logic worth showing. Each flag names what happened and which rows it happened to, so an adjustment is never silent.</p>
       <div class="tablewrap" style="margin-top:18px;">
         <table>
           <thead><tr><th>Flag</th><th>Fires when</th><th>What the engine does</th></tr></thead>
@@ -1006,7 +1006,7 @@
             <tr>
               <td class="mono">anomaly_threshold_exceeded</td>
               <td>Total gross revenue deviates more than 20% from a trailing 3-day average of complete days.</td>
-              <td>Flags the day with the actual figures and the threshold. 20% is set just above this fixture set's real peak variance (~18% at a 3-day window) &mdash; tunable, not asserted as universal.</td>
+              <td>Flags the day with the actual figures and the threshold. At the dataset's realistic scale, ordinary weekly seasonality can legitimately cross 20% (a slow Monday after a strong weekend does), and the reconciliation tests pin exactly which opening-window days do &mdash; tunable, not asserted as universal.</td>
             </tr>
           </tbody>
         </table>
@@ -1039,7 +1039,7 @@
       <h2>Why it was built first</h2>
       <p class="prose">The build order was fixed before anything was written, and not reordered:</p>
       <ol class="build" style="margin-top:16px;">
-        <li><span>Fixture data, including the deliberate mess.</span></li>
+        <li><span>Hand-authored test data, including the deliberate mess.</span></li>
         <li><span>The deterministic reconciliation engine in Go, proven with tests &mdash; <strong>before any LLM call existed</strong>.</span></li>
         <li><span>The MCP server, wrapping that engine as a fixed set of typed tools.</span></li>
         <li><span>The model layer, starting with the ambiguity gate.</span></li>
@@ -1255,7 +1255,7 @@
           <h3>Claude Sonnet 5 &mdash; the ambiguity gate <span style="font-weight:400;color:var(--muted);font-size:0.7em;">(moved off Haiku 4.5, 2026-08-29)</span></h3>
           <p style="font-size:14.5px;margin-bottom:10px;"><code>internal/ambiguity</code>. Classifies one question, before anything runs, into answerable / ambiguous / unanswerable, and emits a small fixed JSON object &mdash; never prose. Capped at 512 output tokens. (This same package also makes a conditional second Sonnet 5 call to write the final prose &mdash; see the callout below.)</p>
           <ul style="font-size:14.5px;padding-left:18px;">
-            <li><strong>Why not the cheap model anymore:</strong> this ran on Haiku 4.5 for the original single-year fixture, where classification didn't need frontier reasoning. Once the live dataset grew to span 2024&ndash;2026, Haiku repeatedly misclassified fully in-range, explicitly-dated questions (e.g. &ldquo;July 2026&rdquo;) as unanswerable &mdash; a real date-comparison failure across a year boundary, not a prompt-wording issue. Three prompt-only fixes were tried and verified <em>not</em> to fix it; swapping this one call to Sonnet 5 fixed it immediately. Full rationale in <code>internal/llmclient/cost.go</code>'s doc comment.</li>
+            <li><strong>Why not the cheap model anymore:</strong> this ran on Haiku 4.5 for the original single-year window, where classification didn't need frontier reasoning. Once the live dataset grew to span 2024&ndash;2026, Haiku repeatedly misclassified fully in-range, explicitly-dated questions (e.g. &ldquo;July 2026&rdquo;) as unanswerable &mdash; a real date-comparison failure across a year boundary, not a prompt-wording issue. Three prompt-only fixes were tried and verified <em>not</em> to fix it; swapping this one call to Sonnet 5 fixed it immediately. Full rationale in <code>internal/llmclient/cost.go</code>'s doc comment.</li>
             <li><strong>Why it cannot leak a number:</strong> the package has no import path to <code>internal/storage</code> or <code>internal/mcptools</code> at all. It sees question text and nothing else. The one exception is deliberate and narrow &mdash; it is handed the data's real min/max date range as two plain strings, so &ldquo;today&rdquo; grounds against what the data covers rather than the host machine's clock.</li>
             <li>On ambiguity it either asks a clarifying question or proceeds with the assumption <em>stated back to the user</em>. It never silently assumes.</li>
           </ul>

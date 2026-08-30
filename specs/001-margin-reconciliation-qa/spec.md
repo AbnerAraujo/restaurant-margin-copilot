@@ -28,7 +28,7 @@ source file, rows, and period.
 owner currently discovers margin slippage at month-end. Nothing else matters
 if this number isn't right.
 
-**Independent Test**: Load a day's fixture files (including the deliberate
+**Independent Test**: Load a day's source files (including the deliberate
 mess — duplicate order, refund, missing day, inconsistent date format) and
 confirm the displayed margin matches an independently computed reference
 value, with visible provenance. No natural-language question required.
@@ -90,13 +90,13 @@ and 2 already work, since a system with no correct answers can't be usefully
 evaluated for refusing incorrectly.
 
 **Independent Test**: Ask the ~5 refusal-evaluation questions that cannot be
-answered from the fixture data (e.g., asking about a supplier not in the
+answered from the ingested data (e.g., asking about a supplier not in the
 cost sheet) and confirm each produces a refusal or clarifying question, never
 a fabricated number.
 
 **Acceptance Scenarios**:
 
-1. **Given** a question referencing data not present in any fixture file,
+1. **Given** a question referencing data not present in any source file,
    **When** it is asked, **Then** the system states it cannot answer and
    says what's missing, rather than estimating.
 2. **Given** an ambiguous date range in a question, **When** it is asked,
@@ -121,7 +121,7 @@ reconciled, provenanced pipeline as Stories 1–3.
 deterministic core and refusal discipline already proven by Stories 1–3, so
 it's built last, once that core is trustworthy, not in parallel with it.
 
-**Independent Test**: Load fixture data including at least one promotion
+**Independent Test**: Load test data including at least one promotion
 whose spend exceeds the incremental revenue it drove, and confirm the system
 flags it correctly with the computed ROI and provenance — independent of any
 margin question being asked.
@@ -194,7 +194,7 @@ margin question being asked.
 - **Question Interaction**: question text, resolved period, answer text,
   provenance references, tokens/cost/latency, whether a refusal or
   clarification fired.
-- **Fixture Data Source**: delivery-platform export, POS export, supplier
+- **Source Data File**: delivery-platform export, POS export, supplier
   cost sheet, promotion/ad-spend export — each carrying known, deliberate
   irregularities used to prove the reconciliation logic.
 - **Promotion / Ad Spend Record**: platform, campaign identifier, spend
@@ -211,14 +211,14 @@ margin question being asked.
   advance of measurement, per Constitution Principle V.
 - **SC-002**: On ~5 questions each asked in 3 phrasings, the rate at which
   all 3 phrasings agree is measured and reported, including failures.
-- **SC-003**: On ~5 questions that cannot be answered from the fixture data,
+- **SC-003**: On ~5 questions that cannot be answered from the available data,
   the system responds with a refusal or clarifying question — not a
   fabricated answer — and this rate is measured and reported.
 - **SC-004**: Every number shown to the user carries a visible, checkable
   source citation, with zero exceptions.
 - **SC-005**: Per-interaction cost, token usage, and latency are visible to
   the user for 100% of interactions, from the first interaction onward.
-- **SC-006**: On a fixture set of promotions including at least one
+- **SC-006**: On a set of promotions including at least one
   negative-ROI case, the system correctly flags it end-to-end (ingestion
   through natural-language answer) with provenance — the KR3 growth-lever
   proof point.
@@ -232,20 +232,20 @@ margin question being asked.
   ambiguity gate (FR-006), not pre-decided in this spec.
 - The anomaly-flagging threshold (FR-003) is a configurable percentage
   deviation from a trailing average, tuned during implementation against the
-  fixture data rather than fixed here.
-- Fixture data (not live integrations) stands in for real delivery-platform
+  test data rather than fixed here.
+- Synthetic test data (not live integrations) stands in for real delivery-platform
   and POS exports; connecting to real platform APIs is out of scope.
 - No specific numeric targets are set in advance for SC-001–SC-003 — per the
   brief and Constitution Principle V, these are measured honestly and
   reported including failures, not pre-committed to a passing threshold.
 - Incremental-revenue attribution for a promotion (FR-012) is computed via a
-  defined, deterministic tagging in the fixture data (which orders a
+  defined, deterministic tagging in the test data (which orders a
   promotion drove), not statistical multi-touch attribution modeling — full
-  marketing-attribution science is out of scope; the fixture data is
+  marketing-attribution science is out of scope; the test data is
   constructed clean enough to demonstrate the mechanism honestly.
 - The user wants this build to be usable with a real restaurant/bar's actual
-  export files, not only the synthetic fixtures — so ingestion parsing
+  export files, not only this project's own CSVs — so ingestion parsing
   targets realistic, generic CSV shapes for each source type rather than a
-  format hard-coded to the fixture files' exact columns. This is a design
+  format hard-coded to this project's own exact columns. This is a design
   constraint for `/speckit-plan`, not a claim that real-file compatibility
   is validated in this build.
