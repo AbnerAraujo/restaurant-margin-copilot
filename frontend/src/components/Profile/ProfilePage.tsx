@@ -217,6 +217,12 @@ export default function ProfilePage() {
         email: form.email.trim(),
         description: form.description.trim(),
         photo,
+        // Optimistic concurrency: echo back exactly the updated_at this tab
+        // last loaded. If another tab (or another save from this one) has
+        // since changed the profile, the backend's updated_at will have
+        // moved on and this PUT is refused with 409 rather than silently
+        // reverting that other save (the QA two-tab lost-update finding).
+        updated_at: updatedAt,
       })
       setForm({
         name: response.name,
