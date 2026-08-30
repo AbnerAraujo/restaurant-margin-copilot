@@ -34,7 +34,37 @@ func connectOrSkip(t *testing.T) (*pgx.Conn, *storage.Queries, context.Context) 
 	require.NoError(t, err, "must be able to connect to the live Postgres instance at DATABASE_URL")
 	t.Cleanup(func() { conn.Close(context.Background()) })
 
+	assertCanonicalDatasetFingerprint(t, ctx, conn)
+
 	return conn, storage.New(conn), ctx
+}
+
+// assertCanonicalDatasetFingerprint is a cheap tripwire, not a general
+// drift-detection framework: one query against the hand-authored sentinel
+// day 2024-08-01, whose margin (701.90) is independently verified in
+// backend/cmd/gendata/opening/README.md and cross-checked against
+// internal/reconcile's TestComputeDailyReconciliations_CleanDayMatchesHandComputation.
+// It exists because backend/data/live/ is gitignored and has, in practice,
+// been silently clobbered by this app's own cost-sheet-upload feature
+// writing its example template over the real supplier_cost_sheet.csv —
+// producing wrong input_costs (and therefore wrong margin) with no signal
+// until a DB-backed test failed for a reason that looked like a code bug.
+// This fires before any test in this package runs a real query, so a
+// drifted dataset fails loudly and actionably instead of as a confusing
+// numeric mismatch several layers downstream.
+func assertCanonicalDatasetFingerprint(t *testing.T, ctx context.Context, conn *pgx.Conn) {
+	t.Helper()
+	const sentinelDate = "2024-08-01"
+	const canonicalMargin = "701.90"
+
+	var gotMargin string
+	err := conn.QueryRow(ctx, "SELECT margin::text FROM daily_reconciliation WHERE date = $1", sentinelDate).Scan(&gotMargin)
+	if err != nil {
+		t.Fatalf("dataset fingerprint check failed: could not read sentinel day %s from daily_reconciliation (%v) — data/live may not be ingested, or database state has drifted from the canonical dataset; regenerate with `go run ./cmd/gendata` and re-ingest via `cmd/server -ingest data/live -ingest-promo data/live` before running DB-backed tests", sentinelDate, err)
+	}
+	if gotMargin != canonicalMargin {
+		t.Fatalf("database state has drifted from the canonical dataset (sentinel day %s: got margin %s, want %s per backend/cmd/gendata/opening/README.md) — data/live may have been overwritten (e.g. by the cost-sheet upload feature's own example template); regenerate with `go run ./cmd/gendata` and re-ingest via `cmd/server -ingest data/live -ingest-promo data/live` before running DB-backed tests", sentinelDate, gotMargin, canonicalMargin)
+	}
 }
 
 // TestCreateOwnerPromotion_RoundTripsOriginAndReplacesReference exercises
