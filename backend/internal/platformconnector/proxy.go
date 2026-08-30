@@ -160,6 +160,18 @@ type PlatformDayTotals struct {
 	// it changed.
 	DuplicatesRemoved  int `json:"duplicates_removed"`
 	UnresolvedOverlaps int `json:"unresolved_overlaps"`
+
+	// TradingNote is the simulated day's statable cause when it had one —
+	// "Severe weather — couriers scarce and almost no walk-in trade" — and
+	// "" on an ordinary day. See seed.go's trading-day condition model.
+	//
+	// It is a property of the DATE, so every source's row for the same day
+	// carries the same note; that repetition is the point, because it is
+	// what says the storm hit the whole restaurant rather than one feed.
+	// Without it, the variance this model adds would reach the owner as an
+	// unexplained dip, which is the one thing this product is not allowed
+	// to show them.
+	TradingNote string `json:"trading_note,omitempty"`
 }
 
 // FetchResult is one range fetch: every normalized record, plus the
@@ -291,6 +303,7 @@ func (p *Proxy) FetchRange(ctx context.Context, from, to time.Time, platforms []
 				Platform:     platform,
 				PlatformName: platform.DisplayName(),
 				Date:         day,
+				TradingNote:  TradingNoteForDate(day),
 			}
 			for _, rec := range records {
 				if err := checkContract(platform, day, rec); err != nil {
@@ -331,6 +344,7 @@ func (p *Proxy) FetchRange(ctx context.Context, from, to time.Time, platforms []
 			PlatformName: PlatformPOS.DisplayName(),
 			Date:         day,
 			OrderCount:   len(kept),
+			TradingNote:  TradingNoteForDate(day),
 		}
 		for _, rec := range kept {
 			// A voided ticket contributes no gross, exactly as

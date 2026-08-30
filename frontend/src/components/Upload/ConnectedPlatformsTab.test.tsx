@@ -97,6 +97,7 @@ const PREVIEW_RESPONSE = {
       commissions: '162.21',
       duplicates_removed: 0,
       unresolved_overlaps: 0,
+      trading_note: 'Severe weather — couriers scarce and almost no walk-in trade',
     },
     {
       platform: 'just_eat_takeaway',
@@ -109,6 +110,7 @@ const PREVIEW_RESPONSE = {
       commissions: '119.54',
       duplicates_removed: 0,
       unresolved_overlaps: 0,
+      trading_note: 'Severe weather — couriers scarce and almost no walk-in trade',
     },
     {
       platform: 'pos',
@@ -121,6 +123,7 @@ const PREVIEW_RESPONSE = {
       commissions: '0.00',
       duplicates_removed: 12,
       unresolved_overlaps: 2,
+      trading_note: 'Severe weather — couriers scarce and almost no walk-in trade',
     },
   ],
 }
@@ -328,5 +331,23 @@ describe('ConnectedPlatformsTab', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/31-day limit/i)
     expect(alert).not.toHaveTextContent(/something went wrong/i)
+  })
+
+  it('names the cause of a simulated day whose trade was unusual, on every source row for that date', async () => {
+    // The connector's day model gives a bad day a statable reason rather
+    // than an unexplained dip (seed.go's trading-day conditions). The
+    // reason is a property of the DATE, so all three sources report the
+    // same one — which is what says the storm hit the restaurant, not one
+    // feed. A dip with no cause beside it is the thing this product is not
+    // allowed to show.
+    stubFetchByPath({
+      '/api/connectors/platforms': { body: PLATFORMS_RESPONSE },
+      '/api/connectors/sync/preview': { body: PREVIEW_RESPONSE },
+    })
+    render(<ConnectedPlatformsTab />)
+    await userEvent.click(await screen.findByRole('button', { name: /preview orders/i }))
+
+    const notes = await screen.findAllByText(/severe weather/i)
+    expect(notes).toHaveLength(PREVIEW_RESPONSE.days.length)
   })
 })

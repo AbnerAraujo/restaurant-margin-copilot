@@ -130,6 +130,9 @@ describe('CostSheetTab', () => {
 
     stubFetchOnce(true, {
       rows_committed: 1,
+      covers_from: '2026-08-01',
+      covers_to: '2026-08-01',
+      connector_sync: null,
       before: { days: 14, margin: '1000.00' },
       after: { days: 14, margin: '950.00' },
     })
@@ -164,6 +167,9 @@ describe('CostSheetTab', () => {
 
     stubFetchOnce(true, {
       rows_committed: 1,
+      covers_from: '2026-08-01',
+      covers_to: '2026-08-01',
+      connector_sync: null,
       before: { days: 0, margin: null },
       after: { days: 14, margin: '950.00' },
     })
@@ -306,6 +312,9 @@ describe('CostSheetTab', () => {
 
       stubFetchOnce(true, {
         rows_committed: 1,
+        covers_from: '2026-08-01',
+        covers_to: '2026-08-01',
+        connector_sync: null,
         before: { days: 14, margin: '1000.00' },
         after: { days: 14, margin: '950.00' },
       })
@@ -482,5 +491,140 @@ describe('CostSheetTab', () => {
     // client-side view filter — narrowing what's SHOWN never narrows what
     // gets committed.
     expect(screen.getByRole('button', { name: /replace cost sheet/i })).toBeEnabled()
+  })
+
+  // --- The upload-triggers-sync opt-in (2026-08-30) -------------------------
+  //
+  // The behaviour under test is a disclosure decision, not just a feature:
+  // the box is pre-ticked because pulling the matching platform revenue in
+  // is what the owner asked for, but the revenue is SIMULATED, so nothing
+  // may reach the commit button without having said so. These tests assert
+  // that pairing directly — the default, the words, and the ability to say
+  // no — because a regression in any one of them is the product quietly
+  // inventing data.
+
+  const TWO_DAY_PREVIEW = {
+    row_count: 2,
+    total_amount: '150.25',
+    rows: [
+      {
+        invoice_id: 'INV-TEST-002',
+        invoice_date: '2026-08-05',
+        supplier: 'Test Beverage Co.',
+        category: 'beverage',
+        amount: '50.25',
+        notes: '',
+        source_row_ref: { file: 'cost_sheet.csv', row: 3 },
+      },
+      {
+        invoice_id: 'INV-TEST-001',
+        invoice_date: '2026-08-01',
+        supplier: 'Test Produce Co.',
+        category: 'produce',
+        amount: '100.00',
+        notes: '',
+        source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+      },
+    ],
+  }
+
+  it('offers the connector pull pre-ticked, naming the dates it covers and the fact that it is simulated', async () => {
+    stubFetchOnce(true, TWO_DAY_PREVIEW)
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    const optIn = screen.getByRole('checkbox', { name: /also pull in simulated platform revenue/i })
+    expect(optIn).toBeChecked()
+    // The range is derived from the ROWS, across all of them and in date
+    // order — not from the first row, which here is the LATER date.
+    expect(optIn).toHaveAccessibleName(/2026-08-01 to 2026-08-05/)
+    expect(optIn).toHaveAccessibleName(/simulated/i)
+    expect(optIn).toHaveAccessibleName(/no real account is connected/i)
+  })
+
+  it('sends the opt-in with the commit and reports what the sync actually did, unresolved overlaps included', async () => {
+    stubFetchOnce(true, TWO_DAY_PREVIEW)
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    const commitFetch = stubFetchOnce(true, {
+      rows_committed: 2,
+      covers_from: '2026-08-01',
+      covers_to: '2026-08-05',
+      connector_sync: {
+        simulated: true,
+        notice: 'Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration.',
+        from: '2026-08-01',
+        to: '2026-08-05',
+        days_affected: 5,
+        orders_synced: 187,
+        refunds_synced: 4,
+        tickets_synced: 402,
+        duplicates_removed: 61,
+        unresolved_overlaps: 3,
+        dedup: [],
+      },
+      before: { days: 759, margin: '1000.00' },
+      after: { days: 759, margin: '4200.00' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /replace cost sheet/i }))
+
+    await screen.findByText(/cost sheet ingested/i)
+
+    const body = commitFetch.mock.calls[0][1].body as FormData
+    expect(body.get('sync_connectors')).toBe('true')
+
+    expect(screen.getByText(/187 simulated delivery orders/i)).toBeInTheDocument()
+    expect(screen.getByText(/402 POS tickets/i)).toBeInTheDocument()
+    expect(screen.getByText(/61 POS tickets matched a delivery order/i)).toBeInTheDocument()
+    // The half that matters more: an overlap the matcher refused to resolve
+    // is a possible double-count inside the margin figure shown beside it.
+    expect(screen.getByText(/3 overlaps could not be resolved/i)).toBeInTheDocument()
+  })
+
+  it('lets the owner decline the pull, and then says plainly that no simulated revenue was added', async () => {
+    stubFetchOnce(true, TWO_DAY_PREVIEW)
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    await userEvent.click(screen.getByRole('checkbox', { name: /also pull in simulated platform revenue/i }))
+
+    const commitFetch = stubFetchOnce(true, {
+      rows_committed: 2,
+      covers_from: '2026-08-01',
+      covers_to: '2026-08-05',
+      connector_sync: null,
+      before: { days: 759, margin: '1000.00' },
+      after: { days: 759, margin: '900.00' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /replace cost sheet/i }))
+
+    await screen.findByText(/cost sheet ingested/i)
+
+    const body = commitFetch.mock.calls[0][1].body as FormData
+    expect(body.get('sync_connectors')).toBe('false')
+    expect(screen.getByText(/simulated platform revenue was not pulled in/i)).toBeInTheDocument()
+  })
+
+  it('states the date range the committed file covered', async () => {
+    stubFetchOnce(true, TWO_DAY_PREVIEW)
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    stubFetchOnce(true, {
+      rows_committed: 2,
+      covers_from: '2026-08-01',
+      covers_to: '2026-08-05',
+      connector_sync: null,
+      before: { days: 759, margin: '1000.00' },
+      after: { days: 759, margin: '900.00' },
+    })
+    await userEvent.click(screen.getByRole('button', { name: /replace cost sheet/i }))
+
+    expect(await screen.findByText(/covering 2026-08-01 to 2026-08-05/i)).toBeInTheDocument()
   })
 })

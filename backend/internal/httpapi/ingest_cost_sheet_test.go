@@ -25,13 +25,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/livedata"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 )
 
 // multipartCostSheetRequest builds a multipart/form-data POST request with
@@ -39,12 +42,23 @@ import (
 // upload (or the frontend's FormData-based postMultipart) shapes the body.
 func multipartCostSheetRequest(t *testing.T, method, path, filename, csvContent string) *http.Request {
 	t.Helper()
+	return multipartCostSheetRequestWithFields(t, method, path, filename, csvContent, nil)
+}
+
+// multipartCostSheetRequestWithFields is the same, plus the extra plain
+// form fields a real browser upload can carry alongside the file — today
+// just "sync_connectors" (see wantsConnectorSync).
+func multipartCostSheetRequestWithFields(t *testing.T, method, path, filename, csvContent string, fields map[string]string) *http.Request {
+	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	part, err := w.CreateFormFile("file", filename)
 	require.NoError(t, err)
 	_, err = io.WriteString(part, csvContent)
 	require.NoError(t, err)
+	for name, value := range fields {
+		require.NoError(t, w.WriteField(name, value))
+	}
 	require.NoError(t, w.Close())
 
 	req := httptest.NewRequest(method, path, &body)
@@ -226,7 +240,7 @@ func TestHandleCommitCostSheet_RejectsAMalformedUploadBeforeTouchingStoreOrDisk(
 	req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "missing_supplier.csv", missingSupplier)
 	rec := httptest.NewRecorder()
 
-	handler := HandleCommitCostSheet(nil, nil)
+	handler := HandleCommitCostSheet(nil, nil, nil)
 	handler(rec, req)
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
@@ -250,7 +264,7 @@ func TestHandleCommitCostSheet_RejectsAHeaderOnlyUploadBeforeTouchingStoreOrDisk
 	req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "header_only.csv", headerOnly)
 	rec := httptest.NewRecorder()
 
-	handler := HandleCommitCostSheet(nil, nil)
+	handler := HandleCommitCostSheet(nil, nil, nil)
 	handler(rec, req)
 
 	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
@@ -366,7 +380,7 @@ func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
 	}
 	t.Cleanup(func() { afterCommitWriteForTests = nil })
 
-	handler := HandleCommitCostSheet(q, nil)
+	handler := HandleCommitCostSheet(nil, q, nil)
 	destPath := filepath.Join(livedata.Dir, liveCostSheetFilename)
 
 	doneA := make(chan *httptest.ResponseRecorder, 1)
@@ -430,4 +444,119 @@ func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
 	finalOnDisk, err := os.ReadFile(destPath)
 	require.NoError(t, err)
 	require.Equal(t, fileB, string(finalOnDisk), "B ran strictly after A released commitMu, so B's file must be what's left on disk")
+}
+
+// --- The upload-triggers-sync composition (2026-08-30) ----------------------
+
+// TestCostSheetDateRange_SpansEveryRow proves the range a commit hands the
+// connector is derived from the FILE, across all of its rows, not from the
+// first row and not from anything the client sent. A cost sheet is one
+// invoice per row on a supplier's own irregular cadence, so a real upload
+// can be one day or a month of them.
+func TestCostSheetDateRange_SpansEveryRow(t *testing.T) {
+	// Deliberately out of chronological order, and with the widest dates in
+	// the middle: a min/max scan is correct, "first and last row" is not.
+	csv := "invoice_id,invoice_date,supplier,amount\n" +
+		"INV-1,2026-08-14,S,10.00\n" +
+		"INV-2,2026-08-03,S,10.00\n" +
+		"INV-3,2026-08-27,S,10.00\n" +
+		"INV-4,2026-08-09,S,10.00\n"
+
+	records, err := ingest.ParseCostSheet(strings.NewReader(csv), "range.csv")
+	require.NoError(t, err)
+
+	from, to := costSheetDateRange(records)
+	require.Equal(t, "2026-08-03", from.Format(dateLayout))
+	require.Equal(t, "2026-08-27", to.Format(dateLayout))
+}
+
+// TestCostSheetDateRange_HandlesASingleDaySheet: the degenerate case is a
+// real one (an owner uploading today's three invoices), and it must produce
+// a one-day range, not an empty or inverted one — the connector refuses an
+// inverted range outright.
+func TestCostSheetDateRange_HandlesASingleDaySheet(t *testing.T) {
+	csv := "invoice_id,invoice_date,supplier,amount\ninv,2026-08-20,S,10.00\n"
+	records, err := ingest.ParseCostSheet(strings.NewReader(csv), "one_day.csv")
+	require.NoError(t, err)
+
+	from, to := costSheetDateRange(records)
+	require.Equal(t, from, to)
+	require.Equal(t, "2026-08-20", from.Format(dateLayout))
+}
+
+// TestWantsConnectorSync_IsOffUnlessAsked is the API half of the
+// automatic-vs-opt-in decision recorded on wantsConnectorSync: an absent
+// flag must mean "do not pull in simulated revenue", so every client that
+// existed before this change — a curl, a script, the evaluation harness —
+// keeps behaving exactly as it did. Silently injecting simulated numbers
+// into a caller that never mentioned connectors is the failure this guards.
+func TestWantsConnectorSync_IsOffUnlessAsked(t *testing.T) {
+	off := []map[string]string{
+		nil,
+		{"sync_connectors": ""},
+		{"sync_connectors": "false"},
+		{"sync_connectors": "0"},
+		{"sync_connectors": "maybe"},
+	}
+	for _, fields := range off {
+		req := multipartCostSheetRequestWithFields(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "c.csv", validCostSheetCSV, fields)
+		require.NoError(t, req.ParseMultipartForm(maxCostSheetUploadBytes))
+		require.False(t, wantsConnectorSync(req), "fields %v must not opt in", fields)
+	}
+
+	for _, value := range []string{"true", "TRUE", "1", "yes", "on", " true "} {
+		req := multipartCostSheetRequestWithFields(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "c.csv", validCostSheetCSV,
+			map[string]string{"sync_connectors": value})
+		require.NoError(t, req.ParseMultipartForm(maxCostSheetUploadBytes))
+		require.True(t, wantsConnectorSync(req), "value %q should opt in", value)
+	}
+}
+
+// TestHandleCommitCostSheet_RefusesAnOverWideConnectorRangeBeforeTouchingDisk
+// is the atomicity guarantee for the combined action.
+//
+// The owner asked for one thing ("commit these costs AND pull in the
+// revenue for the days they cover"). If the connector cannot serve the
+// range — here, a cost sheet spanning more than the 31-day sync cap — the
+// honest answer is to refuse the whole request and say why, not to commit
+// half of it and mention the other half failed in a field nobody reads.
+// Passing a nil store and a nil cache proves the refusal happens before any
+// database or filesystem work: reaching either would panic.
+func TestHandleCommitCostSheet_RefusesAnOverWideConnectorRangeBeforeTouchingDisk(t *testing.T) {
+	wide := "invoice_id,invoice_date,supplier,amount\n" +
+		"INV-1,2026-06-01,S,100.00\n" +
+		"INV-2,2026-08-01,S,100.00\n"
+
+	req := multipartCostSheetRequestWithFields(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "wide.csv", wide,
+		map[string]string{"sync_connectors": "true"})
+	rec := httptest.NewRecorder()
+
+	HandleCommitCostSheet(platformconnector.NewSimulatedProxy(), nil, nil)(rec, req)
+
+	require.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "connector_fetch_failed", body["error"])
+	require.Contains(t, body["detail"], "31-day limit")
+	require.Contains(t, body["detail"], "the cost sheet was not committed",
+		"a refusal must say what did NOT happen, or the owner has to guess whether their costs landed")
+	require.NotContains(t, body["detail"], "platformconnector:",
+		"the internal package prefix must not reach the owner")
+}
+
+// TestHandleCommitCostSheet_RefusesTheSyncWhenNoConnectorsAreWired: a
+// server built without the proxy must refuse an explicit sync request
+// rather than quietly committing the cost sheet alone and reporting
+// connector_sync: null, which a client would read as "I did not ask".
+func TestHandleCommitCostSheet_RefusesTheSyncWhenNoConnectorsAreWired(t *testing.T) {
+	req := multipartCostSheetRequestWithFields(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "c.csv", validCostSheetCSV,
+		map[string]string{"sync_connectors": "true"})
+	rec := httptest.NewRecorder()
+
+	HandleCommitCostSheet(nil, nil, nil)(rec, req)
+
+	require.Equal(t, http.StatusInternalServerError, rec.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+	require.Equal(t, "connectors_unavailable", body["error"])
 }
