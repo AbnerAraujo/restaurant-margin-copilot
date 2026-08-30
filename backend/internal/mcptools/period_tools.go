@@ -105,14 +105,14 @@ type GetPeriodTotalsArgs struct {
 // collapseSourceRowRefsByFile keeps exactly the first and last row seen per
 // source file, instead of one entry per row per day. Reported live, and
 // root-caused from the real failure: a period-totals question spanning the
-// live dataset's full 744-day history built up one SourceRowRef per row per
+// live dataset's full multi-year history built up one SourceRowRef per row per
 // day (every delivery/POS/cost-sheet row that contributed to each day),
 // producing tens of thousands of entries for a single "overall" question —
 // serialized into the explain step's prompt, this pushed a real request to
 // over 1,000,000 tokens and the Anthropic API rejected it outright
 // (400: "prompt is too long"), surfacing to the owner as a bare "the
 // explanation step failed; please try again" with no indication why. This
-// was invisible at the original 14-day fixture scale (a handful of refs
+// was invisible at the original 14-day dataset scale (a handful of refs
 // total) and only became a real failure once the live dataset grew.
 //
 // Two refs per file (min row, max row) still satisfies Constitution

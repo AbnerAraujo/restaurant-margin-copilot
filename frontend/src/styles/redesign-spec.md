@@ -290,8 +290,10 @@ gaps) is exactly controllable.
 
 ### 4.1 `/close` — 14-day margin chart
 
-**Data** (`daily_reconciliation.csv`, Aug 1–14 2026 — exact fixture values,
-do not substitute different numbers):
+**Data** (`daily_reconciliation.csv`, Aug 1–14 2026 — the exact values of
+the 14-day dataset the app served when this redesign shipped; kept here as
+the historical design reference, since the mark spec was tuned against
+them):
 
 | Date | Margin (USD) |
 |---|---|
@@ -372,7 +374,8 @@ pattern" is satisfied without a raw table on the page.
 
 ### 4.2 `/promotions` — promotion ROI chart
 
-**Data** (exact fixture values):
+**Data** (the exact 4-campaign values the app served when this redesign
+shipped — historical design reference):
 
 | Campaign | Spend | Incremental revenue | Net | Verdict |
 |---|---|---|---|---|

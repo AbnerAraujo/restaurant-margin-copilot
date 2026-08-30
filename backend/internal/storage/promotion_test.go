@@ -24,12 +24,12 @@ func int64Ptr(v int64) *int64 { return &v }
 // unattributable (FR-013 refusal) shapes, since the storage adapter has to
 // get both nil-handling and the daterange canonicalization right.
 //
-// Per docs/plan.md's mistakes log ("never use a real in-range fixture date
+// Per docs/plan.md's mistakes log ("never use a real in-range dataset date
 // as a test's own database primary key"), this test uses a sentinel
-// campaign_id and a period entirely outside the real fixture period
+// campaign_id and a period entirely outside the real dataset period
 // (2026-08-01..14) — never a real promotion_ad_spend_export.csv campaign —
 // so its cleanup can never collide with (and delete) the real, permanently
-// -persisted fixture campaigns a separate pipeline run writes.
+// -persisted campaigns a separate pipeline run writes.
 //
 // The test is skipped (not faked) when DATABASE_URL isn't set.
 func TestSaveAndLoadPromotionRoiRecord_RoundTripsExactly(t *testing.T) {

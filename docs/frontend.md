@@ -475,7 +475,7 @@ component logic under test, network faked at the lowest possible layer.**
   never `lib/api`'s helpers — so `getJson`/`postJson`'s real error-handling
   and `ApiError`-parsing code actually executes in every test that touches
   the network, rather than being assumed correct. `ClosePage.test.tsx`
-  stubs `fetch` to resolve with a **realistic, fixture-shaped**
+  stubs `fetch` to resolve with a **realistic, production-shaped**
   `/api/reconciliation` payload (real field names like
   `total_delivery_gross_sales`, `discrepancy_flags`, `source_row_refs`,
   a deliberately-absent day) rather than an invented, simplified shape —

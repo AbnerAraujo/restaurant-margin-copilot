@@ -185,7 +185,7 @@ func TestHandleCommitCostSheet_RejectsAMalformedUploadBeforeTouchingStoreOrDisk(
 }
 
 // TestHandleCostSheetTemplate_ServesAParsableCSV is spec FR-006/SC-004: the
-// downloaded template is a genuinely valid input, not a fixture-only
+// downloaded template is a genuinely valid input, not a display-only
 // convenience file — round-tripping it through the real preview handler
 // must succeed.
 func TestHandleCostSheetTemplate_ServesAParsableCSV(t *testing.T) {

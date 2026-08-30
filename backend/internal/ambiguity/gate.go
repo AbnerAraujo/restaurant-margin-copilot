@@ -6,7 +6,7 @@
 //
 // It used Claude Haiku 4.5 originally — a cheap classification task, not
 // one that needs frontier reasoning at the scale of the 14-day take-home
-// fixture (constitution v1.1.0, research.md's model-split rationale). It
+// dataset (constitution v1.1.0, research.md's model-split rationale). It
 // now uses Claude Sonnet 5 (llmclient.ModelAmbiguityGate), moved there
 // 2026-08-29 after Haiku was caught, live and reproducibly, misclassifying
 // a fully in-range dated question as unanswerable once the real dataset
@@ -46,7 +46,7 @@
 // internal/storage.LoadDataDateRange, at process start) so that (a) the
 // gate's system prompt can ground relative date language ("today", "this
 // week", a year-less date) against what the data really covers, instead of
-// either a hardcoded literal that can drift from the fixtures actually
+// either a hardcoded literal that can drift from the data actually
 // loaded, or the host machine's wall-clock date — see systemPrompt's "Date
 // grounding" paragraph and docs/plan.md's mistakes log ("date-year
 // grounding defect") for the bug this fixes — and (b) daterange.go's

@@ -105,7 +105,7 @@ func newFakeMCPClient(t *testing.T) *client.Client {
 		func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return mcp.NewToolResultJSON(map[string]any{
 				"value":           "42.00",
-				"source_row_refs": []map[string]any{{"file": "fixture.csv", "row": 1}},
+				"source_row_refs": []map[string]any{{"file": "sample.csv", "row": 1}},
 			})
 		},
 	)
@@ -309,7 +309,7 @@ func TestExplain_ZeroToolCallCurrencyAnswerIsRefused(t *testing.T) {
 // with no tool call, that a date falls outside the covered range (an
 // established fact per systemPromptTemplate's "Date grounding" paragraph),
 // and that must still come back as a normal answer, matching
-// explain_test.go's live-gated "question about data outside the fixture
+// explain_test.go's live-gated "question about data outside the dataset
 // period" case.
 func TestExplain_ZeroToolCallNonCurrencyAnswerStillAllowed(t *testing.T) {
 	answer := "2026-09-01 is outside the only period we have data for, which is 2026-08-01 through 2026-08-14."

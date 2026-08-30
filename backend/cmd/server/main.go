@@ -46,8 +46,8 @@ func main() {
 
 	if *ingestDir == "" && *ingestPromoDir == "" && *serveAddr == "" {
 		log.Println("restaurant-margin-copilot backend: no -ingest, -ingest-promo, or -serve flag given; nothing to do.")
-		log.Println("Usage: go run ./backend/cmd/server -ingest <fixture-directory>")
-		log.Println("       go run ./backend/cmd/server -ingest-promo <fixture-directory>")
+		log.Println("Usage: go run ./backend/cmd/server -ingest <data-directory>")
+		log.Println("       go run ./backend/cmd/server -ingest-promo <data-directory>")
 		log.Println("       go run ./backend/cmd/server -serve <addr>")
 		return
 	}

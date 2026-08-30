@@ -7,8 +7,9 @@ import ProvenanceTag, {
 } from '@/components/Provenance/ProvenanceTag'
 
 // ---------------------------------------------------------------------------
-// Data — the exact `promotion_ad_spend_export.csv` fixture (see
-// backend/fixtures/README.md "Promotion ROI" table). `net: null` for
+// Data — the exact 4 campaigns of the dataset's hand-authored opening
+// window (see backend/cmd/gendata/opening/README.md "Promotion ROI"
+// table). `net: null` for
 // IFOOD-CAMP-WEEKEND is the FR-013 refusal case: zero delivery-platform
 // orders carry that campaign_id, so incremental revenue — and therefore
 // net — cannot be computed, and must never be estimated or shown as $0.
@@ -179,7 +180,7 @@ const REFUSAL_BOX_WIDTH = 64
 const REFUSAL_BOX_HEIGHT = 28
 
 // ---------------------------------------------------------------------------
-// Scale — this chart was built and tested against the 4-campaign fixture,
+// Scale — this chart was built and tested against a 4-campaign sample,
 // where a fixed 560px canvas and a label on every bar both made sense. The
 // real dataset carries 25-30+ campaigns: `PLOT_WIDTH / data.length` with a
 // fixed 24px BAR_WIDTH means bars start overlapping their neighbors past
@@ -192,7 +193,7 @@ const REFUSAL_BOX_HEIGHT = 28
 //
 // Same two-part fix as MarginTrendChart, scoped to fire only once there is
 // real data to warrant it — at <= LABEL_ALL_MAX campaigns (the 4-campaign
-// fixture included) this renders pixel-identical to before:
+// sample included) this renders pixel-identical to before:
 //
 //  1. The canvas grows with campaign count (MIN_SLOT_WIDTH per bar) instead
 //     of staying pinned to 560px, so bars get real room and the existing
@@ -230,7 +231,7 @@ const MAX_AXIS_TICKS = 8
 // Reported live at 29 real campaigns: each bar's invisible hover/click
 // hit-target was BAR_WIDTH (24) + 14px of padding on EACH side (52px
 // total) — a generous, easy-to-click affordance that made sense at the
-// original 4-campaign fixture's wide slots (124px+), but at MIN_SLOT_WIDTH
+// original 4-campaign sample's wide slots (124px+), but at MIN_SLOT_WIDTH
 // (28px) that 52px-wide hit-rect overlaps BOTH neighbors' hit-rects by a
 // large margin, so hovering near a slot boundary could trigger the WRONG
 // bar's tooltip ("getting data from the left bar"). HIT_RECT_MAX_PADDING
@@ -250,7 +251,7 @@ const HIT_RECT_MIN_PADDING = 2
 // half a real campaign id's rendered width (a 16-19 char id like
 // "IFOOD-CAMP-BOOST01" runs ~100px+ at this 9.5px font) to grow into on
 // that side. The SVG root's own default `overflow: hidden` then clips
-// mid-word — invisible in the small-fixture/short-synthetic-id tests that
+// mid-word — invisible in the small-sample/short-synthetic-id tests that
 // exercised this campaign COUNT but never an id long enough to hit an edge.
 // Any label whose center falls within this many px of the plot's left/right
 // boundary anchors from that boundary inward instead of centering outward
@@ -332,7 +333,7 @@ function selectVisibleTickIndices(
 
 /**
  * Y scale derived from the data, not hard-coded. The previous fixed
- * [-200, 60] domain was tuned to one fixture; against live /api/promotions
+ * [-200, 60] domain was tuned to one sample; against live /api/promotions
  * rows a campaign outside it would be CLAMPED to the axis edge and drawn
  * smaller than the loss it represents.
  */
@@ -546,7 +547,7 @@ function PromoRoiChart({
   // The tickLabelStep-selected candidates, further pruned for estimated
   // overlap — see selectVisibleTickIndices's doc comment. Labeling every
   // bar (<= LABEL_ALL_MAX) skips this: tight, uniform slot widths there are
-  // already proven to fit (the 4-campaign fixture), and running collision
+  // already proven to fit (the 4-campaign sample), and running collision
   // pruning over real campaign ids at that width could start dropping
   // labels that were never actually reported as overlapping.
   const visibleTickIndices = labelEveryBar
@@ -604,7 +605,7 @@ function PromoRoiChart({
           }${refusedCount > 0 ? `, with ${refusedCount} flagged as unattributable and refused` : ''}`}
           // See MarginTrendChart: capped at its design width, which itself
           // grows with campaign count so bars get real room past the
-          // 4-campaign fixture instead of overlapping or floating in dead
+          // 4-campaign sample instead of overlapping or floating in dead
           // space to the right of a canvas that never grew to fit them. Past
           // the base 560px, a fixed pixel width (not `w-full`) is what makes
           // the wrapper's `overflow-x-auto` actually scroll instead of
@@ -714,7 +715,7 @@ function PromoRoiChart({
                 ) : null}
 
                 {/* Direct label mandatory on every bar at <= LABEL_ALL_MAX
-                    categories (the 4-campaign fixture qualifies); past that,
+                    categories (the 4-campaign sample qualifies); past that,
                     only the two extremes get one — see the Scale comment
                     above for why a label on all 25-30+ bars stopped being
                     readable. */}
@@ -882,7 +883,7 @@ function PromoRoiChart({
 
       {/* Per-campaign provenance used to render here unconditionally, one
           "CampaignID: N sources" tag per campaign — fine at the original
-          4-campaign fixture, unreadable at 25-30 real campaigns (reported
+          4-campaign sample, unreadable at 25-30 real campaigns (reported
           live). Provenance is Constitution Principle IV, non-optional, but
           "always visible" and "readable at real scale" turned out to
           conflict — folded into the already-collapsed table below (a

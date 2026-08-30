@@ -1,7 +1,7 @@
 package mcptools_test
 
 // Finding 4: promo_tools_test.go's only test skips when DATABASE_URL isn't
-// set (and additionally needs real ingested fixture data). These exercise
+// set (and additionally needs the real ingested dataset). These exercise
 // GetPromotionRoi and ListNegativeRoiPromotions against fakeQuerier
 // (fake_querier_test.go) instead, covering both tools' happy paths and
 // refusal paths with zero Postgres dependency.

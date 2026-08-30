@@ -10,7 +10,7 @@ info:
     source for each route (`backend/internal/httpapi/*.go`,
     `backend/internal/badges/badges.go`) and cross-checked against `curl`
     calls to a live instance of this backend seeded from
-    `backend/fixtures/` — request/response shapes are not guessed from
+    `backend/data/live/` — request/response shapes are not guessed from
     route names.
 
     ### The deterministic / probabilistic split
@@ -285,8 +285,8 @@ paths:
                     roi: "34.00"
                     flagged_negative: false
                     source_row_refs:
-                      - { file: "fixtures/promotion_ad_spend_export.csv", row: 2 }
-                      - { file: "fixtures/delivery_platform_export.csv", row: 2 }
+                      - { file: "data/live/promotion_ad_spend_export.csv", row: 2 }
+                      - { file: "data/live/delivery_platform_export.csv", row: 2 }
                     origin: ingested
                   - platform: Just Eat Takeaway
                     campaign_id: JET-CAMP-LUNCHFIX
@@ -297,7 +297,7 @@ paths:
                     roi: "-165.00"
                     flagged_negative: true
                     source_row_refs:
-                      - { file: "fixtures/promotion_ad_spend_export.csv", row: 3 }
+                      - { file: "data/live/promotion_ad_spend_export.csv", row: 3 }
                     origin: ingested
                   - platform: iFood
                     campaign_id: IFOOD-CAMP-WEEKEND
@@ -309,7 +309,7 @@ paths:
                     reason: attribution_unavailable
                     flagged_negative: false
                     source_row_refs:
-                      - { file: "fixtures/promotion_ad_spend_export.csv", row: 4 }
+                      - { file: "data/live/promotion_ad_spend_export.csv", row: 4 }
                     origin: ingested
         "405":
           description: Any method other than GET (the handler this route dispatches to on a non-POST method).
@@ -759,8 +759,8 @@ paths:
       description: |
         A static, downloadable example CSV (spec FR-006). The example rows
         are fabricated and clearly labeled ("Example ..."), deliberately
-        **not** copied from `backend/fixtures/` — a "template" that turned
-        out to secretly be real fixture data would blur the line this
+        **not** copied from `backend/data/live/` — a "template" that turned
+        out to secretly be real dataset rows would blur the line this
         feature exists to keep bright.
       operationId: downloadCostSheetTemplate
       responses:

@@ -25,7 +25,7 @@ Independent restaurants and bars can't see, daily, whether they made money — r
 | Accuracy (KR1) | N/A — not yet run | Measured & reported, incl. failures | `evaluation/promptfoo/accuracy.yaml`, ~15–20 questions |
 | Consistency (KR1) | N/A | Measured & reported | 5 questions × 3 phrasings |
 | Refusal-correctness (KR1) | N/A | 100% on ~5 unanswerable questions | Refusal harness |
-| Reconciliation correctness (KR2) | N/A | Zero silent data loss on messy fixture set | Table-driven tests + quickstart validation |
+| Reconciliation correctness (KR2) | N/A | Zero silent data loss on the deliberately messy test data | Table-driven tests + quickstart validation |
 | Promo-ROI flagging (KR3) | N/A | ≥1 negative-ROI promo correctly flagged end-to-end | quickstart validation |
 | Cost per interaction (KR4) | N/A | Under a stated threshold (e.g. $0.05), instrumented | Instrumentation log |
 
@@ -53,7 +53,7 @@ Full list with acceptance criteria: `specs/001-margin-reconciliation-qa/spec.md`
 
 **Explicitly out of scope for this build** (see `docs/product-strategy.md`'s roadmap sections for why):
 - Multi-tenant / multi-location support
-- Real delivery-platform API integrations (fixture/real-file CSV only)
+- Real delivery-platform API integrations (CSV exports only)
 - Growth, Engagement, and Campaign-Creation badge categories (Reconciliation category only is built)
 - The semantic-memory/cache/LLMOps harness discussed and explicitly deferred as a Phase 2 vision, not part of this build
 - Non-Prosus-customer market segment (Segment 2 in the market-sizing section)

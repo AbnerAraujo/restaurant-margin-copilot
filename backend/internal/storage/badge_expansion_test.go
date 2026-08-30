@@ -3,8 +3,8 @@ package storage_test
 // Live-Postgres integration tests for spec 002-badge-expansion's storage
 // layer, following promotion_test.go's own established pattern exactly:
 // skipped (not faked) when DATABASE_URL is unset, sentinel campaign_ids and
-// an out-of-fixture-range period so cleanup can never touch a real,
-// permanently-persisted fixture row, and defer-then-cleanup ordering that
+// an out-of-dataset-range period so cleanup can never touch a real,
+// permanently-persisted row, and defer-then-cleanup ordering that
 // matches docs/plan.md's mistakes log entry on t.Cleanup being LIFO.
 
 import (

@@ -12,7 +12,7 @@ package mcptools
 import "testing"
 
 // knownCampaignIDs mirrors the real, persisted campaign_id set this
-// product's fixture data actually has (backend/fixtures/README.md).
+// product's dataset actually has (backend/cmd/gendata/opening/README.md).
 var knownCampaignIDs = []string{
 	"IFOOD-CAMP-BOOST01",
 	"JET-CAMP-LUNCHFIX",
@@ -82,7 +82,7 @@ func TestMatchCampaignID_OtherRealCampaigns(t *testing.T) {
 
 // TestMatchCampaignID_AmbiguousFragmentRefusesRatherThanGuesses is the
 // Principle-III-compliance case: "CAMP" is a substring of every known id in
-// this fixture set, so a confident single match does not exist. This must
+// this dataset, so a confident single match does not exist. This must
 // refuse ("") rather than arbitrarily pick one — the same "refuse rather
 // than guess" discipline (Constitution Principle II) applied to this
 // package's own internal resolution step.

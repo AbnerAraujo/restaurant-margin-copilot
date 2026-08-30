@@ -85,7 +85,7 @@ func (h *insightHarness) post(t *testing.T, body string) *httptest.ResponseRecor
 }
 
 // flaggedInsightRequestBody grounds a discrepancy_pattern request in the
-// same flagged daily-summary fixture the derivation tests use.
+// same flagged daily-summary sample the derivation tests use.
 func flaggedInsightRequestBody() string {
 	return `{"kind":"discrepancy_pattern","tool_calls":[{"name":"get_daily_summary","result_json":` + flaggedDailySummaryJSON + `}]}`
 }

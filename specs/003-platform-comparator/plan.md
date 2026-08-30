@@ -4,7 +4,7 @@
 
 ## Technical Context
 
-A new read-only computation over already-ingested data — no new ingestion, no new fixtures, no schema migration required. The two platforms already exist as distinct `gross_sales_by_source` keys (`ifood`, `just_eat_takeaway`) with genuinely different real commission rates in the fixture data (23% vs 20% flat, per `backend/fixtures/README.md`).
+A new read-only computation over already-ingested data — no new ingestion, no new source data, no schema migration required. The two platforms already exist as distinct `gross_sales_by_source` keys (`ifood`, `just_eat_takeaway`) with genuinely different real commission rates in the ingested data (23% vs 20% flat, per `backend/cmd/gendata/opening/README.md`).
 
 ## Constitution Check
 
@@ -43,4 +43,4 @@ Extends `backend/internal/httpapi/visualization.go`'s existing tool-name-to-char
 
 ## Testing strategy
 
-Table-driven Go tests against the existing fixture data, with expected values computed independently (matching this project's existing double-verification discipline — hand-compute from the raw CSVs, do not derive the test's expected values from the implementation being tested). Explicit test case for the zero-activity-platform edge case (FR-003) confirming `effective_rate: null`, not `0`.
+Table-driven Go tests against the existing hand-authored data, with expected values computed independently (matching this project's existing double-verification discipline — hand-compute from the raw CSVs, do not derive the test's expected values from the implementation being tested). Explicit test case for the zero-activity-platform edge case (FR-003) confirming `effective_rate: null`, not `0`.

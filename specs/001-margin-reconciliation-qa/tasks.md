@@ -26,19 +26,19 @@
 - [x] T005 Write `docker-compose.yml` for local PostgreSQL
 - [x] T006 Write initial `golang-migrate` migration in `backend/migrations/` for `daily_reconciliation`, `promotion_roi_record`, `question_interaction` tables per `data-model.md`
 - [x] T007 [P] Configure `sqlc.yaml` and base queries in `backend/internal/storage/`
-- [x] T008 [P] Generate fixture CSVs (delivery-platform, POS, cost-sheet, promotion exports) in `backend/fixtures/`, including the deliberate mess: duplicate order, refund, missing day, inconsistent date format, one promotion with incomplete attribution — per Constitution Principle V, this MUST exist before any reconciliation code is written
+- [x] T008 [P] Hand-author the test CSVs (delivery-platform, POS, cost-sheet, promotion exports — today the dataset's opening window, `backend/cmd/gendata/opening/`), including the deliberate mess: duplicate order, refund, missing day, inconsistent date format, one promotion with incomplete attribution — per Constitution Principle V, this MUST exist before any reconciliation code is written
 - [x] T009 Implement shared Anthropic API client wrapper in `backend/internal/llmclient/client.go`
 - [x] T010 [P] Implement instrumentation writer (tokens, cost, latency, refusal/clarification flags) in `backend/internal/instrumentation/log.go`
 
-**Checkpoint**: DB migrated, fixtures exist, LLM client and instrumentation ready — user stories can now proceed.
+**Checkpoint**: DB migrated, test data exists, LLM client and instrumentation ready — user stories can now proceed.
 
 ---
 
 ## Phase 3: User Story 1 - See today's reconciled margin (Priority: P1) 🎯 MVP
 
-**Goal**: Ingest fixture files and produce a provenanced daily margin figure.
+**Goal**: Ingest the source files and produce a provenanced daily margin figure.
 
-**Independent Test**: Run ingestion against `backend/fixtures/`; the resulting margin matches an independently hand-computed value, with the duplicate/refund/missing-day cases handled correctly.
+**Independent Test**: Run ingestion against the hand-authored test data; the resulting margin matches an independently hand-computed value, with the duplicate/refund/missing-day cases handled correctly.
 
 ### Tests for User Story 1 ⚠️ write first, confirm they fail
 
@@ -141,13 +141,13 @@
 - **US4 (Phase 6)**: depends on Foundational only, not on US2/US3 — can be built in parallel with US2/US3 once US1 is done, since it's an independent ingestion+computation+tool-set slice.
 - **Polish (Phase 7)**: depends on all four stories being complete.
 
-This order matches the constitution's fixed build order (fixtures → engine + tests → MCP → model layer → instrumentation → harness → UI) — it is not to be reordered even for parallelization convenience.
+This order matches the constitution's fixed build order (test data → engine + tests → MCP → model layer → instrumentation → harness → UI) — it is not to be reordered even for parallelization convenience.
 
 ### Parallel Opportunities
 
 - T003/T004 (frontend init, lint config) parallel with T001/T002 (backend init).
 - T007/T008/T010 parallel with each other in Phase 2.
-- **US1 and US4 can run in parallel** once Phase 2 is done (both only need fixtures + storage, not each other).
+- **US1 and US4 can run in parallel** once Phase 2 is done (both only need the test data + storage, not each other).
 - **US2 and US3 must run sequentially** (US3 wraps US2's endpoint) — not a parallel pair.
 - T033/T035/T036/T037 in Phase 7 can run in parallel (independent files).
 

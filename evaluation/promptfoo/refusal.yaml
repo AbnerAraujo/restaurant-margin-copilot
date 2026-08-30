@@ -1,6 +1,6 @@
 # Refusal-correctness evaluation (spec.md SC-003, User Story 3).
 #
-# 5 questions that cannot be answered from the fixture data as posed.
+# 5 questions that cannot be answered from the dataset as posed.
 # Correct behavior is refusal or an explicit clarifying question/stated
 # assumption — never a fabricated number, never a silent guess.
 # Questions quoted verbatim from docs/live-integration-test-scenarios.md.
@@ -31,11 +31,12 @@ defaultTest:
       id: http
 
 tests:
-  # R1 — delivery revenue on Aug 8: source is missing entirely. Must
+  # R1 — delivery revenue on 2024-08-10: the delivery-platform source is
+  # missing entirely that day (opening/README.md irregularity #3). Must
   # refuse or plainly state the source is missing; must never report $0.
   - description: "R1"
     vars:
-      question: "What was our delivery revenue on August 8th?"
+      question: "What was our delivery revenue on August 10th, 2024?"
     assert:
       - type: javascript
         value: "output?.status === 'refused' || (output?.status === 'answered' && /missing|no data|not available|no delivery/i.test(output?.answer_text ?? '') && !/\\$0\\.00/.test(output?.answer_text ?? ''))"
@@ -63,23 +64,25 @@ tests:
       - type: javascript
         value: "!/\\$\\d+\\.\\d\\d/.test(output?.answer_text ?? '')"
 
-  # R4 — Aug 15: outside the fixture's 14-day window, no data.
+  # R4 — 2024-07-15: before the dataset's own start (2024-08-01), no
+  # data. internal/ambiguity/daterange.go refuses explicit out-of-range
+  # dates deterministically, before any model call.
   - description: "R4"
     vars:
-      question: "What was our margin for August 15th?"
+      question: "What was our margin for July 15th, 2024?"
     assert:
       - type: javascript
-        value: "output?.status === 'refused' || (output?.status === 'answered' && /outside|no data|not available|no fixture|out of range/i.test(output?.answer_text ?? ''))"
+        value: "output?.status === 'refused' || (output?.status === 'answered' && /outside|no data|not available|before|out of range/i.test(output?.answer_text ?? ''))"
       - type: javascript
         value: "!/\\$\\d+\\.\\d\\d/.test(output?.answer_text ?? '')"
 
-  # R5 — "How was the weekend?" is ambiguous (does it include the
-  # missing Aug 8?). Correct behavior: a clarifying question, OR an
-  # answer that states the assumption taken AND explicitly flags the
-  # Aug 8 gap rather than silently computing a partial figure.
+  # R5 — "How was the weekend?" is ambiguous (which days count — does it
+  # include Friday?). Correct behavior: a clarifying question, OR an
+  # answer that states the assumption taken explicitly rather than
+  # silently picking a range.
   - description: "R5"
     vars:
       question: "How was the weekend?"
     assert:
       - type: javascript
-        value: "output?.status === 'clarification_needed' || (output?.status === 'answered' && !!output?.assumption_stated && /08|8th|missing|gap|no data/i.test(output?.answer_text ?? ''))"
+        value: "output?.status === 'clarification_needed' || (output?.status === 'answered' && !!output?.assumption_stated)"

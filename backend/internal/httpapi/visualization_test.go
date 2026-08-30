@@ -11,27 +11,27 @@ func inv(name, resultJSON string) explain.ToolInvocation {
 }
 
 const (
-	discrepanciesJSONFixture = `{"days_checked":14,"days":[
+	discrepanciesJSONSample = `{"days_checked":14,"days":[
 		{"date":"2026-08-08","flags":[{"type":"missing_delivery_source","detail":"no delivery-platform rows for this date"}]},
 		{"date":"2026-08-03","flags":[{"type":"duplicate_order_removed","detail":"order 4412 appeared twice"},{"type":"commission_mismatch","detail":"stated 8.10, recomputed 8.35"}]}
 	]}`
 
-	cleanDiscrepanciesJSONFixture = `{"days_checked":7,"days":[]}`
+	cleanDiscrepanciesJSONSample = `{"days_checked":7,"days":[]}`
 
-	marginDeltaJSONFixture = `{
+	marginDeltaJSONSample = `{
 		"period_a":{"start":"2026-08-01","end":"2026-08-07","days_included":7,"margin_total":"104.61"},
 		"period_b":{"start":"2026-08-08","end":"2026-08-14","days_included":7,"margin_total":"377.02"},
 		"delta_margin_total":"272.41"}`
 
-	dailySummaryAug07JSONFixture = `{"date":"2026-08-07","gross_sales_by_source":{"pos":"266.25","ifood":"74.25","just_eat_takeaway":"65.50"},
+	dailySummaryAug07JSONSample = `{"date":"2026-08-07","gross_sales_by_source":{"pos":"266.25","ifood":"74.25","just_eat_takeaway":"65.50"},
 		"total_delivery_gross_sales":"139.75","commissions":"20.96","refunds":"0.00","input_costs":"9.22","margin":"375.82",
 		"discrepancy_flags":[],"source_row_refs":[]}`
 
-	dailySummaryAug08JSONFixture = `{"date":"2026-08-08","gross_sales_by_source":{"pos":"487.50"},
+	dailySummaryAug08JSONSample = `{"date":"2026-08-08","gross_sales_by_source":{"pos":"487.50"},
 		"total_delivery_gross_sales":"0.00","commissions":"0.00","refunds":"0.00","input_costs":"335.00","margin":"152.50",
 		"discrepancy_flags":[{"type":"missing_delivery_source","detail":"none"}],"source_row_refs":[]}`
 
-	promotionsJSONFixture = `{"promotions":[
+	promotionsJSONSample = `{"promotions":[
 		{"platform":"iFood","campaign_id":"IFOOD-CAMP-BOOST01","period":{"start":"2026-08-01","end":"2026-08-07"},
 		 "spend":"180.00","attributed_incremental_orders":6,"attributed_incremental_revenue":"214.00","roi":"34.00","flagged_negative":false},
 		{"platform":"Just Eat Takeaway","campaign_id":"JET-CAMP-LUNCHFIX","period":{"start":"2026-08-04","end":"2026-08-10"},
@@ -41,12 +41,12 @@ const (
 		 "reason":"attribution_unavailable","flagged_negative":false}
 	]}`
 
-	singlePromotionJSONFixture = `{"promotions":[
+	singlePromotionJSONSample = `{"promotions":[
 		{"platform":"iFood","campaign_id":"IFOOD-CAMP-BOOST01","period":{"start":"2026-08-01","end":"2026-08-07"},
 		 "spend":"180.00","attributed_incremental_orders":6,"attributed_incremental_revenue":"214.00","roi":"34.00","flagged_negative":false}
 	]}`
 
-	periodTotalsPieJSONFixture = `{"start":"2026-08-01","end":"2026-08-14","days_included":14,
+	periodTotalsPieJSONSample = `{"start":"2026-08-01","end":"2026-08-14","days_included":14,
 		"gross_sales_by_source":{"pos":"3472.75","ifood":"838.00","just_eat_takeaway":"908.00"},
 		"total_delivery_gross_sales":"1746.00","commissions":"366.45","refunds":"34.50","refunds_by_source":{"ifood":"34.50"},
 		"input_costs":"4335.75","margin_total":"482.05","avg_daily_margin":"34.43",
@@ -54,13 +54,13 @@ const (
 
 	// One source: below MinPieSlices, must yield no chart, matching
 	// get_daily_summary's single-source case.
-	periodTotalsSingleSourceJSONFixture = `{"start":"2026-08-01","end":"2026-08-01","days_included":1,
+	periodTotalsSingleSourceJSONSample = `{"start":"2026-08-01","end":"2026-08-01","days_included":1,
 		"gross_sales_by_source":{"pos":"487.50"},
 		"total_delivery_gross_sales":"0.00","commissions":"0.00","refunds":"0.00","refunds_by_source":{},
 		"input_costs":"335.00","margin_total":"152.50","avg_daily_margin":"152.50",
 		"best_day":{"date":"2026-08-01","margin":"152.50"},"worst_day":{"date":"2026-08-01","margin":"152.50"},"source_row_refs":[]}`
 
-	platformComparisonJSONFixture = `{"period":{"start":"2026-08-01","end":"2026-08-14"},"days_included":14,"platforms":[
+	platformComparisonJSONSample = `{"period":{"start":"2026-08-01","end":"2026-08-14"},"days_included":14,"platforms":[
 		{"source":"ifood","display_name":"iFood","gross_sales":"838.00","commission_paid":"184.85","effective_rate":"22.06%",
 		 "promo_spend":"275.00","combined_cost":"459.85","combined_effective_rate":"54.87%","source_row_refs":[]},
 		{"source":"just_eat_takeaway","display_name":"Just Eat Takeaway","gross_sales":"908.00","commission_paid":"181.60","effective_rate":"20.00%",
@@ -70,7 +70,7 @@ const (
 	// A platform with zero gross sales this period (FR-003): effective_rate
 	// is null, never "0.00%", but the platform still appears with real
 	// zeros — the chart must render its (zero) bars, not drop it.
-	platformComparisonZeroSalesJSONFixture = `{"period":{"start":"1999-04-01","end":"1999-04-01"},"days_included":1,"platforms":[
+	platformComparisonZeroSalesJSONSample = `{"period":{"start":"1999-04-01","end":"1999-04-01"},"days_included":1,"platforms":[
 		{"source":"ifood","display_name":"iFood","gross_sales":"0.00","commission_paid":"0.00","effective_rate":null,
 		 "promo_spend":"0.00","combined_cost":"0.00","combined_effective_rate":null,"source_row_refs":[]},
 		{"source":"just_eat_takeaway","display_name":"Just Eat Takeaway","gross_sales":"100.00","commission_paid":"20.00","effective_rate":"20.00%",
@@ -99,40 +99,40 @@ func TestDeriveVisualizationKind(t *testing.T) {
 		},
 		{
 			name:        "list_discrepancies becomes a table, one row per flagged day",
-			invocations: []explain.ToolInvocation{inv("list_discrepancies", discrepanciesJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_discrepancies", discrepanciesJSONSample)},
 			wantKind:    VizKindTable,
 			wantTool:    "list_discrepancies",
 			wantRows:    2,
 		},
 		{
 			name:        "a clean period yields no table rather than an empty one",
-			invocations: []explain.ToolInvocation{inv("list_discrepancies", cleanDiscrepanciesJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_discrepancies", cleanDiscrepanciesJSONSample)},
 			wantKind:    "",
 		},
 		{
 			name:        "get_margin_delta becomes a two-bar comparison, never three bars",
-			invocations: []explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)},
 			wantKind:    VizKindBar,
 			wantTool:    "get_margin_delta",
 			wantPoints:  2,
 		},
 		{
 			name:        "a single day with three revenue sources becomes a pie",
-			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug07JSONSample)},
 			wantKind:    VizKindPie,
 			wantTool:    "get_daily_summary",
 			wantPoints:  3,
 		},
 		{
 			name:        "a single day with one revenue source yields no chart",
-			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug08JSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_daily_summary", dailySummaryAug08JSONSample)},
 			wantKind:    "",
 		},
 		{
 			name: "two days looked up in one interaction become a margin bar chart",
 			invocations: []explain.ToolInvocation{
-				inv("get_daily_summary", dailySummaryAug08JSONFixture),
-				inv("get_daily_summary", dailySummaryAug07JSONFixture),
+				inv("get_daily_summary", dailySummaryAug08JSONSample),
+				inv("get_daily_summary", dailySummaryAug07JSONSample),
 			},
 			wantKind:   VizKindBar,
 			wantTool:   "get_daily_summary",
@@ -140,21 +140,21 @@ func TestDeriveVisualizationKind(t *testing.T) {
 		},
 		{
 			name:        "several campaigns become a bar chart of ROI per campaign",
-			invocations: []explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONSample)},
 			wantKind:    VizKindBar,
 			wantTool:    "get_promotion_roi",
 			wantPoints:  3,
 		},
 		{
 			name:        "a single campaign becomes a detail table, never a one-bar chart",
-			invocations: []explain.ToolInvocation{inv("get_promotion_roi", singlePromotionJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_promotion_roi", singlePromotionJSONSample)},
 			wantKind:    VizKindTable,
 			wantTool:    "get_promotion_roi",
 			wantRows:    1,
 		},
 		{
 			name:        "list_negative_roi_promotions uses the same shape and records its own source tool",
-			invocations: []explain.ToolInvocation{inv("list_negative_roi_promotions", promotionsJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("list_negative_roi_promotions", promotionsJSONSample)},
 			wantKind:    VizKindBar,
 			wantTool:    "list_negative_roi_promotions",
 			wantPoints:  3,
@@ -166,28 +166,28 @@ func TestDeriveVisualizationKind(t *testing.T) {
 		},
 		{
 			name:        "compare_platform_economics becomes a 4-point bar chart, commission-only and combined per platform",
-			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONSample)},
 			wantKind:    VizKindBar,
 			wantTool:    "compare_platform_economics",
 			wantPoints:  4,
 		},
 		{
 			name:        "a platform with zero sales still gets its own bar pair, never omitted",
-			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonZeroSalesJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("compare_platform_economics", platformComparisonZeroSalesJSONSample)},
 			wantKind:    VizKindBar,
 			wantTool:    "compare_platform_economics",
 			wantPoints:  4,
 		},
 		{
 			name:        "get_period_totals with three revenue sources becomes a pie, same gate as a single day",
-			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsPieJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsPieJSONSample)},
 			wantKind:    VizKindPie,
 			wantTool:    "get_period_totals",
 			wantPoints:  3,
 		},
 		{
 			name:        "get_period_totals with one revenue source yields no chart, not a one-slice pie",
-			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsSingleSourceJSONFixture)},
+			invocations: []explain.ToolInvocation{inv("get_period_totals", periodTotalsSingleSourceJSONSample)},
 			wantKind:    "",
 		},
 	}
@@ -225,14 +225,14 @@ func TestDeriveVisualizationPriorityIsFixedNotCallOrder(t *testing.T) {
 	// The same set of tool calls must produce the same chart regardless of
 	// the order the model happened to make them in.
 	forward := deriveVisualization([]explain.ToolInvocation{
-		inv("get_daily_summary", dailySummaryAug07JSONFixture),
-		inv("get_margin_delta", marginDeltaJSONFixture),
-		inv("get_promotion_roi", promotionsJSONFixture),
+		inv("get_daily_summary", dailySummaryAug07JSONSample),
+		inv("get_margin_delta", marginDeltaJSONSample),
+		inv("get_promotion_roi", promotionsJSONSample),
 	})
 	reversed := deriveVisualization([]explain.ToolInvocation{
-		inv("get_promotion_roi", promotionsJSONFixture),
-		inv("get_margin_delta", marginDeltaJSONFixture),
-		inv("get_daily_summary", dailySummaryAug07JSONFixture),
+		inv("get_promotion_roi", promotionsJSONSample),
+		inv("get_margin_delta", marginDeltaJSONSample),
+		inv("get_daily_summary", dailySummaryAug07JSONSample),
 	})
 
 	if forward == nil || reversed == nil {
@@ -249,8 +249,8 @@ func TestDeriveVisualizationPlatformComparisonOutranksPromotions(t *testing.T) {
 	// narrowest/most specific subject wins, same doctrine as the existing
 	// priority test above.
 	viz := deriveVisualization([]explain.ToolInvocation{
-		inv("get_promotion_roi", promotionsJSONFixture),
-		inv("compare_platform_economics", platformComparisonJSONFixture),
+		inv("get_promotion_roi", promotionsJSONSample),
+		inv("compare_platform_economics", platformComparisonJSONSample),
 	})
 	if viz == nil {
 		t.Fatal("expected a visualization")
@@ -261,7 +261,7 @@ func TestDeriveVisualizationPlatformComparisonOutranksPromotions(t *testing.T) {
 }
 
 func TestPlatformComparisonChartShowsCommissionOnlyAndCombinedAsDistinctBars(t *testing.T) {
-	viz := deriveVisualization([]explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONFixture)})
+	viz := deriveVisualization([]explain.ToolInvocation{inv("compare_platform_economics", platformComparisonJSONSample)})
 	if viz == nil {
 		t.Fatal("expected a visualization")
 	}
@@ -299,7 +299,7 @@ func TestPlatformComparisonChartShowsCommissionOnlyAndCombinedAsDistinctBars(t *
 }
 
 func TestUnattributablePromotionIsMarkedUnavailableNotZero(t *testing.T) {
-	viz := deriveVisualization([]explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONFixture)})
+	viz := deriveVisualization([]explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONSample)})
 	if viz == nil {
 		t.Fatal("expected a visualization")
 	}
@@ -325,7 +325,7 @@ func TestUnattributablePromotionIsMarkedUnavailableNotZero(t *testing.T) {
 }
 
 func TestMoneyCrossesTheWireAsFormattedStringsAndGeometryDollars(t *testing.T) {
-	viz := deriveVisualization([]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONFixture)})
+	viz := deriveVisualization([]explain.ToolInvocation{inv("get_margin_delta", marginDeltaJSONSample)})
 	if viz == nil {
 		t.Fatal("expected a visualization")
 	}
@@ -356,7 +356,7 @@ func TestMoneyCrossesTheWireAsFormattedStringsAndGeometryDollars(t *testing.T) {
 }
 
 func TestNegativeMoneyRendersWithATypographicMinusOutsideTheCurrencySymbol(t *testing.T) {
-	viz := deriveVisualization([]explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONFixture)})
+	viz := deriveVisualization([]explain.ToolInvocation{inv("get_promotion_roi", promotionsJSONSample)})
 	if viz == nil {
 		t.Fatal("expected a visualization")
 	}

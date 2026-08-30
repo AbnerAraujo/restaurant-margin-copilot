@@ -66,10 +66,10 @@ whichever of `internal/ambiguity/` / `internal/explain/` ran.
 **Validation**: `refusal_fired = true` implies `answer_text IS NULL` and
 `provenance_refs = '[]'` — a refusal never carries a fabricated citation.
 
-## FixtureDataSource (design-time, not a DB table)
+## SourceDataFile (design-time, not a DB table)
 
 The four CSV shapes `internal/ingest/` parses: delivery-platform export, POS
-export, supplier cost sheet, promotion/ad-spend export. Each fixture file
+export, supplier cost sheet, promotion/ad-spend export. Each source file
 deliberately includes the irregularities named in `spec.md`'s Edge Cases
 (duplicate order, refund, missing day, inconsistent date format, incomplete
 promotion attribution). Column-name matching tolerates realistic real-world

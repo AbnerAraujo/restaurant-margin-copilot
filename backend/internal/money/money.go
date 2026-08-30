@@ -6,11 +6,12 @@
 // specifically to avoid the binary floating-point rounding error a naive
 // float64 computation would introduce.
 //
-// This is not theoretical: backend/fixtures/README.md documents that
+// This is not theoretical: the dataset's opening window (see
+// backend/cmd/gendata/opening/README.md) documents that
 // delivery-platform commission is computed as subtotal * commission_rate_pct
-// / 100, and 34.50 * 23% is exactly 7.935 — a value that Go's float64 (and
-// Python's default round()) can push to 7.93 instead of the fixture's
-// correct round-half-up 7.94, producing a false "commission mismatch" flag
+// / 100, and 48.50 * 23% is exactly 11.155 — a value that Go's float64 (and
+// Python's default round()) can push to 11.15 instead of the export's
+// correct round-half-up 11.16, producing a false "commission mismatch" flag
 // that has nothing to do with real data. Money and DivRoundHalfUp exist to
 // make that false positive impossible.
 package money
@@ -104,10 +105,10 @@ func FormatCents(cents int64) string {
 }
 
 // DivRoundHalfUp divides numerator by denominator, rounding half away from
-// zero — the convention this project's delivery-platform fixture data uses
+// zero — the convention this project's delivery-platform exports use
 // for commission math (see the package doc). Plain integer division
 // truncates toward zero, which would silently under-count commission by a
-// cent on exact .5 cases such as 34.50 * 23% = 7.935.
+// cent on exact .5 cases such as 48.50 * 23% = 11.155.
 func DivRoundHalfUp(numerator, denominator int64) int64 {
 	if denominator == 0 {
 		return 0

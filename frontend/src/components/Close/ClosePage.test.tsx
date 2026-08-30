@@ -33,8 +33,8 @@ const RECONCILIATION_RESPONSE = {
       margin: '43.26',
       discrepancy_flags: [],
       source_row_refs: [
-        { file: 'fixtures/pos_export.csv', row: 2 },
-        { file: 'fixtures/pos_export.csv', row: 5 },
+        { file: 'data/live/pos_export.csv', row: 2 },
+        { file: 'data/live/pos_export.csv', row: 5 },
       ],
     },
     {
@@ -52,7 +52,7 @@ const RECONCILIATION_RESPONSE = {
       discrepancy_flags: [
         { type: 'duplicate_order_removed', detail: 'order 4412 appeared twice' },
       ],
-      source_row_refs: [{ file: 'fixtures/pos_export.csv', row: 9 }],
+      source_row_refs: [{ file: 'data/live/pos_export.csv', row: 9 }],
     },
   ],
 }
@@ -157,7 +157,7 @@ describe('ClosePage', () => {
         input_costs: isLossDay ? '250.00' : '50.00',
         margin: isLossDay ? '-150.00' : '50.00',
         discrepancy_flags: [],
-        source_row_refs: [{ file: 'fixtures/pos_export.csv', row: i + 2 }],
+        source_row_refs: [{ file: 'data/live/pos_export.csv', row: i + 2 }],
       }
     })
     stubFetch({ start: days[0].date, end: days[days.length - 1].date, days })

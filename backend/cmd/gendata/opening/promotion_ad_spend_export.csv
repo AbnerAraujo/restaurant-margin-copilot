@@ -1,0 +1,5 @@
+platform,campaign_id,campaign_name,period_start,period_end,spend_amount,placement_type,notes
+iFood,IFOOD-CAMP-BOOST01,In-App Boost - Weekday Lunch,2024-08-01,2024-08-07,380.00,in_app_boost,
+Just Eat Takeaway,JET-CAMP-LUNCHFIX,Banner Ad - Lunch Fix Menu,2024-08-04,2024-08-10,610.00,banner_ad,
+iFood,IFOOD-CAMP-WEEKEND,Featured Placement - Weekend Boost,2024-08-09,2024-08-10,260.00,featured_placement,"iFood merchant dashboard export did not include a per-order attribution breakdown for this campaign (open support ticket #48213) -- no orders in the delivery-platform export carry this campaign_id, so incremental revenue cannot be computed from available data."
+Just Eat Takeaway,JET-CAMP-NEWMENU,Sponsored Listing - New Menu Launch,2024-08-11,2024-08-14,120.00,sponsored_listing,

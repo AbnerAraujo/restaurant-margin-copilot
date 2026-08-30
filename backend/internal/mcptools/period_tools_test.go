@@ -7,34 +7,34 @@ package mcptools_test
 // fakeQuerier with zero Postgres dependency, so this tool's core logic
 // still runs in a default `go test ./...`.
 //
-// TestGetPeriodTotals_TotalsARealMultiDayPeriodFromFixtureData below is the
-// one test in this file that reads the REAL, already-ingested fixture
-// pipeline output (2026-08-01..14) rather than writing sentinel rows of its
-// own — its expected numbers are NOT computed by this test or trusted from
-// this tool's own output; they are copied from
-// internal/reconcile/reconcile_test.go's own independently-verified golden
-// values for 2026-08-01 and 2026-08-02 (themselves hand-verified twice per
-// docs/plan.md's mistakes log: once via Python's Decimal with explicit
-// ROUND_HALF_UP, once against the real pipeline's persisted output), so no
-// fresh arithmetic error can sneak into this test's own expectations. This
-// test writes nothing and cleans up nothing — a design deliberately chosen
-// per the docs/plan.md "sentinel key collision" lesson recorded in
+// TestGetPeriodTotals_TotalsARealMultiDayPeriodFromOpeningData below is the
+// one test in this file that reads the REAL, already-ingested pipeline
+// output for the dataset's hand-authored opening window (2024-08-01..14)
+// rather than writing sentinel rows of its own — its expected numbers are
+// NOT computed by this test or trusted from this tool's own output; they
+// are copied from internal/reconcile/reconcile_test.go's own
+// independently-verified golden values for 2024-08-01 and 2024-08-02
+// (themselves cross-checked against cmd/gendata/opening/README.md's
+// hand-computed reference tables), so no fresh arithmetic error can sneak
+// into this test's own expectations. This test writes nothing and cleans
+// up nothing — a design deliberately chosen per the docs/plan.md
+// "sentinel key collision" lesson recorded in
 // reconciliation_tools_test.go's own doc comment (an earlier integration
-// test used the real, in-range fixture date 2026-08-08 as its own test
-// key, and its cleanup silently deleted real pipeline output sharing that
-// key). All other tests in this file use sentinel dates far outside the
-// real fixture period (2020-xx-xx), exactly like reconciliation_tools_test.go.
+// test used a real, in-range dataset date as its own test key, and its
+// cleanup silently deleted real pipeline output sharing that key). All
+// other tests in this file use sentinel dates far outside the real
+// dataset period (1999/2020-xx-xx), exactly like reconciliation_tools_test.go.
 //
-// Note on 2026-08-08: fixtures/README.md's irregularity #3 documents that
+// Note on 2024-08-10: opening/README.md's irregularity #3 documents that
 // date as having ZERO delivery-platform rows, but the real pipeline still
 // computes and persists a DailyReconciliation row for it (flagged
 // missing_delivery_source, not absent) — verified directly against the
-// live database for this task. get_margin_delta/get_period_totals'
-// insufficient_data refusal fires on a calendar day with NO persisted row
-// at all, which 2026-08-08 is not; the missing-day refusal tests below
-// therefore use sentinel dates with a genuine gap, the same technique
+// live database. get_margin_delta/get_period_totals' insufficient_data
+// refusal fires on a calendar day with NO persisted row at all, which
+// 2024-08-10 is not; the missing-day refusal tests below therefore use
+// sentinel dates with a genuine gap, the same technique
 // reconciliation_tools_test.go's own TestGetMarginDelta_InsufficientDataWhenPeriodHasMissingDay
-// already established, rather than 2026-08-08.
+// already established, rather than 2024-08-10.
 
 import (
 	"context"
@@ -47,55 +47,55 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
 
-// TestGetPeriodTotals_TotalsARealMultiDayPeriodFromFixtureData totals the
-// real 2026-08-01..2026-08-02 window against the real, already-ingested
-// fixture pipeline output. Expected figures are reconcile_test.go's own
+// TestGetPeriodTotals_TotalsARealMultiDayPeriodFromOpeningData totals the
+// real 2024-08-01..2024-08-02 window against the real, already-ingested
+// pipeline output. Expected figures are reconcile_test.go's own
 // independently-verified golden values for those two days:
 //
-//	2026-08-01: ifood 69.50, just_eat_takeaway 76.25, pos 248.75,
-//	            commissions 31.24, refunds 0, input_costs 320.00,
-//	            margin 43.26 (TestComputeDailyReconciliations_CleanDayMatchesHandComputation)
-//	2026-08-02: ifood 72.50, just_eat_takeaway 81.75, pos 223.75,
-//	            commissions 25.09, refunds 34.50, input_costs 545.50,
-//	            margin -227.09 (TestComputeDailyReconciliations_RefundNetsCorrectly)
+//	2024-08-01: ifood 196.50, just_eat_takeaway 178.25, pos 736.50,
+//	            commissions 80.85, refunds 0, input_costs 328.50,
+//	            margin 701.90 (TestComputeDailyReconciliations_CleanDayMatchesHandComputation)
+//	2024-08-02: ifood 231.75, just_eat_takeaway 214.50, pos 802.25,
+//	            commissions 81.90, refunds 62.25, input_costs 612.75,
+//	            margin 491.60 (TestComputeDailyReconciliations_RefundNetsCorrectly)
 //
 // Summed by hand here (not by this tool, not by reconcile_test.go):
 //
-//	ifood:        69.50 + 72.50   = 142.00
-//	just_eat:     76.25 + 81.75   = 158.00
-//	pos:         248.75 + 223.75  = 472.50
-//	delivery total (ifood+just_eat, pos excluded): 142.00 + 158.00 = 300.00
-//	commissions:  31.24 + 25.09   =  56.33
-//	refunds:       0.00 + 34.50   =  34.50
-//	input_costs: 320.00 + 545.50  = 865.50
-//	margin_total: 43.26 + (-227.09) = -183.83
-//	avg_daily_margin: -183.83 / 2 = -91.915 -> round-half-up -> -91.92
-//	best_day: 2026-08-01 (43.26); worst_day: 2026-08-02 (-227.09)
-func TestGetPeriodTotals_TotalsARealMultiDayPeriodFromFixtureData(t *testing.T) {
+//	ifood:       196.50 + 231.75  = 428.25
+//	just_eat:    178.25 + 214.50  = 392.75
+//	pos:         736.50 + 802.25  = 1538.75
+//	delivery total (ifood+just_eat, pos excluded): 428.25 + 392.75 = 821.00
+//	commissions:  80.85 + 81.90   = 162.75
+//	refunds:       0.00 + 62.25   =  62.25
+//	input_costs: 328.50 + 612.75  = 941.25
+//	margin_total: 701.90 + 491.60 = 1193.50
+//	avg_daily_margin: 1193.50 / 2 = 596.75
+//	best_day: 2024-08-01 (701.90); worst_day: 2024-08-02 (491.60)
+func TestGetPeriodTotals_TotalsARealMultiDayPeriodFromOpeningData(t *testing.T) {
 	_, q := connectAndQueries(t)
 	ctx := context.Background()
 
-	result, toolErr, err := mcptools.GetPeriodTotals(ctx, q, mcptools.Period{Start: "2026-08-01", End: "2026-08-02"})
+	result, toolErr, err := mcptools.GetPeriodTotals(ctx, q, mcptools.Period{Start: "2024-08-01", End: "2024-08-02"})
 	require.NoError(t, err)
-	require.Nil(t, toolErr, "the real fixture pipeline must already have both days persisted")
+	require.Nil(t, toolErr, "the real pipeline must already have both days persisted")
 	require.NotNil(t, result)
 
 	require.Equal(t, 2, result.DaysIncluded)
-	require.Equal(t, "142.00", result.GrossSalesBySource["ifood"])
-	require.Equal(t, "158.00", result.GrossSalesBySource["just_eat_takeaway"])
-	require.Equal(t, "472.50", result.GrossSalesBySource["pos"])
-	require.Equal(t, "300.00", result.TotalDeliveryGrossSales, "142.00 (ifood) + 158.00 (just_eat_takeaway); pos excluded")
-	require.Equal(t, "56.33", result.Commissions)
-	require.Equal(t, "34.50", result.Refunds)
-	require.Equal(t, "34.50", result.RefundsBySource["ifood"], "A15: fixtures/README.md's only refund in this window (order 0007) is iFood's")
+	require.Equal(t, "428.25", result.GrossSalesBySource["ifood"])
+	require.Equal(t, "392.75", result.GrossSalesBySource["just_eat_takeaway"])
+	require.Equal(t, "1538.75", result.GrossSalesBySource["pos"])
+	require.Equal(t, "821.00", result.TotalDeliveryGrossSales, "428.25 (ifood) + 392.75 (just_eat_takeaway); pos excluded")
+	require.Equal(t, "162.75", result.Commissions)
+	require.Equal(t, "62.25", result.Refunds)
+	require.Equal(t, "62.25", result.RefundsBySource["ifood"], "A15: opening/README.md's only refund in this window (order 0006) is iFood's")
 	require.NotContains(t, result.RefundsBySource, "just_eat_takeaway", "no Just Eat Takeaway refund exists in this window")
-	require.Equal(t, "865.50", result.InputCosts)
-	require.Equal(t, "-183.83", result.MarginTotal, "43.26 + (-227.09)")
-	require.Equal(t, "-91.92", result.AvgDailyMargin, "-183.83 / 2 = -91.915, round-half-up to -91.92")
-	require.Equal(t, "2026-08-01", result.BestDay.Date)
-	require.Equal(t, "43.26", result.BestDay.Margin)
-	require.Equal(t, "2026-08-02", result.WorstDay.Date)
-	require.Equal(t, "-227.09", result.WorstDay.Margin)
+	require.Equal(t, "941.25", result.InputCosts)
+	require.Equal(t, "1193.50", result.MarginTotal, "701.90 + 491.60")
+	require.Equal(t, "596.75", result.AvgDailyMargin, "1193.50 / 2")
+	require.Equal(t, "2024-08-01", result.BestDay.Date)
+	require.Equal(t, "701.90", result.BestDay.Margin)
+	require.Equal(t, "2024-08-02", result.WorstDay.Date)
+	require.Equal(t, "491.60", result.WorstDay.Margin)
 	require.NotEmpty(t, result.SourceRowRefs)
 }
 

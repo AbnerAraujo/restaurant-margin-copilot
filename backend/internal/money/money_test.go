@@ -104,7 +104,7 @@ func TestDivRoundHalfUp_PackageDocExample(t *testing.T) {
 
 // TestDivRoundHalfUp covers both positive and negative operand combinations:
 // the review flagged that the negative branch was previously exercised only
-// transitively, via a single fixture row.
+// transitively, via a single real data row.
 func TestDivRoundHalfUp(t *testing.T) {
 	tests := []struct {
 		name        string

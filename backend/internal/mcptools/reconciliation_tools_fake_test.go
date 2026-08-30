@@ -22,7 +22,7 @@ import (
 
 // TestGetDailySummary_ReturnsPersistedDay_Fake proves the fake is correct
 // against a known-good case, not just wired up to pass the refusal path:
-// same fixture-shaped values and assertions as
+// same sample values and assertions as
 // reconciliation_tools_test.go's live TestGetDailySummary_ReturnsPersistedDay.
 func TestGetDailySummary_ReturnsPersistedDay_Fake(t *testing.T) {
 	q := newFakeQuerier()

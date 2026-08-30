@@ -169,7 +169,7 @@ function collapseRefs(
  * The chart takes a display name per campaign, which the API does not carry —
  * campaign_id is the only identifier the deterministic layer has. Rather than
  * invent a marketing-style name (the previous hardcoded page did exactly
- * that: "In-App Boost — Weekday Lunch" appears nowhere in the fixtures), the
+ * that: "In-App Boost — Weekday Lunch" appears nowhere in the dataset), the
  * id doubles as the name and the platform supplies the human context.
  */
 function toChartDatum(promotion: PromotionApi): PromotionRoiDatum {

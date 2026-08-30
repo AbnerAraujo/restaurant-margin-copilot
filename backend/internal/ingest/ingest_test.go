@@ -9,21 +9,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Fixture paths are relative to this package, matching backend/fixtures/'s
-// location two directories up. fixtures/README.md documents every
-// deliberate irregularity below with exact row IDs and independently
-// hand-verified sums — that file is the ground truth these tests assert
-// against, not a reimplementation of it.
+// Paths are relative to this package, pointing at the dataset's checked-in
+// hand-authored opening window (backend/cmd/gendata/opening/).
+// opening/README.md documents every deliberate irregularity below with
+// exact row IDs and independently hand-verified sums — that file is the
+// ground truth these tests assert against, not a reimplementation of it.
 const (
-	fixtureDeliveryFile = "../../fixtures/delivery_platform_export.csv"
-	fixturePOSFile      = "../../fixtures/pos_export.csv"
-	fixtureCostFile     = "../../fixtures/supplier_cost_sheet.csv"
+	openingDeliveryFile = "../../cmd/gendata/opening/delivery_platform_export.csv"
+	openingPOSFile      = "../../cmd/gendata/opening/pos_export.csv"
+	openingCostFile     = "../../cmd/gendata/opening/supplier_cost_sheet.csv"
 )
 
-func openFixture(t *testing.T, path string) *os.File {
+func openDataFile(t *testing.T, path string) *os.File {
 	t.Helper()
 	f, err := os.Open(path)
-	require.NoError(t, err, "fixture file must exist: %s", path)
+	require.NoError(t, err, "opening-window file must exist: %s", path)
 	t.Cleanup(func() { _ = f.Close() })
 	return f
 }
@@ -35,47 +35,47 @@ func mustDate(t *testing.T, s string) time.Time {
 	return d
 }
 
-// --- Irregularity #1: duplicate order (fixtures/README.md) ---
-// order_id IFOOD-20260803-0011 appears twice, byte-for-byte identical.
+// --- Irregularity #1: duplicate order (opening/README.md) ---
+// order_id IFOOD-20240803-0011 appears twice, byte-for-byte identical.
 // Ingestion's job is only to parse rows faithfully — deduplication is
 // internal/reconcile's business-logic concern (T012/T014) — so this
 // asserts parsing preserves both rows rather than silently collapsing or
 // losing one.
 func TestParseDeliveryExport_DuplicateOrderBothRowsPreserved(t *testing.T) {
-	records, err := ParseDeliveryExport(openFixture(t, fixtureDeliveryFile), fixtureDeliveryFile)
+	records, err := ParseDeliveryExport(openDataFile(t, openingDeliveryFile), openingDeliveryFile)
 	require.NoError(t, err)
 
 	var matches []DeliveryRecord
 	for _, r := range records {
-		if r.OrderID == "IFOOD-20260803-0011" {
+		if r.OrderID == "IFOOD-20240803-0011" {
 			matches = append(matches, r)
 		}
 	}
 
-	require.Lenf(t, matches, 2, "expected both duplicate rows for IFOOD-20260803-0011 to be parsed, not deduplicated at ingest time")
+	require.Lenf(t, matches, 2, "expected both duplicate rows for IFOOD-20240803-0011 to be parsed, not deduplicated at ingest time")
 	for _, r := range matches {
 		require.Equal(t, "iFood", r.Platform)
 		require.Equal(t, int64(2400), r.SubtotalCents)
 		require.Equal(t, "completed", r.Status)
-		require.Equal(t, mustDate(t, "2026-08-03"), r.OrderDate)
+		require.Equal(t, mustDate(t, "2024-08-03"), r.OrderDate)
 		require.Equal(t, "IFOOD-CAMP-BOOST01", r.CampaignID)
 	}
 	require.NotEqual(t, matches[0].Ref.Row, matches[1].Ref.Row, "duplicate rows must carry distinct row provenance")
 }
 
-// --- Irregularity #2: refund from a prior period (fixtures/README.md) ---
-// order_id IFOOD-20260802-0007 was placed 2026-08-02 and reversed by a
-// second row with the same order_id, refund_date=2026-08-09 (one week
+// --- Irregularity #2: refund from a prior period (opening/README.md) ---
+// order_id IFOOD-20240802-0006 was placed 2024-08-02 and reversed by a
+// second row with the same order_id, refund_date=2024-08-09 (one week
 // later). Ingestion must preserve order_date as the original order's date
 // (not the refund date) and parse refund_date separately.
 func TestParseDeliveryExport_RefundRowParsedWithOriginalOrderDate(t *testing.T) {
-	records, err := ParseDeliveryExport(openFixture(t, fixtureDeliveryFile), fixtureDeliveryFile)
+	records, err := ParseDeliveryExport(openDataFile(t, openingDeliveryFile), openingDeliveryFile)
 	require.NoError(t, err)
 
 	var original, refund *DeliveryRecord
 	for i := range records {
 		r := &records[i]
-		if r.OrderID != "IFOOD-20260802-0007" {
+		if r.OrderID != "IFOOD-20240802-0006" {
 			continue
 		}
 		switch r.Status {
@@ -86,28 +86,28 @@ func TestParseDeliveryExport_RefundRowParsedWithOriginalOrderDate(t *testing.T) 
 		}
 	}
 
-	require.NotNil(t, original, "original completed row for IFOOD-20260802-0007 must parse")
-	require.NotNil(t, refund, "refund row for IFOOD-20260802-0007 must parse")
+	require.NotNil(t, original, "original completed row for IFOOD-20240802-0006 must parse")
+	require.NotNil(t, refund, "refund row for IFOOD-20240802-0006 must parse")
 
-	require.Equal(t, int64(3450), original.SubtotalCents)
+	require.Equal(t, int64(6225), original.SubtotalCents)
 	require.Nil(t, original.RefundDate)
 
-	require.Equal(t, mustDate(t, "2026-08-02"), refund.OrderDate, "refund row's order_date must stay the original order date, not the refund date")
-	require.Equal(t, int64(-3450), refund.SubtotalCents)
-	require.Equal(t, int64(-794), refund.CommissionCents)
-	require.Equal(t, int64(-2656), refund.NetPayoutCents)
+	require.Equal(t, mustDate(t, "2024-08-02"), refund.OrderDate, "refund row's order_date must stay the original order date, not the refund date")
+	require.Equal(t, int64(-6225), refund.SubtotalCents)
+	require.Equal(t, int64(-1432), refund.CommissionCents)
+	require.Equal(t, int64(-4793), refund.NetPayoutCents)
 	require.NotNil(t, refund.RefundDate)
-	require.Equal(t, mustDate(t, "2026-08-09"), *refund.RefundDate, "refund_date must be parsed as the settlement date, one week after order_date")
+	require.Equal(t, mustDate(t, "2024-08-09"), *refund.RefundDate, "refund_date must be parsed as the settlement date, one week after order_date")
 }
 
-// --- Irregularity #3: missing day (fixtures/README.md) ---
-// delivery_platform_export.csv has zero rows for 2026-08-08.
+// --- Irregularity #3: missing day (opening/README.md) ---
+// delivery_platform_export.csv has zero rows for 2024-08-10.
 func TestParseDeliveryExport_MissingDayHasNoRows(t *testing.T) {
-	records, err := ParseDeliveryExport(openFixture(t, fixtureDeliveryFile), fixtureDeliveryFile)
+	records, err := ParseDeliveryExport(openDataFile(t, openingDeliveryFile), openingDeliveryFile)
 	require.NoError(t, err)
 
 	for _, r := range records {
-		require.NotEqual(t, mustDate(t, "2026-08-08"), r.OrderDate, "delivery export must have zero rows for 2026-08-08 per fixtures/README.md")
+		require.NotEqual(t, mustDate(t, "2024-08-10"), r.OrderDate, "delivery export must have zero rows for 2024-08-10 per opening/README.md")
 	}
 }
 
@@ -117,7 +117,7 @@ func TestParseDeliveryExport_MissingDayHasNoRows(t *testing.T) {
 // files, including the deliberately ambiguous case (day <= 12 and month <=
 // 12, e.g. "01/08/2026") where a naive parse could silently swap day/month.
 func TestParsePOSExport_InconsistentDateFormatResolvedCorrectly(t *testing.T) {
-	records, err := ParsePOSExport(openFixture(t, fixturePOSFile), fixturePOSFile)
+	records, err := ParsePOSExport(openDataFile(t, openingPOSFile), openingPOSFile)
 	require.NoError(t, err)
 
 	byID := make(map[string]POSRecord, len(records))
@@ -125,27 +125,26 @@ func TestParsePOSExport_InconsistentDateFormatResolvedCorrectly(t *testing.T) {
 		byID[r.OrderID] = r
 	}
 
-	// POS-1028..1031 are dated 08/08/2026 in the fixture: unambiguous once
-	// parsed (day=8, month=8), and must land on the same missing-delivery
-	// calendar day (irregularity #3) that the delivery/cost-sheet ISO
-	// exports call 2026-08-08.
-	for _, id := range []string{"POS-1028", "POS-1029", "POS-1030", "POS-1031"} {
+	// POS-1054..1059 are dated 10/08/2024 in the opening window: they must
+	// land on the same missing-delivery calendar day (irregularity #3) that
+	// the delivery/cost-sheet ISO exports call 2024-08-10.
+	for _, id := range []string{"POS-1054", "POS-1055", "POS-1056", "POS-1057", "POS-1058", "POS-1059"} {
 		r, ok := byID[id]
 		require.Truef(t, ok, "expected POS record %s", id)
-		require.Equal(t, mustDate(t, "2026-08-08"), r.OrderDate, "%s date must resolve to 2026-08-08", id)
+		require.Equal(t, mustDate(t, "2024-08-10"), r.OrderDate, "%s date must resolve to 2024-08-10", id)
 	}
 
-	// POS-1000 is dated "01/08/2026" — genuinely ambiguous (day=1,month=8
+	// POS-1000 is dated "01/08/2024" — genuinely ambiguous (day=1,month=8
 	// vs. day=8,month=1). The documented DD/MM default must resolve this to
-	// 2026-08-01 (August), not 2026-01-08 (January).
+	// 2024-08-01 (August), not 2024-01-08 (January).
 	r, ok := byID["POS-1000"]
 	require.True(t, ok, "expected POS record POS-1000")
-	require.Equal(t, mustDate(t, "2026-08-01"), r.OrderDate, "ambiguous DD/MM date must default to day-first, per the documented assumption")
-	require.Equal(t, int64(7850), r.GrossCents)
+	require.Equal(t, mustDate(t, "2024-08-01"), r.OrderDate, "ambiguous DD/MM date must default to day-first, per the documented assumption")
+	require.Equal(t, int64(15250), r.GrossCents)
 }
 
 // --- Per-file (not per-row) date format resolution ---
-// fixtures/README.md irregularity #4 documents the DD/MM-vs-MM/DD
+// opening/README.md irregularity #4 documents the DD/MM-vs-MM/DD
 // difference as systematic PER FILE, not a row-by-row toss-up. A file's
 // format must be established once, from its own unambiguous rows (any row
 // with one part > 12), and a later row that unambiguously contradicts that
@@ -192,19 +191,19 @@ POS-3,17/01/2026,9.50
 }
 
 func TestParseCostSheet_ParsesAllInvoices(t *testing.T) {
-	records, err := ParseCostSheet(openFixture(t, fixtureCostFile), fixtureCostFile)
+	records, err := ParseCostSheet(openDataFile(t, openingCostFile), openingCostFile)
 	require.NoError(t, err)
-	require.Len(t, records, 12, "fixtures/README.md documents 12 invoices")
+	require.Len(t, records, 14, "opening/README.md documents 14 invoices")
 
 	var total int64
 	for _, r := range records {
 		total += r.AmountCents
 	}
-	require.Equal(t, int64(433575), total, "fixtures/README.md's independently-verified supplier cost total is 4335.75")
+	require.Equal(t, int64(500275), total, "opening/README.md's independently-verified supplier cost total is 5,002.75")
 }
 
 // Real-file compatibility (research.md): ingestion must tolerate realistic
-// column-name variance, not just the fixture files' exact headers. This
+// column-name variance, not just the opening window's exact headers. This
 // constructs an in-memory delivery export using differently named, reordered,
 // and differently-cased columns and confirms parsing still succeeds.
 func TestParseDeliveryExport_ToleratesRealisticColumnNameVariance(t *testing.T) {

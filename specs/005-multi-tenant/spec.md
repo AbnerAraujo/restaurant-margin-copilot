@@ -50,7 +50,7 @@ A new restaurant owner can create an account, ingest their own data, and begin u
 
 ### User Story 3 - An existing single-tenant deployment is not silently broken by this change (Priority: P3)
 
-The current prototype's data (the 14-day fixture period already relied upon by the evaluation harness, the presentation, and every existing test) continues to exist, coherently, as exactly one tenant after this change — not lost, not duplicated, not silently reassigned.
+The current prototype's data (the single continuous dataset already relied upon by the evaluation harness, the presentation, and every existing test) continues to exist, coherently, as exactly one tenant after this change — not lost, not duplicated, not silently reassigned.
 
 **Why this priority**: A correctness/migration requirement, sequenced last because it is only meaningful once User Stories 1 and 2 define what "a tenant" actually is.
 

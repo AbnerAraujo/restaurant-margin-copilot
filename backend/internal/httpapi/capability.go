@@ -82,7 +82,7 @@ func capabilityAnswerText(dataStart, dataEnd string) string {
 - **Promotion ROI** — a specific campaign's return, or every campaign that's losing money in a period.
 - **How the delivery platforms compare** — commission rates and promo spend, iFood against Just Eat Takeaway, side by side.
 
-If a question needs data this product doesn't have — a date outside the window, a platform or supplier that was never in the fixture set — I'll say so plainly instead of estimating. A confidently wrong number is worse than an honest "I don't have that."`,
+If a question needs data this product doesn't have — a date outside the window, a platform or supplier that was never in its data — I'll say so plainly instead of estimating. A confidently wrong number is worse than an honest "I don't have that."`,
 		coverage,
 	)
 }

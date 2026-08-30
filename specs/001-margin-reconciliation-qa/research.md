@@ -38,6 +38,6 @@ traceability, not to re-litigate them.
 
 ## Real-file compatibility (spec Assumptions)
 
-- **Decision**: `internal/ingest/` parses generic, realistic CSV shapes per source type (column-name matching with reasonable tolerance for the delivery/POS/cost/promo formats), not fixture-file-exact columns.
-- **Rationale**: The user wants to try this with a real restaurant/bar's actual export files, not only synthetic fixtures — ingestion needs to survive real-world column naming and ordering variance, not just the fixture set's exact shape.
-- **Alternatives considered**: Hard-coding fixture columns (fastest to build, fails the real-file goal) — rejected.
+- **Decision**: `internal/ingest/` parses generic, realistic CSV shapes per source type (column-name matching with reasonable tolerance for the delivery/POS/cost/promo formats), not exact-header-only columns.
+- **Rationale**: The user wants to try this with a real restaurant/bar's actual export files, not only this project's own CSVs — ingestion needs to survive real-world column naming and ordering variance, not just one exact shape.
+- **Alternatives considered**: Hard-coding this project's own column headers (fastest to build, fails the real-file goal) — rejected.

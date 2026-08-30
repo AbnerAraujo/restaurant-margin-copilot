@@ -46,5 +46,5 @@ ORDER BY date;
 -- internal/explain's system prompt as plain strings, so relative date
 -- language ("today", "this week", a year-less date) resolves against the
 -- real data's own range instead of the host machine's wall-clock date or
--- a hardcoded literal that could drift from the fixtures actually loaded.
+-- a hardcoded literal that could drift from the data actually loaded.
 SELECT MIN(date)::date AS min_date, MAX(date)::date AS max_date FROM daily_reconciliation;

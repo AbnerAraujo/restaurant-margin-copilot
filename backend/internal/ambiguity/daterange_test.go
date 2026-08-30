@@ -12,7 +12,7 @@ import (
 )
 
 // The multi-year window from the real 2026-08-29 incident: 730 synthetic
-// days plus the 14-day fixture, spanning three calendar years.
+// days spanning three calendar years.
 const (
 	incidentStart = "2024-08-01"
 	incidentEnd   = "2026-08-14"

@@ -182,7 +182,7 @@ func PromotionRoiRecordToDomain(row PromotionRoiRecord) (reconcile.PromotionRoiR
 // promotion_roi_record.period (and for the period-overlap query parameters
 // on GetPromotionRoiByPlatformAndPeriod / ListNegativeRoiPromotions) from a
 // calendar period_start/period_end that are both inclusive dates, per
-// fixtures/README.md's promotion export ("2026-08-01 to 2026-08-07").
+// cmd/gendata/opening/README.md's promotion export ("2024-08-01 to 2024-08-07").
 //
 // Postgres canonicalizes any DATERANGE bound to the form [start, end) on
 // storage, regardless of how it was inserted — a documented Postgres

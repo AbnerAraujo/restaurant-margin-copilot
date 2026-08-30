@@ -63,7 +63,7 @@ type Querier interface {
 	// internal/explain's system prompt as plain strings, so relative date
 	// language ("today", "this week", a year-less date) resolves against the
 	// real data's own range instead of the host machine's wall-clock date or
-	// a hardcoded literal that could drift from the fixtures actually loaded.
+	// a hardcoded literal that could drift from the data actually loaded.
 	GetDataDateRange(ctx context.Context) (GetDataDateRangeRow, error)
 	// Backs the get_promotion_roi MCP tool contract (campaign_id input form).
 	GetPromotionRoiByCampaign(ctx context.Context, campaignID string) ([]PromotionRoiRecord, error)

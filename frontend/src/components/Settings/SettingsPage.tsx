@@ -97,7 +97,7 @@ export default function SettingsPage() {
           <SettingsLink
             icon={Code2}
             label="Source (GitHub)"
-            description="Full repository — backend, frontend, fixtures, specs."
+            description="Full repository — backend, frontend, dataset generator, specs."
             href="https://github.com/AbnerAraujo/restaurant-margin-copilot"
           />
           <SettingsLink

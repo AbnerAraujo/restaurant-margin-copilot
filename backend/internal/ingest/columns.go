@@ -7,11 +7,11 @@ import (
 
 // headerIndex resolves logical field names to CSV column indices, tolerating
 // realistic real-world header variance (case, spaces vs underscores vs
-// hyphens, a trailing "number"/"#") rather than requiring the fixture
+// hyphens, a trailing "number"/"#") rather than requiring the dataset
 // files' exact column names. This is a real design constraint, not
 // polish: research.md's real-file-compatibility decision requires ingestion
 // to survive an actual restaurant/bar's own export files, whose column
-// names will not match this project's fixtures byte-for-byte.
+// names will not match this project's own CSVs byte-for-byte.
 type headerIndex struct {
 	index map[string]int
 }

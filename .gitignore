@@ -47,6 +47,7 @@ pgdata/
 # --- Spec Kit / SDD working files that are just scratch ---
 specs/**/*.tmp
 
-# --- Live data (specs/007-cost-sheet-upload): real uploads land here, never
-# in the git-tracked backend/fixtures/ the evaluation harness depends on. ---
+# --- The generated dataset (backend/cmd/gendata): real uploads
+# (specs/007-cost-sheet-upload) land here too. The hand-authored opening
+# window it embeds stays git-tracked at backend/cmd/gendata/opening/. ---
 backend/data/live/

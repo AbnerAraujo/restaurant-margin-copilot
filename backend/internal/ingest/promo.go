@@ -12,7 +12,7 @@ import (
 // platform's campaign export (iFood, Just Eat Takeaway, or any similarly
 // -shaped platform). Attribution — which orders it drove, and how much
 // incremental revenue that produced — is deliberately NOT parsed from this
-// file: per spec.md's Assumptions and fixtures/README.md, incremental
+// file: per spec.md's Assumptions and cmd/gendata/opening/README.md, incremental
 // revenue is computed by internal/reconcile as a tag-join against
 // DeliveryRecord.CampaignID, not read as a pre-baked column here. This
 // package stays as "dumb" about attribution as ingest.go's doc comment says

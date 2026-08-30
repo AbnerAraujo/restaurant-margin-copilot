@@ -23,7 +23,8 @@ Prior report (1.2.0, superseded above):
 - Modified sections: Technology & Scope Constraints — the ambiguity gate
   moved from Claude Haiku 4.5 to Claude Sonnet 5 on 2026-08-29. Real,
   reproducible cause: once the live dataset grew to a multi-year range
-  (backend/cmd/gendata's synthetic history on top of the fixture), Haiku's
+  (backend/cmd/gendata's synthetic history behind the original 14-day
+  window), Haiku's
   classification calls repeatedly misclassified fully in-range, explicitly
   dated questions as unanswerable — a genuine date-comparison failure across
   a year boundary, not a prompt-wording issue (three prompt-only fixes were
@@ -89,7 +90,8 @@ falsifiable instead of asserted, and is the cheapest possible trust signal
 to build.
 
 ### V. Test-First for the Deterministic Core
-Build order is fixed and MUST NOT be reordered: (1) fixture data, including
+Build order is fixed and MUST NOT be reordered: (1) hand-authored test
+data, including
 deliberate messiness (duplicate order, refund, missing day, inconsistent
 date format), (2) the Go reconciliation engine, proven with tests, before
 (3) any LLM call exists. The model layer, instrumentation, and evaluation

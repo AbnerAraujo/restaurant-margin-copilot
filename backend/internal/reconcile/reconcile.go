@@ -26,9 +26,9 @@ const dateKeyLayout = "2006-01-02"
 //     platform, order_id, timestamps, and amounts) is collapsed to one,
 //     with a duplicate_order_removed flag naming the rows involved.
 //   - Refund netting: netted against the refunded row's order_date field
-//     (which the fixture data — and most real platform exports — carries
+//     (which this dataset — and most real platform exports — carries
 //     as the *original* order's date, not the refund settlement date),
-//     per fixtures/README.md's documented convention. GrossSalesBySource
+//     per cmd/gendata/opening/README.md's documented convention. GrossSalesBySource
 //     reports completed-only gross bookings; RefundsCents is the separate
 //     refunded amount; commissions are summed across completed AND
 //     refunded rows for the same order_date, since a platform reverses its
@@ -47,7 +47,7 @@ const dateKeyLayout = "2006-01-02"
 //   - Supplier cost allocation: costs are allocated to their own
 //     invoice_date only (point allocation, no smoothing/amortization
 //     across the gap until the next invoice). Real supplier billing is not
-//     daily (fixtures/README.md), so a day without an invoice simply
+//     daily (cmd/gendata/opening/README.md), so a day without an invoice simply
 //     contributes zero input cost that day — a known, visible modeling
 //     choice, not a hidden average.
 func ComputeDailyReconciliations(delivery []ingest.DeliveryRecord, pos []ingest.POSRecord, costs []ingest.CostInvoiceRecord) []DailyReconciliation {
@@ -179,8 +179,9 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 
 // recomputeCommissionCents independently derives commission from subtotal
 // and the file's stated rate, rather than trusting the file's own
-// commission_amount column — a defensive check the fixture data explicitly
-// calls for (fixtures/README.md: "the reconciliation engine should still be
+// commission_amount column — a defensive check the dataset explicitly
+// calls for (cmd/gendata/opening/README.md: "the reconciliation engine still
+// recomputes and cross-checks them
 // able to recompute and cross-check them from subtotal and
 // commission_rate_pct"). CommissionRateBps is rate% * 100 (23% -> 2300), so
 // commission = subtotal * rate% / 100 = subtotal * bps / 10000.
@@ -190,7 +191,7 @@ func recomputeCommissionCents(r ingest.DeliveryRecord) int64 {
 
 // dedupeDelivery collapses exact byte-for-byte duplicate rows (same
 // platform, order_id, timestamps, amounts, status, campaign, and notes) to
-// one, per fixtures/README.md irregularity #1 — a platform export/webhook-
+// one, per cmd/gendata/opening/README.md irregularity #1 — a platform export/webhook-
 // retry glitch, not a legitimate second line item. It returns the deduped
 // records plus, per order_date, a discrepancy flag documenting every
 // collapse so the adjustment stays visible (spec FR-002) rather than

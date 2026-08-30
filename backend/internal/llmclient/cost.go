@@ -8,11 +8,11 @@ import (
 // Model IDs this project uses (constitution v1.1.0, CLAUDE.md, research.md).
 //
 // ModelAmbiguityGate was Claude Haiku 4.5 for the original 14-day take-home
-// fixture — a cheap classification task that didn't need frontier
+// dataset — a cheap classification task that didn't need frontier
 // reasoning at that scale. It was moved to Claude Sonnet 5 on 2026-08-29
 // after a real, reproducible bug: once the live dataset grew to a
 // multi-year range (backend/cmd/gendata's 730-day synthetic history, on
-// top of the fixture), Haiku's classification calls repeatedly
+// top of that window), Haiku's classification calls repeatedly
 // misclassified a fully-in-range, explicitly-dated question ("July 2026",
 // inside a 2024-08-01..2026-08-14 window) as unanswerable — a real date-
 // comparison failure across a year boundary, not a prompt-wording issue

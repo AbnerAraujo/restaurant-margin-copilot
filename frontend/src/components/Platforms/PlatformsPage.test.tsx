@@ -18,7 +18,7 @@ const PLATFORM_COMPARISON_RESPONSE = {
       combined_cost: '459.85',
       combined_effective_rate: '54.87%',
       source_row_refs: [
-        { file: 'fixtures/delivery_platform_export.csv', row: 2 },
+        { file: 'data/live/delivery_platform_export.csv', row: 2 },
       ],
     },
     {
@@ -31,7 +31,7 @@ const PLATFORM_COMPARISON_RESPONSE = {
       combined_cost: '461.60',
       combined_effective_rate: '50.84%',
       source_row_refs: [
-        { file: 'fixtures/delivery_platform_export.csv', row: 4 },
+        { file: 'data/live/delivery_platform_export.csv', row: 4 },
       ],
     },
   ],

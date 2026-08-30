@@ -154,7 +154,7 @@ func newAskHarness(t *testing.T) *askHarness {
 	}}
 	explainer := &countingExplainer{result: explain.Result{
 		AnswerText:       "Margin on 2026-08-07 was $375.82.",
-		ProvenanceRefs:   []string{"fixtures/daily_reconciliation.csv:7"},
+		ProvenanceRefs:   []string{"data/live/daily_reconciliation.csv:7"},
 		InputTokens:      1180,
 		OutputTokens:     240,
 		EstimatedCostUSD: 0.00476,

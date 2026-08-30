@@ -22,20 +22,20 @@ import (
 // of RunIngestionPipeline (US1's daily-margin pipeline): attribution needs
 // the delivery-platform export too (a promotion spend record carries no
 // attribution of its own — internal/reconcile computes it as a tag-join
-// over delivery orders, see fixtures/README.md), so this function re-parses
+// over delivery orders, see cmd/gendata/opening/README.md), so this function re-parses
 // the delivery export on its own rather than sharing state with
 // RunIngestionPipeline, keeping the two pipelines independently runnable
 // (spec: US4 has no dependency on US1's pipeline having already run in the
 // same process).
-func RunPromotionIngestionPipeline(fixtureDir string, store *storage.Queries) error {
-	deliveryPath, _, _, err := findSourceFiles(fixtureDir)
+func RunPromotionIngestionPipeline(dataDir string, store *storage.Queries) error {
+	deliveryPath, _, _, err := findSourceFiles(dataDir)
 	if err != nil {
 		return err
 	}
 	if deliveryPath == "" {
-		return fmt.Errorf("pipeline: no delivery-platform export found in %s — promotion ROI cannot be attributed without it", fixtureDir)
+		return fmt.Errorf("pipeline: no delivery-platform export found in %s — promotion ROI cannot be attributed without it", dataDir)
 	}
-	promoPath, err := findPromotionFile(fixtureDir)
+	promoPath, err := findPromotionFile(dataDir)
 	if err != nil {
 		return err
 	}
@@ -49,7 +49,7 @@ func RunPromotionIngestionPipeline(fixtureDir string, store *storage.Queries) er
 		return err
 	}
 	if len(promos) == 0 {
-		return fmt.Errorf("pipeline: no promotion/ad-spend rows found in %s", fixtureDir)
+		return fmt.Errorf("pipeline: no promotion/ad-spend rows found in %s", dataDir)
 	}
 
 	records := reconcile.ComputePromotionRoiRecords(promos, delivery)
@@ -66,13 +66,13 @@ func RunPromotionIngestionPipeline(fixtureDir string, store *storage.Queries) er
 	return nil
 }
 
-// findPromotionFile scans fixtureDir for a file recognizable as a
+// findPromotionFile scans dataDir for a file recognizable as a
 // promotion/ad-spend export, by the same filename keywords findSourceFiles
 // uses to deliberately SKIP such files from the US1 pipeline.
-func findPromotionFile(fixtureDir string) (string, error) {
-	entries, err := os.ReadDir(fixtureDir)
+func findPromotionFile(dataDir string) (string, error) {
+	entries, err := os.ReadDir(dataDir)
 	if err != nil {
-		return "", fmt.Errorf("pipeline: reading fixture directory %s: %w", fixtureDir, err)
+		return "", fmt.Errorf("pipeline: reading data directory %s: %w", dataDir, err)
 	}
 
 	for _, e := range entries {
@@ -81,10 +81,10 @@ func findPromotionFile(fixtureDir string) (string, error) {
 		}
 		name := strings.ToLower(e.Name())
 		if strings.Contains(name, "promo") || strings.Contains(name, "campaign") || strings.Contains(name, "ad_spend") || strings.Contains(name, "adspend") {
-			return filepath.Join(fixtureDir, e.Name()), nil
+			return filepath.Join(dataDir, e.Name()), nil
 		}
 	}
-	return "", fmt.Errorf("pipeline: no recognizable promotion/ad-spend file found in %s", fixtureDir)
+	return "", fmt.Errorf("pipeline: no recognizable promotion/ad-spend file found in %s", dataDir)
 }
 
 func printPromoSummary(rec reconcile.PromotionRoiRecord) {

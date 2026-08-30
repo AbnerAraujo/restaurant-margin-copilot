@@ -1,0 +1,15 @@
+invoice_id,invoice_date,supplier,category,amount,notes
+INV-3001,2024-08-01,Fresh Fields Produce Co.,produce,328.50,Weekly produce delivery
+INV-3002,2024-08-02,Coastal Meat & Poultry,protein,612.75,"Beef, chicken, pork order"
+INV-3003,2024-08-03,Blue Wave Beverage Distributors,beverage,348.00,"Kegs, soft drinks, mixers"
+INV-3004,2024-08-04,Fresh Fields Produce Co.,produce,331.25,Mid-week produce top-up
+INV-3005,2024-08-05,PackRight Disposables,packaging,158.50,"To-go containers, napkins"
+INV-3006,2024-08-06,Coastal Meat & Poultry,protein,598.25,Weekly protein order
+INV-3007,2024-08-07,Fresh Fields Produce Co.,produce,325.75,Weekly produce delivery
+INV-3008,2024-08-09,Blue Wave Beverage Distributors,beverage,352.50,Weekly beverage order
+INV-3009,2024-08-10,Fresh Fields Produce Co.,produce,336.00,Weekend produce delivery
+INV-3010,2024-08-11,Coastal Meat & Poultry,protein,631.50,Weekly protein order
+INV-3011,2024-08-12,PackRight Disposables,packaging,149.75,"To-go containers, napkins"
+INV-3012,2024-08-13,Fresh Fields Produce Co.,produce,322.25,Weekly produce delivery
+INV-3013,2024-08-14,Blue Wave Beverage Distributors,beverage,355.50,Weekly beverage order
+INV-3014,2024-08-14,PackRight Disposables,packaging,152.25,"To-go containers, napkins"

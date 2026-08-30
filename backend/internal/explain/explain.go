@@ -306,7 +306,7 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			// with no tool call, that a date falls outside the covered
 			// range (an established fact, not something to verify
 			// per-question) — see explain_test.go's
-			// "question about data outside the fixture period" case, which
+			// "question about data outside the dataset period" case, which
 			// legitimately makes zero tool calls and must keep answering
 			// rather than being refused here.
 			if budget.Used() == 0 && len(orderedRefs) == 0 && looksLikeCurrencyAmount(resp.Text) {

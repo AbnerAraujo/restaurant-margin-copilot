@@ -36,9 +36,9 @@ re-deriving them.
 
 **Performance Goals**: Not throughput-sensitive (single-tenant prototype); the meaningful target is the North Star (time-to-reconciled-close, minutes not weeks) and per-interaction latency visible to the user, not a req/s figure
 
-**Constraints**: Every MCP tool call carries a timeout and a per-interaction call cap (Principle III); ingestion parsing targets realistic, generic CSV shapes per source type so a real restaurant/bar's actual export files are plausible inputs, not only the fixture files' exact columns (spec Assumptions)
+**Constraints**: Every MCP tool call carries a timeout and a per-interaction call cap (Principle III); ingestion parsing targets realistic, generic CSV shapes per source type so a real restaurant/bar's actual export files are plausible inputs, not only this project's own exact columns (spec Assumptions)
 
-**Scale/Scope**: One restaurant/bar, one currency, one time zone (spec Assumptions); a few weeks of daily fixture data plus a handful of promotion records — not a scale problem, a correctness problem
+**Scale/Scope**: One restaurant/bar, one currency, one time zone (spec Assumptions); a few weeks of hand-authored daily data plus a handful of promotion records — not a scale problem, a correctness problem
 
 ## Constitution Check
 
@@ -50,7 +50,7 @@ re-deriving them.
 | II. Refuse Rather Than Guess | Ambiguity gate + FR-006/FR-007/FR-013 refusal paths are first-class flows in data-model.md, not error handling bolted on | PASS |
 | III. Typed Tools Only, No Open Computation | MCP tool contracts (contracts/) are a fixed, named set; no free-form query tool defined; timeouts and a call cap are in Technical Context | PASS |
 | IV. Provenance on Every Number | Every entity in data-model.md carries source-row references | PASS |
-| V. Test-First for the Deterministic Core | Project Structure below sequences fixtures → engine + tests → MCP → model layer, matching `docs/plan.md`'s Day 1–4 order | PASS |
+| V. Test-First for the Deterministic Core | Project Structure below sequences test data → engine + tests → MCP → model layer, matching `docs/plan.md`'s Day 1–4 order | PASS |
 | VI. Instrument From the First API Call | Instrumentation log is a first-class entity in data-model.md, not deferred | PASS |
 
 No violations. Complexity Tracking section below is empty on purpose.
@@ -84,7 +84,7 @@ backend/
 │   ├── instrumentation/   # per-interaction logging (tokens, cost, latency, refusal flags)
 │   └── storage/           # sqlc-generated Postgres access
 ├── migrations/            # golang-migrate schema files
-└── fixtures/              # generated fixture CSVs live here, referenced by ingest/ and evaluation/
+└── cmd/gendata/opening/   # the hand-authored test CSVs (today: the dataset's opening window), referenced by ingest/ and evaluation/
 
 frontend/
 ├── src/

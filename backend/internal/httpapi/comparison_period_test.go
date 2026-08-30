@@ -53,7 +53,7 @@ func TestDerivePriorPeriod_CalendarYear(t *testing.T) {
 }
 
 func TestDerivePriorPeriod_ArbitraryCustomRange(t *testing.T) {
-	// A 14-day fixture-style window: the prior period is the immediately
+	// A 14-day window: the prior period is the immediately
 	// preceding 14 days, no gap, no overlap — not calendar-month-aware
 	// since this isn't a full calendar month.
 	gotS, gotE := derivePriorPeriod(date("2026-08-01"), date("2026-08-14"))

@@ -15,36 +15,36 @@ import (
 )
 
 const (
-	fixtureDeliveryFile = "../../fixtures/delivery_platform_export.csv"
-	fixturePOSFile      = "../../fixtures/pos_export.csv"
-	fixtureCostFile     = "../../fixtures/supplier_cost_sheet.csv"
+	openingDeliveryFile = "../../cmd/gendata/opening/delivery_platform_export.csv"
+	openingPOSFile      = "../../cmd/gendata/opening/pos_export.csv"
+	openingCostFile     = "../../cmd/gendata/opening/supplier_cost_sheet.csv"
 )
 
-func loadFixtureDays(t *testing.T) []reconcile.DailyReconciliation {
+func loadOpeningDays(t *testing.T) []reconcile.DailyReconciliation {
 	t.Helper()
 
-	deliveryFile, err := os.Open(fixtureDeliveryFile)
+	deliveryFile, err := os.Open(openingDeliveryFile)
 	require.NoError(t, err)
 	defer deliveryFile.Close()
-	delivery, err := ingest.ParseDeliveryExport(deliveryFile, fixtureDeliveryFile)
+	delivery, err := ingest.ParseDeliveryExport(deliveryFile, openingDeliveryFile)
 	require.NoError(t, err)
 
-	posFile, err := os.Open(fixturePOSFile)
+	posFile, err := os.Open(openingPOSFile)
 	require.NoError(t, err)
 	defer posFile.Close()
-	pos, err := ingest.ParsePOSExport(posFile, fixturePOSFile)
+	pos, err := ingest.ParsePOSExport(posFile, openingPOSFile)
 	require.NoError(t, err)
 
-	costFile, err := os.Open(fixtureCostFile)
+	costFile, err := os.Open(openingCostFile)
 	require.NoError(t, err)
 	defer costFile.Close()
-	costs, err := ingest.ParseCostSheet(costFile, fixtureCostFile)
+	costs, err := ingest.ParseCostSheet(costFile, openingCostFile)
 	require.NoError(t, err)
 
 	return reconcile.ComputeDailyReconciliations(delivery, pos, costs)
 }
 
-func findFixtureDay(t *testing.T, days []reconcile.DailyReconciliation, date string) reconcile.DailyReconciliation {
+func findOpeningDay(t *testing.T, days []reconcile.DailyReconciliation, date string) reconcile.DailyReconciliation {
 	t.Helper()
 	want, err := time.Parse("2006-01-02", date)
 	require.NoError(t, err)
@@ -59,12 +59,13 @@ func findFixtureDay(t *testing.T, days []reconcile.DailyReconciliation, date str
 
 // TestSaveAndLoadDailyReconciliation_RoundTripsExactly is a genuine
 // integration test against a live PostgreSQL instance (DATABASE_URL) — not
-// a mock. It computes a real DailyReconciliation from
-// backend/fixtures/ via internal/ingest + internal/reconcile (the exact
-// pipeline T017 wires into cmd/server), persists it, reads it back, and
-// asserts every field — including the jsonb columns — matches exactly.
+// a mock. It computes a real DailyReconciliation from the dataset's
+// hand-authored opening window via internal/ingest + internal/reconcile
+// (the exact pipeline T017 wires into cmd/server), persists it, reads it
+// back, and asserts every field — including the jsonb columns — matches
+// exactly.
 //
-// It uses 2026-08-08 (fixtures/README.md irregularity #3: the missing
+// It uses 2024-08-10 (opening/README.md irregularity #3: the missing
 // delivery-platform day) deliberately, since that day exercises the most
 // jsonb surface: a non-empty discrepancy_flags array and a
 // gross_sales_by_source map missing the "ifood"/"just_eat_takeaway" keys
@@ -89,22 +90,22 @@ func TestSaveAndLoadDailyReconciliation_RoundTripsExactly(t *testing.T) {
 
 	q := storage.New(conn)
 
-	days := loadFixtureDays(t)
-	target := findFixtureDay(t, days, "2026-08-08")
+	days := loadOpeningDays(t)
+	target := findOpeningDay(t, days, "2024-08-10")
 	require.NotEmpty(t, target.DiscrepancyFlags, "sanity check: this day must carry the missing_delivery_source flag to exercise jsonb round-trip")
 	require.NotEmpty(t, target.SourceRowRefs)
 	require.NotContains(t, target.GrossSalesBySource, "ifood", "sanity check: this day has zero delivery rows, so the gross_sales_by_source map must omit the key entirely")
 
-	// Retarget onto a sentinel date far outside the real fixture period
-	// (2026-08-01..14) before touching the live database. This test shares
-	// a live Postgres instance with real `cmd/server -ingest` pipeline runs
-	// (see quickstart.md) — an earlier version of this test used the real
-	// 2026-08-08 as both its subject AND its primary key, so its own
+	// Retarget onto a sentinel date far outside the real dataset period
+	// before touching the live database. This test shares a live Postgres
+	// instance with real `cmd/server -ingest` pipeline runs (see
+	// quickstart.md) — an earlier version of this test used the real
+	// missing-delivery day as both its subject AND its primary key, so its own
 	// cleanup (`DELETE WHERE date = target.Date`) silently deleted the real
 	// pipeline's legitimately-computed row for that day when both ran
 	// against the same database (caught in independent verification, see
 	// docs/plan.md's mistakes log). Keeping every other field from the real
-	// 2026-08-08 computation preserves exactly what this test needs to
+	// 2024-08-10 computation preserves exactly what this test needs to
 	// exercise (the missing-delivery jsonb shape); only the primary key
 	// changes, so cleanup can never touch real data again.
 	target.Date = time.Date(1999, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -126,9 +127,9 @@ func TestSaveAndLoadDailyReconciliation_RoundTripsExactly(t *testing.T) {
 	require.True(t, target.Date.Equal(loaded.Date), "date must round-trip exactly")
 	require.Equal(t, target.GrossSalesBySource, loaded.GrossSalesBySource, "gross_sales_by_source jsonb must round-trip exactly, including the absence of the ifood/just_eat_takeaway keys")
 	require.Equal(t, target.CommissionsCents, loaded.CommissionsCents)
-	require.Equal(t, target.CommissionsBySource, loaded.CommissionsBySource, "commissions_by_source jsonb (specs/003-platform-comparator) must round-trip exactly, including the absence of the ifood/just_eat_takeaway keys on this missing-delivery-day fixture")
+	require.Equal(t, target.CommissionsBySource, loaded.CommissionsBySource, "commissions_by_source jsonb (specs/003-platform-comparator) must round-trip exactly, including the absence of the ifood/just_eat_takeaway keys on this missing-delivery day")
 	require.Equal(t, target.RefundsCents, loaded.RefundsCents)
-	require.Equal(t, target.RefundsBySource, loaded.RefundsBySource, "refunds_by_source jsonb (A15, docs/product-strategy.md) must round-trip exactly, including being empty on this refund-free fixture day")
+	require.Equal(t, target.RefundsBySource, loaded.RefundsBySource, "refunds_by_source jsonb (A15, docs/product-strategy.md) must round-trip exactly, including being empty on this refund-free day")
 	require.Equal(t, target.InputCostsCents, loaded.InputCostsCents)
 	require.Equal(t, target.MarginCents, loaded.MarginCents, "margin must round-trip exactly — a rounding-mode mismatch here would silently corrupt the one number Constitution Principle I says must never be wrong")
 	require.ElementsMatch(t, target.DiscrepancyFlags, loaded.DiscrepancyFlags, "discrepancy_flags jsonb must round-trip exactly")

@@ -66,7 +66,7 @@ func TestNoToolCallsYieldsOmittedToolCallsField(t *testing.T) {
 func TestRefusedQuestionNeverCarriesToolCalls(t *testing.T) {
 	h := newAskHarness(t)
 	h.gate.decision.Result = instrumentation.GateUnanswerable
-	h.gate.decision.RefusalReason = "This data isn't in the fixture."
+	h.gate.decision.RefusalReason = "This data isn't in the dataset."
 
 	response := h.ask(t, "What was our margin in the year 3000?")
 

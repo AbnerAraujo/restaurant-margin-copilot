@@ -27,7 +27,7 @@ export interface MarginTrend {
  * Comparison point, chosen and documented rather than left ambiguous
  * (plan.md's own open question): the immediately PRECEDING entry in `days`,
  * not calendar-yesterday. `days` can have real gaps (a missing ingestion
- * day is a known, deliberate case in this project's fixture set), so "the
+ * day is a known, deliberate case in this project's own dataset), so "the
  * previous reconciled day" is the honest, always-available comparison
  * point — comparing against a fixed calendar offset would silently produce
  * no result across a gap even though a perfectly good prior data point

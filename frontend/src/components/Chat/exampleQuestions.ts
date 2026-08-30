@@ -72,7 +72,7 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
  * than asked of the model, for the same reason the list above is — but the
  * date range is a real parameter, not baked into this string. It used to be
  * hardcoded to "2026-08-01 through 2026-08-14" (the original 14-day
- * fixture's own window), which silently went stale the moment the live
+ * dataset's opening window), which silently went stale the moment the
  * dataset grew to a multi-year synthetic history behind it — the sentence
  * kept claiming a period that was no longer the only one this data covers.
  * Callers get the real, current range from `useDataCoverage` (lib/) and pass

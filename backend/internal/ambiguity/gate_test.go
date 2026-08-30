@@ -229,8 +229,8 @@ func TestComposeAnswerFollowUp_UsesADistinctMarkerFromClarificationFollowUp(t *t
 	require.NotContains(t, got, "[Follow-up context]")
 }
 
-// testDataStart/testDataEnd mirror the real fixture range
-// (backend/fixtures/README.md, 2026-08-01..14) — tests that don't care
+// testDataStart/testDataEnd are an arbitrary 14-day grounding window the
+// assertions below stay consistent with — tests that don't care
 // about the exact date-grounding text still need a well-formed range for
 // New to build a usable system prompt.
 const (

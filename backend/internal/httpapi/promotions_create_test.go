@@ -3,7 +3,7 @@ package httpapi
 // Live-Postgres integration tests for POST /api/promotions and POST
 // /api/usage, following this codebase's established pattern (see
 // internal/storage/promotion_test.go): skipped when DATABASE_URL is unset,
-// sentinel campaign_ids so cleanup can never touch real fixture data.
+// sentinel campaign_ids so cleanup can never touch real dataset rows.
 
 import (
 	"bytes"
@@ -100,18 +100,18 @@ func TestHandleCreatePromotion_RefusesAReplacesClaimAgainstANonFlaggedCampaign(t
 }
 
 // TestHandleCreatePromotion_AcceptsAReplacesClaimAgainstARealFlaggedCampaign
-// is FR-007/FR-008's success path, using the REAL fixture campaign
-// JET-CAMP-LUNCHFIX (backend/fixtures/README.md: -$165.00 ROI, genuinely
+// is FR-007/FR-008's success path, using the REAL persisted campaign
+// JET-CAMP-LUNCHFIX (backend/cmd/gendata/opening/README.md: -$450.75 ROI, genuinely
 // flagged_negative=true once -ingest-promo has run) rather than a sentinel
 // flagged row, so this test also proves the handler works against the
-// product's actual persisted data, not just a purpose-built fixture.
+// product's actual persisted data, not just a purpose-built sample.
 func TestHandleCreatePromotion_AcceptsAReplacesClaimAgainstARealFlaggedCampaign(t *testing.T) {
 	conn, q := httpapiConnectOrSkip(t)
 
 	flagged, err := storage.IsCampaignFlaggedNegative(context.Background(), q, "JET-CAMP-LUNCHFIX")
 	require.NoError(t, err)
 	if !flagged {
-		t.Skip("real fixture campaign JET-CAMP-LUNCHFIX is not flagged negative in this database — has -ingest-promo been run?")
+		t.Skip("real campaign JET-CAMP-LUNCHFIX is not flagged negative in this database — has -ingest-promo been run?")
 	}
 
 	newCampaignID := "TEST-HTTPAPI-SENTINEL-ACCEPTED-REPLACEMENT"

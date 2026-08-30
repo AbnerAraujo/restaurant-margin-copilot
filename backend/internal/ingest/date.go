@@ -57,10 +57,10 @@ func (f dateFormat) String() string {
 // parts are <= 12) against a format established ONCE from that file's own
 // unambiguous rows (any row where one part is > 12) — never per row.
 //
-// fixtures/README.md irregularity #4 documents the ambiguity as systematic
+// cmd/gendata/opening/README.md irregularity #4 documents the ambiguity as systematic
 // per file ("not a one-off typo — a systematic difference between the two
 // export systems"): pos_export.csv is DD/MM/YYYY throughout, the other
-// fixture files are ISO throughout. Resolving format independently per row
+// other source files are ISO throughout. Resolving format independently per row
 // (the previous behavior) could let a single stray row using the other
 // convention silently land on the wrong calendar day instead of being
 // caught — the opposite of Constitution Principle II's refuse-rather-than
@@ -192,7 +192,7 @@ func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 		// a can't be a month, so a is the day: DD/MM/YYYY, unambiguous.
 		if res.format != dateFormatUnestablished && res.format != dateFormatDMY {
 			return time.Time{}, fmt.Errorf(
-				"date %q is unambiguously DD/MM/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
+				"date %q is unambiguously DD/MM/YYYY, but this file's dates were established as %s from an earlier row (cmd/gendata/opening/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
 				s, res.format)
 		}
 		t, ok := tryDate(b, a)
@@ -204,7 +204,7 @@ func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 		// b can't be a month, so a is the month: MM/DD/YYYY, unambiguous.
 		if res.format != dateFormatUnestablished && res.format != dateFormatMDY {
 			return time.Time{}, fmt.Errorf(
-				"date %q is unambiguously MM/DD/YYYY, but this file's dates were established as %s from an earlier row (fixtures/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
+				"date %q is unambiguously MM/DD/YYYY, but this file's dates were established as %s from an earlier row (cmd/gendata/opening/README.md irregularity #4: one file uses one format throughout) — refusing rather than guessing which row is wrong",
 				s, res.format)
 		}
 		t, ok := tryDate(a, b)
@@ -215,7 +215,7 @@ func (res *dateFormatResolver) parseSlashDate(s string) (time.Time, error) {
 	default:
 		// Genuinely ambiguous (both <= 12): use this file's established
 		// format if one exists, otherwise fall back to the documented
-		// DD/MM default (matching this fixture set's POS convention and the
+		// DD/MM default (matching this dataset's POS convention and the
 		// international convention outside the US).
 		format := res.format
 		if format == dateFormatUnestablished {

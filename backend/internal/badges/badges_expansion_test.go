@@ -22,18 +22,18 @@ func promoPeriod(t *testing.T, start, end string) (time.Time, time.Time) {
 }
 
 // TestEvaluateGrowthBadges_TableDriven exercises User Story 1 against the
-// REAL, independently-computed reference values in backend/fixtures/README.md
-// (not invented numbers): IFOOD-CAMP-BOOST01 (+$34.00) and JET-CAMP-NEWMENU
-// (+$19.50) are the fixture set's two positive-ROI campaigns,
-// JET-CAMP-LUNCHFIX (-$165.00) is its one negative one, and
-// IFOOD-CAMP-WEEKEND is its one unattributable one (FR-013). Spec 002 SC-001
-// requires exactly this fixture set to produce exactly the two Growth
-// badges.
+// REAL, independently-computed reference values in
+// backend/cmd/gendata/opening/README.md (not invented numbers):
+// IFOOD-CAMP-BOOST01 (+$62.75) and JET-CAMP-NEWMENU (+$33.75) are the
+// opening window's two positive-ROI campaigns, JET-CAMP-LUNCHFIX
+// (-$450.75) is its one negative one, and IFOOD-CAMP-WEEKEND is its one
+// unattributable one (FR-013). Spec 002 SC-001 requires exactly this
+// campaign set to produce exactly the two Growth badges.
 func TestEvaluateGrowthBadges_TableDriven(t *testing.T) {
-	boostStart, boostEnd := promoPeriod(t, "2026-08-01", "2026-08-07")
-	lunchStart, lunchEnd := promoPeriod(t, "2026-08-04", "2026-08-10")
-	weekendStart, weekendEnd := promoPeriod(t, "2026-08-08", "2026-08-09")
-	newmenuStart, newmenuEnd := promoPeriod(t, "2026-08-01", "2026-08-14")
+	boostStart, boostEnd := promoPeriod(t, "2024-08-01", "2024-08-07")
+	lunchStart, lunchEnd := promoPeriod(t, "2024-08-04", "2024-08-10")
+	weekendStart, weekendEnd := promoPeriod(t, "2024-08-09", "2024-08-10")
+	newmenuStart, newmenuEnd := promoPeriod(t, "2024-08-11", "2024-08-14")
 
 	tests := []struct {
 		name      string
@@ -41,50 +41,50 @@ func TestEvaluateGrowthBadges_TableDriven(t *testing.T) {
 		wantBadge bool
 	}{
 		{
-			name: "IFOOD-CAMP-BOOST01: real fixture +$34.00 ROI earns Growth",
+			name: "IFOOD-CAMP-BOOST01: real +$62.75 ROI earns Growth",
 			promo: reconcile.PromotionRoiRecord{
 				Platform:    "iFood",
 				CampaignID:  "IFOOD-CAMP-BOOST01",
 				PeriodStart: boostStart,
 				PeriodEnd:   boostEnd,
-				SpendCents:  18000,
-				ROICents:    int64Ptr(3400),
+				SpendCents:  38000,
+				ROICents:    int64Ptr(6275),
 			},
 			wantBadge: true,
 		},
 		{
-			name: "JET-CAMP-NEWMENU: real fixture +$19.50 ROI earns Growth",
+			name: "JET-CAMP-NEWMENU: real +$33.75 ROI earns Growth",
 			promo: reconcile.PromotionRoiRecord{
 				Platform:    "Just Eat Takeaway",
 				CampaignID:  "JET-CAMP-NEWMENU",
 				PeriodStart: newmenuStart,
 				PeriodEnd:   newmenuEnd,
-				SpendCents:  6000,
-				ROICents:    int64Ptr(1950),
+				SpendCents:  12000,
+				ROICents:    int64Ptr(3375),
 			},
 			wantBadge: true,
 		},
 		{
-			name: "JET-CAMP-LUNCHFIX: real fixture -$165.00 ROI earns nothing",
+			name: "JET-CAMP-LUNCHFIX: real -$450.75 ROI earns nothing",
 			promo: reconcile.PromotionRoiRecord{
 				Platform:        "Just Eat Takeaway",
 				CampaignID:      "JET-CAMP-LUNCHFIX",
 				PeriodStart:     lunchStart,
 				PeriodEnd:       lunchEnd,
-				SpendCents:      22000,
-				ROICents:        int64Ptr(-16500),
+				SpendCents:      61000,
+				ROICents:        int64Ptr(-45075),
 				FlaggedNegative: true,
 			},
 			wantBadge: false,
 		},
 		{
-			name: "IFOOD-CAMP-WEEKEND: real fixture unattributable ROI (nil) earns nothing",
+			name: "IFOOD-CAMP-WEEKEND: real unattributable ROI (nil) earns nothing",
 			promo: reconcile.PromotionRoiRecord{
 				Platform:    "iFood",
 				CampaignID:  "IFOOD-CAMP-WEEKEND",
 				PeriodStart: weekendStart,
 				PeriodEnd:   weekendEnd,
-				SpendCents:  9500,
+				SpendCents:  26000,
 				ROICents:    nil,
 			},
 			wantBadge: false,
@@ -124,14 +124,14 @@ func TestEvaluateGrowthBadges_TableDriven(t *testing.T) {
 // User Story 1 Acceptance Scenario 3: two positive-ROI promotions in the
 // same period are each acknowledged once — no double-counting, no combined
 // "bonus" badge inventing a value neither promotion earned alone. Uses the
-// fixture set's real two positive campaigns together.
+// opening window's real two positive campaigns together.
 func TestEvaluateGrowthBadges_TwoPositivePromotionsEachBadgeOnce(t *testing.T) {
-	boostStart, boostEnd := promoPeriod(t, "2026-08-01", "2026-08-07")
-	newmenuStart, newmenuEnd := promoPeriod(t, "2026-08-01", "2026-08-14")
+	boostStart, boostEnd := promoPeriod(t, "2024-08-01", "2024-08-07")
+	newmenuStart, newmenuEnd := promoPeriod(t, "2024-08-11", "2024-08-14")
 
 	badges := EvaluateGrowthBadges([]reconcile.PromotionRoiRecord{
-		{CampaignID: "IFOOD-CAMP-BOOST01", PeriodStart: boostStart, PeriodEnd: boostEnd, ROICents: int64Ptr(3400)},
-		{CampaignID: "JET-CAMP-NEWMENU", PeriodStart: newmenuStart, PeriodEnd: newmenuEnd, ROICents: int64Ptr(1950)},
+		{CampaignID: "IFOOD-CAMP-BOOST01", PeriodStart: boostStart, PeriodEnd: boostEnd, ROICents: int64Ptr(6275)},
+		{CampaignID: "JET-CAMP-NEWMENU", PeriodStart: newmenuStart, PeriodEnd: newmenuEnd, ROICents: int64Ptr(3375)},
 	})
 
 	require.Len(t, badges, 2)

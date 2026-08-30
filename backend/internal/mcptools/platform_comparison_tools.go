@@ -121,7 +121,8 @@ type PlatformComparisonArgs struct {
 // (insufficient_data) rather than compute over partial coverage if any
 // calendar day in the requested period has no persisted DailyReconciliation
 // at all. A day that DOES have a persisted row but zero delivery activity
-// for a platform (fixtures/README.md irregularity #3, 2026-08-08) is not
+// for a platform (cmd/gendata/opening/README.md irregularity #3,
+// 2024-08-10) is not
 // "missing" in that sense — its zero contribution to that platform's totals
 // is the honest reconciled fact for that day (reconcile.go's own
 // missing_delivery_source flag already names it), not a data gap this tool
