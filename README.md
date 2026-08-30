@@ -83,17 +83,32 @@ a refusal or clarification fired.
 
 ## Getting started
 
-See [`docs/SETUP.md`](docs/SETUP.md) for full local setup (Go, Postgres via
-`docker-compose.yml`, Node/Vite, environment variables in `.env.example`).
-Quick shape of it:
+Requires Go 1.27+, Node 20+, Docker, and the
+[`golang-migrate`](https://github.com/golang-migrate/migrate) CLI
+(`brew install golang-migrate`) for the schema step below.
+[`docs/SETUP.md`](docs/SETUP.md) is a dated, machine-bootstrap doc (installing
+Homebrew/Go/Node/Docker/`gh` themselves on a machine that starts with none of
+them) — it predates this app and does not cover running it, so it isn't
+linked as a second source of truth here. Everything needed once those tools
+are present is below — every command runs top-to-bottom, in order, from the
+repo root unless a `cd` says otherwise (QA finding: an earlier version of
+this block ran `go run ./backend/cmd/server ...` from the repo root, which
+fails immediately with "cannot find main module" — the Go module root is
+`backend/`, not the repo root — and never exported `DATABASE_URL` or applied
+the schema migration before the first `-ingest`, which fails with
+"relation ... does not exist" on a genuinely fresh database):
 
 ```bash
-docker compose up -d                                          # Postgres
-cd backend && go run ./cmd/gendata -out data/live && cd ..    # generate the dataset (opening days + synthetic history)
-go run ./backend/cmd/server -ingest backend/data/live         # reconcile + persist every day
-go run ./backend/cmd/server -ingest-promo backend/data/live   # reconcile + persist promotion/ad-spend data
-go run ./backend/cmd/server -serve :8080                      # backend API
-cd frontend && npm install && npm run dev                     # frontend (Vite)
+cp .env.example .env                                            # then fill in ANTHROPIC_API_KEY
+set -a && source .env && set +a                                 # export DATABASE_URL/ANTHROPIC_API_KEY for the commands below
+docker compose up -d                                             # Postgres
+migrate -path backend/migrations -database "$DATABASE_URL" up    # apply the schema — required once, before any ingest
+cd backend
+go run ./cmd/gendata -out data/live                              # generate the dataset (opening days + synthetic history)
+go run ./cmd/server -ingest data/live                             # reconcile + persist every day
+go run ./cmd/server -ingest-promo data/live                       # reconcile + persist promotion/ad-spend data
+go run ./cmd/server -serve :8080                                  # backend API
+cd ../frontend && npm install && npm run dev                     # frontend (Vite)
 ```
 
 How that dataset is put together — and why its first 14 days are special —
@@ -112,8 +127,8 @@ worker — check with both backend and frontend above running):
    **Steward**, with a real Dock icon.
 
 The installed app still talks to `localhost:8080` — the backend needs to be
-running (`go run ./backend/cmd/server -serve :8080`) whenever you open it,
-same as any other local-first tool in this repo. The service worker only
+running (`go run ./cmd/server -serve :8080`, from `backend/`) whenever you
+open it, same as any other local-first tool in this repo. The service worker only
 caches the app's own JS/CSS/icons; it never caches `/api/*`, so every
 number you see always comes from a live request, never a stale cache.
 

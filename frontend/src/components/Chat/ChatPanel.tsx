@@ -855,12 +855,22 @@ function AnswerBubble({
   onSuggestionSelect,
   resolveBusinessInsight,
   onSpend,
+  disabled = false,
 }: {
   message: AnswerChatMessage
   onSuggestionSelect: (text: string) => void
   resolveBusinessInsight?: ResolveBusinessInsight
   /** Records what a tapped business-insight call cost, against this answer. */
   onSpend: (messageId: string, interactions: CostInteraction[]) => void
+  /**
+   * True while a different question is already in flight. `onSuggestionSelect`
+   * and the "Compare to last period" button both reach the same re-entrancy-
+   * guarded `submitQuestion` as the composer's own Send button — without this,
+   * a follow-up chip on an EARLIER answer stayed clickable while a newer
+   * question was pending and silently did nothing when tapped, with no error
+   * and no visual sign anything was wrong. See `submitLockRef`'s doc comment.
+   */
+  disabled?: boolean
 }) {
   // The advice call behind a business-insight chip is the app's only billed
   // request that isn't an /api/ask turn, and it used to report its cost to a
@@ -956,6 +966,7 @@ function AnswerBubble({
             size="sm"
             variant="outline"
             className="gap-1.5"
+            disabled={disabled}
             onClick={() => onSuggestionSelect(buildCompareToLastPeriodQuestion(resolvedPeriod))}
           >
             <CalendarRange className="size-3.5" />
@@ -993,6 +1004,7 @@ function AnswerBubble({
               label="Worth checking next"
               questions={followUps.map((text) => ({ text }))}
               onSelect={onSuggestionSelect}
+              disabled={disabled}
             />
           </div>
         ) : null}
@@ -1040,9 +1052,12 @@ function AnswerBubble({
 function ClarificationBubble({
   message,
   onOptionSelect,
+  disabled = false,
 }: {
   message: ClarificationChatMessage
   onOptionSelect: (text: string) => void
+  /** See {@link AnswerBubble}'s `disabled` doc comment — identical reason. */
+  disabled?: boolean
 }) {
   return (
     <li className="flex items-start gap-2">
@@ -1061,8 +1076,9 @@ function ClarificationBubble({
               <button
                 key={option}
                 type="button"
+                disabled={disabled}
                 onClick={() => onOptionSelect(option)}
-                className="rounded-full border border-warning/30 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-warning/10"
+                className="rounded-full border border-warning/30 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-warning/10 disabled:pointer-events-none disabled:opacity-50"
               >
                 {option}
               </button>
@@ -1077,9 +1093,12 @@ function ClarificationBubble({
 function RefusalBubble({
   message,
   onSuggestionSelect,
+  disabled = false,
 }: {
   message: RefusalChatMessage
   onSuggestionSelect: (text: string) => void
+  /** See {@link AnswerBubble}'s `disabled` doc comment — identical reason. */
+  disabled?: boolean
 }) {
   return (
     <li className="flex items-start gap-2">
@@ -1111,6 +1130,7 @@ function RefusalBubble({
             label="Questions this product can answer"
             questions={EXAMPLE_QUESTIONS.slice(0, 3)}
             onSelect={onSuggestionSelect}
+            disabled={disabled}
           />
         </div>
         {message.cache ? <CacheBadge cache={message.cache} /> : null}
@@ -1122,9 +1142,12 @@ function RefusalBubble({
 function ErrorBubble({
   message,
   onRetry,
+  disabled = false,
 }: {
   message: ErrorChatMessage
   onRetry: (question: string) => void
+  /** See {@link AnswerBubble}'s `disabled` doc comment — identical reason. */
+  disabled?: boolean
 }) {
   const interrupted = message.cause === 'interrupted'
   return (
@@ -1156,10 +1179,12 @@ function ErrorBubble({
         </p>
         <button
           type="button"
+          disabled={disabled}
           onClick={() => onRetry(message.question)}
           className="inline-flex items-center gap-1.5 rounded-full border border-border bg-background px-3 py-1
             text-xs font-medium text-foreground transition-colors hover:bg-muted
-            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50
+            disabled:pointer-events-none disabled:opacity-50"
         >
           <RotateCw className="size-3" aria-hidden="true" />
           Try again
@@ -1835,18 +1860,21 @@ export default function ChatPanel({
                   onSuggestionSelect={submitQuestion}
                   resolveBusinessInsight={resolveBusinessInsight}
                   onSpend={recordMessageSpend}
+                  disabled={isPending}
                 />
               ) : message.kind === 'clarification' ? (
                 <ClarificationBubble
                   key={message.id}
                   message={message}
                   onOptionSelect={submitQuestion}
+                  disabled={isPending}
                 />
               ) : message.kind === 'error' ? (
                 <ErrorBubble
                   key={message.id}
                   message={message}
                   onRetry={submitQuestion}
+                  disabled={isPending}
                 />
               ) : message.kind === 'pending' ? (
                 /* Driven by the persisted pending message rather than by a
@@ -1860,6 +1888,7 @@ export default function ChatPanel({
                   key={message.id}
                   message={message}
                   onSuggestionSelect={submitQuestion}
+                  disabled={isPending}
                 />
               ),
             )}
@@ -1977,6 +2006,7 @@ export default function ChatPanel({
                   void submitQuestion(text)
                 }}
                 showTool
+                disabled={isPending}
               />
             </div>
           ) : null}
@@ -1993,6 +2023,7 @@ export default function ChatPanel({
               variant="outline"
               size="sm"
               className="gap-1.5"
+              disabled={isPending}
               onClick={() => setComposerOpen(true)}
             >
               <Wand2 className="size-3.5" aria-hidden="true" />

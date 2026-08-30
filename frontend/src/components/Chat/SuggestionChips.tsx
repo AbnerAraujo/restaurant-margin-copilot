@@ -23,6 +23,18 @@ export interface SuggestionChipsProps {
   label: string
   /** Shows the backing MCP tool under each chip. Off in dense placements. */
   showTool?: boolean
+  /**
+   * True while a question is already in flight. `onSelect` for every chip
+   * everywhere ultimately reaches `ChatPanel`'s `submitQuestion`, which is
+   * re-entrancy-guarded and silently no-ops on a second call while one is
+   * pending (see its `submitLockRef` doc comment) — so a chip that stayed
+   * clickable during that window looked like a real affordance but did
+   * nothing, with no error and no feedback, the instant a reader tapped one
+   * while an earlier answer was still loading. Disabling here makes that
+   * unavailability visible instead of silent, matching the composer's own
+   * textarea/send-button treatment of the identical state.
+   */
+  disabled?: boolean
   className?: string
 }
 
@@ -37,6 +49,7 @@ export default function SuggestionChips({
   onSelect,
   label,
   showTool = false,
+  disabled = false,
   className,
 }: SuggestionChipsProps) {
   if (questions.length === 0) return null
@@ -50,11 +63,13 @@ export default function SuggestionChips({
         <li key={question.text}>
           <button
             type="button"
+            disabled={disabled}
             onClick={() => onSelect(question.text)}
             className="group flex max-w-full flex-col items-start gap-0.5 rounded-lg border border-border
               bg-card px-2.5 py-1.5 text-left text-xs font-medium text-foreground shadow-sm
               transition-colors hover:border-primary/40 hover:bg-primary/5
-              focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50
+              disabled:pointer-events-none disabled:opacity-50"
           >
             <span className="line-clamp-2">{question.text}</span>
             {showTool ? (

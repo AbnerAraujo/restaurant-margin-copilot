@@ -12,6 +12,89 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — QA round 8: a silently-swallowed real chat race, and a README Quickstart that didn't actually run
+
+An eighth overnight QA pass, scoped to four genuinely fresh angles: two
+SEPARATE real chat questions submitted back-to-back in one thread (not a
+double-click on one button), whether `cmd/gendata` is actually deterministic
+across two full runs, whether a 4xx on one field of a multi-field form
+(Promotions' "Log a replacement campaign", Profile) wipes the rest of the
+owner's already-typed input, and a literal, in-order read-through of the
+root README's Getting Started Quickstart from a genuinely fresh clone. Run
+against an isolated backend, an ephemeral Postgres (`docker run`, its own
+port), and a separate git worktree; the shared `:8080`/`:5173`/`:5432`
+instances were never touched.
+
+- **Fixed** `ChatPanel.tsx`: every clickable affordance that reaches
+  `submitQuestion` OTHER than the composer's own textarea/Send button —
+  follow-up chips (`AnswerBubble`), the "Compare to last period" button,
+  a clarification's quick-reply options, a refusal's example-question chips,
+  and an error bubble's "Try again" — stayed fully clickable while a
+  DIFFERENT, later question was already in flight. `submitQuestion`'s
+  re-entrancy guard (`submitLockRef`) silently no-ops on a second call while
+  one is pending, so tapping any of these mid-flight did nothing at all: no
+  second message, no error, no visual sign the tap was ignored — a real
+  "two separate user actions" race the composer's own `disabled={isPending}`
+  never covered, because it only ever guarded the composer itself. Threaded
+  a `disabled` prop through `SuggestionChips`, `AnswerBubble`,
+  `ClarificationBubble`, `RefusalBubble`, and `ErrorBubble`, plus the
+  persistent "Ideas" rail and the "Build a question" guided-composer
+  trigger, all wired to the same `isPending` the textarea already uses — so
+  the unavailability is now visible (native `disabled`, dimmed) instead of
+  silent. New test in `ChatPanel.test.tsx`: submits a first question,
+  resolves it (leaving a real follow-up chip on screen), submits a second,
+  distinct question, asserts the earlier chip is `toBeDisabled()` while the
+  second is in flight, then asserts it's clickable again — and actually
+  submits a third question through it — once the second one resolves.
+- **Fixed** `README.md`'s Getting Started Quickstart, which did not
+  literally run, in order, from a fresh clone — verified by actually
+  cloning the repo into a separate worktree and following it verbatim
+  against an ephemeral Postgres:
+  - `go run ./backend/cmd/server ...` was run from the repo root after the
+    `cd backend && ... && cd ..` gendata step returned there — but the Go
+    module root is `backend/` (`backend/go.mod`), not the repo root, so
+    this failed immediately with `go: cannot find main module`. Fixed by
+    keeping the working directory inside `backend/` for every
+    `cmd/server`/`cmd/gendata` invocation and dropping the now-redundant
+    `backend/` path prefixes.
+  - The block never exported `DATABASE_URL` (or `ANTHROPIC_API_KEY`) and
+    never applied the schema migration, so even with the module path fixed,
+    the first `-ingest` against a genuinely fresh Postgres failed with
+    `relation "answer_cache" does not exist`. Fixed by adding
+    `cp .env.example .env` + `source .env` and a
+    `migrate -path backend/migrations -database "$DATABASE_URL" up` step
+    before the first ingest, and naming `golang-migrate` as a prerequisite
+    (it was used — `docs/tooling.md` already lists it installed — but never
+    named as something a fresh evaluator needs to install).
+  - The section's opening sentence pointed to `docs/SETUP.md` as covering
+    "Postgres via `docker-compose.yml`... environment variables in
+    `.env.example`" — that file actually predates this app entirely (it's a
+    machine-bootstrap doc for installing Homebrew/Go/Node/Docker/`gh` on a
+    computer that has none of them, written before `docker-compose.yml`
+    existed) and covers none of that. Reworded to say what `docs/SETUP.md`
+    actually is, so a reader isn't sent to it looking for content it
+    doesn't have.
+  - Also fixed the identical `go run ./backend/cmd/server ...` path bug in
+    the "Installing it as a Mac app" section and in
+    `specs/001-margin-reconciliation-qa/quickstart.md` — the latter is what
+    `cmd/server`'s own `DATABASE_URL must be set` fatal error points a user
+    at by name, so it needed the same correction to actually help anyone
+    who follows that pointer.
+- **Audited, no bug found**: `cmd/gendata` determinism. Ran it twice into
+  separate output directories on the fixed seed (`randSeed = 20260815`,
+  `backend/cmd/gendata/main.go`) — byte-identical CSVs and stdout both
+  times (`diff -rq`), confirming the seeded-RNG-plus-sorted-map-iteration
+  fix already documented in `forcedShockDays`'s own comment (from an earlier
+  round) holds. No remaining `math/rand`/`crypto/rand` call anywhere in the
+  package reads from an unseeded or wall-clock source.
+- **Audited, no bug found**: mid-form error recovery on both real
+  multi-field write forms (`Promotions/LogReplacementForm.tsx`,
+  `Profile/ProfilePage.tsx`). Neither form's error path resets any field —
+  `resetFields()` / the saved-snapshot update only run on a successful
+  response; the `catch` block in both only ever calls `setError`/
+  `setSubmitError`. A 4xx on one field leaves every other field exactly as
+  the owner typed it.
+
 ## 2026-08-30 — QA round 6: stale badge/roadmap copy, a chat month-boundary gap, and an untested loop-cap
 
 A sixth overnight QA pass, scoped to four fresh angles the prior five rounds
