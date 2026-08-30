@@ -1,10 +1,12 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
 
+import { buildLinearTickScale, formatAxisCurrency } from '@/lib/chartScale'
 import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import PinnedValueAxis from './PinnedValueAxis'
 
 // ---------------------------------------------------------------------------
 // Data — the exact reconciled margins of the dataset's hand-authored opening
@@ -81,8 +83,15 @@ export interface MarginTrendChartProps {
 
 const CHART_WIDTH = 700
 const CHART_HEIGHT = 300
-const MARGIN = { top: 40, right: 12, bottom: 40, left: 44 }
+// `left` is both the plot's own left inset AND the pixel width of the pinned
+// value-axis gutter beside it — the two must stay equal so the first gridline
+// begins exactly where the gutter ends. Widened from 44 to 56 for the live
+// dataset's compacted labels ("−$12.5K" does not fit 44px at 10px type).
+const MARGIN = { top: 40, right: 12, bottom: 40, left: 56 }
 const PLOT_HEIGHT = CHART_HEIGHT - MARGIN.top - MARGIN.bottom
+/** Roughly the rendered height of the hover tooltip, used to decide whether
+ *  it has room to sit above a bar's tip or must flip below it. */
+const TOOLTIP_HEIGHT = 58
 
 const BAR_WIDTH = 24 // mark spec: bars <= 24px thick
 const BAR_RADIUS = 4
@@ -180,28 +189,32 @@ function aggregateForDisplay(data: DailyMarginDatum[]): {
  * CLAMPED to the axis edge — a bar drawn shorter than the loss it represents,
  * which is the one failure mode a margin chart must not have.
  *
- * Ticks are stepped on a round 100/200/500 so the labels stay readable
- * whatever the range turns out to be.
+ * The step comes from `buildLinearTickScale`'s nice-number algorithm rather
+ * than the 100/200/500 ladder this used to carry. That ladder was tuned to a
+ * few-hundred-dollar span and had no tier above $500, so the live dataset's
+ * $36,000 weekly-bucket span drew ~75 gridlines 3px apart — the reported
+ * "precision of the lines on the Y axis is bad". See `lib/chartScale.ts`,
+ * where the maths is unit-tested directly across the full range of spans.
+ *
+ * Exported so the geometry (not just the arithmetic beneath it) is testable
+ * without rendering an SVG.
  */
-function buildScale(data: DisplayDatum[]) {
+export function buildScale(data: DisplayDatum[]) {
   const values = data
     .map((datum) => datum.margin)
     .filter((value): value is number => value !== null)
-  const rawMin = Math.min(0, ...values)
-  const rawMax = Math.max(0, ...values)
-  const span = rawMax - rawMin || 1
-  const step = span > 2000 ? 500 : span > 800 ? 200 : 100
-  const min = Math.floor(rawMin / step) * step
-  const max = Math.ceil(rawMax / step) * step
-
-  const ticks: number[] = []
-  for (let tick = min; tick <= max; tick += step) ticks.push(tick)
+  // Always zero-baselined: a margin bar's length is only meaningful against a
+  // true zero, and profit/loss is read as which side of zero the bar sits on.
+  const { min, max, step, ticks } = buildLinearTickScale(
+    Math.min(0, ...values),
+    Math.max(0, ...values),
+  )
 
   const yToPixel = (value: number) => {
     const clamped = Math.min(Math.max(value, min), max)
     return MARGIN.top + ((max - clamped) / (max - min || 1)) * PLOT_HEIGHT
   }
-  return { ticks, yToPixel, baselineY: yToPixel(0) }
+  return { ticks, step, yToPixel, baselineY: yToPixel(0) }
 }
 
 /** A rect rounded only on the "data end" — the tip away from the baseline. */
@@ -372,7 +385,7 @@ function MarginTrendChart({
   const tickLabelStep =
     display.length <= 14 ? 1 : Math.ceil(display.length / 14)
 
-  const { ticks, yToPixel, baselineY } = buildScale(display)
+  const { ticks, step, yToPixel, baselineY } = buildScale(display)
   const bars = buildBars(display, yToPixel, plotWidth)
   const values = display
     .map((d) => d.margin)
@@ -383,6 +396,17 @@ function MarginTrendChart({
   const minIndex = display.findIndex((d) => d.margin === minValue)
 
   const hovered = hoveredIndex === null ? null : bars[hoveredIndex]
+  // The tip of the hovered mark, in viewBox units: where the tooltip points.
+  const tooltipAnchorX = hovered?.slotCenterX ?? 0
+  const tooltipAnchorY = hovered
+    ? Math.min(
+        hovered.isMissing
+          ? baselineY - MISSING_CAPSULE_HEIGHT / 2
+          : hovered.barY,
+        baselineY,
+      ) - 4
+    : 0
+  const tooltipBelow = tooltipAnchorY < TOOLTIP_HEIGHT
 
   // Mount (and every genuinely new period load) scrolled to the RIGHT edge —
   // today / the most recent data — rather than the oldest history a plain
@@ -420,9 +444,31 @@ function MarginTrendChart({
         ) : null}
       </figcaption>
 
-      <div ref={scrollContainerRef} className="relative w-full overflow-x-auto">
+      {/* Scroll viewport (always the panel's own width) wrapping a flex row of
+          two children: the frozen value axis, then the plot. The plot renders
+          at a fixed 1:1 pixel width rather than scaling to fit, which is what
+          keeps the axis labels aligned with their own gridlines however narrow
+          the panel gets — and keeps 10px type at 10px instead of shrinking it
+          to an illegible 5px on a phone. Overflow becomes a scroll, which is
+          exactly the interaction the frozen axis exists to support. */}
+      <div
+        ref={scrollContainerRef}
+        className="flex w-full overflow-x-auto overscroll-x-contain"
+      >
+        <PinnedValueAxis
+          ticks={ticks}
+          step={step}
+          yToPixel={yToPixel}
+          chartHeight={CHART_HEIGHT}
+          width={MARGIN.left}
+          title="Margin (USD)"
+          formatTick={formatAxisCurrency}
+        />
+        <div className="relative shrink-0" style={{ width: plotWidth + MARGIN.right }}>
         <svg
-          viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
+          // Cropped to start where the frozen axis gutter ends, so every
+          // coordinate below stays in the original whole-chart space.
+          viewBox={`${MARGIN.left} 0 ${plotWidth + MARGIN.right} ${CHART_HEIGHT}`}
           // See CategoryBarChart: role="img" cannot contain the focusable
           // per-day targets below (axe nested-interactive).
           role="group"
@@ -431,23 +477,9 @@ function MarginTrendChart({
               ? `, grouped into ${display.length} ${bucketDays}-day totals`
               : ''
           }${missingDatesSummary}`}
-          // Capped at its own design width (`w-full` alone let the viewBox
-          // scale up inside the widened 1200px content column, which
-          // enlarges the SVG's text with it — axis ticks rendered at roughly
-          // 20px and the whole chart read as a blown-up thumbnail). Once
-          // bucketing has widened the design width past the base 700px,
-          // switching from a responsive `w-full` to a FIXED pixel width is
-          // what actually makes the wrapper's `overflow-x-auto` scroll: a
-          // percentage width still resolves to the (narrower) panel's own
-          // width, which would silently rescale every bar back down instead
-          // of giving each one its real, readable BAR_WIDTH.
-          style={
-            chartWidth > CHART_WIDTH ? { width: chartWidth } : { maxWidth: chartWidth }
-          }
-          className={cn(
-            'h-auto min-w-[420px]',
-            chartWidth > CHART_WIDTH ? '' : 'w-full',
-          )}
+          width={plotWidth + MARGIN.right}
+          height={CHART_HEIGHT}
+          className="block"
         >
           <defs>
             <pattern
@@ -470,28 +502,19 @@ function MarginTrendChart({
             </pattern>
           </defs>
 
-          {/* Y gridlines + tick labels — recessive hairlines, one step off the surface */}
+          {/* Y gridlines — recessive solid hairlines, one step off the
+              surface. Their labels live in the frozen axis beside this SVG. */}
           {ticks.map((tick) => (
-            <g key={tick}>
-              <line
-                x1={MARGIN.left}
-                x2={chartWidth - MARGIN.right}
-                y1={yToPixel(tick)}
-                y2={yToPixel(tick)}
-                stroke="var(--border)"
-                strokeWidth={1}
-                opacity={tick === 0 ? 0 : 0.6}
-              />
-              <text
-                x={MARGIN.left - 8}
-                y={yToPixel(tick)}
-                textAnchor="end"
-                dominantBaseline="middle"
-                className="fill-muted-foreground text-[10px] tabular-nums"
-              >
-                {tick}
-              </text>
-            </g>
+            <line
+              key={tick}
+              x1={MARGIN.left}
+              x2={chartWidth - MARGIN.right}
+              y1={yToPixel(tick)}
+              y2={yToPixel(tick)}
+              stroke="var(--border)"
+              strokeWidth={1}
+              opacity={tick === 0 ? 0 : 0.6}
+            />
           ))}
 
           {/* Baseline — the primary above/below cue, independent of color */}
@@ -670,11 +693,18 @@ function MarginTrendChart({
         {hovered ? (
           <div
             role="status"
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md"
-            style={{
-              left: `${(hovered.slotCenterX / chartWidth) * 100}%`,
-              top: `${(Math.min(hovered.isMissing ? baselineY - MISSING_CAPSULE_HEIGHT / 2 : hovered.barY, baselineY) / CHART_HEIGHT) * 100 - 1}%`,
-            }}
+            // Positioned in real pixels against the plot layer, which renders
+            // 1:1 — the previous percentages resolved against the scroll
+            // VIEWPORT rather than the scrolled content, so on any chart wide
+            // enough to scroll the tooltip drifted away from its own bar.
+            // Flips below the tip when the bar reaches too near the top for a
+            // tooltip to fit above it, rather than being clipped by the scroll
+            // container's own edge.
+            className={cn(
+              'pointer-events-none absolute z-20 w-max -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-xs shadow-md',
+              tooltipBelow ? 'translate-y-2' : '-translate-y-full',
+            )}
+            style={{ left: tooltipAnchorX - MARGIN.left, top: tooltipAnchorY }}
           >
             <p className="text-muted-foreground">
               {formatBarDateLabel(hovered.datum)}
@@ -701,6 +731,7 @@ function MarginTrendChart({
             <p className="text-muted-foreground">daily_reconciliation.csv</p>
           </div>
         ) : null}
+        </div>
       </div>
 
       {/* Legend — mandatory at 2+ series; text labels, not bare swatches, since
