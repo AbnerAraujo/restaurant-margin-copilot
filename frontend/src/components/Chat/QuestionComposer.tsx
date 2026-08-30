@@ -345,6 +345,29 @@ export default function QuestionComposer({
     }
   }, [open, portalNode])
 
+  // Escape must close the dialog per the WAI-ARIA modal dialog pattern,
+  // regardless of where focus currently sits. A React `onKeyDown` on the
+  // dialog's own container only fires for a keydown that bubbles up
+  // through that container's subtree — but QA found that clicking a Step 1
+  // category button (or the in-dialog Back button) unmounts that button on
+  // the step change, which drops focus to `document.body`. A keydown on
+  // `body` never bubbles into the dialog's own container, so the
+  // container-scoped handler silently never sees it. Listening at the
+  // document level sidesteps that entirely: this fires for Escape no
+  // matter which element (or lack of one) currently has focus.
+  React.useEffect(() => {
+    if (!open) return
+    function handleDocumentKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        onClose()
+      }
+    }
+    document.addEventListener('keydown', handleDocumentKeyDown)
+    return () => {
+      document.removeEventListener('keydown', handleDocumentKeyDown)
+    }
+  }, [open, onClose])
+
   /** Tab/Shift+Tab cycling, scoped to the dialog's own focusable elements. */
   function trapTabKey(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Tab') return
@@ -430,13 +453,7 @@ export default function QuestionComposer({
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          onClose()
-          return
-        }
-        trapTabKey(event)
-      }}
+      onKeyDown={trapTabKey}
     >
       <div
         aria-hidden="true"
