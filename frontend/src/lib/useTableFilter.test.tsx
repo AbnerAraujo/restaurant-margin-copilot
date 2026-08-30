@@ -133,6 +133,55 @@ describe('useTableFilter', () => {
     expect(result.current.location.search).toContain('platform=iFood')
   })
 
+  it('composes two filter writes issued in the same React batch, instead of the second clobbering the first (regression: reported clobber when two writes land under ~30ms apart)', () => {
+    // Reported live: type a search term, then quickly clear it and
+    // immediately change a dropdown filter. `setSearchParams`'s functional
+    // updater is handed the last-COMMITTED params, not a live queue of
+    // pending writes — so two calls inside the SAME batch could both read
+    // the same stale `current` and the second write's result would silently
+    // drop the first write's change once both committed. A single `act()`
+    // wrapping both calls reproduces that same-batch timing directly,
+    // rather than relying on a real clock.
+    const { result } = setupWithLocation()
+
+    act(() => {
+      result.current.filter.setSearchQuery('weekend')
+    })
+    expect(result.current.location.search).toContain('tf-search=weekend')
+
+    act(() => {
+      // Clearing the search box and picking a platform, back to back, in
+      // one batch — the exact two-controls-at-once sequence from the report.
+      result.current.filter.setSearchQuery('')
+      result.current.filter.setFilterValue('platform', 'iFood')
+    })
+
+    // Both writes must be reflected — the cleared search AND the new
+    // platform filter — never just whichever call happened to commit last.
+    expect(result.current.filter.searchQuery).toBe('')
+    expect(result.current.filter.filterValues.platform).toBe('iFood')
+    expect(result.current.location.search).not.toContain('tf-search=weekend')
+    expect(result.current.location.search).toContain('platform=iFood')
+  })
+
+  it('composes two writes to DIFFERENT dimensions issued in the same batch, in either call order', () => {
+    // The report's repro clears one field while setting another, but the
+    // same staleness could equally clobber two dimensions set together
+    // (e.g. platform then ROI sign) — this guards the general case, not
+    // just the search-plus-dropdown one.
+    const { result } = setupWithLocation()
+
+    act(() => {
+      result.current.filter.setFilterValue('platform', 'iFood')
+      result.current.filter.setSearchQuery('camp')
+    })
+
+    expect(result.current.filter.filterValues.platform).toBe('iFood')
+    expect(result.current.filter.searchQuery).toBe('camp')
+    expect(result.current.location.search).toContain('platform=iFood')
+    expect(result.current.location.search).toContain('tf-search=camp')
+  })
+
   it('restores search and dimension filters from the URL on mount — the POP/Back-navigation case (spec 008 FR-001)', () => {
     // Stands in for the real bug: the owner filtered Promotions down to one
     // campaign, clicked a chart point to `/ask`, then pressed the browser's

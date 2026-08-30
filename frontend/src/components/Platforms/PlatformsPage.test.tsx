@@ -313,6 +313,22 @@ describe('PlatformsPage', () => {
     expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)
   })
 
+  it('labels the header chip "Overall" once the search narrows the chart/table, matching PromotionsPage\'s convention', async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    renderPage()
+
+    await screen.findAllByText('iFood')
+    expect(screen.queryByText('Overall')).not.toBeInTheDocument()
+
+    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood')
+
+    // "2 platforms compared" stays the honest total of every platform on
+    // file even though the table/chart now show just 1 — the label makes
+    // that an intentional overview, not a stale or disagreeing count.
+    expect(screen.getByText('Overall')).toBeInTheDocument()
+    expect(screen.getByText('2 platforms compared')).toBeInTheDocument()
+  })
+
   it('shows a reassuring empty state when the platform search matches nothing', async () => {
     stubFetch(PLATFORM_COMPARISON_RESPONSE)
     renderPage()

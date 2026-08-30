@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 /**
@@ -79,6 +79,30 @@ export function useTableFilter<T>({
 }: UseTableFilterOptions<T>): UseTableFilterResult<T> {
   const [searchParams, setSearchParams] = useSearchParams()
 
+  // `setSearchParams`'s functional-updater argument is the last-COMMITTED
+  // params, not a live queue of pending writes: two setter calls issued
+  // within the same React batch (e.g. clearing the search box, then
+  // immediately picking a dropdown value) can BOTH have their updater
+  // invoked against the SAME pre-batch `current` — so the second call's
+  // computed `next` has no idea about the first call's change and silently
+  // clobbers it when it commits last. Reported live: clear the search box,
+  // then instantly change a dropdown filter — the cleared search term
+  // reappears in the URL (and the search box visually refills) alongside
+  // the new dropdown value, a combination the owner never asked for.
+  //
+  // The fix doesn't depend on react-router ever queuing correctly: this ref
+  // is this hook's OWN authoritative "latest intended params", kept in sync
+  // in two places — (1) every render, so an external change (mount, a
+  // restored POP/Back navigation, this hook re-rendering after its own
+  // write commits) is picked up, and (2) synchronously inside every setter,
+  // immediately after it computes its own `next`, so a second setter called
+  // later in the same tick builds on the first call's change instead of on
+  // whatever was last committed. Setters then hand `setSearchParams` a
+  // concrete `URLSearchParams` object, never a function — so react-router's
+  // own notion of "current" never enters the picture at all.
+  const latestParamsRef = useRef(searchParams)
+  latestParamsRef.current = searchParams
+
   const searchQuery = searchParams.get(SEARCH_PARAM_KEY) ?? ''
 
   const filterValues = useMemo(() => {
@@ -95,39 +119,27 @@ export function useTableFilter<T>({
   }, [searchParams])
 
   function setSearchQuery(value: string) {
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        if (value) next.set(SEARCH_PARAM_KEY, value)
-        else next.delete(SEARCH_PARAM_KEY)
-        return next
-      },
-      { replace: true },
-    )
+    const next = new URLSearchParams(latestParamsRef.current)
+    if (value) next.set(SEARCH_PARAM_KEY, value)
+    else next.delete(SEARCH_PARAM_KEY)
+    latestParamsRef.current = next
+    setSearchParams(next, { replace: true })
   }
 
   function setFilterValue(key: string, value: string | null) {
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        if (value) next.set(key, value)
-        else next.delete(key)
-        return next
-      },
-      { replace: true },
-    )
+    const next = new URLSearchParams(latestParamsRef.current)
+    if (value) next.set(key, value)
+    else next.delete(key)
+    latestParamsRef.current = next
+    setSearchParams(next, { replace: true })
   }
 
   function clearFilters() {
-    setSearchParams(
-      (current) => {
-        const next = new URLSearchParams(current)
-        next.delete(SEARCH_PARAM_KEY)
-        for (const dimension of dimensions) next.delete(dimension.key)
-        return next
-      },
-      { replace: true },
-    )
+    const next = new URLSearchParams(latestParamsRef.current)
+    next.delete(SEARCH_PARAM_KEY)
+    for (const dimension of dimensions) next.delete(dimension.key)
+    latestParamsRef.current = next
+    setSearchParams(next, { replace: true })
   }
 
   const dimensionOptions = useMemo(() => {
