@@ -96,6 +96,8 @@ tags:
     description: The primary model-backed endpoint — natural-language Q&A over the reconciled data, via a pre-processing ambiguity gate and a typed-MCP-tool explanation step.
   - name: Business Insight
     description: The opt-in business-advisor skill (specs/009) — a deterministic Go-derived teaser on eligible answers, and an owner-initiated Claude Sonnet 5 advice call that is re-verified, instrumented in its own ledger, and always labeled as a suggestion rather than a computed fact.
+  - name: Profile
+    description: The restaurant owner's own company information and photo, shown on and edited from the Profile/Settings page. Plain CRUD over a single pinned row — no model in the request path.
 
 paths:
   # ------------------------------------------------------------------
@@ -1026,6 +1028,97 @@ paths:
               examples:
                 adviceFailed: { value: { error: advice_failed, detail: "the advice call failed; please try again" } }
 
+  # ------------------------------------------------------------------
+  /api/profile:
+    get:
+      tags: [Profile]
+      summary: Read the restaurant's profile
+      description: |
+        `restaurant_profile` (migration 000011) is pinned to exactly one
+        row: this is a single-tenant prototype, so "the profile" always
+        means the one restaurant this instance belongs to. Before any PUT
+        has ever succeeded, this returns a well-formed, all-empty profile
+        (200), not a 404 — the Profile page's form has a real, typed shape
+        to render into from the very first load.
+      operationId: getProfile
+      responses:
+        "200":
+          description: The current profile (all fields empty and `photo` null if never saved).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfileView" }
+        "500":
+          description: A Postgres query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+    put:
+      tags: [Profile]
+      summary: Replace the restaurant's profile
+      description: |
+        A full replace of the one profile row — no partial-patch
+        semantics. A client that wants to keep the existing photo must
+        resubmit the exact data URI GET /api/profile just handed it;
+        omitting or nulling `photo` clears it. `name` is required; all
+        other fields may be blank.
+
+        Optimistic-concurrency-checked (QA's two-tab lost-update finding):
+        the client must echo back the `updated_at` it last read via GET
+        or PUT, and a request whose `updated_at` no longer matches the
+        row's current value — because a save from elsewhere landed in
+        between — is refused with 409 rather than silently overwriting
+        that other save.
+      operationId: putProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileRequest" }
+            example:
+              name: "Trattoria Nonna"
+              address: "123 Main St, Springfield"
+              phone: "+1 555-0100"
+              email: "owner@trattorianonna.example"
+              description: "Family-run Italian kitchen, open for lunch and dinner."
+              photo: null
+              updated_at: "2026-08-14T09:32:01.123456Z"
+      responses:
+        "200":
+          description: The saved profile, with a fresh `updated_at`.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProfileView" }
+        "400":
+          description: Invalid JSON, a blank `name`, an over-length field, an unparseable `updated_at`, or a malformed/unsupported photo (PNG/JPEG/WebP only).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                blankName: { value: { error: invalid_input, detail: "enter your restaurant's name — it's shown throughout the app and can't be blank" } }
+                unsupportedPhoto: { value: { error: unsupported_photo_type, detail: "photos must be PNG, JPEG, or WebP — \"image/gif\" isn't supported" } }
+        "405":
+          description: Any method other than GET or PUT.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: The profile was updated elsewhere since this client last loaded it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+              examples:
+                conflict: { value: { error: profile_conflict, detail: "this profile was updated elsewhere since you loaded it — reload to see the latest before saving your changes" } }
+        "413":
+          description: The request body, or the decoded photo, is too large (5MB photo / 8MB request body limits).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "500":
+          description: A Postgres query failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
 components:
   schemas:
     # --- shared -------------------------------------------------------
@@ -1621,3 +1714,42 @@ components:
         interaction:
           $ref: "#/components/schemas/CostInteraction"
       required: [kind, advice_text, disclaimer, interaction]
+
+    # --- profile ---------------------------------------------------------
+    ProfileView:
+      type: object
+      description: GET/PUT /api/profile's shared response shape.
+      properties:
+        name: { type: string, example: "Trattoria Nonna" }
+        address: { type: string, example: "123 Main St, Springfield" }
+        phone: { type: string, example: "+1 555-0100" }
+        email: { type: string, example: "owner@trattorianonna.example" }
+        description: { type: string, example: "Family-run Italian kitchen, open for lunch and dinner." }
+        photo:
+          type: string
+          nullable: true
+          description: A data URI (`data:image/png;base64,...`), or null when no photo has been uploaded.
+        updated_at:
+          type: string
+          description: RFC 3339 (nanosecond precision), or `""` when the profile has never been saved.
+          example: "2026-08-14T09:32:01.123456Z"
+      required: [name, address, phone, email, description, photo, updated_at]
+
+    ProfileRequest:
+      type: object
+      description: PUT /api/profile's request body — a full replace of the one profile row.
+      properties:
+        name: { type: string, example: "Trattoria Nonna" }
+        address: { type: string, example: "123 Main St, Springfield" }
+        phone: { type: string, example: "+1 555-0100" }
+        email: { type: string, example: "owner@trattorianonna.example" }
+        description: { type: string, example: "Family-run Italian kitchen, open for lunch and dinner." }
+        photo:
+          type: string
+          nullable: true
+          description: A data URI (`data:image/png;base64,...`); omit or set null to clear the photo.
+        updated_at:
+          type: string
+          description: The `updated_at` this client last saw from GET or PUT /api/profile, echoed back for optimistic concurrency; `""` if the client loaded the profile before it had ever been saved.
+          example: "2026-08-14T09:32:01.123456Z"
+      required: [name, updated_at]
