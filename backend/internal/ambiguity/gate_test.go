@@ -480,3 +480,30 @@ func TestBuildSystemPrompt_MonthHasADeterministicAnchor(t *testing.T) {
 		`the Date grounding section must give "this month" the same explicit calendar-month anchor comparison_period.go/platforms_trend.go already use, not leave it to model judgment`)
 	require.Contains(t, prompt, `"Last month" is the FULL prior calendar month`)
 }
+
+// TestBuildSystemPrompt_MixedDataAdviceQuestionsAreNotFlatlyUnanswerable is
+// the offline half of a real live defect: a question phrased as "how do I
+// replicate/improve X" (e.g. "how can I replicate the margin from Aug 22 on
+// other days?", or the same question naming staffing/menu/promotions
+// explicitly) was observed, live against a fresh -eval-no-answer-cache
+// instance, being classified "unanswerable" for the WHOLE question — even
+// though it always has a genuinely data-answerable core (what the tools can
+// show about the named day). Worse, the gate's own Sonnet writing pass then
+// produced a polished refusal that explicitly PROMISED the data-answerable
+// part ("I can show you what drove Aug 22's margin...") without the system
+// ever actually delivering it — the user had to ask a second, separate
+// question to get data the first response already said it could give.
+//
+// This is a plain offline string check (no live model call) that the fix —
+// a new "Mixed data-plus-advice questions" section — is actually present in
+// the generated prompt, mirroring TestBuildSystemPrompt_MonthHasADeterministicAnchor's
+// pattern above. internal/explain/explain_internal_test.go carries the
+// narration step's own copy of this same test.
+func TestBuildSystemPrompt_MixedDataAdviceQuestionsAreNotFlatlyUnanswerable(t *testing.T) {
+	prompt := buildSystemPrompt(testDataStart, testDataEnd)
+
+	require.Contains(t, prompt, "Mixed data-plus-advice questions",
+		"the gate must have an explicit section telling it not to refuse a whole question just because part of it asks for advice this product can't give")
+	require.Contains(t, prompt, `Do NOT classify the whole question "unanswerable"`,
+		"the rule must explicitly forbid refusing the entire interaction when a data-answerable core exists underneath an advice-shaped wrapper")
+}
