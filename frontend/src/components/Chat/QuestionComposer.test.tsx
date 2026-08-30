@@ -322,6 +322,53 @@ describe('QuestionComposer', () => {
     expect(dialog.closest('[inert]')).toBeNull()
   })
 
+  it('closes on Escape from the initial screen', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape after a category click moves focus to document.body (QA regression)', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.click(screen.getByText('Check a single day'))
+    // The clicked category button unmounted on the step change — focus
+    // fell to document.body, exactly the state a container-scoped
+    // `onKeyDown` handler can never see a keydown from.
+    expect(document.activeElement).toBe(document.body)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('closes on Escape after clicking the in-dialog Back button (same focus-loss failure mode)', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    await user.click(screen.getByText('Check a single day'))
+    await user.click(screen.getByRole('button', { name: /back/i }))
+    expect(document.activeElement).toBe(document.body)
+
+    await user.keyboard('{Escape}')
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
+  it('stops listening for Escape once closed, and does not double-fire across remounts', async () => {
+    const user = userEvent.setup()
+    const onClose = vi.fn()
+    const { rerender } = render(<QuestionComposer open onClose={onClose} onAsk={vi.fn()} />)
+
+    rerender(<QuestionComposer open={false} onClose={onClose} onAsk={vi.fn()} />)
+    await user.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('shows a loading state while campaigns are in flight', async () => {
     const user = userEvent.setup()
     const { promise } = deferred<{ campaignId: string; platform: string }[]>()
