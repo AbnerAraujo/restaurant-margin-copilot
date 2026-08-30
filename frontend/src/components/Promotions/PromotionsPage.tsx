@@ -351,6 +351,20 @@ export default function PromotionsPage() {
         meta={
           promotions && promotions.length > 0 ? (
             <>
+              {/* These chips are deliberately never scoped by campaignFilter
+                  below (see its own comment) — they're the honest overview
+                  of every campaign on file, not a live readout of whatever
+                  the owner is currently browsing. Once a filter narrows the
+                  table/chart, that's no longer self-evident from the chips
+                  alone (a reader comparing "12 lost money" here against a
+                  1-row filtered table could easily read it as the two
+                  disagreeing), so this label makes the "totals, not the
+                  current view" framing explicit exactly when it matters. */}
+              {campaignFilter.isFiltered ? (
+                <span className="text-micro font-medium uppercase tracking-wider text-muted-foreground">
+                  Overall
+                </span>
+              ) : null}
               <Chip icon={Megaphone}>{promotions.length} campaigns</Chip>
               {negativeCount > 0 ? (
                 <Chip icon={TrendingDown} tone="destructive">
