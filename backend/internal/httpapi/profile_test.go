@@ -321,6 +321,29 @@ func TestHandleProfile_PutRejectsOversizedPhoto(t *testing.T) {
 	}
 }
 
+// TestHandleProfile_PutRejectsPhotoOneByteOverLimitWithoutSelfContradiction
+// is the QA self-contradiction fix's proof: a photo exactly 1 byte over the
+// 5MB cap must never be described with a rounded size ("5.0MB") that reads
+// as satisfying, rather than violating, "...over the 5MB limit".
+func TestHandleProfile_PutRejectsPhotoOneByteOverLimitWithoutSelfContradiction(t *testing.T) {
+	store := &fakeProfileStore{}
+	oneByteOver := make([]byte, maxProfilePhotoBytes+1)
+	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(oneByteOver)
+
+	body, err := json.Marshal(ProfileRequest{Name: "Cafe Test", Photo: &dataURI})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	rec := doPutProfile(store, string(body))
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "5.0MB") {
+		t.Errorf("body = %s, must never describe a photo that's over the limit as exactly \"5.0MB\" — self-contradicts \"over the 5MB limit\"", rec.Body.String())
+	}
+}
+
 func TestHandleProfile_PutRejectsRequestBodyOverTheOuterCap(t *testing.T) {
 	store := &fakeProfileStore{}
 	// Bigger than maxProfileRequestBodyBytes even before JSON/base64

@@ -38,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -364,11 +365,31 @@ func decodeProfilePhoto(photo *string) ([]byte, pgtype.Text, *profileFieldError)
 	}
 	if len(data) > maxProfilePhotoBytes {
 		return nil, pgtype.Text{}, &profileFieldError{http.StatusRequestEntityTooLarge, "photo_too_large",
-			fmt.Sprintf("that photo is %.1fMB, which is over the %dMB limit — choose a smaller image or compress it first",
-				float64(len(data))/(1<<20), maxProfilePhotoBytes>>20)}
+			fmt.Sprintf("that photo is %s, which is over the %dMB limit — choose a smaller image or compress it first",
+				describeOversizedPhoto(len(data), maxProfilePhotoBytes), maxProfilePhotoBytes>>20)}
 	}
 
 	return data, pgtype.Text{String: contentType, Valid: true}, nil
+}
+
+// describeOversizedPhoto describes a photo already known to exceed
+// limitBytes, for the "over the limit" rejection message — guaranteeing
+// the displayed size never reads as at-or-under the limit. Plain
+// one-decimal rounding turns a file exactly 1 byte over a whole-MB cap
+// (e.g. 5,242,881 bytes against a 5MB cap) into "5.0MB", which
+// self-contradicts "...over the 5MB limit" (the same QA finding the
+// frontend's own describeOversizedPhoto in ProfilePage.tsx fixes).
+// Ordinary oversized files still get the familiar "6.0MB" form; only the
+// boundary case falls back to an honest "just over" phrasing rather than a
+// misleadingly precise decimal.
+func describeOversizedPhoto(bytes, limitBytes int) string {
+	megabytes := float64(bytes) / (1 << 20)
+	limitMegabytes := float64(limitBytes) / (1 << 20)
+	oneDecimal := fmt.Sprintf("%.1f", megabytes)
+	if reparsed, err := strconv.ParseFloat(oneDecimal, 64); err == nil && reparsed > limitMegabytes {
+		return oneDecimal + "MB"
+	}
+	return fmt.Sprintf("just over %gMB", limitMegabytes)
 }
 
 // renderProfileView converts a storage row into the wire shape, rebuilding
