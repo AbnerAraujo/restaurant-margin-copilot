@@ -28,6 +28,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
@@ -37,6 +38,20 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
+
+// ownerFacing strips internal/platformconnector's own "platformconnector: "
+// error-wrapping prefix (every error that package returns carries it, for
+// traceability in logs) before the message reaches this handler's HTTP
+// response. The prose after the prefix is already specific and actionable
+// ("date range ... covers 35 days, more than the 31-day limit ... sync a
+// shorter range") — the prefix itself is the only part that reads as an
+// internal Go package name rather than something a restaurant owner wrote
+// down for themselves, the same class of leak
+// TestExplain_ZeroToolCallCurrencyAnswerIsRefused guards against in the
+// chat's own refusal copy.
+func ownerFacing(err error) string {
+	return strings.TrimPrefix(err.Error(), "platformconnector: ")
+}
 
 // syncSimulationNotice is the one sentence every response in this file
 // repeats. It is duplicated into the payload rather than left to the UI
@@ -321,7 +336,7 @@ func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconn
 	for _, key := range keys {
 		p, err := platformconnector.ParsePlatform(key)
 		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid_request", err.Error())
+			writeJSONError(w, http.StatusBadRequest, "invalid_request", ownerFacing(err))
 			return nil, false
 		}
 		platforms = append(platforms, p)
@@ -334,7 +349,7 @@ func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconn
 		// upstream that failed, a record that violated the connector
 		// contract). Surfacing it verbatim is the same treatment
 		// ingest.ParseCostSheet's errors already get.
-		writeJSONError(w, http.StatusUnprocessableEntity, "connector_fetch_failed", err.Error())
+		writeJSONError(w, http.StatusUnprocessableEntity, "connector_fetch_failed", ownerFacing(err))
 		return nil, false
 	}
 	return result, true

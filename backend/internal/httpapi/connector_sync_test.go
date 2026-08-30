@@ -194,6 +194,13 @@ func TestConnectorSync_Refusals(t *testing.T) {
 				}
 				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &errBody))
 				require.Contains(t, errBody.Detail, tc.wantDetail, path)
+				// internal/platformconnector wraps every error it returns
+				// with a "platformconnector: " prefix for log traceability
+				// — that Go-package-name prefix must never reach the HTTP
+				// response, the same class of internal-vocabulary leak
+				// explain_internal_test.go guards the chat's own refusal
+				// copy against.
+				require.NotContains(t, errBody.Detail, "platformconnector:", path)
 			}
 		})
 	}
