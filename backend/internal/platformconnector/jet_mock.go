@@ -105,7 +105,7 @@ func (u jetUpstream) getOrders(date time.Time, cursor string) ([]byte, error) {
 	dtos := make([]jetOrderDTO, 0, end-offset)
 	for _, o := range orders[offset:end] {
 		dto := jetOrderDTO{
-			OrderReference:       fmt.Sprintf("JET-SIM-%s-%04d", date.Format("20060102"), o.Seq),
+			OrderReference:       deliveryOrderID(PlatformJustEatTakeaway, date, o.Seq),
 			PlacedAtEpochMs:      o.PlacedAt.UnixMilli(),
 			Currency:             "USD",
 			GrossAmountMinor:     o.SubtotalCents,

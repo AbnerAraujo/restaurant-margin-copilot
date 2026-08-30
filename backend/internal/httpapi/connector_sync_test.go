@@ -26,6 +26,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 )
 
@@ -52,7 +53,7 @@ func TestConnectorEndpoints_AlwaysDiscloseTheSimulation(t *testing.T) {
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 		require.True(t, body.Simulated, "top-level simulated flag must be true")
 		require.Contains(t, body.Notice, "Emulated connection")
-		require.Len(t, body.Platforms, 2)
+		require.Len(t, body.Platforms, 3)
 
 		for _, p := range body.Platforms {
 			require.True(t, p.Simulated, "platform %q must carry its own simulated flag, not rely on the envelope's", p.Platform)
@@ -62,8 +63,16 @@ func TestConnectorEndpoints_AlwaysDiscloseTheSimulation(t *testing.T) {
 		}
 		require.Equal(t, "ifood", body.Platforms[0].Platform)
 		require.Equal(t, "just_eat_takeaway", body.Platforms[1].Platform)
-		require.NotEqual(t, body.Platforms[0].WireFormat, body.Platforms[1].WireFormat,
-			"the two connectors describe identical wire formats — the heterogeneity this feature exists to normalize has gone")
+		require.Equal(t, "pos", body.Platforms[2].Platform)
+		// All three, pairwise. Two connectors describing the same wire
+		// format would mean the heterogeneity this feature exists to
+		// normalize had quietly gone.
+		for i := range body.Platforms {
+			for j := i + 1; j < len(body.Platforms); j++ {
+				require.NotEqual(t, body.Platforms[i].WireFormat, body.Platforms[j].WireFormat,
+					"%s and %s describe identical wire formats", body.Platforms[i].Platform, body.Platforms[j].Platform)
+			}
+		}
 	})
 
 	t.Run("sync preview", func(t *testing.T) {
@@ -77,7 +86,7 @@ func TestConnectorEndpoints_AlwaysDiscloseTheSimulation(t *testing.T) {
 		var body ConnectorSyncPreviewResponse
 		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 		require.True(t, body.Simulated)
-		require.Contains(t, body.Notice, "No real iFood or Just Eat Takeaway account is connected")
+		require.Contains(t, body.Notice, "No real iFood account, Just Eat Takeaway account or POS terminal is connected")
 	})
 }
 
@@ -95,8 +104,8 @@ func TestHandleConnectorSyncPreview_SummarizesEveryPlatformDay(t *testing.T) {
 	var body ConnectorSyncPreviewResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 
-	// Two platforms x three days.
-	require.Len(t, body.Days, 6)
+	// Three sources x three days.
+	require.Len(t, body.Days, 9)
 	require.Equal(t, "2026-08-18", body.From)
 	require.Equal(t, "2026-08-20", body.To)
 	require.Greater(t, body.OrderCount, 0)
@@ -112,6 +121,7 @@ func TestHandleConnectorSyncPreview_SummarizesEveryPlatformDay(t *testing.T) {
 	for _, key := range []string{
 		"ifood|2026-08-18", "ifood|2026-08-19", "ifood|2026-08-20",
 		"just_eat_takeaway|2026-08-18", "just_eat_takeaway|2026-08-19", "just_eat_takeaway|2026-08-20",
+		"pos|2026-08-18", "pos|2026-08-19", "pos|2026-08-20",
 	} {
 		require.True(t, seen[key], "missing platform-day %s", key)
 	}
@@ -225,5 +235,89 @@ func TestHandleConnectorSyncPreview_OmittedPlatformsMeansAll(t *testing.T) {
 
 	var body ConnectorSyncPreviewResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-	require.Len(t, body.Days, 2, "an omitted platform list should have fetched both platforms")
+	require.Len(t, body.Days, 3, "an omitted platform list should have fetched every connected source, including the POS")
+}
+
+// specs/012-pos-connector-dedup SC-001, at the API boundary: gross sales
+// for a three-source sync equal what the three sources reported on their
+// own, minus exactly the duplicates that were removed — and that
+// difference is accounted for, line by line, by the decisions in the same
+// response.
+//
+// This is the arithmetic the feature exists to get right. A response where
+// the numbers and the explanation did not reconcile would be worse than no
+// deduplication at all, because it would look correct.
+func TestHandleConnectorSyncPreview_GrossIsRawTotalsMinusRemovedDuplicates(t *testing.T) {
+	proxy := platformconnector.NewSimulatedProxy()
+
+	preview := func(t *testing.T, platforms []string) ConnectorSyncPreviewResponse {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		HandleConnectorSyncPreview(proxy)(rec, connectorRequest(t, "/api/connectors/sync/preview", map[string]any{
+			"from":      "2026-08-18",
+			"to":        "2026-08-20",
+			"platforms": platforms,
+		}))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		var body ConnectorSyncPreviewResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+		return body
+	}
+
+	deliveryOnly := preview(t, []string{"ifood", "just_eat_takeaway"})
+	posOnly := preview(t, []string{"pos"})
+	all := preview(t, []string{"ifood", "just_eat_takeaway", "pos"})
+
+	require.Zero(t, deliveryOnly.DuplicatesRemoved, "a delivery-only sync has no POS tickets to remove")
+	require.Zero(t, posOnly.DuplicatesRemoved, "a POS-only sync has nothing to compare against")
+	require.Greater(t, all.DuplicatesRemoved, 0, "the simulated POS records iFood orders — a combined sync must find duplicates")
+
+	// The removed amount, derived independently from the decisions rather
+	// than from the totals it is being checked against.
+	var removedCents int64
+	var mergedCount int
+	for _, d := range all.Dedup {
+		if !d.Resolved {
+			continue
+		}
+		mergedCount++
+	}
+	require.Equal(t, all.DuplicatesRemoved, mergedCount,
+		"the headline count and the itemized decisions must agree")
+
+	// The gross difference must be non-zero and must be entirely explained
+	// by removals: combined gross is strictly less than the sum of the two
+	// independent syncs, by the removed tickets' value.
+	raw := parseCents(t, deliveryOnly.GrossSales) + parseCents(t, posOnly.GrossSales)
+	combined := parseCents(t, all.GrossSales)
+	removedCents = raw - combined
+	require.Greater(t, removedCents, int64(0),
+		"combined gross is not lower than the two sources summed separately — no duplicate was actually removed from the numbers")
+
+	// Every unresolved overlap is reported too, not quietly dropped from
+	// the summary. A response that only listed successes would be claiming
+	// a clean result it did not achieve.
+	// Filtered on kind, not on !Resolved: an amount-mismatch decision is
+	// also not a resolution, but it accompanies one rather than reporting
+	// a possible double-count.
+	unresolved := 0
+	for _, d := range all.Dedup {
+		require.NotEmpty(t, d.Detail, "decision %s carries no explanation", d.Kind)
+		if strings.HasPrefix(d.Kind, "unresolved_") {
+			require.False(t, d.Resolved)
+			unresolved++
+		}
+	}
+	require.Equal(t, all.UnresolvedOverlaps, unresolved)
+
+	t.Logf("2026-08-18..20: delivery %s + POS %s = %s raw, %s after removing %d duplicate(s) (%s), %d overlap(s) left unresolved",
+		deliveryOnly.GrossSales, posOnly.GrossSales, money.FormatCents(raw), all.GrossSales,
+		all.DuplicatesRemoved, money.FormatCents(removedCents), all.UnresolvedOverlaps)
+}
+
+func parseCents(t *testing.T, decimal string) int64 {
+	t.Helper()
+	cents, err := money.ParseCents(decimal)
+	require.NoError(t, err)
+	return cents
 }

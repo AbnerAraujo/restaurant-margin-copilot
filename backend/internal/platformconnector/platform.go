@@ -1,14 +1,14 @@
-// Package platformconnector is the product's delivery-platform integration
-// layer: one internal interface over iFood and Just Eat Takeaway, with both
-// upstreams currently EMULATED.
+// Package platformconnector is the product's revenue-source integration
+// layer: one internal interface over iFood, Just Eat Takeaway and the
+// in-house POS, with all three upstreams currently EMULATED.
 //
 // # This is a simulation, and it says so everywhere
 //
-// This project has no iFood partner-API credentials and no Just Eat
-// Takeaway partner-API credentials, and will not have them. Every order
-// this package returns is generated locally by a seeded pseudorandom
-// model (seed.go). Nothing here talks to a network, and no number here is
-// a real settlement figure.
+// This project has no iFood partner-API credentials, no Just Eat
+// Takeaway partner-API credentials, and no POS terminal to poll, and will
+// not have them. Every order this package returns is generated locally by
+// a seeded pseudorandom model (seed.go). Nothing here talks to a network,
+// and no number here is a real settlement figure.
 //
 // That fact is disclosed in five independent places, deliberately
 // redundantly, because this product's entire claim is that it would rather
@@ -22,21 +22,33 @@
 //
 // # What is real
 //
-// The connector layer itself. The two mock upstreams emit genuinely
+// The connector layer itself. The three mock upstreams emit genuinely
 // different wire formats — different envelopes, pagination, money
 // representations, timestamp encodings, and status vocabularies (see
-// ifood_mock.go and jet_mock.go) — and each adapter does the real work of
-// normalizing its own format into internal/ingest.DeliveryRecord, the
-// exact type ingest.ParseDeliveryExport already produces from a CSV. When
-// real credentials exist, a real client replaces a mock behind the same
-// Client interface and nothing downstream changes.
+// ifood_mock.go, jet_mock.go and pos_mock.go) — and each adapter does the
+// real work of normalizing its own format into internal/ingest's
+// DeliveryRecord or POSRecord, the exact types
+// ingest.ParseDeliveryExport and ingest.ParsePOSExport already produce
+// from a CSV. When real credentials exist, a real client replaces a mock
+// behind the same interface and nothing downstream changes.
+//
+// The cross-source deduplication in dedup.go is also real, and is the
+// reason the POS upstream exists as more than a third data feed. A POS
+// that integrates with a delivery aggregator records the aggregator's
+// orders as its own tickets, so the same real-world order arrives twice —
+// once in the platform's settlement feed, once in the POS's ticket feed.
+// Summing both inflates gross sales every single day. dedup.go finds
+// those pairs with plain, auditable Go, refuses to guess when the
+// evidence is ambiguous, and never removes a ticket without saying so
+// (specs/012-pos-connector-dedup).
 //
 // # What this package never does
 //
 // No arithmetic that reaches a margin figure. Records leave here and go
 // straight into internal/reconcile, unchanged and indistinguishable from
 // CSV-sourced records except by their provenance. No model call, anywhere,
-// at any point (Constitution Principle I).
+// at any point — the matcher is integer comparison and string equality,
+// not a similarity score (Constitution Principle I).
 package platformconnector
 
 import (
@@ -68,22 +80,42 @@ const dateLayout = "2006-01-02"
 // dependency on the host's tzdata being present.
 var merchantZone = time.FixedZone("BRT", -3*60*60)
 
-// Platform identifies one delivery platform. Exactly two exist; this is
-// deliberately a closed set rather than a plugin registry (spec.md
-// Assumptions — the requirement names two platforms, and a generic
-// registry for two entries would be architecture for its own sake, which
-// CLAUDE.md lists as a non-goal).
+// Platform identifies one revenue source this connector can fetch from —
+// two delivery platforms and the in-house POS. Exactly three exist; this
+// is deliberately a closed set rather than a plugin registry (spec 010
+// Assumptions, carried forward by spec 012 — a generic registry for three
+// entries would be architecture for its own sake, which CLAUDE.md lists
+// as a non-goal).
 type Platform string
 
 const (
 	PlatformIFood           Platform = "ifood"
 	PlatformJustEatTakeaway Platform = "just_eat_takeaway"
+
+	// PlatformPOS is the in-house point-of-sale terminal: dine-in,
+	// counter, and — the reason dedup.go exists — the delivery-platform
+	// orders an integrated POS records a second time as its own tickets.
+	// It is not a delivery platform and never produces a
+	// DeliveryRecord; see client.go's POSClient for why it is a peer of
+	// Client rather than an implementation of it.
+	PlatformPOS Platform = "pos"
 )
 
 // AllPlatforms is the full, ordered set — ordered so a sync over "every
 // platform" produces records in a stable sequence run to run, which is
-// part of what makes a re-run byte-identical (spec FR-005).
-var AllPlatforms = []Platform{PlatformIFood, PlatformJustEatTakeaway}
+// part of what makes a re-run byte-identical (spec 010 FR-005).
+//
+// POS is LAST on purpose. dedup.go resolves a duplicate in favour of the
+// delivery-platform record (spec 012 FR-013), and having the delivery
+// feeds already in hand when the POS answers keeps the fetch order and
+// the resolution order telling the same story.
+var AllPlatforms = []Platform{PlatformIFood, PlatformJustEatTakeaway, PlatformPOS}
+
+// DeliveryPlatforms is AllPlatforms minus the POS: the sources that
+// produce an ingest.DeliveryRecord. Used where "a delivery platform" is
+// the meaningful set — the dedup matcher's channel vocabulary, and the
+// POS mock's own model of which aggregator it is integrated with.
+var DeliveryPlatforms = []Platform{PlatformIFood, PlatformJustEatTakeaway}
 
 // DisplayName is the string written into ingest.DeliveryRecord.Platform.
 //
@@ -95,20 +127,33 @@ var AllPlatforms = []Platform{PlatformIFood, PlatformJustEatTakeaway}
 // the keys the CSV-ingested dataset already produces (its own
 // delivery_platform_export.csv uses these same two display strings).
 // Writing "IFood", "iFood Brasil", or "JustEat" here would silently open a
-// THIRD revenue bucket: the platform comparison page, the
+// FOURTH revenue bucket: the platform comparison page, the
 // compare_platform_economics MCP tool, and every chat answer about
 // platform economics would all keep working, and all quietly report a
 // platform that had half its orders missing.
+//
+// "POS" is here for the same reason and with the same constraint —
+// normalizeSourceName lowercases it to "pos", the key
+// reconcile.computeOneDay already writes in-house revenue under for the
+// CSV path — even though a POS record never carries a Platform field of
+// its own. It is what the UI and the sync summary display.
 func (p Platform) DisplayName() string {
 	switch p {
 	case PlatformIFood:
 		return "iFood"
 	case PlatformJustEatTakeaway:
 		return "Just Eat Takeaway"
+	case PlatformPOS:
+		return "POS"
 	default:
 		return string(p)
 	}
 }
+
+// IsDelivery reports whether this source produces delivery-platform
+// records (and therefore commission, payouts and refunds) rather than
+// in-house POS tickets.
+func (p Platform) IsDelivery() bool { return p != PlatformPOS }
 
 // ParsePlatform resolves a platform key from an API request. Unknown keys
 // are refused by name rather than ignored: a sync request naming a

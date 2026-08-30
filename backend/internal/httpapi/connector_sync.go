@@ -1,21 +1,31 @@
 package httpapi
 
-// specs/010-platform-connector-proxy: pulling delivery-platform revenue
-// from iFood and Just Eat Takeaway directly, instead of waiting for
-// somebody to export a CSV from each merchant portal.
+// specs/010-platform-connector-proxy and
+// specs/012-pos-connector-dedup: pulling revenue from iFood, Just Eat
+// Takeaway and the in-house POS directly, instead of waiting for somebody
+// to export a CSV from each one.
 //
-// Both upstreams are SIMULATED. This project has no partner-API
-// credentials for either platform, so internal/platformconnector stands in
-// two mock APIs with deliberately different wire formats and normalizes
-// them into the same ingest.DeliveryRecord the CSV path already produces.
-// Every response body in this file carries a top-level "simulated": true,
-// so a client that ignores every UI affordance still cannot render these
-// numbers without having been told what they are.
+// All three upstreams are SIMULATED. This project has no partner-API
+// credentials for either platform and no POS terminal to poll, so
+// internal/platformconnector stands in three mock APIs with deliberately
+// different wire formats and normalizes them into the same
+// ingest.DeliveryRecord and ingest.POSRecord the CSV path already
+// produces. Every response body in this file carries a top-level
+// "simulated": true, so a client that ignores every UI affordance still
+// cannot render these numbers without having been told what they are.
+//
+// Because the simulated POS records the delivery orders an integrated POS
+// really would receive, a sync covering more than one source can see the
+// same real-world order twice. The connector's matcher resolves what it
+// can and refuses to guess at the rest; both outcomes reach the owner
+// here, in the response body and as discrepancy flags on the affected
+// days. A response that reported only the successes would be claiming a
+// clean result it did not achieve.
 //
 // Zero model involvement. The fetch is seeded pseudorandom Go, the
-// normalization is Go, and the margin recomputation is
-// internal/reconcile — unchanged, and unaware that anything about this
-// request differs from a cost-sheet upload.
+// normalization is Go, the matching is integer comparison, and the margin
+// recomputation is internal/reconcile — unchanged, and unaware that
+// anything about this request differs from a cost-sheet upload.
 //
 // Three endpoints, mirroring ingest_cost_sheet.go's preview/commit shape
 // because it is the same job (stage something, look at it, then let it
@@ -58,7 +68,7 @@ func ownerFacing(err error) string {
 // because the UI is not the only consumer: a curl, a screenshot of a JSON
 // body, a future integration reading this API. Disclosure that lives only
 // in the presentation layer is disclosure that can be cropped out.
-const syncSimulationNotice = "Emulated connection. No real iFood or Just Eat Takeaway account is connected — these orders are generated locally for demonstration."
+const syncSimulationNotice = "Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration."
 
 // ConnectorPlatformView is one connector, as GET
 // /api/connectors/platforms renders it.
@@ -97,35 +107,98 @@ type ConnectorDayTotalsView struct {
 	GrossSales   string `json:"gross_sales"`
 	Refunds      string `json:"refunds"`
 	Commissions  string `json:"commissions"`
+
+	// DuplicatesRemoved and UnresolvedOverlaps are non-zero only on a POS
+	// row, and only when the same sync also fetched a delivery platform
+	// the POS records orders from. OrderCount above is already net of the
+	// removals — it is what will land, not what the terminal reported.
+	DuplicatesRemoved  int `json:"duplicates_removed"`
+	UnresolvedOverlaps int `json:"unresolved_overlaps"`
+}
+
+// ConnectorDedupDecisionView is one cross-source deduplication outcome, as
+// both POST endpoints render it.
+//
+// The unresolved ones are in this list too, and that is the point: an
+// overlap the matcher declined to resolve is a possible double-count in
+// the numbers alongside it, and a response that only reported successes
+// would be quietly claiming a clean result it did not achieve
+// (specs/012-pos-connector-dedup FR-014).
+type ConnectorDedupDecisionView struct {
+	Kind string `json:"kind"`
+
+	// Resolved means this decision REMOVED a POS ticket. It is false both
+	// for an overlap the matcher declined to resolve and for an
+	// amount-mismatch note, which accompanies a resolution rather than
+	// being one — so a client counting possible double-counts should
+	// filter on Kind's "unresolved_" prefix, not on !Resolved.
+	Resolved        bool   `json:"resolved"`
+	Date            string `json:"date"`
+	Platform        string `json:"platform"`
+	POSOrderID      string `json:"pos_order_id"`
+	PlatformOrderID string `json:"platform_order_id,omitempty"`
+	Detail          string `json:"detail"`
 }
 
 // ConnectorSyncPreviewResponse is POST /api/connectors/sync/preview's
 // body. Nothing has been persisted when this is returned.
 type ConnectorSyncPreviewResponse struct {
-	Simulated   bool                     `json:"simulated"`
-	Notice      string                   `json:"notice"`
-	From        string                   `json:"from"`
-	To          string                   `json:"to"`
-	OrderCount  int                      `json:"order_count"`
-	GrossSales  string                   `json:"gross_sales"`
-	Refunds     string                   `json:"refunds"`
-	Commissions string                   `json:"commissions"`
-	Days        []ConnectorDayTotalsView `json:"days"`
+	Simulated   bool   `json:"simulated"`
+	Notice      string `json:"notice"`
+	From        string `json:"from"`
+	To          string `json:"to"`
+	OrderCount  int    `json:"order_count"`
+	GrossSales  string `json:"gross_sales"`
+	Refunds     string `json:"refunds"`
+	Commissions string `json:"commissions"`
+
+	// Post-deduplication, like every other figure in this body.
+	DuplicatesRemoved  int                          `json:"duplicates_removed"`
+	UnresolvedOverlaps int                          `json:"unresolved_overlaps"`
+	Dedup              []ConnectorDedupDecisionView `json:"dedup"`
+
+	Days []ConnectorDayTotalsView `json:"days"`
 }
 
 // ConnectorSyncResponse is POST /api/connectors/sync's body. Before/After
 // reuse ingest_cost_sheet.go's MarginSnapshotView so the two write paths
 // report their effect in exactly the same shape.
 type ConnectorSyncResponse struct {
-	Simulated     bool               `json:"simulated"`
-	Notice        string             `json:"notice"`
-	From          string             `json:"from"`
-	To            string             `json:"to"`
-	DaysAffected  int                `json:"days_affected"`
-	OrdersSynced  int                `json:"orders_synced"`
-	RefundsSynced int                `json:"refunds_synced"`
-	Before        MarginSnapshotView `json:"before"`
-	After         MarginSnapshotView `json:"after"`
+	Simulated     bool   `json:"simulated"`
+	Notice        string `json:"notice"`
+	From          string `json:"from"`
+	To            string `json:"to"`
+	DaysAffected  int    `json:"days_affected"`
+	OrdersSynced  int    `json:"orders_synced"`
+	RefundsSynced int    `json:"refunds_synced"`
+
+	// TicketsSynced is the POS side, net of deduplication.
+	TicketsSynced      int                          `json:"tickets_synced"`
+	DuplicatesRemoved  int                          `json:"duplicates_removed"`
+	UnresolvedOverlaps int                          `json:"unresolved_overlaps"`
+	Dedup              []ConnectorDedupDecisionView `json:"dedup"`
+
+	Before MarginSnapshotView `json:"before"`
+	After  MarginSnapshotView `json:"after"`
+}
+
+// toDedupViews renders the connector's decisions for the API. Order is the
+// matcher's own, which is ticket order within each day — stable, so two
+// syncs of the same range produce byte-identical bodies.
+func toDedupViews(decisions []platformconnector.DedupDecision) []ConnectorDedupDecisionView {
+	out := make([]ConnectorDedupDecisionView, 0, len(decisions))
+	for _, d := range decisions {
+		out = append(out, ConnectorDedupDecisionView{
+			Kind:            string(d.Kind),
+			Resolved:        d.Kind.Merged(),
+			Date:            d.Date.Format(dateLayout),
+			Platform:        string(d.Platform),
+			POSOrderID:      d.POSOrderID,
+			PlatformOrderID: d.PlatformOrderID,
+			Detail:          d.Detail,
+		})
+	}
+	return out
 }
 
 // HandleConnectorPlatforms implements GET /api/connectors/platforms.
@@ -168,7 +241,7 @@ func HandleConnectorSyncPreview(proxy *platformconnector.Proxy) http.HandlerFunc
 			return
 		}
 
-		result, ok := fetchForRequest(w, r, proxy)
+		result, _, ok := fetchForRequest(w, r, proxy)
 		if !ok {
 			return
 		}
@@ -182,27 +255,32 @@ func HandleConnectorSyncPreview(proxy *platformconnector.Proxy) http.HandlerFunc
 			refundCents += t.RefundsCents
 			commissionCents += t.CommissionCents
 			days = append(days, ConnectorDayTotalsView{
-				Platform:     string(t.Platform),
-				PlatformName: t.PlatformName,
-				Date:         t.Date.Format(dateLayout),
-				OrderCount:   t.OrderCount,
-				RefundCount:  t.RefundCount,
-				GrossSales:   money.FormatCents(t.GrossCents),
-				Refunds:      money.FormatCents(t.RefundsCents),
-				Commissions:  money.FormatCents(t.CommissionCents),
+				Platform:           string(t.Platform),
+				PlatformName:       t.PlatformName,
+				Date:               t.Date.Format(dateLayout),
+				OrderCount:         t.OrderCount,
+				RefundCount:        t.RefundCount,
+				GrossSales:         money.FormatCents(t.GrossCents),
+				Refunds:            money.FormatCents(t.RefundsCents),
+				Commissions:        money.FormatCents(t.CommissionCents),
+				DuplicatesRemoved:  t.DuplicatesRemoved,
+				UnresolvedOverlaps: t.UnresolvedOverlaps,
 			})
 		}
 
 		writeJSON(w, http.StatusOK, ConnectorSyncPreviewResponse{
-			Simulated:   true,
-			Notice:      syncSimulationNotice,
-			From:        result.From.Format(dateLayout),
-			To:          result.To.Format(dateLayout),
-			OrderCount:  orderCount,
-			GrossSales:  money.FormatCents(grossCents),
-			Refunds:     money.FormatCents(refundCents),
-			Commissions: money.FormatCents(commissionCents),
-			Days:        days,
+			Simulated:          true,
+			Notice:             syncSimulationNotice,
+			From:               result.From.Format(dateLayout),
+			To:                 result.To.Format(dateLayout),
+			OrderCount:         orderCount,
+			GrossSales:         money.FormatCents(grossCents),
+			Refunds:            money.FormatCents(refundCents),
+			Commissions:        money.FormatCents(commissionCents),
+			DuplicatesRemoved:  result.DuplicatesRemoved(),
+			UnresolvedOverlaps: result.UnresolvedOverlaps(),
+			Dedup:              toDedupViews(result.Decisions),
+			Days:               days,
 		})
 	}
 }
@@ -227,7 +305,7 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 			return
 		}
 
-		result, ok := fetchForRequest(w, r, proxy)
+		result, platforms, ok := fetchForRequest(w, r, proxy)
 		if !ok {
 			return
 		}
@@ -259,12 +337,23 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 			}
 		}
 
-		overlay := &pipeline.DeliveryOverlay{
-			From:    result.From,
-			To:      result.To,
-			Records: result.Records,
+		// The two Active booleans mirror what the request actually asked
+		// for. A sync that named only delivery platforms leaves POS
+		// revenue alone; a sync that named only the POS leaves delivery
+		// revenue alone. Deriving them from the fetch rather than
+		// hardcoding both to true is what makes a partial sync safe —
+		// see pipeline.ConnectorOverlay's own doc comment for what the
+		// alternative silently destroys.
+		overlay := &pipeline.ConnectorOverlay{
+			From:           result.From,
+			To:             result.To,
+			DeliveryActive: containsDeliveryPlatform(platforms),
+			Delivery:       result.Records,
+			POSActive:      containsPOS(platforms),
+			POS:            result.POSRecords,
+			Decisions:      result.Decisions,
 		}
-		if err := pipeline.RunIngestionPipelineWithDeliveryOverlay(livedata.Dir, store, overlay); err != nil {
+		if err := pipeline.RunIngestionPipelineWithConnectorOverlay(livedata.Dir, store, overlay); err != nil {
 			// The fetch itself already succeeded and passed the
 			// connector contract check, so a failure here is an
 			// operational failure of the pipeline run, not a rejection of
@@ -288,15 +377,19 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 		}
 
 		writeJSON(w, http.StatusOK, ConnectorSyncResponse{
-			Simulated:     true,
-			Notice:        syncSimulationNotice,
-			From:          result.From.Format(dateLayout),
-			To:            result.To.Format(dateLayout),
-			DaysAffected:  int(result.To.Sub(result.From).Hours()/24) + 1,
-			OrdersSynced:  len(result.Records),
-			RefundsSynced: refunds,
-			Before:        toMarginSnapshotView(before),
-			After:         toMarginSnapshotView(after),
+			Simulated:          true,
+			Notice:             syncSimulationNotice,
+			From:               result.From.Format(dateLayout),
+			To:                 result.To.Format(dateLayout),
+			DaysAffected:       int(result.To.Sub(result.From).Hours()/24) + 1,
+			OrdersSynced:       len(result.Records),
+			RefundsSynced:      refunds,
+			TicketsSynced:      len(result.POSRecords),
+			DuplicatesRemoved:  result.DuplicatesRemoved(),
+			UnresolvedOverlaps: result.UnresolvedOverlaps(),
+			Dedup:              toDedupViews(result.Decisions),
+			Before:             toMarginSnapshotView(before),
+			After:              toMarginSnapshotView(after),
 		})
 	}
 }
@@ -305,22 +398,22 @@ func HandleConnectorSync(proxy *platformconnector.Proxy, store *storage.Queries,
 // fetches through the proxy. It writes the error response itself and
 // reports ok=false, so both handlers share one set of refusal messages
 // rather than drifting apart.
-func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconnector.Proxy) (*platformconnector.FetchResult, bool) {
+func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconnector.Proxy) (*platformconnector.FetchResult, []platformconnector.Platform, bool) {
 	var req ConnectorSyncRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("body must be JSON with \"from\", \"to\" and \"platforms\": %v", err))
-		return nil, false
+		return nil, nil, false
 	}
 
 	from, err := time.Parse(dateLayout, req.From)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("\"from\" must be a YYYY-MM-DD date, got %q", req.From))
-		return nil, false
+		return nil, nil, false
 	}
 	to, err := time.Parse(dateLayout, req.To)
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid_request", fmt.Sprintf("\"to\" must be a YYYY-MM-DD date, got %q", req.To))
-		return nil, false
+		return nil, nil, false
 	}
 
 	// An omitted platform list means every connected platform, NOT an
@@ -337,7 +430,7 @@ func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconn
 		p, err := platformconnector.ParsePlatform(key)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid_request", ownerFacing(err))
-			return nil, false
+			return nil, nil, false
 		}
 		platforms = append(platforms, p)
 	}
@@ -350,7 +443,25 @@ func fetchForRequest(w http.ResponseWriter, r *http.Request, proxy *platformconn
 		// contract). Surfacing it verbatim is the same treatment
 		// ingest.ParseCostSheet's errors already get.
 		writeJSONError(w, http.StatusUnprocessableEntity, "connector_fetch_failed", ownerFacing(err))
-		return nil, false
+		return nil, nil, false
 	}
-	return result, true
+	return result, platforms, true
+}
+
+func containsPOS(platforms []platformconnector.Platform) bool {
+	for _, p := range platforms {
+		if p == platformconnector.PlatformPOS {
+			return true
+		}
+	}
+	return false
+}
+
+func containsDeliveryPlatform(platforms []platformconnector.Platform) bool {
+	for _, p := range platforms {
+		if p.IsDelivery() {
+			return true
+		}
+	}
+	return false
 }

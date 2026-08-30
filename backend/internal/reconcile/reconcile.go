@@ -51,7 +51,56 @@ const dateKeyLayout = "2006-01-02"
 //     contributes zero input cost that day — a known, visible modeling
 //     choice, not a hidden average.
 func ComputeDailyReconciliations(delivery []ingest.DeliveryRecord, pos []ingest.POSRecord, costs []ingest.CostInvoiceRecord) []DailyReconciliation {
+	return ComputeDailyReconciliationsWithFlags(delivery, pos, costs, nil)
+}
+
+// ComputeDailyReconciliationsWithFlags is ComputeDailyReconciliations with
+// discrepancy flags supplied from OUTSIDE this package, keyed by
+// YYYY-MM-DD, merged into each day's own flags.
+//
+// It exists for exactly one caller shape: a decision that could only be
+// made where the raw sources were still separable, and that this package
+// therefore cannot re-derive from the records it is handed. Today that is
+// internal/platformconnector's cross-source deduplication
+// (specs/012-pos-connector-dedup) — by the time reconciliation sees the
+// records, the removed POS tickets are gone, and "why is this day's POS
+// gross lower than the terminal reported" is a question only the matcher
+// can answer.
+//
+// Deliberately NOT an escape hatch for arbitrary flag injection. Nothing
+// in this package reads, validates, or acts on these flags; they are
+// carried onto the day and displayed, and every number is still computed
+// here and only here (Constitution Principle I). A caller that wanted to
+// change a figure would still have to change a record.
+//
+// ComputeDailyReconciliations is a nil-map delegate to this, the same
+// shape pipeline.RunIngestionPipeline already took when the delivery
+// overlay landed — so every existing caller is untouched and provably so
+// (TestComputeDailyReconciliations_MatchesTheNilFlagDelegate).
+func ComputeDailyReconciliationsWithFlags(
+	delivery []ingest.DeliveryRecord,
+	pos []ingest.POSRecord,
+	costs []ingest.CostInvoiceRecord,
+	externalFlags map[string][]DiscrepancyFlag,
+) []DailyReconciliation {
 	dedupedDelivery, dupFlagsByDate := dedupeDelivery(delivery)
+
+	// External flags are appended AFTER this package's own, so a day's
+	// flag list reads in the order the work happened: what reconciliation
+	// itself had to handle, then what the connector had already decided
+	// before the records arrived.
+	//
+	// A flag for a date with no records at all would be dropped here,
+	// because days are derived from records. That is not reachable and
+	// must stay unreachable: every cross-source decision names a POS
+	// ticket that either survived (so that day has a POS record) or was
+	// folded into a delivery record (so that day has a delivery record).
+	// Manufacturing a day out of a flag would be the wrong fix anyway —
+	// it would invent a zero-margin reconciliation for a date no source
+	// reported.
+	for dateKey, flags := range externalFlags {
+		dupFlagsByDate[dateKey] = append(dupFlagsByDate[dateKey], flags...)
+	}
 
 	deliveryByDate := groupBy(dedupedDelivery, func(r ingest.DeliveryRecord) string { return r.OrderDate.Format(dateKeyLayout) })
 	posByDate := groupBy(pos, func(r ingest.POSRecord) string { return r.OrderDate.Format(dateKeyLayout) })

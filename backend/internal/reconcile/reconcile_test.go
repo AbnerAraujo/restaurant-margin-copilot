@@ -298,3 +298,40 @@ func TestApplyAnomalyFlags_TableDriven(t *testing.T) {
 		})
 	}
 }
+
+// specs/012-pos-connector-dedup FR-017: adding the external-flag entry
+// point must not have changed a single number on the path everything else
+// in this product already uses. Proven against the real dataset rather
+// than a fixture, because "byte-identical" is only a meaningful claim over
+// the whole thing.
+func TestComputeDailyReconciliations_MatchesTheNilFlagDelegate(t *testing.T) {
+	delivery, pos, costs := loadOpeningWindow(t)
+
+	require.Equal(t,
+		ComputeDailyReconciliations(delivery, pos, costs),
+		ComputeDailyReconciliationsWithFlags(delivery, pos, costs, nil),
+	)
+}
+
+// An externally-supplied flag lands on the day it names, alongside — never
+// instead of — the flags this package raised itself.
+func TestComputeDailyReconciliationsWithFlags_MergesRatherThanReplaces(t *testing.T) {
+	delivery, pos, _ := loadOpeningWindow(t)
+
+	baseline := ComputeDailyReconciliations(delivery, pos, nil)
+	require.NotEmpty(t, baseline)
+	target := baseline[0].Date.Format(dateKeyLayout)
+
+	withFlags := ComputeDailyReconciliationsWithFlags(delivery, pos, nil, map[string][]DiscrepancyFlag{
+		target: {{Type: FlagCrossSourceDuplicateRemoved, Detail: "a ticket the connector folded in"}},
+	})
+
+	require.Equal(t, len(baseline[0].DiscrepancyFlags)+1, len(withFlags[0].DiscrepancyFlags),
+		"the external flag must be added to the day's own flags, not replace them")
+	require.Equal(t, baseline[0].MarginCents, withFlags[0].MarginCents,
+		"a flag must never move a number — every figure is still computed here and only here")
+
+	last := withFlags[0].DiscrepancyFlags[len(withFlags[0].DiscrepancyFlags)-1]
+	require.Equal(t, FlagCrossSourceDuplicateRemoved, last.Type)
+	require.Equal(t, "a ticket the connector folded in", last.Detail)
+}

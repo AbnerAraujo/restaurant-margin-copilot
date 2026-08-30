@@ -7,9 +7,27 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 )
 
-// Client is the one shape the rest of the product sees. Everything above
-// this interface — the HTTP handlers, the pipeline, internal/reconcile —
-// is written against exactly these three methods and has no idea whether
+// Connector is the half every upstream in this package shares: it knows
+// which source it is, and it can describe its own wire format for
+// display. Client and POSClient each add exactly one fetch method on top,
+// because that is the only thing about them that genuinely differs. It is
+// exported so a caller outside this package can hold a mixed list of
+// sources — which is exactly what NewProxy takes.
+type Connector interface {
+	// Platform is the source this client fetches from.
+	Platform() Platform
+
+	// Describe returns the wire-format facts this connector normalizes.
+	// It exists so the UI can show a reviewer WHAT is being normalized
+	// (spec 010 US3) rather than asking them to take "I built a proxy" on
+	// faith, and so the emulation is disclosed in the API surface itself.
+	Describe() Description
+}
+
+// Client is the shape every DELIVERY-platform upstream implements.
+// Everything above this interface — the HTTP handlers, the pipeline,
+// internal/reconcile — is written against exactly these three methods
+// and has no idea whether
 // the platform behind them pages by cursor or by page number, reports
 // money as a decimal string or as minor units, or calls a refund
 // "CANCELLED" or "REFUNDED".
@@ -59,14 +77,7 @@ import (
 // this product exists to prevent, which is why it is checked rather than
 // trusted.
 type Client interface {
-	// Platform is the platform this client fetches from.
-	Platform() Platform
-
-	// Describe returns the wire-format facts this connector normalizes.
-	// It exists so the UI can show a reviewer WHAT is being normalized
-	// (spec US3) rather than asking them to take "I built a proxy" on
-	// faith, and so the emulation is disclosed in the API surface itself.
-	Describe() Description
+	Connector
 
 	// FetchDeliveryRevenue returns every order the platform reports for
 	// one calendar date, normalized. A date the platform has no orders
@@ -75,6 +86,99 @@ type Client interface {
 	// missing_delivery_source flag is what surfaces it. This function
 	// never fabricates an order to avoid an empty day.
 	FetchDeliveryRevenue(ctx context.Context, date time.Time) ([]ingest.DeliveryRecord, error)
+}
+
+// POSClient is Client's peer for the in-house point-of-sale terminal.
+//
+// # Why this is a separate interface and not just another Client
+//
+// The obvious move is to have the POS mock implement Client and return
+// ingest.DeliveryRecord values with a zero commission. It was rejected,
+// and the reason is worth stating here rather than in a plan document,
+// because the next person to look at this file will have the same idea.
+//
+// reconcile.computeOneDay sums commissionsBySource[src] over EVERY
+// delivery record it is given. A POS ticket wearing a DeliveryRecord
+// would therefore add a commissionsBySource["pos"] = 0 entry to the day.
+// That entry is not cosmetic: internal/reconcile/types.go documents, on
+// both CommissionsBySource and RefundsBySource, that "pos" never appears
+// in them — and specs/003's compare_platform_economics reads exactly
+// those maps to rank platforms by economics. The POS would show up in
+// the platform comparator as a delivery platform charging 0%
+// commission: a new, wrong answer in a corner of the product that never
+// mentions connectors. Forcing the type would also discard Channel and
+// PaymentMethod, which is precisely the information dedup.go needs.
+//
+// So: two interfaces, one shared half (Connector), and a Proxy that
+// holds both registries. The cost is one more interface. The alternative
+// cost was a silently wrong platform comparison.
+type POSClient interface {
+	Connector
+
+	// FetchPOSOrders returns every ticket the terminal reports for one
+	// calendar date, normalized. A date with no tickets returns an empty
+	// slice and a nil error — a closed day is a real answer, not a
+	// failure. This function never fabricates a ticket to avoid an empty
+	// day.
+	//
+	// # The output contract
+	//
+	//  1. Record.OrderDate is midnight in the merchant's own zone for the
+	//     requested calendar date, and equals the date that was requested.
+	//  2. Record.GrossCents is integer cents and positive.
+	//  3. Record.Status is "completed" or a non-completed status
+	//     reconcile.computeOneDay will exclude with its existing
+	//     pos_non_completed_row_excluded flag. This connector models no
+	//     POS refund, so there is no negative-amount convention here the
+	//     way there is for delivery records.
+	//  4. Record.Ref.File carries the simulated:// scheme while this
+	//     upstream is emulated, and Record.Ref.Row is the ticket's 1-based
+	//     position in the response.
+	//  5. DeliveryPlatform is either "" or a Platform for which
+	//     IsDelivery() is true. A ticket may not claim to have arrived
+	//     "through the POS".
+	//  6. PlacedAt is in the merchant's own zone and falls on OrderDate.
+	//     Rule 6 has teeth: PlacedAt is the input to dedup.go's time
+	//     window, so an adapter that read a zone-less timestamp as UTC
+	//     would shift every ticket by the merchant's offset, no matching
+	//     would ever fire, and duplicate revenue would flow through with
+	//     nothing to flag it. proxy.go's checkPOSContract enforces it.
+	FetchPOSOrders(ctx context.Context, date time.Time) ([]POSOrder, error)
+}
+
+// POSOrder is one normalized POS ticket plus the two cross-source
+// matching signals ingest.POSRecord has no field for.
+//
+// Those two fields deliberately do NOT live on ingest.POSRecord. The CSV
+// POS export has no partner-reference column and never will, so adding
+// them to the shared type would park a connector-only concern in a type
+// the whole product depends on, permanently empty on the path that
+// produces most of its rows. They stay here, inside the connector, and
+// internal/ingest keeps a zero-line diff from this feature.
+type POSOrder struct {
+	// Record is what leaves this package: the exact type
+	// ingest.ParsePOSExport produces from a CSV row.
+	Record ingest.POSRecord
+
+	// DeliveryPlatform is the delivery platform the POS itself says this
+	// ticket arrived through, or "" for an in-house order (dine-in,
+	// counter). It is an assertion made by the POS, not an inference —
+	// which is what makes it usable as a matching precondition. dedup.go
+	// will not consider a ticket at all unless this is set (spec 012
+	// FR-011).
+	DeliveryPlatform Platform
+
+	// PartnerOrderRef is the delivery platform's own order id as the POS
+	// recorded it, or "" when the integration did not populate it. When
+	// present and resolvable it is treated as identity, outranking every
+	// other signal (FR-009).
+	PartnerOrderRef string
+
+	// PlacedAt is the ticket time in the merchant's own zone. Carried
+	// separately from Record.OrderTime (an "HH:MM" string) because it is
+	// arithmetic input, and re-parsing a display string to do arithmetic
+	// on it is how a formatting change becomes a matching bug.
+	PlacedAt time.Time
 }
 
 // Description is a plain-language summary of one platform connector, for
