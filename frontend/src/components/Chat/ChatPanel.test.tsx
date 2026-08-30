@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ChatPanel, {
   derivePendingClarification,
@@ -183,9 +183,9 @@ describe('ChatPanel', () => {
     ).toBeInTheDocument()
     // Two source rows back this answer, so the shared ProvenanceTag trigger
     // (FR-005 — the same component used everywhere else in the app) renders
-    // its "N sources" form rather than a single inline citation.
+    // its "N source files" form rather than a single inline citation.
     expect(
-      screen.getByRole('button', { name: '2 sources' }),
+      screen.getByRole('button', { name: '2 source files' }),
     ).toBeInTheDocument()
   })
 
@@ -263,7 +263,7 @@ describe('ChatPanel', () => {
     const user = userEvent.setup()
     render(<ChatPanel />)
 
-    const citation = screen.getByRole('button', { name: '2 sources' })
+    const citation = screen.getByRole('button', { name: '2 source files' })
     expect(
       screen.queryByRole('group', { name: /source citations/i }),
     ).not.toBeInTheDocument()
@@ -1434,5 +1434,66 @@ describe('ChatPanel', () => {
     await user.click(chip)
     expect(await within(bubble).findByText(/reconcile daily/i)).toBeInTheDocument()
     expect(resolveBusinessInsight).toHaveBeenCalledTimes(2)
+  })
+})
+
+// Bug fix: the "Recent conversations" history panel's per-thread message
+// count had no singular branch (`${thread.messages.length} messages`), so a
+// one-message thread read "1 messages".
+describe('ChatPanel — thread history message-count pluralization (bug fix)', () => {
+  const THREADS_KEY = 'mbs.chat.threads.v2'
+
+  beforeEach(() => {
+    window.localStorage.clear()
+  })
+
+  function userMessage(id: string, text: string): ChatMessage {
+    return { id, role: 'user', text, askedAt: '2026-08-27T10:00:00Z' }
+  }
+
+  it('reads "1 message" (not "1 messages") for a one-message thread, and "N messages" otherwise', async () => {
+    const user = userEvent.setup()
+    window.localStorage.setItem(
+      THREADS_KEY,
+      JSON.stringify({
+        activeId: 'thread-active',
+        threads: [
+          {
+            id: 'thread-active',
+            title: 'Active thread',
+            updatedAt: '2026-08-27T10:00:00Z',
+            messages: [userMessage('m1', 'How did today close?')],
+          },
+          {
+            id: 'thread-one',
+            title: 'One-message thread',
+            updatedAt: '2026-08-26T10:00:00Z',
+            messages: [userMessage('m2', 'What changed this week?')],
+          },
+          {
+            id: 'thread-three',
+            title: 'Three-message thread',
+            updatedAt: '2026-08-25T10:00:00Z',
+            messages: [
+              userMessage('m3', 'a'),
+              userMessage('m4', 'b'),
+              userMessage('m5', 'c'),
+            ],
+          },
+        ],
+      }),
+    )
+
+    render(<ChatPanel persistConversation />)
+
+    await user.click(screen.getByRole('button', { name: /recent/i }))
+    const list = screen.getByRole('list', { name: /recent conversations/i })
+
+    expect(within(list).getByText('One-message thread')).toBeInTheDocument()
+    expect(within(list).getByText('1 message')).toBeInTheDocument()
+    expect(within(list).queryByText('1 messages')).not.toBeInTheDocument()
+
+    expect(within(list).getByText('Three-message thread')).toBeInTheDocument()
+    expect(within(list).getByText('3 messages')).toBeInTheDocument()
   })
 })

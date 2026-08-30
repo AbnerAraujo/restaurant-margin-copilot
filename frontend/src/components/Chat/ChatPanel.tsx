@@ -1419,7 +1419,9 @@ export default function ChatPanel({
                       <span className="text-[10px] text-muted-foreground">
                         {thread.messages.length === 0
                           ? 'Empty'
-                          : `${thread.messages.length} messages`}
+                          : thread.messages.length === 1
+                            ? '1 message'
+                            : `${thread.messages.length} messages`}
                         {thread.id === threadStore.activeId ? ' · current' : ''}
                       </span>
                     </button>
