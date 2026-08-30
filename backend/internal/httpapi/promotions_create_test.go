@@ -9,13 +9,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
@@ -469,6 +472,108 @@ func TestHandleCreatePromotion_RejectsASecondReplacementOfAnAlreadyReplacedCampa
 	require.Len(t, campaignBadges, 1, "exactly one Campaign Launcher badge for one real replacement, never two")
 	require.Equal(t, flaggedID, campaignBadges[0].ReplacesCampaignID)
 	require.Equal(t, firstReplacementID, campaignBadges[0].CampaignID, "the EARLIEST replacement wins the badge")
+}
+
+// TestHandleCreatePromotion_ConcurrentReplacementsOfTheSameCampaignRaceToExactlyOneWinner
+// is the genuinely concurrent counterpart to
+// TestHandleCreatePromotion_RejectsASecondReplacementOfAnAlreadyReplacedCampaign.
+// That test proves the sequential case (IsCampaignAlreadyReplaced's
+// check-then-insert correctly refuses a SECOND, later request). It cannot
+// prove the concurrent case: two requests racing to replace the same flagged
+// campaign can both read "not yet replaced" from IsCampaignAlreadyReplaced
+// before either has committed its insert — a real, live-reproducible TOCTOU
+// gap the pre-insert application check alone cannot close, since it is two
+// separate round trips with nothing serializing them. Only the database sees
+// both transactions.
+//
+// migrations/000012_replaces_campaign_unique.up.sql's partial unique index
+// closes it: with N requests fired truly concurrently, exactly one must
+// succeed and every other must come back as the SAME typed 409
+// "already_replaced" a sequential double-submit already gets — never a raw
+// 500 from an unmapped constraint violation, and never two successes.
+func TestHandleCreatePromotion_ConcurrentReplacementsOfTheSameCampaignRaceToExactlyOneWinner(t *testing.T) {
+	conn, _ := httpapiConnectOrSkip(t)
+
+	// httpapiConnectOrSkip's single *pgx.Conn (shared by every OTHER test in
+	// this file, all of which issue one request at a time) is not safe for
+	// concurrent use — pgx.Conn, unlike pgxpool.Pool, serializes all
+	// traffic onto one physical connection and returns "conn busy" under
+	// real concurrency. Production never hits this: cmd/server/main.go
+	// hands every request its own connection from a pgxpool.Pool. This test
+	// needs that same concurrency model to race real, simultaneous
+	// requests the way the bug it's proving actually occurs, so it opens
+	// its own pool against the same database rather than reusing conn/q.
+	pool, err := pgxpool.New(context.Background(), os.Getenv("DATABASE_URL"))
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	pooledQ := storage.New(pool)
+
+	flaggedID := "TEST-HTTPAPI-SENTINEL-CONCURRENT-REPLACE-FLAGGED"
+	const contenders = 25
+	replacementIDs := make([]string, contenders)
+	for i := range replacementIDs {
+		replacementIDs[i] = fmt.Sprintf("TEST-HTTPAPI-SENTINEL-CONCURRENT-REPLACE-%d", i)
+	}
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(),
+			"DELETE FROM promotion_roi_record WHERE campaign_id = ANY($1)",
+			append([]string{flaggedID}, replacementIDs...))
+	})
+
+	roiNeg := int64(-5000)
+	_, err = storage.SavePromotionRoiRecord(context.Background(), pooledQ, reconcile.PromotionRoiRecord{
+		Platform:                          "TestPlatform",
+		CampaignID:                        flaggedID,
+		PeriodStart:                       time.Date(1999, 8, 1, 0, 0, 0, 0, time.UTC),
+		PeriodEnd:                         time.Date(1999, 8, 3, 0, 0, 0, 0, time.UTC),
+		SpendCents:                        6000,
+		AttributedIncrementalOrders:       intPtrHTTP(1),
+		AttributedIncrementalRevenueCents: int64PtrHTTP(1000),
+		ROICents:                          &roiNeg,
+		FlaggedNegative:                   true,
+	})
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	results := make([]*httptest.ResponseRecorder, contenders)
+	for i := 0; i < contenders; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i] = doCreatePromotion(t, pooledQ, map[string]any{
+				"platform":    "iFood",
+				"campaign_id": replacementIDs[i],
+				"period":      map[string]string{"start": fmt.Sprintf("1999-09-%02d", i+1), "end": fmt.Sprintf("1999-09-%02d", i+1)},
+				"spend":       "50.00",
+				"replaces":    flaggedID,
+			})
+		}(i)
+	}
+	wg.Wait()
+
+	created, conflicted := 0, 0
+	for _, rec := range results {
+		switch rec.Code {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			conflicted++
+			var body map[string]string
+			require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
+			require.Equal(t, "already_replaced", body["error"],
+				"a losing request must come back as the same typed 409 a sequential double-submit gets, not an unmapped constraint error: %s", rec.Body.String())
+		default:
+			t.Fatalf("unexpected status %d for a concurrent replace attempt: %s", rec.Code, rec.Body.String())
+		}
+	}
+	require.Equal(t, 1, created, "exactly one concurrent replacement of the same flagged campaign may succeed")
+	require.Equal(t, contenders-1, conflicted, "every other contender must be refused, not silently dropped or double-awarded")
+
+	var count int
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT count(*) FROM promotion_roi_record WHERE replaces_campaign_id = $1", flaggedID,
+	).Scan(&count))
+	require.Equal(t, 1, count, "the database must hold exactly one row claiming this replacement, regardless of how many requests raced for it")
 }
 
 func intPtrHTTP(v int) *int       { return &v }

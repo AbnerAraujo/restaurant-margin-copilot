@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS promotion_roi_record_replaces_campaign_id_idx;

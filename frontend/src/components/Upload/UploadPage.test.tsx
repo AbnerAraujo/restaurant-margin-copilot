@@ -318,5 +318,61 @@ describe('UploadPage', () => {
       expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
       expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
     })
+
+    // QA-found: navigating away mid-commit used to show the exact same
+    // "Nothing has been committed yet" dialog as navigating away from a
+    // merely-previewed, never-submitted file — false at this specific
+    // moment, since the replace request is already in flight and cannot be
+    // cancelled from this page (lib/api.ts's postMultipart has no
+    // AbortSignal). The dialog must say something true instead: leaving
+    // won't undo the request, it just means this tab stops waiting on it.
+    it('warns with honest, different copy when navigating away while a commit is still in flight', async () => {
+      stubFetchOnce(true, {
+        row_count: 1,
+        total_amount: '100.00',
+        rows: [
+          {
+            invoice_id: 'INV-TEST-001',
+            invoice_date: '2026-08-01',
+            supplier: 'Test Produce Co.',
+            category: 'produce',
+            amount: '100.00',
+            notes: '',
+            source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+          },
+        ],
+      })
+      const router = renderPage()
+      await selectFile(testFile())
+      await screen.findByText('INV-TEST-001')
+
+      // The commit request is left deliberately unresolved — it must still
+      // be "in flight" from this page's point of view when navigation is
+      // attempted below.
+      const commitPromise = new Promise<{
+        ok: boolean
+        status: number
+        json: () => Promise<unknown>
+        text: () => Promise<string>
+      }>(() => {
+        /* never resolves within this test */
+      })
+      const mockFetch = vi.mocked(fetch)
+      mockFetch.mockImplementationOnce(() => commitPromise as unknown as ReturnType<typeof fetch>)
+
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: /replace cost sheet/i }))
+
+      void router.navigate('/close')
+
+      const dialog = await screen.findByRole('alertdialog')
+      expect(dialog).toHaveTextContent(/leave while replacing the cost sheet/i)
+      expect(dialog).toHaveTextContent(/already been sent and can't be cancelled/i)
+      expect(dialog).not.toHaveTextContent(/nothing has been committed yet/i)
+      expect(screen.getByRole('button', { name: 'Leave anyway' })).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'Leave anyway' }))
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+    })
   })
 })

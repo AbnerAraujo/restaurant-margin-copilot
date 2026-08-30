@@ -170,6 +170,18 @@ export default function UploadPage() {
   const hasUnsavedChanges = stage.name !== 'idle' && stage.name !== 'committed'
   const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesGuard(hasUnsavedChanges)
 
+  // QA-found: the dialog below used to show "Nothing has been committed
+  // yet" unconditionally, including while `stage.name === 'committing'` —
+  // at that exact moment the commit POST is already in flight, and this
+  // page has no way to cancel it (lib/api.ts's postMultipart takes no
+  // AbortSignal, and even if it did, the request may already have reached
+  // the server). Leaving then does NOT undo anything; it just means this
+  // tab stops waiting for a result that may still land. Saying "nothing
+  // has been committed yet" at that moment is a real, specific lie about
+  // financial-data state (CLAUDE.md: a confidently wrong report is worse
+  // than a refusal), not just an over-cautious warning.
+  const isCommitInFlight = stage.name === 'committing'
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -344,9 +356,13 @@ export default function UploadPage() {
 
       <ConfirmDialog
         open={isBlocked}
-        title="Discard this cost sheet preview?"
-        description="Nothing has been committed yet. Leaving this page now discards the staged file and its preview — you'd need to re-pick it and re-run the preview from scratch."
-        confirmLabel="Discard preview"
+        title={isCommitInFlight ? 'Leave while replacing the cost sheet?' : 'Discard this cost sheet preview?'}
+        description={
+          isCommitInFlight
+            ? "This replace request has already been sent and can't be cancelled from here — leaving now won't undo it. If it succeeds, the cost sheet will still be replaced; you just won't see the before/after confirmation. Check Today's Close afterward if you want to be sure."
+            : "Nothing has been committed yet. Leaving this page now discards the staged file and its preview — you'd need to re-pick it and re-run the preview from scratch."
+        }
+        confirmLabel={isCommitInFlight ? 'Leave anyway' : 'Discard preview'}
         onConfirm={confirmDiscard}
         onCancel={cancelDiscard}
       />

@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -88,7 +89,28 @@ type CreatePromotionResponse struct {
 }
 
 // HandleCreatePromotion implements POST /api/promotions.
+//
+// createMu (below) serializes every request from just past cheap,
+// no-database input validation through the final insert. Found live in the
+// same QA pass as commitMu (internal/httpapi/ingest_cost_sheet.go): the
+// points-balance path recomputes `available := earned - alreadySpent` from
+// live data and only checks it against the request's own cost afterward —
+// a plain read-then-write with no lock or transaction between them. Two
+// requests funding two different campaigns with points, submitted close
+// together, could each read the SAME "available" balance before either had
+// committed its spend, and both pass the check — overdrawing the points
+// ledger negative for an economy this product otherwise guards carefully
+// (badges.PointsNeededForSpend's whole point). A single in-process mutex is
+// sufficient for the same reason commitMu's doc comment gives: this is a
+// single-process server (cmd/server/main.go), a low-traffic owner-facing
+// write path (nobody is meant to be submitting promotions in a hot loop),
+// and this endpoint has no separate connection-pool-based transaction seam
+// to hook into today. This also gives the "replaces" check-then-insert a
+// second, application-level guard alongside migrations/
+// 000012_replaces_campaign_unique.up.sql's unique index — belt and
+// suspenders on the exact same bug class, not a replacement for it.
 func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
+	var createMu sync.Mutex
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
@@ -153,6 +175,14 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid_input", "spend must not be negative")
 			return
 		}
+
+		// From here on, this request reads and then acts on shared,
+		// live-computed state (the points balance, the "already replaced"
+		// fact) — see createMu's doc comment above for the exact race this
+		// closes. Everything before this line is cheap, request-local
+		// validation that touches no shared state and needs no lock.
+		createMu.Lock()
+		defer createMu.Unlock()
 
 		paymentMethod := strings.TrimSpace(req.PaymentMethod)
 		if paymentMethod == "" {
@@ -268,7 +298,25 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 			PointsSpent:        pointsSpentPtr,
 		})
 		if err != nil {
-			if isUniqueViolation(err) {
+			if constraint, ok := uniqueViolationConstraint(err); ok {
+				// Two distinct unique constraints can fire here, and they
+				// mean two different things to the owner — see each
+				// constraint's own migration for why it exists.
+				if constraint == replacesCampaignUniqueConstraint {
+					// The TOCTOU counterpart to the IsCampaignAlreadyReplaced
+					// check above: that check and this insert are two
+					// separate round trips, so two requests racing to
+					// replace the SAME flagged campaign can both pass the
+					// check before either commits. The database is the only
+					// thing that sees both transactions, so it — not the
+					// application check — is what actually closes this.
+					// Same 409 the pre-insert check above already returns,
+					// since to the owner this is the identical outcome:
+					// "someone already replaced that campaign."
+					writeJSONError(w, http.StatusConflict, "already_replaced",
+						fmt.Sprintf("campaign_id %q has already been replaced by another promotion record — a flagged campaign can only be replaced once. Log this promotion without a replaces reference instead.", replaces))
+					return
+				}
 				writeJSONError(w, http.StatusConflict, "already_exists",
 					fmt.Sprintf("a promotion for platform %q, campaign_id %q, and this exact period already exists", platform, campaignID))
 				return
@@ -306,13 +354,22 @@ func parseStrictPeriod(startStr, endStr string) (start, end time.Time, err error
 	return start, end, nil
 }
 
-// isUniqueViolation reports whether err is Postgres' unique_violation
-// (SQLSTATE 23505) — the promotion_roi_record_platform_campaign_period_idx
-// constraint firing because this exact platform/campaign_id/period already
-// exists. Rendered as 409 Conflict rather than a generic 500, since it is a
-// well-formed, entirely expected outcome of a duplicate submission, not an
-// infrastructure failure.
-func isUniqueViolation(err error) bool {
+// replacesCampaignUniqueConstraint is the partial unique index added by
+// migrations/000012_replaces_campaign_unique.up.sql — see its own comment
+// for the race it closes.
+const replacesCampaignUniqueConstraint = "promotion_roi_record_replaces_campaign_id_idx"
+
+// uniqueViolationConstraint reports whether err is Postgres'
+// unique_violation (SQLSTATE 23505) and, if so, which constraint fired.
+// Two constraints can fire from this handler's one insert —
+// promotion_roi_record_platform_campaign_period_idx (a genuine duplicate
+// submission) and replacesCampaignUniqueConstraint (the double-replace race)
+// — and they are not the same failure to the owner, so the caller needs to
+// tell them apart rather than collapsing both into one generic message.
+func uniqueViolationConstraint(err error) (string, bool) {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return "", false
+	}
+	return pgErr.ConstraintName, true
 }
