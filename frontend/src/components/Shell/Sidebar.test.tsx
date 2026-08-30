@@ -1,9 +1,32 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 
 import Sidebar from './Sidebar'
+
+const EMPTY_PROFILE = {
+  name: '',
+  address: '',
+  phone: '',
+  email: '',
+  description: '',
+  photo: null,
+  updated_at: '',
+}
+
+/** Every test renders `Sidebar`, which now reads `GET /api/profile` (the
+ * fix for the "shown throughout the app" copy bug) — stub it the same way
+ * `Profile/ProfilePage.test.tsx` and `Points/PointsCard.test.tsx` stub their
+ * own data fetch, defaulting to "no profile saved yet" so pre-existing
+ * nav-only assertions keep seeing the sidebar's original, unchanged shape.
+ */
+function stubProfile(body: unknown = EMPTY_PROFILE) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({ ok: true, json: async () => body }),
+  )
+}
 
 /**
  * `Sidebar` renders only the `<aside>` (no `<Outlet/>` of its own — see
@@ -55,7 +78,12 @@ function getNav() {
 }
 
 describe('Sidebar', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
   it('renders all four nav items with their labels', () => {
+    stubProfile()
     renderSidebarAt('/')
     const nav = getNav()
 
@@ -70,6 +98,7 @@ describe('Sidebar', () => {
   })
 
   it('highlights the Home link as active at the root route, and no other link', () => {
+    stubProfile()
     renderSidebarAt('/')
     const nav = getNav()
 
@@ -89,6 +118,7 @@ describe('Sidebar', () => {
   })
 
   it('highlights the matching link (not Home) when on a nested route', () => {
+    stubProfile()
     renderSidebarAt('/promotions')
     const nav = getNav()
 
@@ -101,6 +131,7 @@ describe('Sidebar', () => {
   })
 
   it('navigates to the matching content when a nav item is clicked', async () => {
+    stubProfile()
     const user = userEvent.setup()
     renderSidebarAt('/')
 
@@ -114,6 +145,7 @@ describe('Sidebar', () => {
   })
 
   it('renders a Profile nav item linking to /profile', async () => {
+    stubProfile()
     const user = userEvent.setup()
     renderSidebarAt('/')
     const nav = getNav()
@@ -126,5 +158,27 @@ describe('Sidebar', () => {
 
     expect(screen.getByText('Profile content')).toBeInTheDocument()
     expect(profileLink).toHaveAttribute('aria-current', 'page')
+  })
+
+  // Bug fix: the Profile page told the owner their profile is "shown
+  // throughout the app" while nothing outside Profile itself ever read
+  // GET /api/profile. The sidebar is now the surface that makes that copy
+  // true — these two tests are the sidebar half of the fix.
+  it('shows the saved restaurant name once GET /api/profile resolves', async () => {
+    stubProfile({ ...EMPTY_PROFILE, name: 'Trattoria Bellavista' })
+    renderSidebarAt('/')
+
+    expect(await screen.findByText('Trattoria Bellavista')).toBeInTheDocument()
+  })
+
+  it('renders nothing extra when no restaurant name has been saved yet', async () => {
+    stubProfile(EMPTY_PROFILE)
+    renderSidebarAt('/')
+
+    // Give the profile fetch a turn to resolve, then confirm it produced no
+    // name text anywhere in the sidebar — a fresh install must look exactly
+    // as it did before this feature existed, never a blank placeholder row.
+    await screen.findByRole('navigation', { name: /primary navigation/i })
+    expect(screen.queryByLabelText(/^restaurant:/i)).not.toBeInTheDocument()
   })
 })

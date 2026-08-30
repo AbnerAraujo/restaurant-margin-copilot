@@ -325,6 +325,74 @@ func TestEvaluateCampaignCreationBadges_TableDriven(t *testing.T) {
 	}
 }
 
+// TestEvaluateCampaignCreationBadges_SameTargetReplacedTwiceEarnsOnlyOneBadge
+// is the source-of-truth fix for a QA-found double-award currency bug: a
+// flagged campaign stayed offered in the frontend's "replaces" dropdown
+// after it had already been replaced once, and submitting it again minted a
+// SECOND Campaign Launcher badge (and points award) for one real
+// replacement. Two owner_created records naming the SAME
+// ReplacesCampaignID must earn exactly one badge — the earliest one by
+// CreatedAt — regardless of what order this slice arrives in, since
+// storage.LoadAllPromotionRoiRecords orders by period/campaign_id, not by
+// creation time.
+func TestEvaluateCampaignCreationBadges_SameTargetReplacedTwiceEarnsOnlyOneBadge(t *testing.T) {
+	earlier := time.Date(2026, 8, 10, 9, 0, 0, 0, time.UTC)
+	later := time.Date(2026, 8, 12, 14, 30, 0, 0, time.UTC)
+
+	first := reconcile.PromotionRoiRecord{
+		CampaignID:         "OWNER-CAMP-FIRST-REPLACEMENT",
+		Origin:             reconcile.OriginOwnerCreated,
+		ReplacesCampaignID: strPtr("JET-CAMP-LUNCHFIX"),
+		CreatedAt:          earlier,
+	}
+	second := reconcile.PromotionRoiRecord{
+		CampaignID:         "OWNER-CAMP-SECOND-REPLACEMENT",
+		Origin:             reconcile.OriginOwnerCreated,
+		ReplacesCampaignID: strPtr("JET-CAMP-LUNCHFIX"),
+		CreatedAt:          later,
+	}
+
+	// Reversed input order (as if the second-in-time record happened to sort
+	// first) — the dedup must still pick the EARLIEST by CreatedAt, not the
+	// first one encountered in the slice.
+	got := EvaluateCampaignCreationBadges([]reconcile.PromotionRoiRecord{second, first})
+
+	require.Len(t, got, 1, "the same flagged campaign can only genuinely be replaced once")
+	require.Equal(t, "OWNER-CAMP-FIRST-REPLACEMENT", got[0].CampaignID, "the earliest replacement wins the badge")
+	require.Equal(t, "JET-CAMP-LUNCHFIX", got[0].ReplacesCampaignID)
+	require.Equal(t, earlier.Format(dateLayout), got[0].Date)
+
+	points := EvaluatePoints(got)
+	require.Equal(t, PointsCampaignCreation, points.Total, "one real replacement must be worth exactly one Campaign Launcher's points, never two")
+}
+
+// TestEvaluateCampaignCreationBadges_DifferentTargetsEachEarnTheirOwnBadge is
+// the boundary the dedup fix must not break: two owner_created records
+// replacing TWO DIFFERENT flagged campaigns are two genuinely separate
+// replacements and must each earn their own badge.
+func TestEvaluateCampaignCreationBadges_DifferentTargetsEachEarnTheirOwnBadge(t *testing.T) {
+	created := time.Date(2026, 8, 12, 0, 0, 0, 0, time.UTC)
+
+	got := EvaluateCampaignCreationBadges([]reconcile.PromotionRoiRecord{
+		{
+			CampaignID:         "OWNER-CAMP-A",
+			Origin:             reconcile.OriginOwnerCreated,
+			ReplacesCampaignID: strPtr("JET-CAMP-LUNCHFIX"),
+			CreatedAt:          created,
+		},
+		{
+			CampaignID:         "OWNER-CAMP-B",
+			Origin:             reconcile.OriginOwnerCreated,
+			ReplacesCampaignID: strPtr("IFOOD-CAMP-WEEKEND"),
+			CreatedAt:          created,
+		},
+	})
+
+	require.Len(t, got, 2)
+	replaces := []string{got[0].ReplacesCampaignID, got[1].ReplacesCampaignID}
+	require.ElementsMatch(t, []string{"JET-CAMP-LUNCHFIX", "IFOOD-CAMP-WEEKEND"}, replaces)
+}
+
 // TestEvaluatePoints_IncludesNewCategories confirms the three new codes are
 // wired into the SAME points derivation the Reconciliation badges use — a
 // mixed set of all five categories still reconciles to an auditable total,

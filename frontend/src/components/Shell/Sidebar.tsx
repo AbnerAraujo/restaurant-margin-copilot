@@ -7,6 +7,7 @@ import {
   MessagesSquare,
   Scale,
   Settings,
+  Store,
   UploadCloud,
   UserCircle,
 } from 'lucide-react'
@@ -14,6 +15,7 @@ import type { LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 
 import Logo from '@/components/Logo/Logo'
+import { useProfile } from '@/components/Profile/useProfile'
 import { cn } from '@/lib/utils'
 
 /**
@@ -61,6 +63,59 @@ const MOBILE_LINK_BASE_CLASSES =
   'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50'
 
 /**
+ * The saved restaurant's own name/photo (`GET /api/profile`, saved via
+ * `/profile`) — distinct from the `Logo` mark above it, which is this
+ * PRODUCT's own brand ("My Business Steward") and never changes per
+ * restaurant. This is what makes the Profile page's "shown throughout the
+ * app" copy actually true (previously it was not: nothing outside the
+ * Profile page itself read `GET /api/profile` at all). Renders nothing
+ * until the owner has saved a name — a fresh install's sidebar looks
+ * exactly as it did before this existed, never a placeholder inviting
+ * "add your restaurant" nag here (that ask already lives on `/profile`
+ * itself).
+ */
+function RestaurantIdentity({ compact = false }: { compact?: boolean }) {
+  const { data } = useProfile()
+  const name = data?.name.trim()
+  if (!name) return null
+
+  const avatar = (
+    <div
+      className={cn(
+        'flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border bg-muted/40',
+        compact ? 'size-6' : 'size-7',
+      )}
+    >
+      {data?.photo ? (
+        <img src={data.photo} alt="" className="size-full object-cover" />
+      ) : (
+        <Store className={compact ? 'size-3' : 'size-3.5'} aria-hidden="true" />
+      )}
+    </div>
+  )
+
+  if (compact) {
+    // Mobile icon bar: avatar only, no room for a name beside the nav pills
+    // without crowding them — the full name still shows in the desktop
+    // sidebar and on /profile itself.
+    return (
+      <span title={name} aria-label={`Restaurant: ${name}`}>
+        {avatar}
+      </span>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2 border-b border-border px-5 py-3">
+      {avatar}
+      <span className="truncate text-xs font-medium text-foreground" title={name}>
+        {name}
+      </span>
+    </div>
+  )
+}
+
+/**
  * Fixed-width (w-60/240px) left sidebar, Toqan-inspired: logo/workspace
  * lockup at top, four nav items below, active-route highlighted with the
  * brand accent. Hidden below the `lg` breakpoint — see `MobileNavBar` for
@@ -77,6 +132,8 @@ export default function Sidebar() {
       <div className="flex items-center border-b border-border px-5 py-5">
         <Logo doorAnimation="once" />
       </div>
+
+      <RestaurantIdentity />
 
       <nav
         aria-label="Primary navigation"
@@ -113,6 +170,7 @@ export function MobileNavBar() {
       className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 py-2 pl-3 pr-16 lg:hidden"
     >
       <Logo variant="icon" size={28} doorAnimation="once" />
+      <RestaurantIdentity compact />
       {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
         <NavLink
           key={to}

@@ -89,8 +89,17 @@ function ProvenanceTag({ refs, className }: ProvenanceTagProps) {
     return null
   }
 
+  // "source FILES", not the bare "sources" this used to say — on `/close`
+  // this citation's own trigger sits right beside "Gross sales" own
+  // "N sources" caption (Close/ClosePage.tsx), which counts distinct SALES
+  // CHANNELS, a completely different denominator. Two adjacent captions
+  // both saying "sources" read as if a source were missing from one of them
+  // when neither was wrong — a QA pass found exactly that confusion. This
+  // component always counts distinct provenance FILES (`source_file` per
+  // ref), so naming that explicitly disambiguates it everywhere it renders,
+  // not just on this one page.
   const triggerLabel =
-    refs.length === 1 ? citationLabel(refs[0]) : `${refs.length} sources`
+    refs.length === 1 ? citationLabel(refs[0]) : `${refs.length} source files`
 
   return (
     <span className={cn('relative inline-block', className)}>
@@ -114,7 +123,7 @@ function ProvenanceTag({ refs, className }: ProvenanceTagProps) {
         >
           <div className="mb-1.5 flex items-center justify-between gap-4">
             <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Source{refs.length > 1 ? 's' : ''}
+              Source file{refs.length > 1 ? 's' : ''}
             </span>
             <button
               type="button"

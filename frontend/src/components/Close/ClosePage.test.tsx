@@ -120,6 +120,54 @@ describe('ClosePage', () => {
     expect(within(panel).queryByText('just_eat_takeaway')).not.toBeInTheDocument()
   })
 
+  // Bug fix: "Margin ... 2 sources" (distinct provenance FILES, via
+  // ProvenanceTag) used to sit right beside "Gross sales ... 3 sources"
+  // (distinct sales CHANNELS) — same word, same row, different denominators.
+  // A day whose file count and channel count actually differ makes this
+  // checkable: the two captions must use different, unambiguous nouns.
+  it('labels margin\'s source-file count and gross sales\' channel count with different, unambiguous words', async () => {
+    stubFetch({
+      start: '2026-08-01',
+      end: '2026-08-01',
+      days: [
+        {
+          date: '2026-08-01',
+          gross_sales_by_source: {
+            pos: '248.75',
+            ifood: '69.50',
+            just_eat_takeaway: '76.25',
+          },
+          total_delivery_gross_sales: '145.75',
+          commissions: '31.24',
+          refunds: '0.00',
+          input_costs: '320.00',
+          margin: '43.26',
+          discrepancy_flags: [],
+          // Two DISTINCT files, deliberately fewer than the three gross-sales
+          // channels above, so a matching count would be a coincidence a
+          // test could miss — mismatched counts make the two captions'
+          // independence checkable.
+          source_row_refs: [
+            { file: 'data/live/pos_export.csv', row: 2 },
+            { file: 'data/live/ifood_export.csv', row: 5 },
+          ],
+        },
+      ],
+    })
+    renderPage()
+
+    const summary = await screen.findByRole('region', {
+      name: /latest reconciled day/i,
+    })
+
+    expect(
+      within(summary).getByRole('button', { name: '2 source files' }),
+    ).toBeInTheDocument()
+    expect(within(summary).getByText('3 channels')).toBeInTheDocument()
+    // Neither caption should render the bare, ambiguous "sources" word.
+    expect(within(summary).queryByText(/^\d+ sources$/)).not.toBeInTheDocument()
+  })
+
   it('draws a calendar day the backend omitted as an explicit gap, never a $0 bar', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
     renderPage()

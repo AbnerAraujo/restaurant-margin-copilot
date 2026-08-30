@@ -266,11 +266,34 @@ export default function PromotionsPage() {
   const unattributableCount =
     promotions?.filter((promotion) => promotion.roi === null).length ?? 0
 
-  // The flagged rows this page already shows — LogReplacementForm's
-  // "replaces" dropdown is populated ONLY from this list (SC-003: no step
-  // requiring data the owner doesn't already have on screen).
+  // A flagged campaign counts as "already replaced" once some OTHER
+  // campaign's replaces_campaign_id names it — computed once here so every
+  // derivation below (the "needs a decision" panel AND the replaces
+  // dropdown) agrees on the same fact. This fixes a real double-award bug a
+  // QA pass found: the dropdown used to be built from `flagged_negative`
+  // alone, so a campaign that had already been replaced once (and had
+  // already dropped off the "needs a decision" panel) was still offered
+  // again — selecting it a second time earned a SECOND Campaign Launcher
+  // badge and a second points award for the same real replacement. The
+  // backend now also refuses to create that second record server-side
+  // (internal/httpapi/promotions_create.go), but the dropdown must not
+  // offer the choice in the first place.
+  const replacedCampaignIds = new Set(
+    (promotions ?? [])
+      .map((promotion) => promotion.replaces_campaign_id)
+      .filter((id): id is string => Boolean(id)),
+  )
+
+  // The flagged, NOT-YET-replaced rows this page already shows —
+  // LogReplacementForm's "replaces" dropdown is populated ONLY from this
+  // list (SC-003: no step requiring data the owner doesn't already have on
+  // screen), and must never offer a campaign that's already been replaced.
   const flaggedCampaigns = (promotions ?? [])
-    .filter((promotion) => promotion.flagged_negative)
+    .filter(
+      (promotion) =>
+        promotion.flagged_negative &&
+        !replacedCampaignIds.has(promotion.campaign_id),
+    )
     .map((promotion) => ({
       campaignId: promotion.campaign_id,
       platform: promotion.platform,
@@ -280,13 +303,13 @@ export default function PromotionsPage() {
   // "needs action" only until some OTHER campaign's replaces_campaign_id
   // names it — at that point the owner has already acted, and re-flagging
   // it would be nagging about a closed loop. Pure frontend derivation over
-  // data already fetched; no backend change.
+  // data already fetched; no backend change. Shares replacedCampaignIds with
+  // flaggedCampaigns above so the two lists can never disagree about which
+  // campaigns are still open.
   const needsActionCampaigns = (promotions ?? []).filter(
     (promotion) =>
       promotion.flagged_negative &&
-      !(promotions ?? []).some(
-        (other) => other.replaces_campaign_id === promotion.campaign_id,
-      ),
+      !replacedCampaignIds.has(promotion.campaign_id),
   )
 
   // Spec 008 FR-011: aggregate ROI per platform, real attributed campaigns

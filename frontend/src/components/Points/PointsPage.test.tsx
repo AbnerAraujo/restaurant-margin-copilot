@@ -182,3 +182,75 @@ describe('PointsPage redemption history (spec 008 FR-014)', () => {
     expect(screen.queryByText('IFOOD-CAMP-EARLY')).not.toBeInTheDocument()
   })
 })
+
+// Bug fix: the "Earned" column of the rules table hardcoded "day(s)" for
+// every rule, so two replacement campaigns logged on the same calendar day
+// rendered as "Campaign Launcher ... 2 days" — Campaign Launcher and Growth
+// are counted per CAMPAIGN, not per day. Only Clean Close/Discrepancy
+// Catcher are genuinely day-counted.
+describe('PointsPage rules table — earned-count units (bug fix)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubBadgesOnly(breakdown: unknown[]) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).includes('/api/promotions')) {
+          return Promise.resolve({ ok: true, json: async () => ({ promotions: [] }) })
+        }
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            badges: [],
+            points: { total: 0, breakdown, spent: 0, available: 0 },
+          }),
+        })
+      }),
+    )
+  }
+
+  it('labels a day-counted rule (Clean Close) with "day(s)"', async () => {
+    stubBadgesOnly([
+      { code: 'clean_close', name: 'Clean Close', count: 1, points_each: 10, points: 10 },
+    ])
+    renderPage()
+
+    expect(await screen.findByText('1 day')).toBeInTheDocument()
+  })
+
+  it('labels Campaign Launcher with "campaign(s)", never "day(s)", even for two same-day replacements', async () => {
+    stubBadgesOnly([
+      {
+        code: 'campaign_creation',
+        name: 'Campaign Launcher',
+        count: 2,
+        points_each: 30,
+        points: 60,
+      },
+    ])
+    renderPage()
+
+    expect(await screen.findByText('2 campaigns')).toBeInTheDocument()
+    expect(screen.queryByText('2 days')).not.toBeInTheDocument()
+  })
+
+  it('labels Growth with "campaign(s)", never "day(s)"', async () => {
+    stubBadgesOnly([
+      { code: 'growth', name: 'Growth', count: 3, points_each: 15, points: 45 },
+    ])
+    renderPage()
+
+    expect(await screen.findByText('3 campaigns')).toBeInTheDocument()
+  })
+
+  it('labels Week One with "milestone", never "day"', async () => {
+    stubBadgesOnly([
+      { code: 'engagement', name: 'Week One', count: 1, points_each: 5, points: 5 },
+    ])
+    renderPage()
+
+    expect(await screen.findByText('1 milestone')).toBeInTheDocument()
+  })
+})
