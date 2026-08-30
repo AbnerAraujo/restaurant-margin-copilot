@@ -140,9 +140,13 @@ export default function AskPage() {
   const { logInteractions } = useShellOutletContext()
   // Spec 008 FR-001: a chart click on `/close` or `/promotions` navigates
   // here with the built follow-up question as router state (no shared chat
-  // context exists across those separate routes) — read once per navigation,
-  // never persisted, so a plain visit to `/ask` never carries a stale
-  // question from browser history.
+  // context exists across those separate routes). This is never persisted
+  // by this page — it's read straight off `location.state` on each render —
+  // so a fresh/PUSH navigation to `/ask` (typing the URL, a sidebar link)
+  // never carries a stale question. React Router *does* restore
+  // `location.state` on a POP navigation (Back/Forward), so a prefilled
+  // question can legitimately reappear after Back — that's Back correctly
+  // restoring what was on screen, not a leak of stale state.
   const location = useLocation()
   const autoSubmitQuestion = (location.state as AskPageNavigationState | null)
     ?.autoSubmitQuestion
