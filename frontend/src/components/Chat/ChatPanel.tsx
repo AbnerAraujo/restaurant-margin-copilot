@@ -23,7 +23,7 @@ import {
   Zap,
 } from 'lucide-react'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Chip } from '@/components/ui/page'
 import Logo from '@/components/Logo/Logo'
 import { Button } from '@/components/ui/button'
@@ -77,6 +77,7 @@ import {
 import AnswerVisualizationView from '@/components/Charts/AnswerVisualizationView'
 import type { AnswerVisualization } from '@/components/Charts/answerVisualization'
 import { useDataCoverage } from '@/lib/useDataCoverage'
+import { useProfile } from '@/components/Profile/useProfile'
 import QuestionComposer from '@/components/Chat/QuestionComposer'
 
 // ---------------------------------------------------------------------------
@@ -674,6 +675,7 @@ function ChatAvatar({
   role,
   tone = 'neutral',
   pending = false,
+  photo = null,
 }: {
   role: 'user' | 'assistant'
   tone?: 'neutral' | 'warning' | 'refusal'
@@ -687,6 +689,17 @@ function ChatAvatar({
    * components rather than needing its own stop condition here.
    */
   pending?: boolean
+  /**
+   * The owner's saved `GET /api/profile` photo (role="user" only) — the
+   * same field `Shell/Sidebar.tsx`'s `RestaurantIdentity` already renders.
+   * Passed down from `ChatPanel`'s own single `useProfile()` call rather
+   * than called here, since this component mounts once per message: N user
+   * messages would otherwise fire N redundant `GET /api/profile` requests.
+   * `AvatarImage` (Radix) falls back to the generic icon below on its own
+   * if the URL 404s or is still loading, so no separate loading state is
+   * needed here.
+   */
+  photo?: string | null
 }) {
   const toneClasses =
     tone === 'warning'
@@ -699,6 +712,7 @@ function ChatAvatar({
 
   return (
     <Avatar size="sm" className="mt-0.5 shrink-0">
+      {role === 'user' && photo ? <AvatarImage src={photo} alt="" /> : null}
       <AvatarFallback className={toneClasses}>
         {role === 'user' ? (
           <User className="size-3.5" />
@@ -756,7 +770,13 @@ function CacheBadge({ cache }: { cache: AnswerCacheInfo }) {
   )
 }
 
-function UserBubble({ message }: { message: UserChatMessage }) {
+function UserBubble({
+  message,
+  userPhoto,
+}: {
+  message: UserChatMessage
+  userPhoto: string | null
+}) {
   return (
     <li className="flex items-start justify-end gap-2">
       <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5">
@@ -764,7 +784,7 @@ function UserBubble({ message }: { message: UserChatMessage }) {
           {message.text}
         </p>
       </div>
-      <ChatAvatar role="user" />
+      <ChatAvatar role="user" photo={userPhoto} />
     </li>
   )
 }
@@ -1276,6 +1296,12 @@ export default function ChatPanel({
   // popover's summary sentence — see EmptyState's own use of this same hook
   // for why it's fetched rather than hardcoded.
   const coverage = useDataCoverage()
+  // The owner's saved profile photo (same GET /api/profile Sidebar's
+  // RestaurantIdentity already reads), shown on every user-message avatar
+  // instead of the generic icon. Called once here rather than inside
+  // ChatAvatar/UserBubble, which mount once per message.
+  const { data: profile } = useProfile()
+  const userPhoto = profile?.photo ?? null
   // Restored synchronously in the initializer, not in an effect: mounting
   // empty and then swapping in the saved thread a frame later would flash
   // the empty state on every reload.
@@ -1852,7 +1878,7 @@ export default function ChatPanel({
             ) : null}
             {messages.map((message) =>
               message.role === 'user' ? (
-                <UserBubble key={message.id} message={message} />
+                <UserBubble key={message.id} message={message} userPhoto={userPhoto} />
               ) : message.kind === 'answer' ? (
                 <AnswerBubble
                   key={message.id}

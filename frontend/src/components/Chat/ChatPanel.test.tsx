@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/lib/api'
 
@@ -2001,5 +2001,87 @@ describe('ChatPanel durable conversation state', () => {
     expect(
       screen.queryByText(/couldn't reach your data just now/i),
     ).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * Requested directly: the user's own chat bubble should show the saved
+ * `GET /api/profile` photo — the same field `Shell/Sidebar.tsx`'s
+ * `RestaurantIdentity` already reads — instead of the generic person icon.
+ */
+describe('the user message avatar shows the saved profile photo', () => {
+  // Radix's AvatarImage defers rendering the real <img> until a background
+  // `new Image()` it creates itself fires a genuine 'load' event (via
+  // addEventListener, not an onload assignment) — jsdom never fires that
+  // for a real network image, so without this stub the fallback icon would
+  // render forever regardless of whether the photo prop is correct.
+  // Extending EventTarget and dispatching a real Event on the next
+  // microtask after `src` is set is the standard way to make Radix's own
+  // async gate resolve in a synchronous DOM environment.
+  class StubImage extends EventTarget {
+    // Radix's own load handler reads these two off `event.currentTarget`
+    // (`internal/@radix-ui/react-avatar`'s getImageLoadingStatus) rather
+    // than trusting the event alone — both must already read as "loaded"
+    // by the time the event fires.
+    complete = false
+    naturalWidth = 0
+    private _src = ''
+    get src() {
+      return this._src
+    }
+    set src(value: string) {
+      this._src = value
+      this.complete = true
+      this.naturalWidth = 1
+      queueMicrotask(() => this.dispatchEvent(new Event('load')))
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubProfile(photo: string | null) {
+    vi.stubGlobal('Image', StubImage)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          name: '',
+          address: '',
+          phone: '',
+          email: '',
+          description: '',
+          photo,
+          updated_at: '',
+        }),
+      }),
+    )
+  }
+
+  it('renders the saved photo as an <img> on the user avatar', async () => {
+    stubProfile('data:image/png;base64,iVBORw0KGgo=')
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', text: 'How was last week?', askedAt: '2026-08-27T10:00:00Z' },
+    ]
+    const { container } = render(<ChatPanel initialMessages={messages} />)
+
+    // Presentational (alt=""), so it carries no accessible name/role —
+    // queried by attribute rather than screen.getByRole.
+    await waitFor(() =>
+      expect(container.querySelector('img[src^="data:image/png"]')).not.toBeNull(),
+    )
+  })
+
+  it('falls back to the generic icon when no photo is saved', async () => {
+    stubProfile(null)
+    const messages: ChatMessage[] = [
+      { id: 'u1', role: 'user', text: 'How was last week?', askedAt: '2026-08-27T10:00:00Z' },
+    ]
+    const { container } = render(<ChatPanel initialMessages={messages} />)
+
+    await waitFor(() => expect(fetch).toHaveBeenCalled())
+    expect(container.querySelector('img')).toBeNull()
   })
 })
