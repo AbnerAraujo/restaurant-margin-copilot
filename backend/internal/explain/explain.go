@@ -309,9 +309,27 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 			// "question about data outside the dataset period" case, which
 			// legitimately makes zero tool calls and must keep answering
 			// rather than being refused here.
+			//
+			// IncompleteReason here is not a debug log — internal/httpapi
+			// (HandleAsk) forwards it verbatim as AskResponse.RefusalReason,
+			// and the frontend (AskPage.tsx) renders it verbatim as the chat
+			// bubble's text. A live report caught the ORIGINAL wording here
+			// doing exactly that: a restaurant owner asking a follow-up like
+			// "how can I replicate it on other days?" saw "model stated a
+			// currency-shaped figure without making any MCP tool call or
+			// collecting any provenance — refusing rather than trusting a
+			// number that cannot trace to the deterministic layer" verbatim
+			// in their chat — internal component names ("MCP", "provenance",
+			// "the deterministic layer") with no place in owner-facing copy.
+			// This message must stay in that plain, owner-facing voice —
+			// what happened, why, what to do next — the same discipline
+			// internal/ambiguity's precheckRefusalReason and writerSystemPrompt
+			// already hold refusal/clarification copy to; see
+			// TestExplain_ZeroToolCallCurrencyAnswerIsRefused for the guard
+			// against a regression back to internal vocabulary.
 			if budget.Used() == 0 && len(orderedRefs) == 0 && looksLikeCurrencyAmount(resp.Text) {
 				return &Result{
-					IncompleteReason: "model stated a currency-shaped figure without making any MCP tool call or collecting any provenance — refusing rather than trusting a number that cannot trace to the deterministic layer",
+					IncompleteReason: "I can't back that up with real numbers right now, so I won't guess at a figure — a wrong number is worse than no answer. Ask again, or point me at one specific day or period, and I'll pull the exact reconciled numbers before answering.",
 					ToolCallsMade:    budget.Used(),
 					ToolInvocations:  invocations,
 					InputTokens:      totalIn, OutputTokens: totalOut,
@@ -530,6 +548,7 @@ An upstream ambiguity check already lets exactly these questions through as answ
 
 Rules, no exceptions:
 - A question can mix a data-answerable core (what happened on a day or period, which figures explain a result, what changed) with a request for operational advice this product's tools were never built to give (staffing, menu, pricing, marketing strategy, or any other business decision). When that happens: ALWAYS call the relevant tool(s) and answer the data-answerable part in full first — an advice-shaped wrapper around an answerable question ("how do I replicate/improve/fix this margin?") is never a reason to withhold the data you do have. Then, in one or two plain sentences, state directly that recommending staffing, menu, or other operational/business decisions isn't something this tool computes or has data for — state that boundary plainly, without hedging it into a maybe, and without letting it stop you from giving the data-grounded answer first.
+- This applies just as much on a follow-up question as on a first question. If the conversation history handed to you already contains a figure from an earlier turn (e.g. an earlier answer stated a day's margin, and the new question asks how to "replicate" or "repeat" or "hit that again"), that earlier text is background, not something you may restate as this turn's answer from memory. Call the relevant tool again in THIS turn and answer the data-answerable part from that fresh result — never narrate a number you only know because you saw it earlier in the conversation, even if you are confident it is the same number a tool would return now.
 - Every number you state MUST come directly from a tool call result. Never perform arithmetic on tool results yourself (no adding, subtracting, or averaging numbers across multiple tool calls) — if you need a combined or comparative figure, call the tool that computes it (e.g. get_margin_delta for a comparison between two periods, or compare_platform_economics for any question comparing iFood's and Just Eat Takeaway's costs/rates — e.g. "which platform costs me more in commission?"), rather than computing it yourself from two get_daily_summary or get_promotion_roi calls. This rule is about arithmetic ACROSS separate tool calls, not about numbers already handed to you within a single result: get_daily_summary's total_delivery_gross_sales field is already the deterministic sum of that day's delivery-platform sales (gross_sales_by_source minus "pos") — when a question asks for delivery revenue, state that field directly rather than adding gross_sales_by_source entries yourself or omitting the combined figure. If no single tool computes the combined figure you need, say plainly that this isn't something the product can compute yet — do NOT call the same tool repeatedly per day (or per period) to assemble an aggregate yourself; that burns the turn/tool-call budget trying to simulate a tool that doesn't exist, and the result would be exactly the arithmetic-across-tool-calls this rule forbids.
 - If a tool returns a typed error (e.g. "no_data", "insufficient_data", "invalid_input"), tell the user plainly what is missing or why the request could not be fulfilled. Never estimate, extrapolate, or state a plausible-sounding number in place of a refused tool call.
 - Never state that a specific named entity — a campaign, promotion, or supplier — is missing or "not in the data" without first calling the relevant tool (e.g. get_promotion_roi) and confirming via its actual no_data error. A claim that a named entity doesn't exist must always be grounded in a real tool response, never asserted from assumption or recollection — asserting absence without checking is exactly as much a fabrication as inventing a number. (This does not apply to the date range and scope already stated in "Data grounding" above — you may state directly, without a tool call, that a date is outside %[1]s..%[2]s, since that boundary is already an established fact, not something to verify per-question.)
