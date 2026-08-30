@@ -104,6 +104,10 @@ code{font-family:var(--mono);font-size:.9em;background:var(--surface);border:1px
 .fullscreen-btn:hover{color:var(--accent);border-color:var(--accent)}
 .arch-link{display:inline-flex;align-items:center;gap:5px;margin-left:14px;padding:6px 14px;border-radius:20px;background:var(--surface);border:1px solid var(--border);color:var(--text-secondary);font-size:11px;font-family:var(--sans);text-decoration:none;cursor:pointer;vertical-align:middle}
 .arch-link:hover{color:var(--accent);border-color:var(--accent)}
+.arch-clickable{cursor:pointer}
+.arch-clickable rect{transition:stroke-width .15s}
+.arch-clickable:hover rect,.arch-clickable:focus-visible rect{stroke-width:2.5}
+.arch-clickable:focus-visible{outline:none}
 .nav-btns{position:fixed;bottom:14px;right:22px;z-index:100;display:flex;gap:6px}
 .nav-btns button{width:28px;height:28px;border-radius:7px;border:1px solid var(--border);background:var(--surface);color:var(--text-secondary);font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .nav-btns button:hover{color:var(--accent);border-color:var(--accent)}
@@ -720,9 +724,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <text x="815" y="538" text-anchor="middle" font-size="11" fill="var(--negative)">reaches the user directly — bypasses the model layer</text>
       <line x1="520" y1="415" x2="608" y2="415" stroke="var(--det)" stroke-width="1.5" marker-end="url(#arrowDet)"/>
       <text x="564" y="402" text-anchor="middle" font-size="11" fill="var(--det)">answerable</text>
-      <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
-      <text x="690" y="410" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
-      <text x="690" y="427" text-anchor="middle" font-size="13" fill="currentColor">(Go, 8 typed tools)</text>
+      <g class="arch-clickable" role="button" tabindex="0" aria-haspopup="dialog" aria-label="MCP tool layer — tap to see the full list of 8 typed tools" onclick="showStepDetail(event,'mcpTools')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();showStepDetail(event,'mcpTools')}">
+        <rect x="610" y="380" width="160" height="70" rx="8" fill="var(--det-soft)" stroke="var(--det)"/>
+        <text x="690" y="402" text-anchor="middle" font-size="13" fill="currentColor">MCP tool layer</text>
+        <text x="690" y="418" text-anchor="middle" font-size="12" fill="currentColor">(Go, 8 typed tools)</text>
+        <text x="690" y="435" text-anchor="middle" font-size="9.5" font-weight="600" letter-spacing="0.3" fill="var(--accent)">TAP FOR THE LIST</text>
+      </g>
       <line x1="770" y1="415" x2="818" y2="415" stroke="currentColor" stroke-width="1.5" marker-end="url(#arrow)"/>
       <rect x="820" y="380" width="180" height="70" rx="8" fill="var(--prob-soft)" stroke="var(--prob)"/>
       <text x="910" y="410" text-anchor="middle" font-size="13" fill="currentColor">Claude Sonnet 5</text>
@@ -1268,6 +1275,23 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   // it was weighed against, and this popup says exactly that rather than
   // padding it out.
   var STEP_DETAIL = {
+    mcpTools: {
+      eyebrow: 'Architecture · MCP tool layer',
+      title: "The model's entire vocabulary — eight verbs, nothing else",
+      html:
+        '<p>No open SQL, ever. Claude cannot query the database, and it cannot invent a ninth tool — these eight typed Go functions, each with its own request/response schema, are the complete set of things the model is allowed to ask for. Every number that comes back already carries its source-row provenance; the model narrates it, never recomputes it.</p>' +
+        '<div class="step-popup-alt">' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>get_daily_summary</b> <span class="why">&mdash; one calendar day&rsquo;s full reconciliation: sales by source, commissions, refunds, input costs, margin, discrepancy flags</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>get_margin_delta</b> <span class="why">&mdash; the margin difference between two date ranges, each with its own provenance and day count</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>list_discrepancies</b> <span class="why">&mdash; every duplicate order, netted refund, missing source, or anomaly flag for one date or period</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>get_period_totals</b> <span class="why">&mdash; totals and ranks an entire period in one call, including which single day was the best or worst by margin</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>compare_platform_economics</b> <span class="why">&mdash; iFood vs. Just Eat Takeaway side by side: sales, commission, effective rate, promo spend</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>get_promotion_roi</b> <span class="why">&mdash; one campaign&rsquo;s computed ROI &mdash; null, never guessed, when incremental revenue can&rsquo;t be attributed</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>list_negative_roi_promotions</b> <span class="why">&mdash; every campaign that lost money in a period &mdash; the tool behind KR3&rsquo;s flagged LUNCHFIX campaign</span></span></div>' +
+          '<div class="step-popup-alt-row"><span>&bull;</span><span><b>get_expense_pattern_by_day_of_month</b> <span class="why">&mdash; which position in the month (the 1st, the 15th&hellip;) runs highest on average, across however many months actually have it</span></span></div>' +
+        '</div>' +
+        '<p style="margin-top:12px"><b>get_period_totals</b> exists because of a real observed incident: without it, &ldquo;which day had the most profit&rdquo; got answered by calling <code>get_daily_summary</code> once per day and summing the results itself &mdash; arithmetic it should never have owned, and it burned through the model&rsquo;s turn budget doing it. <b>compare_platform_economics</b> and <b>get_expense_pattern_by_day_of_month</b> apply the same lesson pre-emptively: each one&rsquo;s own description tells the model, in the prompt itself, exactly when to call it directly instead of looping and combining results by hand.</p>'
+    },
     discover: {
       eyebrow: 'Discover',
       title: 'The problem, and what else was considered',
