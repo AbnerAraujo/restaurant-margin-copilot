@@ -12,6 +12,37 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — A regression sweep found the persistence redesign's own id generator was still broken
+
+An overnight regression sweep of the chat-persistence redesign above found
+that its fixes rested on an assumption the redesign itself never checked:
+that a message id, once assigned, is unique for the life of the browser tab.
+It wasn't.
+
+- **Fixed** message ids colliding across a page reload, which silently
+  dropped real, billed spend from the ledger. `ChatPanel.tsx` and
+  `AskPage.tsx` each generated ids from a `let messageSequence = 0` counter
+  at module level — invisible in a running tab, because the counter just
+  kept incrementing, but a reload re-evaluates the module and resets it to
+  0. The first message asked after a reload then got the exact same id
+  (`user-1`, `assistant-1`, …) as the first message asked before it. That
+  collision fed straight into `recordSpend`'s dedupe-by-id safeguard — the
+  redesign's own anti-double-billing feature — which had no way to tell "a
+  retried commit for the same answer" from "a genuinely new, separately
+  billed answer that happens to share an id," and silently discarded the
+  second question's cost. Measured before the fix: ask a question, reload,
+  ask a *different* question — the Model spend pill and the ledger sum did
+  not move. It also threw a real React duplicate-key warning, and since
+  `mergeMessages` (the redesign's cross-tab merge) keys on the same id, a
+  collision could substitute one tab's message for another's entirely. Both
+  generators now call a shared `createUniqueId()` (`lib/id.ts`,
+  `crypto.randomUUID()` with a timestamp+random fallback) — stateless, so
+  reload and tab count are irrelevant. Message order was never derived from
+  the id (`mergeMessages` is positional; `askedAt` is the timestamp of
+  record), so nothing about ordering had to change. Verified live in
+  Chromium against the real production build: ask a question, reload, ask a
+  different one — the pill now reflects both.
+
 ## 2026-08-30 — Chat persistence: one broken model, three symptoms
 
 A state-persistence QA pass on `/ask` found three defects that turned out to
