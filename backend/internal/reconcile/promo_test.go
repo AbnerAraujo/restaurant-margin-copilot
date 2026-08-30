@@ -9,28 +9,29 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 )
 
-// Fixture paths and the independently-verified golden values below come
-// straight from backend/fixtures/README.md's "Promotion ROI" table — this
-// test does not reimplement or second-guess that document, it asserts this
-// package's output matches it exactly.
+// The paths point at the dataset's checked-in hand-authored opening
+// window; the independently-verified golden values below come straight
+// from backend/cmd/gendata/opening/README.md's "Promotion ROI" table —
+// this test does not reimplement or second-guess that document, it
+// asserts this package's output matches it exactly.
 const (
-	fixturePromoDeliveryFile = "../../fixtures/delivery_platform_export.csv"
-	fixturePromoSpendFile    = "../../fixtures/promotion_ad_spend_export.csv"
+	openingPromoDeliveryFile = "../../cmd/gendata/opening/delivery_platform_export.csv"
+	openingPromoSpendFile    = "../../cmd/gendata/opening/promotion_ad_spend_export.csv"
 )
 
-func loadPromoFixtures(t *testing.T) ([]ingest.PromotionSpendRecord, []ingest.DeliveryRecord) {
+func loadPromoOpeningWindow(t *testing.T) ([]ingest.PromotionSpendRecord, []ingest.DeliveryRecord) {
 	t.Helper()
 
-	promoFile, err := os.Open(fixturePromoSpendFile)
+	promoFile, err := os.Open(openingPromoSpendFile)
 	require.NoError(t, err)
 	defer promoFile.Close()
-	promos, err := ingest.ParsePromotionExport(promoFile, fixturePromoSpendFile)
+	promos, err := ingest.ParsePromotionExport(promoFile, openingPromoSpendFile)
 	require.NoError(t, err)
 
-	deliveryFile, err := os.Open(fixturePromoDeliveryFile)
+	deliveryFile, err := os.Open(openingPromoDeliveryFile)
 	require.NoError(t, err)
 	defer deliveryFile.Close()
-	delivery, err := ingest.ParseDeliveryExport(deliveryFile, fixturePromoDeliveryFile)
+	delivery, err := ingest.ParseDeliveryExport(deliveryFile, openingPromoDeliveryFile)
 	require.NoError(t, err)
 
 	return promos, delivery
@@ -47,14 +48,14 @@ func findPromoRecord(t *testing.T, records []PromotionRoiRecord, campaignID stri
 	return PromotionRoiRecord{}
 }
 
-// TestComputePromotionRoiRecords_MatchesFixtureReferenceTable is the single
-// table-driven test (T028) exercising every campaign in
-// backend/fixtures/promotion_ad_spend_export.csv against the exact
-// reference values in fixtures/README.md's Promotion ROI table.
-func TestComputePromotionRoiRecords_MatchesFixtureReferenceTable(t *testing.T) {
-	promos, delivery := loadPromoFixtures(t)
+// TestComputePromotionRoiRecords_MatchesOpeningReferenceTable is the single
+// table-driven test (T028) exercising every campaign in the opening
+// window's promotion_ad_spend_export.csv against the exact reference
+// values in opening/README.md's Promotion ROI table.
+func TestComputePromotionRoiRecords_MatchesOpeningReferenceTable(t *testing.T) {
+	promos, delivery := loadPromoOpeningWindow(t)
 	records := ComputePromotionRoiRecords(promos, delivery)
-	require.Len(t, records, 4, "fixture set has exactly 4 promotion campaigns")
+	require.Len(t, records, 4, "the opening window has exactly 4 promotion campaigns")
 
 	tests := []struct {
 		name                string
@@ -71,37 +72,37 @@ func TestComputePromotionRoiRecords_MatchesFixtureReferenceTable(t *testing.T) {
 			name:                "IFOOD-CAMP-BOOST01 positive ROI, not flagged",
 			campaignID:          "IFOOD-CAMP-BOOST01",
 			wantPlatform:        "iFood",
-			wantSpendCents:      18000,
-			wantOrders:          6, // 42.00 + 38.00 + 24.00 (dedup'd) + 29.00 + 36.00 + 45.00
-			wantRevenueCents:    21400,
-			wantROICents:        3400, // net +34.00
+			wantSpendCents:      38000,
+			wantOrders:          9, // 42.00 + 55.25 + 48.50 + 63.50 + 24.00 (dedup'd) + 59.00 + 43.00 + 52.00 + 55.50
+			wantRevenueCents:    44275,
+			wantROICents:        6275, // net +62.75
 			wantFlaggedNegative: false,
 		},
 		{
 			name:                "JET-CAMP-LUNCHFIX negative ROI, must be flagged",
 			campaignID:          "JET-CAMP-LUNCHFIX",
 			wantPlatform:        "Just Eat Takeaway",
-			wantSpendCents:      22000,
-			wantOrders:          2, // 22.00 + 33.00
-			wantRevenueCents:    5500,
-			wantROICents:        -16500, // net -165.00
+			wantSpendCents:      61000,
+			wantOrders:          4, // 42.25 + 36.25 + 34.50 + 46.25
+			wantRevenueCents:    15925,
+			wantROICents:        -45075, // net -450.75
 			wantFlaggedNegative: true,
 		},
 		{
 			name:               "IFOOD-CAMP-WEEKEND zero tagged orders, unattributable per FR-013",
 			campaignID:         "IFOOD-CAMP-WEEKEND",
 			wantPlatform:       "iFood",
-			wantSpendCents:     9500,
+			wantSpendCents:     26000,
 			wantUnattributable: true,
 		},
 		{
 			name:                "JET-CAMP-NEWMENU positive ROI, not flagged",
 			campaignID:          "JET-CAMP-NEWMENU",
 			wantPlatform:        "Just Eat Takeaway",
-			wantSpendCents:      6000,
-			wantOrders:          3, // 26.00 + 24.50 + 29.00
-			wantRevenueCents:    7950,
-			wantROICents:        1950, // net +19.50
+			wantSpendCents:      12000,
+			wantOrders:          3, // 58.00 + 45.75 + 50.00
+			wantRevenueCents:    15375,
+			wantROICents:        3375, // net +33.75
 			wantFlaggedNegative: false,
 		},
 	}
@@ -135,16 +136,16 @@ func TestComputePromotionRoiRecords_MatchesFixtureReferenceTable(t *testing.T) {
 // TestComputePromotionRoiRecords_DuplicateOrderNotDoubleCounted pins down,
 // in isolation, that IFOOD-CAMP-BOOST01's attribution reuses the same
 // duplicate-collapse dedupeDelivery already proves in reconcile_test.go
-// (fixtures/README.md irregularity #1: order IFOOD-20260803-0011 appears
+// (opening/README.md irregularity #1: order IFOOD-20240803-0011 appears
 // twice, byte-for-byte identical) — attribution must not double-count it
 // any more than gross daily revenue does.
 func TestComputePromotionRoiRecords_DuplicateOrderNotDoubleCounted(t *testing.T) {
-	promos, delivery := loadPromoFixtures(t)
+	promos, delivery := loadPromoOpeningWindow(t)
 	records := ComputePromotionRoiRecords(promos, delivery)
 
 	rec := findPromoRecord(t, records, "IFOOD-CAMP-BOOST01")
 	require.NotNil(t, rec.AttributedIncrementalOrders)
-	require.Equal(t, 6, *rec.AttributedIncrementalOrders, "the duplicated order 0011 must be counted once, not twice (would otherwise be 7)")
+	require.Equal(t, 9, *rec.AttributedIncrementalOrders, "the duplicated order 0011 must be counted once, not twice (would otherwise be 10)")
 	require.NotNil(t, rec.AttributedIncrementalRevenueCents)
-	require.Equal(t, int64(21400), *rec.AttributedIncrementalRevenueCents, "duplicate counted twice would incorrectly total 238.00, not 214.00")
+	require.Equal(t, int64(44275), *rec.AttributedIncrementalRevenueCents, "duplicate counted twice would incorrectly total 466.75, not 442.75")
 }

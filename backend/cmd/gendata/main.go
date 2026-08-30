@@ -1,8 +1,17 @@
-// Command gendata generates a realistic 2-year (730-day) synthetic dataset
-// for My Business Steward's "live" exploration database
-// (backend/data/live/), replacing its current contents — which today are
-// just a copy of the small, deliberately-messy 14-day evaluation fixture
-// (backend/fixtures/), untouched by this tool and unaffected by it.
+// Command gendata generates My Business Steward's single continuous
+// dataset (backend/data/live/): 2024-08-01 through endDate, one timeline,
+// one ingestion path, at realistic restaurant scale throughout.
+//
+// The dataset's first 14 days (2024-08-01..2024-08-14) are NOT generated:
+// they are the hand-authored opening window checked in at
+// cmd/gendata/opening/ (embedded below via go:embed and emitted verbatim
+// at the top of each output CSV). Those days carry the deliberately messy,
+// independently-verified records the evaluation harness grades against —
+// a duplicate order, a refund, a missing day, an inconsistent date format
+// — at the same dollar scale as the synthetic days around them. See
+// opening/README.md for the scenarios and the independently-computed
+// reference values. This tool never modifies that directory; regeneration
+// only replaces the synthetic days (2024-08-15 onward).
 //
 // The growth story: gross revenue grows on an S-curve (faster in the first
 // year, decelerating in the second — a real small-restaurant ramp, not
@@ -32,15 +41,17 @@
 //
 // Output: the same four CSVs internal/ingest already parses
 // (delivery_platform_export.csv, pos_export.csv, supplier_cost_sheet.csv,
-// promotion_ad_spend_export.csv), in the exact schema backend/fixtures'
-// versions use — this tool was written by reading those files and
+// promotion_ad_spend_export.csv), in the exact schema the hand-authored
+// opening window uses — this tool was written by reading those files and
 // internal/ingest's parser directly, not guessed from column names.
 package main
 
 import (
+	"embed"
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"math"
 	"math/rand"
 	"os"
@@ -49,10 +60,24 @@ import (
 	"time"
 )
 
+// openingFS embeds the hand-authored opening window (2024-08-01..14) —
+// checked into git, never regenerated, emitted verbatim at the top of each
+// output CSV so the dataset is one continuous timeline from a single
+// ingestion path. See opening/README.md.
+//
+//go:embed opening/*.csv
+var openingFS embed.FS
+
 // --- Tunable parameters, all in one place for auditability -----------------
 
 const (
-	numDays = 730
+	// openingDays is the length of the hand-authored opening window
+	// (opening/*.csv, 2024-08-01..2024-08-14). Synthetic generation starts
+	// the day after it ends, and the growth curve's month index is offset
+	// by it so the curve is continuous across the hand-authored/synthetic
+	// seam — the opening window was authored at the curve's own starting
+	// scale (~$34,000/month gross).
+	openingDays = 14
 
 	// Gross revenue growth curve (logistic S-curve), in dollars/month.
 	// Raised from the previous $14,000 -> $33,500 range (which targeted
@@ -71,14 +96,14 @@ const (
 	midpointMonth = 8.0
 	steepness     = 0.55
 
-	// Revenue split across sources — matches this project's existing
-	// fixture ratio (POS dominant, delivery a meaningful but smaller
+	// Revenue split across sources — matches the hand-authored opening
+	// window's ratio (POS dominant, delivery a meaningful but smaller
 	// channel), not an invented split.
 	posShare   = 0.66
 	ifoodShare = 0.17
 	jetShare   = 0.17
 
-	ifoodCommissionPct = 23.0 // matches existing fixture convention
+	ifoodCommissionPct = 23.0 // same flat rates the opening window uses
 	jetCommissionPct   = 20.0
 
 	refundRatePerOrder = 0.02 // ~2% of delivery orders refunded (research: 1-3%)
@@ -92,9 +117,9 @@ const (
 	beverageShare  = 0.15
 	packagingShare = 0.10
 
-	// Anomaly/mess injection, spread thin across 2 years (unlike the dense
-	// 14-day evaluation fixture) so discrepancy flags stay meaningful
-	// rather than constant.
+	// Anomaly/mess injection, spread thin across 2 years (unlike the
+	// deliberately dense hand-authored opening window) so discrepancy
+	// flags stay meaningful rather than constant.
 	anomalyDayChance   = 0.035 // ~26 days over 2 years get a genuine spike/dip
 	duplicateOrderRate = 0.004 // ~a handful of duplicate rows total
 
@@ -123,15 +148,23 @@ const (
 	randSeed       = 20260815 // deterministic — same seed, same dataset, every regen
 )
 
-// startDate is chosen so the 730-day run ends the day BEFORE
-// backend/fixtures' own window begins (2026-08-01) — the synthetic
-// history is the two years leading UP TO the evaluation fixture, never
-// dates after it. The first generation of this tool got this backwards
-// (started the day AFTER the fixture, running through 2028) and produced
-// a dataset whose "today" was over a year in the real-world future —
-// confusing in any chat answer that narrates a date. Everything here must
-// stay in the past relative to both the fixture and the real calendar.
-var startDate = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
+// datasetStart..endDate is the whole dataset's inclusive range. The first
+// openingDays of it come from the hand-authored opening window (see
+// openingFS); synthetic generation covers syntheticStart..endDate. endDate
+// is pinned to a real calendar date — the dataset must always run up
+// through "today" so the app's Home/Close views open onto current data,
+// never a stale or future edge (the first generation of this tool ran
+// through 2028, and a dataset whose "today" is a year in the real-world
+// future reads wrong in any chat answer that narrates a date). Bump
+// endDate forward and re-run this tool + re-ingest to bring the dataset
+// current.
+var (
+	datasetStart   = time.Date(2024, 8, 1, 0, 0, 0, 0, time.UTC)
+	syntheticStart = datasetStart.AddDate(0, 0, openingDays)
+	endDate        = time.Date(2026, 8, 29, 0, 0, 0, 0, time.UTC)
+	// numDays is the synthetic day count (syntheticStart..endDate inclusive).
+	numDays = int(endDate.Sub(syntheticStart).Hours()/24) + 1
+)
 
 // --- monthly regimes -----------------------------------------------------
 //
@@ -336,8 +369,10 @@ func main() {
 
 	days := make([]dayPlan, numDays)
 	for i := range days {
-		date := startDate.AddDate(0, 0, i)
-		monthIdx := float64(i) / 30.44
+		date := syntheticStart.AddDate(0, 0, i)
+		// Month index counts from datasetStart, not syntheticStart, so the
+		// growth curve is continuous across the hand-authored/synthetic seam.
+		monthIdx := float64(i+openingDays) / 30.44
 		targetMonthly := logisticGross(monthIdx)
 		days[i] = planDay(date, targetMonthly, regimes, forcedShock, rng)
 	}
@@ -358,6 +393,12 @@ func main() {
 	}
 
 	first, last := days[0], days[len(days)-1]
+	fmt.Printf("dataset: %d days total — %d hand-authored opening days (%s..%s, see opening/README.md) + %d generated\n",
+		openingDays+numDays,
+		openingDays,
+		datasetStart.Format("2006-01-02"),
+		syntheticStart.AddDate(0, 0, -1).Format("2006-01-02"),
+		numDays)
 	fmt.Printf("generated %d days: %s ($%.0f/mo gross) -> %s ($%.0f/mo gross)\n",
 		numDays, first.date.Format("2006-01-02"), first.targetMonthly,
 		last.date.Format("2006-01-02"), last.targetMonthly)
@@ -421,8 +462,8 @@ func printMonthlyVerification(days []dayPlan, regimes map[string]monthRegime) {
 		}
 		fmt.Printf("%s  $%9.0f  $%9.0f  %s%s\n", k, mt.gross, mt.margin, mt.regimeLabel, mark)
 	}
-	fmt.Printf("\n%d of %d months net-negative; 24-month average margin $%.0f/month\n",
-		lossMonths, len(order), sumMargin/float64(len(order)))
+	fmt.Printf("\n%d of %d generated months net-negative; %d-month average margin $%.0f/month (synthetic days only — 2024-08 excludes the hand-authored opening days)\n",
+		lossMonths, len(order), len(order), sumMargin/float64(len(order)))
 }
 
 func fail(err error) {
@@ -569,6 +610,37 @@ func newWriter(path string) (*os.File, *csv.Writer, error) {
 	return f, csv.NewWriter(f), nil
 }
 
+// writeOpeningRows copies the embedded hand-authored opening window's data
+// rows (everything after its header) into w, so each output CSV begins
+// with the opening window verbatim and the synthetic days follow — one
+// continuous file per source, one ingestion path.
+func writeOpeningRows(w *csv.Writer, name string) error {
+	f, err := openingFS.Open("opening/" + name)
+	if err != nil {
+		return fmt.Errorf("gendata: embedded opening window: %w", err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	header := true
+	for {
+		rec, err := r.Read()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("gendata: reading embedded opening/%s: %w", name, err)
+		}
+		if header {
+			header = false
+			continue
+		}
+		if err := w.Write(rec); err != nil {
+			return err
+		}
+	}
+}
+
 func writeDeliveryCSV(path string, days []dayPlan, promos []promo, rng *rand.Rand) error {
 	f, w, err := newWriter(path)
 	if err != nil {
@@ -578,6 +650,9 @@ func writeDeliveryCSV(path string, days []dayPlan, promos []promo, rng *rand.Ran
 	defer w.Flush()
 
 	if err := w.Write([]string{"platform", "order_id", "order_date", "order_time", "subtotal", "commission_rate_pct", "commission_amount", "net_payout", "status", "refund_date", "campaign_id", "notes"}); err != nil {
+		return err
+	}
+	if err := writeOpeningRows(w, "delivery_platform_export.csv"); err != nil {
 		return err
 	}
 
@@ -694,6 +769,9 @@ func writePOSCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	if err := w.Write([]string{"order_id", "order_date", "order_time", "channel", "gross_amount", "payment_method", "status"}); err != nil {
 		return err
 	}
+	if err := writeOpeningRows(w, "pos_export.csv"); err != nil {
+		return err
+	}
 
 	channels := []string{"dine_in", "dine_in", "dine_in", "takeaway", "phone"}
 	payments := []string{"card", "card", "cash"}
@@ -701,11 +779,13 @@ func writePOSCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	seq := 1
 	for _, d := range days {
 		amounts := splitIntoOrders(d.posGross, 42.0, rng)
-		// POS export uses DD/MM/YYYY throughout, matching the existing
-		// fixture's own documented convention (internal/ingest/date.go).
+		// POS export uses DD/MM/YYYY throughout, matching the opening
+		// window's documented convention (internal/ingest/date.go).
 		dateStr := d.date.Format("02/01/2006")
 		for _, amt := range amounts {
-			orderID := fmt.Sprintf("POS-%d", 1000+seq)
+			// Sequence starts at 200001 so synthetic POS ids can never
+			// collide with the opening window's own POS-1000.. range.
+			orderID := fmt.Sprintf("POS-%d", 200000+seq)
 			seq++
 			channel := channels[rng.Intn(len(channels))]
 			payment := payments[rng.Intn(len(payments))]
@@ -757,6 +837,9 @@ func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 	if err := w.Write([]string{"invoice_id", "invoice_date", "supplier", "category", "amount", "notes"}); err != nil {
 		return err
 	}
+	if err := writeOpeningRows(w, "supplier_cost_sheet.csv"); err != nil {
+		return err
+	}
 
 	// Each category invoices on its own short cadence, sized from the REAL
 	// gross revenue of the exact days it covers (clamped to len(days), so a
@@ -782,7 +865,9 @@ func writeCostSheetCSV(path string, days []dayPlan, rng *rand.Rand) error {
 		{"packaging", "PackRight Disposables", 4, packagingShare},
 	}
 
-	invoiceID := 3001
+	// Invoice ids start at 9001 so synthetic invoices can never collide
+	// with the opening window's own INV-3001.. range.
+	invoiceID := 9001
 	for _, cat := range categories {
 		for i := 0; i < len(days); i += cat.cadence {
 			end := i + cat.cadence
@@ -902,6 +987,9 @@ func writePromoCSV(path string, promos []promo) error {
 	defer w.Flush()
 
 	if err := w.Write([]string{"platform", "campaign_id", "campaign_name", "period_start", "period_end", "spend_amount", "placement_type", "notes"}); err != nil {
+		return err
+	}
+	if err := writeOpeningRows(w, "promotion_ad_spend_export.csv"); err != nil {
 		return err
 	}
 	placements := []string{"in_app_boost", "banner_ad", "featured_placement", "sponsored_listing"}

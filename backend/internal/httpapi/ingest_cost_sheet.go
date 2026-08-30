@@ -44,19 +44,19 @@ import (
 )
 
 // maxCostSheetUploadBytes bounds the multipart body this feature will read.
-// A real supplier cost sheet is a handful of KB (backend/fixtures/supplier_cost_sheet.csv
-// is under 1KB for 12 invoices); 5MB is generous headroom for a much larger
-// real restaurant's invoice history while still being a real, enforced
-// bound — Constitution's "timeouts/explicit caps" hard-limit posture applied
-// to upload size, the one dimension of this feature a malicious or broken
-// client could otherwise abuse unboundedly.
+// A hand-kept supplier cost sheet is a handful of KB (the dataset's own
+// hand-authored opening invoices are ~1KB for 14 invoices); 5MB is generous
+// headroom for a much larger real restaurant's invoice history while still
+// being a real, enforced bound — Constitution's "timeouts/explicit caps"
+// hard-limit posture applied to upload size, the one dimension of this
+// feature a malicious or broken client could otherwise abuse unboundedly.
 const maxCostSheetUploadBytes = 5 << 20
 
 // liveCostSheetFilename is the FIXED name a committed upload is written
-// under inside livedata.Dir — matching the seeded fixture copy's own name so
+// under inside livedata.Dir — matching the dataset's own cost-sheet name so
 // internal/pipeline.RunIngestionPipeline's filename-keyword matching
-// (findSourceFiles: "cost"/"supplier"/"invoice") finds it exactly the way it
-// finds backend/fixtures/supplier_cost_sheet.csv today. This is deliberately
+// (findSourceFiles: "cost"/"supplier"/"invoice") finds it exactly the way
+// it finds the generated data/live copy today. This is deliberately
 // NEVER the multipart upload's own original filename (spec FR-011): the
 // destination path is built from zero request-derived strings, so path
 // traversal via a crafted filename is not a runtime check to get right — it
@@ -190,8 +190,8 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 			return
 		}
 
-		if err := livedata.EnsureSeeded(); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "live_data_seed_failed", err.Error())
+		if err := livedata.EnsureReady(); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "live_data_not_ready", err.Error())
 			return
 		}
 

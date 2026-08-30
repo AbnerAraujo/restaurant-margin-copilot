@@ -8,10 +8,12 @@ import (
 
 // AnomalyThresholdPct is the percentage deviation from a trailing average
 // gross-revenue figure that triggers an anomaly_threshold_exceeded flag
-// (FR-003). This fixture set's real day-to-day variance peaks at ~18% at a
-// 3-day trailing window (see reconcile_test.go's regression test), so 20%
-// is deliberately set just above real noise — tunable per spec Assumptions,
-// not asserted as a universal constant.
+// (FR-003). At the dataset's realistic scale, ordinary weekly seasonality
+// (a strong Friday/Saturday, a slow Monday) can legitimately cross 20%
+// against a 3-day trailing window — reconcile_test.go's regression test
+// pins exactly which opening-window days do, so a threshold change shows
+// up as a deliberate, visible decision. Tunable per spec Assumptions, not
+// asserted as a universal constant.
 const AnomalyThresholdPct = 0.20
 
 // TrailingWindowDays is how many preceding complete days feed the anomaly
