@@ -12,6 +12,173 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — POS connector, and the cross-source duplicate it creates (spec 012)
+
+`specs/012-pos-connector-dedup/`. Two changes that had to ship together,
+because the first one is a bug without the second.
+
+**What was missing.** Spec 010 built the connector for delivery revenue and
+deliberately stopped there — its own Assumptions say "There is no simulated
+POS API." That left the in-house POS, **two thirds** of this restaurant's
+gross sales (`cmd/gendata`: `posShare` 0.66 against 0.17 + 0.17), reachable
+only by somebody exporting `pos_export.csv` by hand. The connector story was
+two thirds unfinished on the revenue side, and it was the larger two thirds.
+
+**The bug adding it would have introduced.** Today's reconciliation treats POS
+and delivery revenue as two disjoint, additive buckets, and has never had to
+ask whether a row in one describes the same real-world order as a row in the
+other. That assumption is wrong in a specific, well-known way: a POS that
+integrates with a delivery aggregator — which is why front-of-house sees one
+screen and one kitchen printer — has the aggregator's orders *pushed into it*,
+where they become POS tickets with their own POS order numbers. The same order
+then arrives twice in one sync, and summing both inflates gross sales,
+understates the cost ratio, and reports a margin percentage better than
+reality every single day.
+
+Measured on this build, 2026-08-18..20: naively summing the three sources
+gives **$14,285.89** of gross sales against a true **$12,442.88** — $1,843.01
+counted twice, and a three-day margin overstated by **20.3%** ($10,941.64
+instead of $9,098.63). Shipping a POS connector without deduplication would
+have made this product's headline number *worse* than before the feature
+existed.
+
+**The failure in the other direction, which drove the design.** A matcher that
+is too eager merges two genuinely different orders that happen to share a
+price and a rough time. On a 20-to-30-order evening at a $32 mean ticket that
+is not exotic, it is expected — and the result is real revenue *deleted* from
+the day, unrecoverable from the reconciliation output, and invisible, because
+the day is simply lower and nothing says why. Dropping a real order and
+double-counting a duplicate one are the same financial-integrity failure
+wearing different signs. `CLAUDE.md`'s "a confidently wrong margin figure is
+worse than a refusal" cuts both ways here, and the design spends its effort on
+the second direction.
+
+**The rule** (`internal/platformconnector/dedup.go`), stated so it can be
+argued with rather than only read:
+
+> A POS ticket is a duplicate of a delivery order **only if the POS itself
+> said** the ticket arrived through a delivery channel. Within that set: if the
+> ticket carries the platform's order reference and that reference resolves,
+> they are the same order. Otherwise they are the same order only if they share
+> a platform, a calendar date and an **exact amount in cents**, their times are
+> within **15 minutes**, and no other reading of the day's tickets is equally
+> consistent.
+
+Three decisions inside that, each deliberate:
+
+- **No matching on amount and time alone.** Without an assertion from one of
+  the two systems that a delivery channel was involved, the evidence is "these
+  numbers are similar", and acting on it deletes revenue. An untagged dine-in
+  ticket is ineligible at any amount, at any time, forever — an accepted false
+  negative, taken so the false-positive rate can be bounded.
+- **Ambiguity is disclosed, never resolved by preference.** One ticket with two
+  candidate orders, or two tickets contesting one: nothing merges, every record
+  survives, and the day carries a flag naming the candidates. The pairing must
+  be the unique solution *from both directions*, which is also what makes the
+  result independent of iteration order — a rule that merged as it walked would
+  hand the order to whichever ticket came first and leave the other looking
+  cleanly unmatched, which is a coin flip presented as an answer
+  (`TestDedup_IsIndependentOfInputOrder`).
+- **The delivery record wins a resolved duplicate.** It knows the commission,
+  the rate, the payout and the refund state; the POS ticket knows only a gross
+  amount. Dropping the delivery side would zero that order's commission and
+  move margin *up* — a wrong number in the flattering direction, which is the
+  worst shape an error in this product can take.
+
+Zero model involvement, and this is the part worth pointing at: "are these two
+records the same order" is exactly the shape of problem a language model gets
+reached for, and exactly the shape this product refuses to hand one. The
+matcher is integer-cent equality, case-folded string equality, and a minute
+difference. Every decision can be recomputed by hand from the two records
+(Constitution Principle I).
+
+**The mock is built to make the rule work for its living.**
+`internal/platformconnector/pos_mock.go` is a third wire format that disagrees
+with both delivery mocks on every decision either of them makes: NDJSON with no
+envelope and no pagination at all, money in pt-BR notation (`"1.234,56"`),
+zone-less local timestamps, `PAID`/`VOID`, a `service_type`, and a nested
+`delivery_partner` block. Two of those are traps with teeth, in the same spirit
+as spec 010's derived JET rate and iFood refund sign:
+
+- `money.ParseCents` reads `"1.234,56"` as **$1.23** — a plausible-looking
+  string understated by three orders of magnitude, with no error anywhere.
+  `normalizePtBRAmount` converts explicitly and *refuses* anything outside the
+  one accepted shape rather than best-effort parsing it.
+- `time.Parse` on a zone-less timestamp yields UTC. The calendar *date* still
+  comes out right for every ticket this mock emits — which is what makes it
+  dangerous, because nothing downstream would look wrong. What it destroys is
+  the merchant's three-hour offset in every ticket *time*, which is the input to
+  the matching window: every amount-and-time match in the product would stop
+  firing, duplicates would flow through, and gross sales would quietly inflate.
+  `time.ParseInLocation` is the fix, and `checkPOSContract` enforces it on every
+  fetch by requiring the parsed instant to agree with the ticket's own recorded
+  wall clock.
+
+The overlap itself is causally real, not arranged: for a given date the POS mock
+calls the *same* `simulateDay(PlatformIFood, …)` the iFood mock calls and echoes
+those actual orders, so a duplicate the matcher finds is one simulated order
+recorded twice. Around it, the deliberate difficulties: only iFood is integrated
+into the POS and Just Eat Takeaway is not (a common real configuration, and the
+one that puts a control group inside every fetch); a quarter of echoed tickets
+carry no partner reference, so the harder tier is not decoration; and
+campaign-discounted orders disagree on amount because the POS rang the menu price
+and never saw the promotion. Ambiguity is **not** manufactured — the mock does not
+arrange a collision so a flag has something to do; that path is proven by unit
+test, and its real incidence is reported as measured.
+
+**Measured, not claimed.** Over August 2026, all 31 days, three sources: **689
+duplicates resolved, 40 overlaps left unresolved and flagged, and 2,569 in-house
+tickets — every one of them intact.** Zero false positives is
+`TestFetchRange_NoInHouseTicketIsEverRemoved`, running on every build against the
+real generated mix, not an assertion in a document.
+
+**Nothing is silently corrected.** Three new flag types in `internal/reconcile`'s
+existing vocabulary — `cross_source_duplicate_removed`,
+`cross_source_duplicate_unresolved`, `cross_source_amount_mismatch` — each naming
+both sides: which ticket was removed, which order it merged into, at which row of
+which source. An unresolved overlap states the consequence out loud ("this day may
+count that order twice"). The connected-sources panel shows the removals and the
+unresolved overlaps side by side, because reporting only the removals would let the
+product claim a clean close it did not achieve.
+
+**Shape changes, each with a compatibility path so nothing existing moved.**
+`ComputeDailyReconciliations` became a nil-map delegate to a new
+`ComputeDailyReconciliationsWithFlags`, proven byte-identical against the real
+dataset (`TestComputeDailyReconciliations_MatchesTheNilFlagDelegate`);
+`RunIngestionPipelineWithDeliveryOverlay` became a delegate to a new
+`RunIngestionPipelineWithConnectorOverlay`. That overlay carries `DeliveryActive`
+and `POSActive` booleans rather than relying on a nil slice, because "I synced the
+POS and it reported nothing" and "I did not sync the POS" must produce different
+days — without the boolean, a delivery-only sync would have silently wiped two
+thirds of every synced day's gross sales.
+
+**Rejected, and recorded because the next reader will have the same idea:** making
+the POS mock implement the existing `Client` interface and return
+`ingest.DeliveryRecord` values with a zero commission. `reconcile.computeOneDay`
+sums `commissionsBySource[src]` over every delivery record, so the day would grow a
+`commissionsBySource["pos"] = 0` entry — breaking the invariant
+`internal/reconcile/types.go` documents on both `CommissionsBySource` and
+`RefundsBySource` ("pos" never appears there), and making the POS show up in
+specs/003's `compare_platform_economics` as a delivery platform charging 0%
+commission: a new, wrong answer in a corner of the product that never mentions
+connectors. A peer `POSClient` interface instead, sharing a `Connector` half with
+`Client`. The reasoning is in `client.go`'s own doc comment, not only here.
+
+**Disclosure held to spec 010's bar exactly** — five independent statements for the
+POS as for the two platforms: the package doc, the enforced `simulated://`
+provenance scheme, `"simulated": true` in every response body, the per-source UI row,
+and the persistent non-dismissible panel notice. The POS's commission chip reads "No
+commission" rather than "0.00%", because a zero rate renders as a platform that
+happens to be free, which is a different and wrong claim.
+
+Live end-to-end on an isolated instance (own Postgres, own ports): three-source sync
+of 2026-08-18..20 committed 121 delivery orders and 198 POS tickets, removed 50
+duplicates, disclosed 5 unresolved overlaps, and moved total margin from
+$1,078,340.64 to $1,079,774.22 across 759 days. Re-running the identical sync
+produced the identical margin, the identical 50 removals and the identical 5
+unresolved overlaps — the determinism the flags depend on, since a re-synced day has
+to carry byte-identical discrepancy flags to reconcile to the same numbers.
+
 ## 2026-08-30 — Close's Period totals no longer truncate to a plausible-looking wrong number
 
 Reported live: filtering Today's Close to a period showed a total margin cut

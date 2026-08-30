@@ -47,16 +47,18 @@ const (
 // commission_mismatch flags, or worse, as a refund that quietly raised a
 // day's margin. Checks 3 and 4 below are spec FR-010's refusal.
 type Proxy struct {
-	clients map[Platform]Client
-	order   []Platform
+	clients    map[Platform]Client
+	posClients map[Platform]POSClient
+	order      []Platform
 }
 
-// NewSimulatedProxy is the production constructor for this prototype: both
-// platforms, both emulated. Named for what it is. A caller that wants a
-// real connector will construct NewProxy with a real Client and the name
-// at every call site will stop saying "simulated", which is the point.
+// NewSimulatedProxy is the production constructor for this prototype: two
+// delivery platforms and the in-house POS, all three emulated. Named for
+// what it is. A caller that wants a real connector will construct NewProxy
+// with a real client and the name at every call site will stop saying
+// "simulated", which is the point.
 func NewSimulatedProxy() *Proxy {
-	p, err := NewProxy(NewIFoodClient(), NewJustEatTakeawayClient())
+	p, err := NewProxy(NewIFoodClient(), NewJustEatTakeawayClient(), NewPOSClient())
 	if err != nil {
 		// Unreachable: the two constructors above return distinct,
 		// non-nil platforms. Panicking rather than returning an error
@@ -68,24 +70,49 @@ func NewSimulatedProxy() *Proxy {
 	return p
 }
 
-// NewProxy registers clients in the order given. Duplicate platforms are
-// refused rather than last-write-wins: two clients for one platform is a
-// wiring bug, and silently picking one would make which orders the product
-// sees depend on argument order.
-func NewProxy(clients ...Client) (*Proxy, error) {
+// NewProxy registers connectors in the order given. Each argument must be
+// a Client (a delivery platform) or a POSClient; anything else is a wiring
+// bug and is refused by name.
+//
+// Duplicate platforms are refused rather than last-write-wins: two clients
+// for one platform is a wiring bug too, and silently picking one would make
+// which orders the product sees depend on argument order.
+//
+// The parameter is `...Connector` rather than two typed slices so a call
+// site reads as one list of sources in the order they will be fetched,
+// which is also the order dedup.go sees them in.
+func NewProxy(clients ...Connector) (*Proxy, error) {
 	if len(clients) == 0 {
 		return nil, fmt.Errorf("platformconnector: NewProxy needs at least one client")
 	}
-	p := &Proxy{clients: make(map[Platform]Client, len(clients))}
+	p := &Proxy{
+		clients:    make(map[Platform]Client, len(clients)),
+		posClients: make(map[Platform]POSClient, 1),
+	}
 	for _, c := range clients {
 		platform := c.Platform()
-		if _, exists := p.clients[platform]; exists {
+		if p.registered(platform) {
 			return nil, fmt.Errorf("platformconnector: two clients registered for platform %q", platform)
 		}
-		p.clients[platform] = c
+		switch typed := c.(type) {
+		case Client:
+			p.clients[platform] = typed
+		case POSClient:
+			p.posClients[platform] = typed
+		default:
+			return nil, fmt.Errorf("platformconnector: connector for platform %q implements neither Client nor POSClient", platform)
+		}
 		p.order = append(p.order, platform)
 	}
 	return p, nil
+}
+
+func (p *Proxy) registered(platform Platform) bool {
+	if _, ok := p.clients[platform]; ok {
+		return true
+	}
+	_, ok := p.posClients[platform]
+	return ok
 }
 
 // Platforms returns the registered platforms in registration order.
@@ -96,11 +123,17 @@ func (p *Proxy) Platforms() []Platform {
 }
 
 // Describe returns every registered connector's wire-format facts, in
-// registration order — what GET /api/connectors/platforms serves.
+// registration order — what GET /api/connectors/platforms serves. Delivery
+// platforms and the POS describe themselves through the same method, so
+// the API and the UI need no special case for the new source.
 func (p *Proxy) Describe() []Description {
 	out := make([]Description, 0, len(p.order))
 	for _, platform := range p.order {
-		out = append(out, p.clients[platform].Describe())
+		if c, ok := p.clients[platform]; ok {
+			out = append(out, c.Describe())
+			continue
+		}
+		out = append(out, p.posClients[platform].Describe())
 	}
 	return out
 }
@@ -119,15 +152,66 @@ type PlatformDayTotals struct {
 	GrossCents      int64     `json:"-"`
 	RefundsCents    int64     `json:"-"`
 	CommissionCents int64     `json:"-"`
+
+	// DuplicatesRemoved and UnresolvedOverlaps are populated on the POS
+	// row only, because only POS tickets are ever removed (spec 012
+	// FR-013). They are here rather than in a separate structure so a
+	// preview table can show, on the row whose count changed, exactly why
+	// it changed.
+	DuplicatesRemoved  int `json:"duplicates_removed"`
+	UnresolvedOverlaps int `json:"unresolved_overlaps"`
 }
 
 // FetchResult is one range fetch: every normalized record, plus the
 // per-platform-per-day summary a human reads before committing anything.
+//
+// Records and POSRecords are POST-deduplication — what will actually land.
+// Computing the totals before the matcher ran would give the owner a
+// preview the commit then contradicts, which is a worse failure than
+// showing no preview at all.
 type FetchResult struct {
-	From    time.Time
-	To      time.Time
+	From time.Time
+	To   time.Time
+
+	// Records are the delivery-platform records. The matcher never
+	// removes or alters one.
 	Records []ingest.DeliveryRecord
-	Totals  []PlatformDayTotals
+
+	// POSRecords are the in-house tickets that survived deduplication,
+	// in the exact type ingest.ParsePOSExport produces.
+	POSRecords []ingest.POSRecord
+
+	// Decisions is every outcome the matcher reached, including the ones
+	// where it deliberately did nothing. Empty when the fetch covered
+	// fewer than two sources, because there was nothing to compare.
+	Decisions []DedupDecision
+
+	Totals []PlatformDayTotals
+}
+
+// DuplicatesRemoved is how many POS tickets the matcher folded into a
+// delivery-platform record across the whole fetch.
+func (r *FetchResult) DuplicatesRemoved() int {
+	n := 0
+	for _, d := range r.Decisions {
+		if d.Kind.Merged() {
+			n++
+		}
+	}
+	return n
+}
+
+// UnresolvedOverlaps is how many POS tickets the matcher believed might be
+// duplicates but declined to merge. Each one is a possible double-count
+// the owner has been told about explicitly.
+func (r *FetchResult) UnresolvedOverlaps() int {
+	n := 0
+	for _, d := range r.Decisions {
+		if d.Kind == DedupUnresolvedAmbiguous || d.Kind == DedupUnresolvedNoCounterpart {
+			n++
+		}
+	}
+	return n
 }
 
 // FetchRange fetches every requested platform for every calendar date in
@@ -160,12 +244,42 @@ func (p *Proxy) FetchRange(ctx context.Context, from, to time.Time, platforms []
 		return nil, fmt.Errorf("platformconnector: no platforms requested — name at least one of %s", strings.Join(platformKeys(), ", "))
 	}
 
+	// Fetch first, dedupe second, summarize third. The three stages are
+	// separated because only the first can fail on an upstream, only the
+	// second makes a judgement, and only the third is for display — and
+	// keeping them apart is what lets the totals report the post-dedup
+	// truth rather than a figure the commit contradicts.
 	result := &FetchResult{From: from, To: to}
+
+	fetchedDelivery := make(map[Platform]bool, len(platforms))
+	posOrdersByDay := make(map[string][]POSOrder)
+	var posDays []string
+
 	for _, platform := range platforms {
+		if posClient, ok := p.posClients[platform]; ok {
+			for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+				orders, err := posClient.FetchPOSOrders(ctx, day)
+				if err != nil {
+					return nil, err
+				}
+				for i, order := range orders {
+					if err := checkPOSContract(platform, day, order); err != nil {
+						return nil, err
+					}
+					orders[i] = order
+				}
+				key := day.Format(dateLayout)
+				posOrdersByDay[key] = orders
+				posDays = append(posDays, key)
+			}
+			continue
+		}
+
 		client, ok := p.clients[platform]
 		if !ok {
 			return nil, fmt.Errorf("platformconnector: no connector registered for platform %q", platform)
 		}
+		fetchedDelivery[platform] = true
 
 		for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
 			records, err := client.FetchDeliveryRevenue(ctx, day)
@@ -196,7 +310,65 @@ func (p *Proxy) FetchRange(ctx context.Context, from, to time.Time, platforms []
 			result.Totals = append(result.Totals, totals)
 		}
 	}
+
+	// Deduplication runs per calendar day, over that day's delivery
+	// records and that day's POS tickets. Per day rather than per range
+	// because matching is scoped to one calendar day (dedup.go), so
+	// comparing across days would only widen the candidate sets and make
+	// ambiguity — and therefore refusals to merge — more likely for no
+	// gain.
+	for _, key := range posDays {
+		day, err := time.ParseInLocation(dateLayout, key, merchantZone)
+		if err != nil {
+			return nil, fmt.Errorf("platformconnector: %w", err)
+		}
+
+		dayDelivery := recordsOnDay(result.Records, key)
+		kept, decisions := dedupeAcrossSources(dayDelivery, posOrdersByDay[key], fetchedDelivery)
+
+		totals := PlatformDayTotals{
+			Platform:     PlatformPOS,
+			PlatformName: PlatformPOS.DisplayName(),
+			Date:         day,
+			OrderCount:   len(kept),
+		}
+		for _, rec := range kept {
+			// A voided ticket contributes no gross, exactly as
+			// reconcile.computeOneDay will treat it. Counting it here
+			// would make the preview disagree with the commit.
+			if rec.Status == "" || rec.Status == "completed" {
+				totals.GrossCents += rec.GrossCents
+			}
+		}
+		for _, d := range decisions {
+			switch {
+			case d.Kind.Merged():
+				totals.DuplicatesRemoved++
+			case d.Kind == DedupUnresolvedAmbiguous || d.Kind == DedupUnresolvedNoCounterpart:
+				totals.UnresolvedOverlaps++
+			}
+		}
+
+		result.POSRecords = append(result.POSRecords, kept...)
+		result.Decisions = append(result.Decisions, decisions...)
+		result.Totals = append(result.Totals, totals)
+	}
+
 	return result, nil
+}
+
+// recordsOnDay filters already-fetched delivery records down to one
+// calendar day. A linear scan per day rather than a prebuilt index: a
+// 31-day sync over three sources is a few thousand records, and an index
+// would trade readable code for microseconds nobody is waiting on.
+func recordsOnDay(records []ingest.DeliveryRecord, dateKey string) []ingest.DeliveryRecord {
+	out := make([]ingest.DeliveryRecord, 0, len(records))
+	for _, rec := range records {
+		if rec.OrderDate.Format(dateLayout) == dateKey {
+			out = append(out, rec)
+		}
+	}
+	return out
 }
 
 // checkContract enforces Client's documented output contract on a single
@@ -262,6 +434,52 @@ func checkContract(platform Platform, date time.Time, rec ingest.DeliveryRecord)
 		}
 	default:
 		return reject("status %q is neither completed nor refunded", rec.Status)
+	}
+	return nil
+}
+
+// checkPOSContract enforces POSClient's documented output contract on a
+// single ticket. Same posture as checkContract: every failure is a
+// refusal, never a correction.
+//
+// The rule with teeth here is the last one. PlacedAt is the input to
+// dedup.go's matching window, and an adapter that read a zone-less
+// timestamp with time.Parse instead of time.ParseInLocation would shift
+// every ticket by the merchant's UTC offset while leaving the calendar
+// date intact — so nothing downstream would look wrong, no amount-and-time
+// match would ever fire again, and duplicate revenue would flow straight
+// into gross sales. Checking that PlacedAt's wall clock agrees with the
+// OrderTime string is what makes that failure loud.
+func checkPOSContract(platform Platform, date time.Time, order POSOrder) error {
+	rec := order.Record
+	reject := func(format string, args ...any) error {
+		return fmt.Errorf("platformconnector: %s connector returned a ticket that violates the connector contract (ticket %s, %s): %s",
+			platform.DisplayName(), rec.OrderID, rec.Ref.File, fmt.Sprintf(format, args...))
+	}
+
+	if got, want := rec.OrderDate.Format(dateLayout), date.Format(dateLayout); got != want {
+		return reject("ticket date is %s but %s was requested", got, want)
+	}
+	if !strings.HasPrefix(rec.Ref.File, "simulated://") {
+		return reject("provenance %q does not carry the simulated:// scheme", rec.Ref.File)
+	}
+	if rec.Ref.Row < 1 {
+		return reject("provenance row %d is not a 1-based position", rec.Ref.Row)
+	}
+	if rec.GrossCents <= 0 {
+		return reject("gross %s is not positive — this connector models no POS refund", money.FormatCents(rec.GrossCents))
+	}
+	if order.DeliveryPlatform != "" && !order.DeliveryPlatform.IsDelivery() {
+		return reject("claims to have arrived through %q, which is not a delivery platform", order.DeliveryPlatform)
+	}
+	if order.DeliveryPlatform == "" && order.PartnerOrderRef != "" {
+		return reject("carries a delivery-partner order reference %q but names no delivery platform — a reference the matcher cannot attribute is worse than none, because it looks like evidence", order.PartnerOrderRef)
+	}
+	if got, want := order.PlacedAt.Format(dateLayout), date.Format(dateLayout); got != want {
+		return reject("ticket time %s falls on %s, not the requested %s", order.PlacedAt.Format(time.RFC3339), got, want)
+	}
+	if got := order.PlacedAt.Format("15:04"); got != rec.OrderTime {
+		return reject("ticket time %s disagrees with the recorded order time %s — the timestamp was almost certainly read in the wrong zone, which would silently disable duplicate detection", got, rec.OrderTime)
 	}
 	return nil
 }

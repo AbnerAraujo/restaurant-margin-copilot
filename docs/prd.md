@@ -128,10 +128,11 @@ Section 3's "explicitly out of scope" list is being worked through, not abandone
 - **Cost sheet upload through the web UI** — `specs/007-cost-sheet-upload/`. Closes the "a developer with terminal access is required to update input costs" gap the CLI-only `-ingest` flag left open; a zero-model feature (pure deterministic parsing/validation, reusing `internal/ingest.ParseCostSheet` unchanged) that turns the one input source the owner personally produces (supplier billing, on an irregular cadence) into something they can update themselves.
 - **Business Insight Advisor** — `specs/009-business-insight-advisor/`. The first feature that deliberately produces probabilistic content, built so the deterministic/probabilistic split runs through its middle: WHETHER an insight exists (a discrepancy flag, a money-losing promotion, a premium-band commission rate, a day-of-month expense spike, a material margin decline) is decided in plain Go at zero cost on every answered question, while the advice TEXT is a separate, owner-initiated, re-verified, and individually-ledgered Claude Sonnet 5 call — rendered in its own visually-distinct "AI suggestion" bubble with its real cost shown, never blended into the provenance-backed answer. Trigger thresholds and prompts are grounded in researched industry practice (commission tiers, payout-dispute mechanics, ordering-cadence cost control), tagged Sourced vs. Judgment per `product-strategy.md`'s discipline.
 - **Platform Connector Proxy (simulated)** — `specs/010-platform-connector-proxy/`. Section 3 lists real delivery-platform API integrations as out of scope, and they still are: this builds the *connector layer* for real — two mock upstreams with incompatible wire formats, one normalizing proxy, the unchanged reconciliation engine behind it — while stubbing the only part that cannot be built without credentials, and labels the result as emulated in five independent places. Full rationale, including what is deliberately not built (OAuth, retries, webhooks, a plugin registry), in section 12 below.
+- **POS connector, and cross-source deduplication** — `specs/012-pos-connector-dedup/`. Extends the connector with the two thirds of revenue spec 010 left out, and then solves the problem that adding it creates: a POS integrated with a delivery aggregator records that aggregator's orders as its own tickets, so the same real-world order arrives twice and a naive sum inflates gross sales every day. A deterministic two-tier matcher resolves what it can and **refuses to guess at the rest**, because a wrong merge deletes real revenue just as surely as a missed one double-counts it. Section 12 below.
 
-## 12. Platform Connector Proxy — simulated iFood and Just Eat Takeaway
+## 12. Connector Proxy — simulated iFood, Just Eat Takeaway and POS
 
-`specs/010-platform-connector-proxy/`. The one section of this PRD whose most important sentence is about what the feature *is not*.
+`specs/010-platform-connector-proxy/` and `specs/012-pos-connector-dedup/`. The one section of this PRD whose most important sentence is about what the feature *is not*.
 
 ### The problem
 
@@ -166,7 +167,54 @@ The values are synthetic, but they are not a guess at real figures, and nothing 
 - **Real OAuth, token refresh, or credential storage.** There is no credential. An auth flow against a fake upstream validates nothing and would misrepresent the integration's maturity.
 - **Retries, backoff, rate limiting, circuit breakers.** In-process function calls do not fail transiently; simulating flakiness so resilience code has something to catch would be fiction stacked on fiction.
 - **Webhooks or push delivery.** Pull-on-demand only.
-- **A third platform or a plugin registry.** Exactly two, registered explicitly.
+- **A fourth source or a plugin registry.** Exactly three, registered explicitly.
 - **Historical backfill.** A sync covers an owner-chosen range, capped at 31 days.
-- **A simulated POS or supplier API.** Delivery revenue only; POS and input costs still come from the dataset and the cost-sheet upload.
+- **A simulated supplier API.** Input costs still come from the cost-sheet upload.
 - **Persisting raw platform payloads.** The raw envelopes live inside one function call; storing them would imply an audit trail this data does not deserve.
+
+## 12b. The POS connector, and the problem it creates
+
+`specs/012-pos-connector-dedup/`. The POS is **two thirds** of this restaurant's gross sales (`cmd/gendata`: 66% POS against 17% + 17% delivery), and spec 010 deliberately left it out — its own Assumptions say so: *"There is no simulated POS API."* So the connector story was two thirds unfinished on the revenue side, and it was the larger two thirds.
+
+Adding a third mocked upstream is the easy half. The hard half is what adding it exposes.
+
+### Same order, two systems
+
+Modern restaurant POS systems integrate with delivery aggregators precisely so front-of-house sees every order — dine-in, counter, and delivery — on one screen and one kitchen printer. When that integration is in place, a delivery order is *pushed into the POS* and becomes a POS ticket with its own POS order number. The same real-world order then appears once in the platform's settlement feed and once in the POS's ticket feed.
+
+Sum both and you double-count it. On a restaurant where delivery is a third of sales and the POS integrates with one aggregator, that is not a rounding error: it is a systematically inflated gross-sales figure, an understated cost ratio, and a margin percentage that looks better than reality every single day. **Measured on this product's own simulated data for 2026-08-18..20: naively summing the three sources gives $14,285.89 of gross sales against a true $12,442.88 — $1,843.01 of revenue counted twice, and a three-day margin overstated by 20.3%.**
+
+### The inverse failure, which is the harder one
+
+A deduplication rule that is too eager merges two genuinely different orders that happen to share a price and a rough time. On a 20-to-30-order evening at a $32 mean ticket, that is not exotic; it is expected. The result is **real revenue deleted** from the day, unrecoverable from the reconciliation output, and invisible — the day is simply lower, and nothing says why.
+
+Dropping a real order and double-counting a duplicate one are the same financial-integrity failure wearing different signs. This feature is designed against both, and the second is the one the design spends its effort on.
+
+### The rule, stated so it can be argued with
+
+> A POS ticket is a duplicate of a delivery order **only if the POS itself said** the ticket arrived through a delivery channel. Within that set: if the ticket carries the platform's order reference and that reference resolves, they are the same order. Otherwise they are the same order only if they share a platform, a calendar date and an **exact amount in cents**, their times are within **15 minutes**, and no other reading of the day's tickets is equally consistent.
+
+Three consequences worth naming:
+
+- **No matching on amount and time alone.** Without an assertion from one of the two systems that a delivery channel was involved, the evidence is "these numbers are similar", and acting on that deletes revenue. An untagged dine-in ticket is ineligible at any amount, at any time. That is a deliberate false negative, accepted so the false-positive rate can be bounded.
+- **Ambiguity is disclosed, never resolved by preference.** Where more than one reading is equally consistent — one ticket with two candidate orders, or two tickets contesting one — nothing merges, every record survives, and the day carries a flag naming the candidates. The pairing must be the unique solution *from both directions*, which is also what makes the result independent of iteration order rather than a coin flip dressed as an answer.
+- **The delivery record wins.** It knows the commission, the rate, the payout and the refund state; the POS ticket knows only a gross amount. Dropping the delivery side would zero that order's commission and move margin *up* — a wrong number in the flattering direction, the worst shape an error in this product can take.
+
+Zero model involvement: integer-cent equality, case-folded string equality, and a minute difference. Every decision can be recomputed by hand from the two records.
+
+### The simulation is built to make the rule work for its living
+
+The POS mock does not invent delivery-looking tickets. For each date it calls the *same* generator the iFood mock calls and echoes those actual orders, so a duplicate the matcher finds is causally real rather than a coincidence the mock arranged. Around it sit the deliberate difficulties:
+
+- **Only iFood is integrated into the POS, not Just Eat Takeaway.** A common real configuration, and the useful one: it puts a control group inside every fetch — JET orders that must never be touched, beside iFood orders that must be.
+- **A quarter of echoed tickets carry no partner reference.** Real integrations do record it; assuming they always do would make the second matching tier decoration. Stated as a modelling choice, not a finding.
+- **Campaign-discounted orders disagree on amount**, because the POS rings the menu price and never saw the platform's promotion — giving the amount-mismatch flag a real cause and the amount-and-time tier a real "no counterpart found" case it has to disclose.
+- **Ambiguity is not manufactured.** The mock does not arrange a collision so the unresolved flag has something to do; that path is proven by test, and its real incidence is reported as measured.
+
+**Measured over August 2026 (all 31 days, three sources): 689 duplicates resolved, 40 overlaps left unresolved and flagged, and 2,569 in-house tickets — every one of them intact.** Zero false positives is a test that runs on every build, not a claim.
+
+### Nothing is silently corrected
+
+Every outcome reaches the day it affected as a discrepancy flag in the vocabulary `internal/reconcile` already uses: `cross_source_duplicate_removed`, `cross_source_duplicate_unresolved`, `cross_source_amount_mismatch`. Each names both sides — which ticket was removed, which order it merged into, at which row of which source. An unresolved overlap says the consequence out loud: *"this day may count that order twice."* The connected-sources panel reports the removals and the unresolved overlaps side by side, because reporting only the removals would let the product claim a clean close it did not achieve.
+
+The `pos_export.csv` upload path is untouched, and deliberately so: a CSV a human exported from a POS with no delivery integration has no overlap to find, and this feature has no way to know whether a given file's POS was integrated. Guessing would be estimating.

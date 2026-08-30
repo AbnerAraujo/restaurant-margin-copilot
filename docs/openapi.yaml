@@ -94,13 +94,18 @@ tags:
     description: Letting the owner upload/replace the supplier cost sheet through the web UI (preview, commit, and a downloadable template).
   - name: Platform Connectors
     description: >-
-      SIMULATED delivery-platform connectors (specs/010). This project has no iFood
-      or Just Eat Takeaway partner-API credentials, so two mock upstreams with
-      deliberately different wire formats stand in for them and one proxy normalizes
-      both into the same record type the CSV parser produces. Every response on these
-      routes carries a top-level `simulated: true` and the same notice text, so a
-      client that ignores the UI still cannot render these numbers undisclosed. No
-      model in any request path.
+      SIMULATED revenue-source connectors (specs/010 and specs/012). This project has
+      no iFood or Just Eat Takeaway partner-API credentials and no POS terminal to
+      poll, so three mock upstreams with deliberately different wire formats stand in
+      for them and one proxy normalizes all three into the same record types the CSV
+      parser produces. Because an integrated POS records a delivery aggregator's
+      orders as its own tickets, a sync covering more than one source can see the same
+      real-world order twice; a deterministic matcher resolves what it can and refuses
+      to guess at the rest, and both outcomes are reported here. Every response on
+      these routes carries a top-level `simulated: true` and the same notice text, so
+      a client that ignores the UI still cannot render these numbers undisclosed. No
+      model in any request path — the matcher is integer comparison, not a similarity
+      score.
   - name: Ask
     description: The primary model-backed endpoint — natural-language Q&A over the reconciled data, via a pre-processing ambiguity gate and a typed-MCP-tool explanation step.
   - name: Business Insight
@@ -798,10 +803,10 @@ paths:
   /api/connectors/platforms:
     get:
       tags: [Platform Connectors]
-      summary: List the connected delivery platforms (all simulated)
+      summary: List the connected revenue sources (all simulated)
       description: |
-        Static description of both connectors. No database access, no fetch,
-        no side effect.
+        Static description of all three connectors — two delivery platforms
+        and the in-house POS. No database access, no fetch, no side effect.
 
         **Every connector listed here is simulated.** `simulated` is `true`
         on the envelope and on each platform individually, and each
@@ -816,7 +821,7 @@ paths:
       operationId: listConnectorPlatforms
       responses:
         "200":
-          description: Both simulated connectors.
+          description: All three simulated connectors.
           content:
             application/json:
               schema:
@@ -826,20 +831,27 @@ paths:
                   simulated: { type: boolean, enum: [true] }
                   notice:
                     type: string
-                    example: "Emulated connection. No real iFood or Just Eat Takeaway account is connected — these orders are generated locally for demonstration."
+                    example: "Emulated connection. No real iFood account, Just Eat Takeaway account or POS terminal is connected — these orders are generated locally for demonstration."
                   platforms:
                     type: array
                     items:
                       type: object
                       required: [platform, name, simulated, wire_format, commission_rate_pct, endpoint]
                       properties:
-                        platform: { type: string, enum: [ifood, just_eat_takeaway] }
+                        platform: { type: string, enum: [ifood, just_eat_takeaway, pos] }
                         name: { type: string, example: "iFood" }
                         simulated: { type: boolean, enum: [true] }
                         wire_format:
                           type: string
                           example: "page-numbered JSON, snake_case, amounts as decimal strings, RFC 3339 timestamps, refunds reported positive with a cancellation block"
-                        commission_rate_pct: { type: string, example: "23.00" }
+                        commission_rate_pct:
+                          type: string
+                          description: >-
+                            Empty string for the POS, which charges no commission at
+                            all. Deliberately not "0.00" — a zero rate would render as
+                            a platform that happens to be free, which is a different
+                            and wrong claim.
+                          example: "23.00"
                         endpoint:
                           type: string
                           example: "simulated://ifood-partner-api/v2/merchants/SIMULATED-MERCHANT-0417/orders"
@@ -915,13 +927,27 @@ paths:
         2. Verifies the live-data directory is ready.
         3. Clears the answer cache — new source data can change any cached
            answer, and it is cleared *before* the run, not after.
-        4. Re-runs `internal/pipeline` with a delivery overlay scoped to
-           `[from, to]`: CSV-parsed delivery rows inside that range are
-           dropped and replaced, rows outside it are kept verbatim, and POS
-           and supplier-cost parsing are untouched. Every affected day is
-           then recomputed from all three sources, because margin cannot be
-           updated from delivery alone.
-        5. Reads the after margin snapshot.
+        4. Runs the cross-source deduplication pass over what came back, so
+           an order the POS recorded because a delivery platform pushed it
+           there is counted once rather than twice. Where the evidence does
+           not single out a pairing, nothing is merged and the overlap is
+           disclosed instead.
+        5. Re-runs `internal/pipeline` with a connector overlay scoped to
+           `[from, to]` **and to the sources this request actually named**:
+           CSV-parsed rows of an overlaid source inside that range are
+           dropped and replaced, rows outside it are kept verbatim, and any
+           source the request did not name is untouched — so a delivery-only
+           sync can never clear a day's POS revenue. Supplier-cost parsing is
+           never overlaid. Every affected day is then recomputed from all
+           three sources, because margin cannot be updated from delivery
+           alone.
+        6. Reads the after margin snapshot.
+
+        Every deduplication outcome also lands on the day it affected as a
+        discrepancy flag — `cross_source_duplicate_removed`,
+        `cross_source_duplicate_unresolved`, or
+        `cross_source_amount_mismatch` — so it stays findable long after this
+        response is gone. Nothing is silently corrected.
 
         Days outside the synced range are provably unchanged — they are
         reconciled from exactly the inputs they were reconciled from before.
@@ -942,7 +968,7 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [simulated, notice, from, to, days_affected, orders_synced, refunds_synced, before, after]
+                required: [simulated, notice, from, to, days_affected, orders_synced, refunds_synced, tickets_synced, duplicates_removed, unresolved_overlaps, dedup, before, after]
                 properties:
                   simulated: { type: boolean, enum: [true] }
                   notice: { type: string }
@@ -951,6 +977,15 @@ paths:
                   days_affected: { type: integer, example: 3 }
                   orders_synced: { type: integer, example: 121 }
                   refunds_synced: { type: integer, example: 4 }
+                  tickets_synced:
+                    type: integer
+                    description: POS tickets committed, already net of the duplicates removed.
+                    example: 198
+                  duplicates_removed: { type: integer, example: 50 }
+                  unresolved_overlaps: { type: integer, example: 5 }
+                  dedup:
+                    type: array
+                    items: { $ref: "#/components/schemas/ConnectorDedupDecision" }
                   before: { $ref: "#/components/schemas/MarginSnapshotView" }
                   after: { $ref: "#/components/schemas/MarginSnapshotView" }
         "400":
@@ -1700,14 +1735,14 @@ components:
             Which connectors to fetch. Omit for every connected platform; an
             explicit empty list is refused rather than treated as "none", so a
             zero-order result can never be produced by accident.
-          items: { type: string, enum: [ifood, just_eat_takeaway] }
+          items: { type: string, enum: [ifood, just_eat_takeaway, pos] }
       required: [from, to]
 
     ConnectorDayTotals:
       type: object
       description: One simulated platform's reported activity for one calendar day.
       properties:
-        platform: { type: string, enum: [ifood, just_eat_takeaway] }
+        platform: { type: string, enum: [ifood, just_eat_takeaway, pos] }
         platform_name: { type: string, example: "iFood" }
         date: { type: string, format: date, example: "2026-08-18" }
         order_count: { type: integer, example: 16 }
@@ -1724,9 +1759,74 @@ components:
         commissions:
           type: string
           pattern: '^-?\d+\.\d{2}$'
-          description: Net of refund reversals, matching how internal/reconcile totals commission for the same day.
+          description: >-
+            Net of refund reversals, matching how internal/reconcile totals commission
+            for the same day. Always "0.00" on a POS row — the POS charges none.
           example: "125.68"
-      required: [platform, platform_name, date, order_count, refund_count, gross_sales, refunds, commissions]
+        duplicates_removed:
+          type: integer
+          description: >-
+            POS tickets on this day that were matched to a delivery-platform order and
+            removed so the order is counted once. Non-zero only on a POS row, and only
+            when the same sync also fetched a delivery platform. `order_count` and
+            `gross_sales` above are already net of these.
+          example: 15
+        unresolved_overlaps:
+          type: integer
+          description: >-
+            POS tickets on this day that the POS itself tagged as arriving through a
+            delivery platform, but which the matcher declined to pair because the
+            evidence did not single out one order. NOTHING was merged for these, so
+            this day may count those orders twice. Reported rather than hidden — a
+            summary listing only the removals would claim a clean result the product
+            did not achieve.
+          example: 1
+      required: [platform, platform_name, date, order_count, refund_count, gross_sales, refunds, commissions, duplicates_removed, unresolved_overlaps]
+
+    ConnectorDedupDecision:
+      type: object
+      description: >-
+        One cross-source deduplication outcome, including the ones where the matcher
+        deliberately did nothing (specs/012).
+      properties:
+        kind:
+          type: string
+          enum:
+            - matched_by_reference
+            - matched_by_channel_amount_time
+            - unresolved_no_counterpart
+            - unresolved_ambiguous
+            - amount_mismatch
+          description: >-
+            `matched_by_reference` — the POS recorded the platform's own order id and
+            it resolved; identity, and the only kind that does not require the amounts
+            to agree. `matched_by_channel_amount_time` — no reference, but the POS
+            tagged the ticket with this platform, the cents match exactly, the times
+            are within 15 minutes, and the pairing is the unique solution from both
+            directions. `unresolved_no_counterpart` / `unresolved_ambiguous` — nothing
+            was merged and the day may double-count. `amount_mismatch` — a confirmed
+            pair reporting two different amounts, usually a platform-funded promotion
+            the POS never saw.
+        resolved:
+          type: boolean
+          description: >-
+            True only when this decision REMOVED a POS ticket. False for both an
+            unresolved overlap and an amount-mismatch note, so a client counting
+            possible double-counts should filter on `kind`'s `unresolved_` prefix
+            rather than on `!resolved`.
+        date: { type: string, format: date, example: "2026-08-18" }
+        platform: { type: string, enum: [ifood, just_eat_takeaway] }
+        pos_order_id: { type: string, example: "POS-SIM-20260818-0017" }
+        platform_order_id:
+          type: string
+          description: Absent on an unresolved decision — there is no counterpart to name.
+          example: "IFOOD-SIM-20260818-0009"
+        detail:
+          type: string
+          description: >-
+            The owner-facing explanation, naming both sides with their file and row so
+            the removal is traceable in both directions.
+      required: [kind, resolved, date, platform, pos_order_id, detail]
 
     ConnectorSyncPreviewResponse:
       type: object
@@ -1745,10 +1845,24 @@ components:
         gross_sales: { type: string, pattern: '^-?\d+\.\d{2}$', example: "4457.09" }
         refunds: { type: string, pattern: '^-?\d+\.\d{2}$', example: "147.22" }
         commissions: { type: string, pattern: '^-?\d+\.\d{2}$', example: "915.91" }
+        duplicates_removed:
+          type: integer
+          description: Across the whole range. Every figure in this body is already net of these.
+          example: 50
+        unresolved_overlaps:
+          type: integer
+          description: >-
+            Possible double-counts the matcher refused to resolve. Not an error — a
+            disclosure.
+          example: 5
+        dedup:
+          type: array
+          description: Every decision, resolved and unresolved alike, in a stable order.
+          items: { $ref: "#/components/schemas/ConnectorDedupDecision" }
         days:
           type: array
           items: { $ref: "#/components/schemas/ConnectorDayTotals" }
-      required: [simulated, notice, from, to, order_count, gross_sales, refunds, commissions, days]
+      required: [simulated, notice, from, to, order_count, gross_sales, refunds, commissions, duplicates_removed, unresolved_overlaps, dedup, days]
 
     # --- ask --------------------------------------------------------------
     PendingClarification:
