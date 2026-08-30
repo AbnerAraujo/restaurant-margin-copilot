@@ -12,6 +12,49 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Release-gate pass: a data-corrupting test, and five stale doc claims
+
+Ahead of a release/interview-ready checkpoint, dispatched a fresh
+documentation coherence audit and a full backend regression pass — not
+trusting any prior commit's own claim about what it had already fixed.
+
+**Doc staleness found and fixed:** README's specs table was missing
+`specs/011-inline-grounded-advice` entirely, and its "Frontend pages" row
+listed 8 pages, missing `Profile` and `Help` (both real routed pages) — now
+10. CLAUDE.md's Stack and Hard-limits sections predated today's
+`internal/ambiguity/weekend.go` and `internal/answerverify`, both now
+documented there. `docs/frontend.md`'s `textarea.tsx` consumer count was
+stale at 1 (`ChatPanel.tsx` only) — the real count is 3, missing
+`QuestionComposer.tsx`'s guided-question dialog and `ProfilePage.tsx`'s bio
+field. `docs/mcp-and-skills.md` and `docs/presentation.html` both understated
+current scale (22→26 slides; 5→12 specs).
+
+**The serious one:** `TestHandleCommitCostSheet_SerializesConcurrentCommits`
+commits real cost-sheet data through the actual handler and pipeline against
+a live Postgres, using real in-range dates (`2026-01-05..07`). Nothing
+restored the canonical row already sitting on those dates, so running this
+suite against any shared Postgres — including one seeded with the real
+dataset — permanently drifted the canonical `$1,078,340.64` total to
+`$1,081,910.28`, silently, since nothing else in the codebase asserts
+against those specific dates. A first attempt at fixing this with a
+cleanup-`DELETE` made it *worse*, not better: verified live that a plain
+delete removes the row outright rather than restoring its original value,
+leaving a hole in the dataset (759 → 756 rows) instead of a wrong-but-present
+one. Fixed properly by moving the test to genuinely out-of-range dates
+(`1999-01-05..07`), matching the `sentinelDate` convention
+`internal/mcptools/reconciliation_tools_test.go` already established for
+exactly this reason. Verified by running the test twice against a live
+Postgres and confirming the canonical total never moves (`$1,078,340.64` /
+759 days, both times).
+
+Full backend suite (18 packages) green throughout. Two other release-gate
+passes ran in parallel: the evaluation harness (99/105 = 94.3% across 9 real
+runs, every failure traced to an already-documented gap, `internal/answerverify`
+firing zero times, both deterministic pre-checks — weekend and date-range —
+confirmed resolving at zero model cost) and a frontend regression pass.
+
+---
+
 ## 2026-08-30 — Home page's "Recent closes" tooltip had the same raw-flag-dump bug as Close, in a second, independent copy
 
 Reported live within minutes of the Close page's own version of this bug
