@@ -102,6 +102,113 @@ describe('ClosePage', () => {
     ).toBeInTheDocument()
   })
 
+  // Reported live: a day with ~40 cross_source_duplicate_removed flags
+  // (a POS-heavy connector sync) rendered its Discrepancy Catcher badge as
+  // every flag's raw `detail` sentence joined with " · " — internal type
+  // names, simulated:// provenance URIs, and row numbers, all in one
+  // paragraph-length pill meant to carry one line of owner-facing context.
+  describe('Discrepancy Catcher summarizes many flags in plain language, never the raw dump', () => {
+    function dayWith(flags: { type: string; detail: string }[]) {
+      return {
+        start: '2026-08-30',
+        end: '2026-08-30',
+        days: [
+          {
+            date: '2026-08-30',
+            gross_sales_by_source: { pos: '2901.46', ifood: '747.37', just_eat_takeaway: '747.34' },
+            total_delivery_gross_sales: '1494.71',
+            commissions: '304.97',
+            refunds: '76.49',
+            input_costs: '0.00',
+            margin: '4014.71',
+            discrepancy_flags: flags,
+            source_row_refs: [],
+          },
+        ],
+      }
+    }
+
+    it('groups many same-type flags into one counted phrase, never one line per flag', async () => {
+      const manyDuplicates = Array.from({ length: 43 }, (_, i) => ({
+        type: 'cross_source_duplicate_removed',
+        detail: `POS ticket POS-SIM-${i} carries iFood's own order reference IFOOD-SIM-${i}, so it is the same order. simulated://pos-terminal-api/pos/v1/terminals/SIMULATED-TERMINAL-02/day-close?date=2026-08-30`,
+      }))
+      stubFetch(dayWith(manyDuplicates))
+      renderPage()
+
+      const summary = await screen.findByRole('region', { name: /latest reconciled day/i })
+      expect(within(summary).getByText('43 duplicates counted once')).toBeInTheDocument()
+      // Never the raw technical detail, and never a wall built from it.
+      expect(within(summary).queryByText(/simulated:\/\//)).not.toBeInTheDocument()
+      expect(within(summary).queryByText(/POS-SIM-0/)).not.toBeInTheDocument()
+    })
+
+    it('orders mixed flag types by owner-actionability and caps at two, folding the rest into a count', async () => {
+      stubFetch(
+        dayWith([
+          ...Array.from({ length: 30 }, () => ({
+            type: 'cross_source_duplicate_removed',
+            detail: 'raw dedup detail, not shown',
+          })),
+          ...Array.from({ length: 5 }, () => ({
+            type: 'cross_source_amount_mismatch',
+            detail: 'raw mismatch detail, not shown',
+          })),
+          { type: 'anomaly_threshold_exceeded', detail: 'raw anomaly detail, not shown' },
+          { type: 'pos_non_completed_row_excluded', detail: 'raw void detail, not shown' },
+        ]),
+      )
+      renderPage()
+
+      const summary = await screen.findByRole('region', { name: /latest reconciled day/i })
+      // Amount mismatches and the anomaly outrank the already-resolved
+      // duplicates and the void exclusion — the top two shown, two folded.
+      expect(
+        within(summary).getByText(
+          '5 orders with a promotion-driven amount difference, an unusual change in revenue, and 2 more things flagged',
+        ),
+      ).toBeInTheDocument()
+    })
+
+    it('reports a single unresolved overlap in singular, ungrouped language', async () => {
+      stubFetch(
+        dayWith([{ type: 'cross_source_duplicate_unresolved', detail: 'raw, not shown' }]),
+      )
+      renderPage()
+
+      const summary = await screen.findByRole('region', { name: /latest reconciled day/i })
+      expect(
+        within(summary).getByText('1 possible duplicate left unresolved'),
+      ).toBeInTheDocument()
+    })
+
+    it('still counts a flag type this list does not name, rather than silently dropping it', async () => {
+      stubFetch(
+        dayWith([
+          { type: 'some_future_flag_type', detail: 'raw, not shown' },
+          { type: 'some_future_flag_type', detail: 'raw, not shown' },
+        ]),
+      )
+      renderPage()
+
+      const summary = await screen.findByRole('region', { name: /latest reconciled day/i })
+      expect(within(summary).getByText('2 other items flagged')).toBeInTheDocument()
+    })
+
+    it('carries the same summarized text into the accessible label, not the raw dump', async () => {
+      const manyDuplicates = Array.from({ length: 10 }, () => ({
+        type: 'cross_source_duplicate_removed',
+        detail: 'raw detail with a simulated:// URI, not shown',
+      }))
+      stubFetch(dayWith(manyDuplicates))
+      renderPage()
+
+      const summary = await screen.findByRole('region', { name: /latest reconciled day/i })
+      const badge = within(summary).getByLabelText(/discrepancy catcher.*10 duplicates counted once/i)
+      expect(badge).toBeInTheDocument()
+    })
+  })
+
   it('labels "Gross sales by source" rows with display names, never raw API keys', async () => {
     stubFetch(RECONCILIATION_RESPONSE)
     renderPage()
