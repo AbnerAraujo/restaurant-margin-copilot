@@ -314,6 +314,13 @@ func buildAskDeps(ctx context.Context, store *storage.Queries, cache *answercach
 		Explainer: explainer,
 		Logger:    instrumentation.NewLogger(storage.NewInstrumentationAdapter(store)),
 		Cache:     cache,
+		// specs/011-inline-grounded-advice: the question-initiated path
+		// into the same advisor POST /api/business-insight uses — one
+		// bounded call after a successful narration, only for questions
+		// the gate flagged as advice-requesting, ledgered in the same
+		// business_insight_interaction table (kind question_advice).
+		QuestionAdviser: advisor.New(llm),
+		InsightStore:    store,
 		// specs/004-semantic-cache: checked only on an exact-match cache
 		// MISS (see httpapi.HandleAsk) — shares the same Haiku model and
 		// llmclient.Client the ambiguity gate uses, one more vendor-internal

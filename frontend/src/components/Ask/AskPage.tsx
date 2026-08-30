@@ -5,6 +5,7 @@ import type { ChatMessage } from '@/components/Chat/ChatPanel'
 import ChatPanel, {
   type AnswerCacheInfo,
   type AssistantChatMessage,
+  type InlineAdvice,
   type PendingClarification,
   type PreviousExchange,
 } from '@/components/Chat/ChatPanel'
@@ -95,6 +96,16 @@ interface AskApiResponse {
    * below), never fetched here.
    */
   business_insight?: BusinessInsightTeaser
+  /**
+   * Spec 011 (inline grounded advice): present only when the owner's
+   * question itself asked for a suggestion (the backend gate's typed
+   * signal), the answer succeeded with real tool results to ground it,
+   * and the one bounded advisor call succeeded. Its cost already appears
+   * as its own `interactions` entry — this block is the content plus the
+   * standing disclaimer, passed straight through to
+   * `AnswerChatMessage.advice`.
+   */
+  advice?: InlineAdvice
 }
 
 /**
@@ -239,6 +250,7 @@ export default function AskPage() {
         toolCalls: data.tool_calls,
         resolvedPeriod: data.resolved_period,
         businessInsight: data.business_insight,
+        advice: data.advice,
         cache: data.cache,
         askedAt,
       }

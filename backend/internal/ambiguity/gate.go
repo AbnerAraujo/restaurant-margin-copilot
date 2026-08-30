@@ -151,6 +151,21 @@ type Decision struct {
 	// RefusalReason is non-empty when Result is Unanswerable.
 	RefusalReason string
 
+	// AdviceRequested reports that the question is itself asking for a
+	// suggestion/recommendation/how-to (specs/011-inline-grounded-advice
+	// FR-001) — the signal internal/httpapi uses to run one inline
+	// advisor call AFTER the normal narration, grounded in that answer's
+	// own tool results. Deliberately a separate boolean, never a fourth
+	// classification: answerability and wanting-advice are orthogonal (an
+	// advice question with a data-groundable core is Answerable AND
+	// advice-requesting; one with no groundable core is Unanswerable and
+	// this flag is irrelevant). Only the classification pass can set it —
+	// writerResponse has no such field and refineIfNeeded never assigns
+	// it, the same structural guarantee Result already has. A model reply
+	// omitting the field parses as false: no signal, no advice call, no
+	// spend — the conservative default.
+	AdviceRequested bool
+
 	InputTokens      int64
 	OutputTokens     int64
 	EstimatedCostUSD float64
@@ -317,6 +332,7 @@ type gateResponse struct {
 	ClarifyingOptions  []string `json:"clarifying_options"`
 	AssumptionStated   string   `json:"assumption_stated"`
 	Reason             string   `json:"reason"`
+	AdviceRequested    bool     `json:"advice_requested"`
 }
 
 // Classify asks Claude Haiku 4.5 to classify question against the data
@@ -423,6 +439,7 @@ func (g *Gate) Classify(ctx context.Context, question string, pending *PendingCl
 	decision.ClarifyingOptions = parsed.ClarifyingOptions
 	decision.AssumptionStated = parsed.AssumptionStated
 	decision.RefusalReason = parsed.RefusalReason
+	decision.AdviceRequested = parsed.AdviceRequested
 
 	g.refineIfNeeded(ctx, resolved, decision)
 	return decision, nil
@@ -739,6 +756,10 @@ func parseGateResponse(text string) (*Decision, error) {
 		ClarifyingOptions:  cleanOptions(gr.ClarifyingOptions),
 		AssumptionStated:   strings.TrimSpace(gr.AssumptionStated),
 		RefusalReason:      strings.TrimSpace(gr.Reason),
+		// Meaningful only alongside Answerable (or Ambiguous-with-assumption,
+		// which proceeds to narration the same way); a refusal never runs the
+		// advisor regardless, so no cross-field validation is needed here.
+		AdviceRequested: gr.AdviceRequested,
 	}
 
 	switch result {
@@ -829,10 +850,11 @@ Campaign/promotion references — read this before classifying any question that
 - You do not have the list of real campaign ids in front of you, and you must NOT classify a question as "unanswerable" just because a named campaign doesn't look familiar or doesn't exactly match an id you can recall. Resolving a shortened or human-readable campaign reference against the real, bounded set of campaigns is a downstream typed lookup's job, not yours — classify a question that names what is plausibly a campaign/promotion (any short code, abbreviation, or descriptive campaign-sounding name) as "answerable", and let the downstream tool return its own no_data result if that specific campaign genuinely doesn't exist.
 - This does not apply to platforms, suppliers, or restaurants — those ARE fully enumerated above, so a question naming one not listed there ("Instagram ads", a named supplier not in this data) is still correctly "unanswerable".
 
-Mixed data-plus-advice questions — read this before classifying a question phrased as "how do I replicate/improve/fix/hit X again" (e.g. "how can I replicate the margin from Aug 22 on other days?", "what should I change about staffing/menu/promotions to get that margin again?"):
-- This product only computes and retrieves reconciled margin, sales, cost, and promotion data — it never recommends staffing, menu, pricing, or other operational/business decisions. A question that asks PURELY for that kind of recommendation, with no day, period, or figure to ground it in, is correctly "unanswerable".
-- But a "how do I replicate/improve X" question almost always has a genuinely data-answerable core underneath the advice-shaped wrapper: what the tools can show about the specific day, period, or pattern named. When that core exists, classify the question "answerable" even if it also names a lever (staffing, menu, marketing strategy) this product has no data for. Do NOT classify the whole question "unanswerable" just because part of it asks for a kind of recommendation this product can't give — the downstream explanation step answers the data-answerable part in full and separately, plainly declines only the advice-shaped part in the same reply; refusing the entire interaction when a real, data-grounded answer exists to give first is exactly the failure this rule prevents.
-- Only classify "unanswerable" for this shape of question when NO part of it can be grounded in a real tool result at all — e.g. a bare "what should I do about staffing?" with no day, period, or figure named to explain.
+Advice requests and mixed data-plus-advice questions — read this before classifying any question asking for a suggestion, recommendation, or how-to ("how can I improve my margin?", "should I focus more on delivery or dine-in?", "how do I replicate the margin from Aug 22?", "what should I do about this promotion?"):
+- Alongside the classification, you report a separate boolean, "advice_requested": set it true whenever the question is itself asking what to DO — a suggestion, recommendation, strategy, or how-to — rather than only what HAPPENED. Set it false for a pure data question. This flag never changes the classification itself; decide answerable/ambiguous/unanswerable exactly as you otherwise would.
+- An advice-shaped question whose subject IS this product's data — margin, sales, costs, commissions, refunds, discrepancies, promotions, platform economics, expense patterns — has a data-groundable core: the tools can compute the relevant figures, and a downstream advisor step (grounded exclusively in those computed figures) handles the suggestion itself. Classify such a question "answerable" and set "advice_requested": true. Examples: "how can I improve my margin overall?" (margin/period data), "should I push delivery or dine-in?" (platform economics data), "what should I do about my worst promotion?" (promotion ROI data).
+- The same applies when a groundable question also names a lever this product has no data for (staffing, menu, marketing strategy): classify "answerable", set "advice_requested": true. Do NOT classify the whole question "unanswerable" just because part of it asks about something outside the data — refusing the entire interaction when a real, data-grounded answer exists to give first is exactly the failure this rule prevents.
+- Only classify "unanswerable" for an advice question when NO part of it can be grounded in this product's data at all — pay rates, hiring, team motivation, opening a location, legal/tax questions, or a bare "what should I do about staffing?" with no day, period, or figure named. This product never guesses at advice it cannot ground in a computed figure; give a specific "reason" naming what data is missing.
 
 Evaluative language — read this before classifying a question that uses a subjective-sounding word ("underperforming", "losing money", "bad", "worst", "best", "worth it"):
 - This product's tool set already defines several of these words deterministically — "underperforming" or "losing money" promotions means a computed negative ROI, and a typed tool exists specifically to return that list. A question is not ambiguous merely because it uses an evaluative word that this product's tool set already resolves to a fixed computation.
@@ -860,9 +882,9 @@ Classify the question into exactly one of:
 - "unanswerable": the question references data this product does not have at all (a date outside %[1]s..%[2]s once resolved per the date-grounding rule above, a supplier/platform/restaurant not listed above, or a question that isn't about this restaurant's margin/reconciliation/promotions at all). Give a specific "reason" naming what's missing.
 
 Reply with ONLY a single JSON object, no other text, no markdown fence, in exactly this shape:
-{"classification": "answerable" | "ambiguous" | "unanswerable", "clarifying_question": "...", "clarifying_options": ["...", "..."], "assumption_stated": "...", "reason": "..."}
+{"classification": "answerable" | "ambiguous" | "unanswerable", "clarifying_question": "...", "clarifying_options": ["...", "..."], "assumption_stated": "...", "reason": "...", "advice_requested": true | false}
 
-Leave clarifying_question/assumption_stated/reason as empty strings ("") and clarifying_options as [] whenever they don't apply to the classification you chose.`
+Leave clarifying_question/assumption_stated/reason as empty strings ("") and clarifying_options as [] whenever they don't apply to the classification you chose. Always include "advice_requested" (false for a pure data question).`
 
 // buildSystemPrompt substitutes the real data date range into
 // systemPromptTemplate. dataStart/dataEnd are expected in YYYY-MM-DD form

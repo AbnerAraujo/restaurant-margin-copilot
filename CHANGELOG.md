@@ -73,6 +73,75 @@ internal component names. New test
 `explain_internal_test.go`) asserts the message never contains "MCP",
 "tool call", "provenance", "deterministic layer", or "currency-shaped".
 
+## 2026-08-30 — Inline Grounded Advice: the advisor now answers the questions that ask for it (spec 011)
+
+The product owner's direction, verbatim: "the advisor should advise
+whatever the customer asks and use the data in context for it — not
+bringing wrong data or hallucination, but using an advisor that gets all
+the rich data we have and brings suggestions is something of value to the
+product strategy and vision." Until now the Business Insight Advisor
+(spec 009) could only be reached one way: Go detected one of five fixed
+patterns in an answer's data and offered a teaser chip. A question that
+*explicitly asked* for a suggestion — "how can I improve my margin
+overall?", "should I focus more on delivery or dine-in?" — got its data
+core answered and its advice part plainly declined (the 2026-08-30
+mixed-question fix below), even though an advisor with exactly the right
+grounding discipline was sitting one package away.
+
+`specs/011-inline-grounded-advice/` adds a second avenue into the same
+advisor, additive by construction — the five-kind teaser path is untouched
+and live-verified unchanged:
+
+- **Trigger** (`internal/ambiguity`): the gate now reports a separate
+  boolean, `advice_requested`, alongside its three-way classification —
+  never a fourth classification, and structurally unsettable by the
+  second-pass prose writer (`writerResponse` has no such field), the same
+  guarantee the classification itself already had. Groundable advice
+  questions classify answerable + flagged; ungroundable ones ("what should
+  I pay my staff?") stay refused exactly as before, verified live.
+- **Grounding**: no new tool-calling loop. The normal narration answers
+  the data core first through the existing budgeted MCP loop, and the one
+  bounded advisor call is grounded exclusively in `ToolInvocations` from
+  that same answer. No grounding → no advice call at all.
+- **Dynamic prompt** (`internal/advisor/question_advice.go`): the system
+  prompt is assembled per-question in plain Go — spec 009's
+  non-fabrication rules verbatim, plus researched-practice sections
+  selected by the NAMES of the tools that actually ran (new sourced
+  content: Restaurant365's prime-cost bands, Kasavana & Smith's 1982 menu
+  engineering matrix, Toast/ChowNow direct-channel steering; unverifiable
+  vendor figures deliberately excluded, same as 009's absent "~52%"
+  claim). The five 009 kind templates are never consulted on this path.
+- **Cost honesty**: every inline call writes a `business_insight_interaction`
+  row (new kind `question_advice`, migration 000013 — the "migration plus
+  a reviewed prompt" cost migration 000010's comment prescribed) and
+  appears as its own `interactions` entry; a failed advice call degrades
+  to the unchanged data answer, never a failed request.
+- **UI**: the suggestion renders in the teaser chip's dashed-warning
+  "AI suggestion" language with the same wire-carried disclaimer, after
+  and never blended into the provenance-backed answer.
+
+One real defect found and fixed during live verification, worth naming:
+the gate's raw model reply carried `"advice_requested": true` correctly,
+and every parser-level unit test passed — but `Classify`'s field-by-field
+copy from the parsed decision onto the usage-carrying `Decision` omitted
+the new field, silently dropping the signal on every live request. The
+symptom (grounded advice questions answered with the old decline, zero
+advisor calls) only surfaced against the live instance. Fixed with the
+one-line copy plus a new Classify-level scripted-fake test
+(`TestClassify_CarriesAdviceRequestedThroughToTheReturnedDecision`) that
+fails without it — the parser tests alone provably could not catch this
+class of drop.
+
+Live verification against an isolated instance (own Postgres, own port,
+real `ANTHROPIC_API_KEY`): "How can I improve my margin overall?" gathered
+`get_period_totals`/`get_margin_delta`/`list_negative_roi_promotions` and
+returned a suggestion anchored to the real computed figures (July→August
+margin move, IFOOD-CAMP-025's own spend/revenue) while stating plainly
+that labor/menu-item data doesn't exist in this product; "What should I
+pay my staff?" still refused with zero tool calls and zero advisor calls;
+the negative-promo teaser + tap flow behaved exactly as before, and
+`POST /api/business-insight` rejects kind `question_advice` (400).
+
 ## 2026-08-30 — Fixed a chat refusal that promised data it never delivered
 
 Reported live: asking "what should I change about staffing, menu, or
