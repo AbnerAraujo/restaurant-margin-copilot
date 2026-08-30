@@ -1,12 +1,11 @@
-import { useCallback, useState } from 'react'
-
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ShellOutletContext } from '@/components/Shell/AppShell'
-import CostPanel, { type CostInteraction } from '@/components/CostPanel/CostPanel'
+import CostPanel from '@/components/CostPanel/CostPanel'
+import { useSpendLedger } from '@/lib/useSpendLedger'
 import AskPage from './AskPage'
 
 // jsdom has no ResizeObserver; Radix's ScrollArea (inside ChatPanel) needs
@@ -30,23 +29,19 @@ function formatUsd(amount: number): string {
 }
 
 /**
- * Stands in for `AppShell`: provides the same `ShellOutletContext` shape
- * (interactions + logInteractions) via a real `<Outlet>`, plus the same
- * `CostPanel` mounted at the shell root, so `AskPage`'s `useShellOutletContext`
- * call and its cost-reporting side effect are exercised exactly as they run
- * in the real app instead of being stubbed away.
+ * Stands in for `AppShell`, using the same durable spend ledger the real
+ * shell now reads (`useSpendLedger`) rather than a local in-memory array.
+ * That is the point of the harness: cost reaches the pill by exactly the
+ * path it takes in the app — attached to the assistant message, written to
+ * the ledger by `ChatPanel`'s commit — so a regression that reintroduced
+ * the ephemeral side-effect reporting would fail here.
  */
 function ShellHarness() {
-  const [interactions, setInteractions] = useState<CostInteraction[]>([])
-  const logInteractions = useCallback((newInteractions: CostInteraction[]) => {
-    setInteractions((previous) => [...previous, ...newInteractions])
-  }, [])
+  const interactions = useSpendLedger()
 
   return (
     <>
-      <Outlet
-        context={{ interactions, logInteractions } satisfies ShellOutletContext}
-      />
+      <Outlet context={{ interactions } satisfies ShellOutletContext} />
       <CostPanel interactions={interactions} />
     </>
   )
@@ -75,6 +70,13 @@ function mockAskResponse(body: Record<string, unknown>) {
 }
 
 describe('AskPage', () => {
+  beforeEach(() => {
+    // The chat thread and the spend ledger are both durable now, so a test
+    // that did not clear them would inherit the previous test's answers and
+    // the previous test's total.
+    window.localStorage.clear()
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -115,7 +117,7 @@ describe('AskPage', () => {
     ).toBeInTheDocument()
   })
 
-  it('starts the shared session cost at zero', () => {
+  it('starts the shared model-spend total at zero', () => {
     renderAskPage()
 
     expect(screen.getByText(formatUsd(0))).toBeInTheDocument()
@@ -134,7 +136,7 @@ describe('AskPage', () => {
     const user = userEvent.setup()
     renderAskPage()
 
-    const costTrigger = screen.getByRole('button', { name: /session cost/i })
+    const costTrigger = screen.getByRole('button', { name: /model spend/i })
 
     const input = screen.getByRole('textbox', {
       name: /ask a question about your margin/i,
@@ -169,5 +171,45 @@ describe('AskPage', () => {
     expect(
       await screen.findByText(formatUsd(HAIKU_GATE_USD)),
     ).toBeInTheDocument()
+  })
+
+  /**
+   * The reported repro: the chat thread is deliberately durable, but the
+   * running total that paid for it used to be per-mount React state, so a
+   * reload showed $0.000 above answers that had demonstrably cost money —
+   * and two tabs showed two different totals, neither of them real.
+   */
+  it('keeps the model-spend total consistent with the conversation across a reload', async () => {
+    mockAskResponse({
+      status: 'answered',
+      answer_text: 'Margin for that period was $1,842.60.',
+      provenance_refs: ['data/live/daily_reconciliation.csv:18'],
+      interactions: [
+        { model_used: 'claude-sonnet-5', input_tokens: 420, output_tokens: 18, estimated_cost_usd: HAIKU_GATE_USD, latency_ms: 310 },
+        { model_used: 'claude-sonnet-5', input_tokens: 1180, output_tokens: 240, estimated_cost_usd: SONNET_EXPLAIN_USD, latency_ms: 1420 },
+      ],
+    })
+    const user = userEvent.setup()
+    const first = renderAskPage()
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do yesterday?{Enter}')
+
+    const expectedTotal = HAIKU_GATE_USD + SONNET_EXPLAIN_USD
+    expect(await screen.findByText(formatUsd(expectedTotal))).toBeInTheDocument()
+
+    // A reload: everything in memory goes, only storage survives.
+    first.unmount()
+    renderAskPage()
+
+    // The answer is still on screen...
+    expect(
+      await screen.findByText('Margin for that period was $1,842.60.'),
+    ).toBeInTheDocument()
+    // ...so the total that produced it has to be too, and it must not have
+    // been counted a second time by the remount either.
+    expect(screen.getByText(formatUsd(expectedTotal))).toBeInTheDocument()
   })
 })

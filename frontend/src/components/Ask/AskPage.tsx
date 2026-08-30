@@ -17,7 +17,6 @@ import type {
 import type { AskPageNavigationState } from '@/components/Charts/chartFollowUpQuestion'
 import type { SourceRowRef } from '@/components/Provenance/ProvenanceTag'
 import { postJson } from '@/lib/api'
-import { useShellOutletContext } from '@/components/Shell/AppShell'
 
 // ---------------------------------------------------------------------------
 // Live wiring to POST /api/ask (httpapi.HandleAsk) — the real two-step
@@ -128,16 +127,18 @@ function nextMessageId(prefix: string): string {
  *
  * Unlike the old single-page `MarginCopilotApp` (which owned its own
  * `CostPanel` state and pre-seeded it with the cost of its already-visible
- * demo conversation), the shell now mounts one `CostPanel` at the router
- * root so the running total survives navigation between routes. This page
- * only reports the cost of questions actually asked *in this visit* through
- * `logInteractions` — it deliberately does not replay the seed
- * conversation's cost on mount, since this page (unlike the old app root)
- * can mount and unmount many times as the owner navigates away and back,
- * and re-seeding on every remount would silently inflate the session total.
+ * demo conversation), the shell mounts one `CostPanel` at the router root so
+ * the running total survives navigation between routes.
+ *
+ * This page no longer reports cost to the shell at all. Each response's
+ * measured `interactions` ride back on the assistant message, and `ChatPanel`
+ * writes them to the durable, deduplicated spend ledger in the same commit
+ * that persists the message. That change is what makes remounting safe by
+ * construction rather than by care taken here: the ledger is keyed by message
+ * id, so navigating away and back — or a component mounting twice — can no
+ * more double-count spend than it can duplicate an answer.
  */
 export default function AskPage() {
-  const { logInteractions } = useShellOutletContext()
   // Spec 008 FR-001: a chart click on `/close` or `/promotions` navigates
   // here with the built follow-up question as router state (no shared chat
   // context exists across those separate routes) — read once per navigation,
@@ -176,9 +177,14 @@ export default function AskPage() {
           : undefined,
       })
 
-      if (data.interactions && data.interactions.length > 0) {
-        logInteractions(data.interactions)
-      }
+      // Attached to the message rather than reported to the shell as a side
+      // effect. `ChatPanel` moves it into the durable spend ledger in the
+      // same commit that persists the message (see CostAttributedMessage),
+      // so the running total survives a reload alongside the answers that
+      // earned it — and, crucially, an answer that completes after this page
+      // has unmounted records its cost too, instead of being billed
+      // invisibly.
+      const interactions = data.interactions
 
       const askedAt = new Date().toISOString()
 
@@ -188,6 +194,7 @@ export default function AskPage() {
           role: 'assistant',
           kind: 'clarification',
           text: data.clarifying_question ?? 'Could you clarify that question?',
+          interactions,
           // Rendered as one-tap chips. Picking one posts it back through the
           // gate with the clarification context attached, exactly as typing
           // it would — an option is a shortcut, never an accepted answer.
@@ -203,6 +210,7 @@ export default function AskPage() {
           role: 'assistant',
           kind: 'refusal',
           text: data.refusal_reason ?? "I can't answer that from the data on file.",
+          interactions,
           missing: [],
           cache: data.cache,
           askedAt,
@@ -214,6 +222,7 @@ export default function AskPage() {
         role: 'assistant',
         kind: 'answer',
         text: data.answer_text ?? '',
+        interactions,
         provenance: (data.provenance_refs ?? []).map(parseProvenanceRef),
         visualization: data.visualization,
         followUps: data.suggested_followups,
@@ -224,7 +233,7 @@ export default function AskPage() {
         askedAt,
       }
     },
-    [logInteractions],
+    [],
   )
 
   // Spec 009: the on-demand advice call behind a tapped business-insight
@@ -236,14 +245,12 @@ export default function AskPage() {
   // call is never invisible spend.
   const resolveBusinessInsight = useCallback<ResolveBusinessInsight>(
     async (kind, toolCalls) => {
-      const advice = await postJson<BusinessInsightAdvice>('/api/business-insight', {
+      return postJson<BusinessInsightAdvice>('/api/business-insight', {
         kind,
         tool_calls: toolCalls,
       })
-      logInteractions([advice.interaction])
-      return advice
     },
-    [logInteractions],
+    [],
   )
 
   return (

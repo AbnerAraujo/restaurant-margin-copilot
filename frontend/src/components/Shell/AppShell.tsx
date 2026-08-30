@@ -6,18 +6,26 @@ import FullscreenToggle from '@/components/Shell/FullscreenToggle'
 import Sidebar, { MobileNavBar } from '@/components/Shell/Sidebar'
 import SplashScreen from '@/components/Shell/SplashScreen'
 import { postJson } from '@/lib/api'
+import { useSpendLedger } from '@/lib/useSpendLedger'
 
 /**
- * What a routed page can read/do with the shell-level running-cost total.
+ * What a routed page can read of the shell-level running-cost total.
+ *
  * `CostPanel` is mounted once here (outside the router outlet, per
- * redesign-spec.md §1/§6) rather than per-page, so a page that logs new
- * interactions — today only `/ask`'s chat panel — reports them upward
- * through `useOutletContext` instead of each route owning its own cost
- * state and duplicating the pill.
+ * redesign-spec.md §1/§6) rather than per-page, so no route owns cost state
+ * or duplicates the pill.
+ *
+ * There is deliberately no `logInteractions` any more. It used to be how
+ * `/ask` reported spend upward, and it was the mechanism behind the QA
+ * finding that the total resets to $0.000 on reload while the answers that
+ * cost the money are still on screen: the report was a side effect into
+ * component state, so it lived and died with a mount. Spend is now written
+ * durably by the same commit that writes the answer it paid for
+ * (`chatStorage.recordSpend`) and read back here, which gives the total one
+ * definition instead of a persistent half and an ephemeral half.
  */
 export interface ShellOutletContext {
   interactions: CostInteraction[]
-  logInteractions: (newInteractions: CostInteraction[]) => void
 }
 
 /** Convenience hook for a routed page to read/report shell-level cost state. */
@@ -54,7 +62,8 @@ const COST_PANEL_INSET_PX = 16
 const DEFAULT_COST_PANEL_HEIGHT_PX = 32
 
 export default function AppShell() {
-  const [interactions, setInteractions] = useState<CostInteraction[]>([])
+  // Durable and cross-tab consistent, not per-mount: see useSpendLedger.
+  const interactions = useSpendLedger()
   const mainRef = useRef<HTMLElement>(null)
   const costPanelRef = useRef<HTMLDivElement>(null)
   const { pathname } = useLocation()
@@ -155,10 +164,6 @@ export default function AppShell() {
     }
   }, [pathname])
 
-  const logInteractions = (newInteractions: CostInteraction[]) => {
-    setInteractions((previous) => [...previous, ...newInteractions])
-  }
-
   // The real usage-event ping backing Engagement badges (spec
   // 002-badge-expansion, FR-003). Fired once per mount of the SHELL, not per
   // routed page: `<Outlet>` swaps children as the owner navigates between
@@ -236,7 +241,7 @@ export default function AppShell() {
           // button) can never end up underneath it, collapsed or expanded.
           style={{ paddingBottom: costPanelHeight + COST_PANEL_INSET_PX * 2 }}
         >
-          <Outlet context={{ interactions, logInteractions } satisfies ShellOutletContext} />
+          <Outlet context={{ interactions } satisfies ShellOutletContext} />
         </main>
       </div>
       <CostPanel ref={costPanelRef} interactions={interactions} />
