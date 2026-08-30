@@ -12,6 +12,125 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — QA round 5: a mobile layout bug, three double-submit races, and an ingestion validation gap
+
+A fifth overnight QA pass, scoped to five fresh angles the prior four rounds
+hadn't covered: ingestion edge cases beyond the existing suite, the MCP tool
+layer exercised directly over its real wire protocol (not just through the
+chat UI), cost/token instrumentation accuracy, visual/responsive layout at
+375px/768px with real Playwright screenshots, and same-tab double-click races
+on three write forms. Run entirely against an isolated backend (`:8990`),
+ephemeral Postgres (`docker run` on `:8991`), and an isolated frontend
+(`:8993`) in a dedicated worktree — the shared `:8080`/`:5173`/`:5432`
+instances were never touched.
+
+- **Fixed** `internal/ingest.ParseCostSheet` silently accepting a negative
+  supplier-invoice `amount` with zero validation, zero discrepancy flag, and
+  no signal anywhere that anything unusual happened — it would quietly
+  *reduce* `input_costs` and inflate the reported margin. Unlike a
+  delivery-platform `subtotal`/`commission`/`net_payout`, where a negative
+  value is a documented, legitimate refund-reversal row
+  (`cmd/gendata/opening/README.md` irregularity #2), this ingestion contract
+  has no concept of a supplier credit/return, so a negative cost-sheet
+  amount is always either a sign error or unmodeled data. Now refused with a
+  specific, row-referenced error, mirroring `POST /api/promotions`' existing
+  "spend must not be negative" check on the identical class of input. New
+  tests: `TestParseCostSheet_NegativeAmountIsRefused`,
+  `TestParseCostSheet_ZeroAmountIsAccepted` (proving the refusal is scoped to
+  strictly-negative values, not zero). Every other ingestion edge case tried
+  — reordered/extra columns, trailing-whitespace headers, thousands
+  separators, European decimal commas, a duplicate mid-file header row,
+  every row's amount at exactly `0.00`, and a 130KB single-field note — was
+  already handled correctly (accepted when it should be, refused cleanly
+  with a specific message when it shouldn't); no bug found there.
+- **Verified, not fixed**: the MCP tool layer, exercised directly over the
+  real in-process wire protocol (`client.NewInProcessClient` +
+  `mcp.CallToolRequest`, the same path `internal/explain.New` uses — not
+  mcptools' own typed Go functions, which can't observe a wrong JSON shape
+  on the wire) against all 8 tools with wrong-typed arguments (numbers,
+  arrays, booleans, nulls, objects in place of strings), missing required
+  fields, both-or-neither mutually-exclusive fields, out-of-range/malformed
+  dates (month 13, day 45, year `0000`), and an unknown tool name. Every
+  case returned a graceful typed error result or a clean protocol error —
+  never a panic, never a fabricated success. New regression test:
+  `TestMCPTools_MalformedArguments_NeverPanicOrFabricateSuccess` (31 cases)
+  and `TestMCPTools_UnknownToolName_IsAGracefulProtocolError` in
+  `backend/internal/mcptools/protocol_malformed_args_test.go`.
+- **Verified, not fixed**: cost/token instrumentation. `llmclient/cost.go`'s
+  pricing table (Sonnet 5 $2/$10, Haiku 4.5 $1/$5 per MTok) matches current
+  Anthropic first-party pricing exactly, `EstimateCostUSD`'s arithmetic is
+  already locked in by `cost_test.go`'s hand-computed cases, the
+  `estimated_cost_usd NUMERIC(12,6)` column stores it at exactly
+  micro-dollar precision with no rounding drift, and the same computed
+  float flows unchanged from the gate/explain call through the DB log
+  through the API response to `CostPanel.tsx`'s micro-dollar-exact
+  summation — no second, independently-computed pricing table exists on the
+  frontend to drift from the backend's. **Blocked, disclosed rather than
+  skipped silently** (same as QA round 4's evaluation-harness gap): hand-
+  verifying 2-3 *real, freshly-logged* interactions end-to-end required a
+  live `ANTHROPIC_API_KEY`, which this sandboxed environment does not have.
+- **Fixed** the mobile nav bar (`Shell/Sidebar.tsx`'s `MobileNavBar`, ten
+  items wide) giving a 375px/768px visitor zero visual indication that
+  `Ask` — this product's own core Q&A feature — and seven other pages exist
+  just past the edge of an `overflow-x-auto` row that looks like it simply
+  ends after "Upload costs." Added a right-edge fade that appears only
+  while there is real unscrolled content (via `scrollLeft`/`scrollWidth`/a
+  `ResizeObserver`) and disappears once scrolled to the end, rather than a
+  permanent decoration that would misleadingly persist either way. New
+  tests in `Sidebar.test.tsx` (4 cases covering render, no-fade-when-
+  fitting, fade-when-overflowing, fade-hides-at-scroll-end).
+- **Fixed** a real, reproducible layout corruption on Close's Period view at
+  375px, found by actually clicking through the page in Playwright (a
+  static screenshot pass alone missed it): the `From`/`To`/`Show results`
+  row (`Close/ClosePage.tsx`) had no `flex-wrap`, so it overflowed `<main>`
+  horizontally instead of breaking onto a second line, pushing `Show
+  results` entirely off-canvas. Clicking it (reachable only via the
+  browser's native focus-follows-scroll behavior, never by anything a touch
+  user could see or tap) then shifted `<main>`'s `scrollLeft`, clipping the
+  START of every other line of text on the page with no scrollbar and no
+  way back. Root cause is a real CSS spec quirk, not just this one row: an
+  element with `overflow-y: auto` and no explicit `overflow-x` computes its
+  `overflow-x` as `auto` too
+  (https://www.w3.org/TR/css-overflow-3/#overflow-properties), so `<main>`
+  (`Shell/AppShell.tsx`, `overflow-y-auto` only) silently became
+  horizontally scrollable the moment ANY descendant on ANY page was even
+  slightly too wide. Fixed at both levels: `flex-wrap` on the immediate
+  row, and `overflow-x-hidden` added to `<main>` itself as defense-in-depth
+  against the same failure mode from any current or future page. New tests:
+  `ClosePage.test.tsx`'s wrap-class assertion and
+  `AppShell.test.tsx`'s `overflow-x-hidden` assertion (jsdom has no layout
+  engine, so both assert the contract; the fix itself was verified with
+  real Playwright screenshots at 375px/768px, before and after).
+- **Fixed** the same same-tab double-submit race in three independent
+  places: `Upload/UploadPage.tsx`'s commit button, `Promotions/
+  LogReplacementForm.tsx`'s submit button, and `Profile/ProfilePage.tsx`'s
+  save button. Each guarded double-submission with `if (stage.name !==
+  'previewed') return` / `disabled={submitting}` alone — both read from
+  React state, which a `setState` call inside an event handler updates only
+  on the NEXT render, not synchronously. Two click/submit events landing
+  before that re-render commits (reproduced with two `fireEvent.click`
+  calls wrapped in one shared `act()`, which defers React's flush until
+  after both have already dispatched — the real race a fast double-click
+  hits before the DOM's `disabled` attribute ever updates) both read the
+  same pre-update state and both proceeded, double-POSTing/double-PUTting.
+  Fixed with a `useRef` boolean guard in each (`committingRef`/
+  `submittingRef`/`submittingRef`), which mutates synchronously and is
+  visible to a second, still-synchronous invocation immediately — closing
+  the exact window `disabled={...}` cannot close on its own. The Profile
+  case was the sharpest: both duplicate PUTs would have carried the
+  identical stale `updated_at`, so the existing optimistic-concurrency 409
+  check couldn't even have told a genuine two-tab conflict apart from the
+  owner's own double click. New tests in each component's test file, each
+  verified to actually fail without its fix before being confirmed to pass
+  with it. `MobileNavBar`'s new scroll-fade effect (above) needs
+  `ResizeObserver`, which jsdom doesn't implement, and `MobileNavBar` now
+  renders inside every `AppShell` — so rather than add a fourth
+  copy-pasted local stub alongside the three that already existed
+  (`ChatPanel.test.tsx`, `HomePage.test.tsx`, `AskPage.test.tsx`, each
+  previously commented "scoped to this file"), all four were consolidated
+  into one shared stub in `src/test/setup.ts`. A jsdom gap needed by two
+  widely-rendered components stopped being reasonably "local to one file."
+
 ## 2026-08-30 — Evaluation harness re-verified with real credentials, closing the round-4 gap
 
 QA round 4 (below) correctly declined to fabricate a "still holds" verdict on

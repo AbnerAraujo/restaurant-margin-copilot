@@ -386,5 +386,29 @@ describe('ClosePage', () => {
 
       expect(screen.getByRole('button', { name: 'Show results' })).toBeDisabled()
     })
+
+    // QA-round-5 finding: this row (From label, From date, To label, To
+    // date, Show results) had no flex-wrap, so at 375px it overflowed
+    // <main> horizontally instead of breaking onto a second line — pushing
+    // Show results off-canvas entirely, reachable only by the browser's own
+    // focus-follows-scroll behavior, never by anything a touch user could
+    // see or tap (see AppShell.tsx's overflow-x-hidden doc comment for the
+    // full mechanism). jsdom has no real layout engine, so this asserts the
+    // fix's actual contract — the row can break onto multiple lines — via
+    // its className, rather than a pixel measurement jsdom cannot produce;
+    // the fix was verified visually with real Playwright screenshots at
+    // 375px/768px.
+    it('lets the From/To/Show-results row wrap onto multiple lines instead of overflowing', async () => {
+      stubFetch(RECONCILIATION_RESPONSE)
+      renderPage()
+
+      await screen.findByText('-$120.26')
+      fireEvent.click(screen.getByRole('button', { name: 'Period' }))
+
+      const fromInput = screen.getByLabelText('From')
+      const row = fromInput.closest('div')
+      expect(row).not.toBeNull()
+      expect(row).toHaveClass('flex-wrap')
+    })
   })
 })

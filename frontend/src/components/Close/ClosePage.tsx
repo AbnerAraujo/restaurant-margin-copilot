@@ -555,7 +555,19 @@ export default function ClosePage() {
               />
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
+            // flex-wrap: found live at 375px — a native <input type="date">
+            // has enough intrinsic width (locale-dependent, but never tiny)
+            // that From's label+input, To's label+input, and the Show
+            // results button never fit on one line at a phone width. The
+            // OUTER row (above) already wraps its own two children (this
+            // group and the "Data on file covers..." span); without
+            // flex-wrap here too, THIS group stayed a single unbreakable
+            // line instead, overflowing <main> horizontally and pushing
+            // Show results off-canvas entirely — reachable only by the
+            // browser's own focus-follows-scroll behavior after tabbing to
+            // it, not by anything a touch user could see or tap. gap-y-2
+            // keeps wrapped lines from touching once they stack.
+            <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
               <label htmlFor="close-period-start" className="text-xs font-medium text-muted-foreground">
                 From
               </label>

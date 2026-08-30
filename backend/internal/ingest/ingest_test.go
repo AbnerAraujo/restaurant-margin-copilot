@@ -323,6 +323,40 @@ func TestParseCostSheet_MalformedAmountErrorIsCleanAndHumanReadable(t *testing.T
 	require.NotContains(t, err.Error(), "abc00", "must never leak the internal cents-padded digit string")
 }
 
+// TestParseCostSheet_NegativeAmountIsRefused is a QA-round-5 finding: a
+// negative amount ("-50.00") parsed successfully with no validation at
+// all, silently REDUCING input_costs and inflating margin with no
+// discrepancy flag anywhere to explain why. Unlike a delivery-platform
+// subtotal/commission/net_payout — where a negative value is a documented,
+// legitimate refund reversal row (cmd/gendata/opening/README.md
+// irregularity #2) — this ingestion contract has no concept of a supplier
+// credit/return, so a negative cost-sheet amount is always either a sign
+// error or unmodeled data, and Constitution Principle II says to refuse
+// rather than let it quietly produce a confidently wrong margin figure.
+// Mirrors POST /api/promotions' existing "spend must not be negative"
+// check (internal/httpapi/promotions_create.go) on the identical class of
+// input.
+func TestParseCostSheet_NegativeAmountIsRefused(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,amount\nINV-1,2026-08-02,Acme Foods,-50.00\n"
+	_, err := ParseCostSheet(strings.NewReader(csvData), "negative-amt.csv")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "negative-amt.csv row 2: amount:")
+	require.Contains(t, err.Error(), "must not be negative")
+}
+
+// TestParseCostSheet_ZeroAmountIsAccepted proves the negative-amount
+// refusal above is scoped to strictly-negative values, not to zero: a real
+// invoice line can legitimately be exactly "0.00" (e.g. a free sample, or
+// a line item fully covered by a separate credit applied elsewhere on the
+// same invoice), and that must keep parsing the same way it always has.
+func TestParseCostSheet_ZeroAmountIsAccepted(t *testing.T) {
+	csvData := "invoice_id,invoice_date,supplier,amount\nINV-1,2026-08-02,Acme Foods,0.00\n"
+	recs, err := ParseCostSheet(strings.NewReader(csvData), "zero-amt.csv")
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	require.Equal(t, int64(0), recs[0].AmountCents)
+}
+
 func TestParsePOSExport_TableDriven(t *testing.T) {
 	tests := []struct {
 		name    string

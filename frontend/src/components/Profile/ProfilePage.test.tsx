@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -241,6 +241,45 @@ describe('ProfilePage', () => {
     expect(body.name).toBe('Cafe Luz')
     expect(body.address).toBe('9 Ocean Ave')
     expect(body.photo).toBeNull()
+  })
+
+  // QA-round-5 finding: same bug class as Upload/UploadPage.tsx's
+  // committingRef and Promotions/LogReplacementForm.tsx's submittingRef —
+  // a fast double-click fires two submit events before React's re-render
+  // disables the button, and setSubmitting(true) from the first is
+  // batched, so a second, still-synchronous invocation of handleSubmit
+  // reads the same pre-update `submitting` (and the same stale
+  // `updatedAt`) and would double-PUT. Both clicks are wrapped in one
+  // shared `act()` (rather than two ordinary `fireEvent.click` calls, each
+  // of which auto-flushes its own `act()` and would hide this exact race)
+  // so the DOM's disabled attribute has no chance to commit between them.
+  it('never double-saves the profile when the button is double-clicked before it disables', async () => {
+    const fetchMock = stubFetch([{ ok: true, body: EMPTY_PROFILE }])
+    const user = userEvent.setup()
+    renderProfilePage()
+
+    await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
+
+    // Left unresolved deliberately — this test only cares how many times
+    // the save endpoint was CALLED, not what happens once it resolves.
+    const putPromise = new Promise<{
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+      text: () => Promise<string>
+    }>(() => {
+      /* never resolves within this test */
+    })
+    fetchMock.mockImplementation(() => putPromise as unknown as ReturnType<typeof fetch>)
+
+    const button = screen.getByRole('button', { name: /save profile/i })
+    act(() => {
+      fireEvent.click(button)
+      fireEvent.click(button)
+    })
+
+    const putCalls = fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'PUT')
+    expect(putCalls).toHaveLength(1)
   })
 
   it('surfaces the server-side refusal (e.g. size cap) rather than a generic error', async () => {

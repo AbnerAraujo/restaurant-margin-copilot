@@ -144,6 +144,17 @@ export default function ProfilePage() {
   const [savedSnapshot, setSavedSnapshot] = useState<ProfileSnapshot>(EMPTY_SNAPSHOT)
 
   const [submitting, setSubmitting] = useState(false)
+  // Found live (same bug as Upload/UploadPage.tsx's committingRef and
+  // Promotions/LogReplacementForm.tsx's submittingRef): a fast double-click
+  // on "Save changes" fires two synchronous submit events before React's
+  // re-render disables the button — setSubmitting(true) from the first is
+  // batched, so the second, still-synchronous invocation reads the same
+  // pre-update `submitting` and would double-PUT (both carrying the SAME
+  // stale `updatedAt`, so the optimistic-concurrency 409 check below
+  // couldn't even tell them apart from a genuine two-tab conflict). A ref
+  // mutates synchronously, closing that window `disabled={submitting}`
+  // cannot.
+  const submittingRef = useRef(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
 
@@ -222,6 +233,8 @@ export default function ProfilePage() {
       return
     }
 
+    if (submittingRef.current) return
+    submittingRef.current = true
     setSubmitting(true)
     try {
       const response = await putJson<ProfileApi>('/api/profile', {
@@ -266,6 +279,7 @@ export default function ProfilePage() {
         notifyProfileSaved()
       }
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

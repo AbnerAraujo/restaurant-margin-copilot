@@ -1,9 +1,9 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
+import { createMemoryRouter, MemoryRouter, Outlet, RouterProvider } from 'react-router-dom'
 
-import Sidebar from './Sidebar'
+import Sidebar, { MobileNavBar } from './Sidebar'
 
 const EMPTY_PROFILE = {
   name: '',
@@ -180,5 +180,80 @@ describe('Sidebar', () => {
     // as it did before this feature existed, never a blank placeholder row.
     await screen.findByRole('navigation', { name: /primary navigation/i })
     expect(screen.queryByLabelText(/^restaurant:/i)).not.toBeInTheDocument()
+  })
+})
+
+/**
+ * QA-round-5 finding: ten nav items (the logo/restaurant-identity pills
+ * plus every NAV_ITEMS entry) never fit at 375px/768px, `overflow-x-auto`
+ * hides the excess without breaking layout, but a plain overflow row gives
+ * a first-time mobile visitor no visual reason to believe `Ask` (this
+ * product's own core feature),`Promotions`, `Platforms`, `Points`,
+ * `Profile`, `Settings`, and `Help` exist just past the edge. These tests
+ * cover the fix: a right-edge fade that appears only while there is real
+ * unscrolled content, and disappears once scrolled to the end — never a
+ * permanent decoration that would misleadingly persist either way.
+ */
+describe('MobileNavBar scroll-fade affordance', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  function renderMobileNavBar() {
+    stubProfile()
+    return render(
+      <MemoryRouter>
+        <MobileNavBar />
+      </MemoryRouter>,
+    )
+  }
+
+  function stubOverflow({ scrollWidth, clientWidth, scrollLeft = 0 }: { scrollWidth: number; clientWidth: number; scrollLeft?: number }) {
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockReturnValue(scrollWidth)
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(clientWidth)
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockReturnValue(scrollLeft)
+  }
+
+  it('renders every nav item, even though most are scrolled out of view', () => {
+    renderMobileNavBar()
+    const nav = getNav()
+
+    for (const name of ['home', "today's close", '^ask$', 'promotions', 'platforms', 'points', 'profile', 'settings', 'help']) {
+      expect(within(nav).getByRole('link', { name: new RegExp(name, 'i') })).toBeInTheDocument()
+    }
+  })
+
+  it('shows no fade when every item already fits within the viewport', () => {
+    stubOverflow({ scrollWidth: 300, clientWidth: 375 })
+    renderMobileNavBar()
+    getNav()
+
+    expect(screen.queryByTestId('mobile-nav-scroll-fade')).not.toBeInTheDocument()
+  })
+
+  it('shows the fade when scrolled content extends past the right edge', () => {
+    stubOverflow({ scrollWidth: 900, clientWidth: 375, scrollLeft: 0 })
+    renderMobileNavBar()
+    getNav()
+
+    expect(screen.getByTestId('mobile-nav-scroll-fade')).toBeInTheDocument()
+  })
+
+  it('hides the fade once scrolled all the way to the end', () => {
+    stubOverflow({ scrollWidth: 900, clientWidth: 375, scrollLeft: 0 })
+    renderMobileNavBar()
+    const nav = getNav()
+
+    expect(screen.getByTestId('mobile-nav-scroll-fade')).toBeInTheDocument()
+
+    // Re-stub scrollLeft as if the user scrolled all the way to the end,
+    // then fire the same 'scroll' event the browser would — fireEvent
+    // (unlike a raw dispatchEvent) wraps this in act() so the resulting
+    // state update is flushed before the assertion below runs.
+    vi.spyOn(HTMLElement.prototype, 'scrollLeft', 'get').mockReturnValue(525)
+    fireEvent.scroll(nav)
+
+    expect(screen.queryByTestId('mobile-nav-scroll-fade')).not.toBeInTheDocument()
   })
 })

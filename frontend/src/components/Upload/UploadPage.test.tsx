@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -374,5 +374,63 @@ describe('UploadPage', () => {
       await user.click(screen.getByRole('button', { name: 'Leave anyway' }))
       expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
     })
+  })
+
+  // QA-round-5 finding: a fast double-click fires two click events before
+  // React's re-render disables the button — setState from an event handler
+  // is batched, so a second, still-synchronous invocation of handleCommit
+  // can read the same pre-update `stage` and post the commit twice. Two
+  // ordinary `fireEvent.click` calls each auto-wrap in their own `act()`,
+  // which flushes the resulting `disabled` DOM update before the SECOND
+  // call ever dispatches — that would hide this exact bug (jsdom would
+  // always see a real double-click as "safe" regardless of whether the
+  // component actually guards against it). Wrapping BOTH dispatches in one
+  // shared `act()` instead defers that flush until after both clicks have
+  // already fired, which is the real race: two events landing before
+  // React's own re-render has committed anything back to the DOM.
+  it('never double-posts the commit when the button is double-clicked before it disables', async () => {
+    stubFetchOnce(true, {
+      row_count: 1,
+      total_amount: '100.00',
+      rows: [
+        {
+          invoice_id: 'INV-TEST-001',
+          invoice_date: '2026-08-01',
+          supplier: 'Test Produce Co.',
+          category: 'produce',
+          amount: '100.00',
+          notes: '',
+          source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+        },
+      ],
+    })
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    // Left unresolved deliberately — this test only cares how many times
+    // the commit endpoint was CALLED, not what happens once it resolves.
+    const commitPromise = new Promise<{
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+      text: () => Promise<string>
+    }>(() => {
+      /* never resolves within this test */
+    })
+    const mockFetch = vi.mocked(fetch)
+    mockFetch.mockImplementation(() => commitPromise as unknown as ReturnType<typeof fetch>)
+    // The preview call above already used this same mock once — clear its
+    // call count so the assertion below counts only what the double-click
+    // itself triggers.
+    mockFetch.mockClear()
+
+    const button = screen.getByRole('button', { name: /replace cost sheet/i })
+    act(() => {
+      fireEvent.click(button)
+      fireEvent.click(button)
+    })
+
+    expect(mockFetch).toHaveBeenCalledTimes(1)
   })
 })

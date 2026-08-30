@@ -12,6 +12,7 @@ import {
   UserCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 
 import Logo from '@/components/Logo/Logo'
@@ -157,33 +158,95 @@ export default function Sidebar() {
   )
 }
 
+// SCROLL_EDGE_SLACK_PX tolerates the sub-pixel rounding a browser's own
+// scroll math can leave behind (scrollWidth/clientWidth are already rounded
+// integers, but scrollLeft can land at e.g. 639.6 on a display with a
+// fractional device pixel ratio) — without it, "has this been scrolled all
+// the way to the end" could stay permanently false-negative on some
+// displays, leaving the end-of-scroll fade stuck on even once nothing more
+// is scrollable.
+const SCROLL_EDGE_SLACK_PX = 1
+
 /**
- * Small-viewport (`< lg`) replacement for the sidebar: the same four nav
- * items as horizontal icon pills, so the IA stays fully reachable without a
+ * Small-viewport (`< lg`) replacement for the sidebar: the same nav items
+ * as horizontal icon pills, so the IA stays fully reachable without a
  * hidden drawer (§2.3 — no Sheet/Drawer primitive exists in `components/ui`
  * yet, and adding one is out of scope here).
+ *
+ * Found live in a QA pass, at exactly the 375px/768px widths this ships to:
+ * ten items (NAV_ITEMS above, plus the logo/restaurant-identity pills)
+ * never fit in one screen's width, `overflow-x-auto` handles the overflow
+ * without visually breaking the layout, but nothing about a plain
+ * `overflow-x-auto` row tells a first-time visitor there IS more content to
+ * the right — the row simply looks like it ends after "Upload costs," with
+ * `Ask` (this product's own core Q&A feature), `Promotions`, `Platforms`,
+ * `Points`, `Profile`, `Settings`, and `Help` invisible and undiscoverable
+ * unless a visitor happens to swipe a bar that gives no visual reason to.
+ * A right-edge fade (shown only while there is real unscrolled content
+ * past the edge, per canScrollRight below — never a permanent decoration
+ * that would misleadingly persist after the row is fully scrolled) is the
+ * same affordance pattern browsers themselves use for overflowing tab
+ * strips, applied here since this codebase has no shared scroll-fade
+ * primitive yet to reuse.
  */
 export function MobileNavBar() {
+  const scrollerRef = useRef<HTMLElement>(null)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  useEffect(() => {
+    const el = scrollerRef.current
+    if (!el) return
+
+    const updateFadeVisibility = () => {
+      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - SCROLL_EDGE_SLACK_PX)
+    }
+
+    updateFadeVisibility()
+    el.addEventListener('scroll', updateFadeVisibility, { passive: true })
+    // ResizeObserver, not just a mount-time check: rotating the device,
+    // resizing a desktop window down into this breakpoint, or the profile
+    // name (RestaurantIdentity) loading in after this first paints can all
+    // change whether the row overflows at all, without ever firing a
+    // 'scroll' event.
+    const observer = new ResizeObserver(updateFadeVisibility)
+    observer.observe(el)
+
+    return () => {
+      el.removeEventListener('scroll', updateFadeVisibility)
+      observer.disconnect()
+    }
+  }, [])
+
   return (
-    <nav
-      aria-label="Primary navigation"
-      className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 py-2 pl-3 pr-16 lg:hidden"
-    >
-      <Logo variant="icon" size={28} doorAnimation="once" />
-      <RestaurantIdentity compact />
-      {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={end}
-          className={({ isActive }) =>
-            cn(MOBILE_LINK_BASE_CLASSES, isActive && ACTIVE_LINK_CLASSES)
-          }
-        >
-          <Icon className="size-3.5" aria-hidden="true" />
-          {label}
-        </NavLink>
-      ))}
-    </nav>
+    <div className="relative lg:hidden">
+      <nav
+        ref={scrollerRef}
+        aria-label="Primary navigation"
+        className="flex items-center gap-1 overflow-x-auto border-b border-border bg-card/50 py-2 pl-3 pr-16"
+      >
+        <Logo variant="icon" size={28} doorAnimation="once" />
+        <RestaurantIdentity compact />
+        {NAV_ITEMS.map(({ to, label, icon: Icon, end }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end={end}
+            className={({ isActive }) =>
+              cn(MOBILE_LINK_BASE_CLASSES, isActive && ACTIVE_LINK_CLASSES)
+            }
+          >
+            <Icon className="size-3.5" aria-hidden="true" />
+            {label}
+          </NavLink>
+        ))}
+      </nav>
+      {canScrollRight && (
+        <div
+          aria-hidden="true"
+          data-testid="mobile-nav-scroll-fade"
+          className="pointer-events-none absolute inset-y-0 right-16 w-8 bg-gradient-to-r from-transparent to-card/50"
+        />
+      )}
+    </div>
   )
 }

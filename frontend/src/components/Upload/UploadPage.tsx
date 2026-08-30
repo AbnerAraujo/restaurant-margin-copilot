@@ -107,6 +107,15 @@ export default function UploadPage() {
   const [stage, setStage] = useState<Stage>({ name: 'idle' })
   const [dragActive, setDragActive] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Found live: a fast double-click on "Replace cost sheet" fires two
+  // synchronous click events before React's re-render disables the button
+  // (setState from an event handler is batched — the handler's SECOND
+  // synchronous invocation still closes over the pre-update `stage`, so
+  // `stage.name !== 'previewed'` alone let both calls through and posted
+  // the commit twice). A ref, unlike state, mutates synchronously and is
+  // visible to that second invocation immediately, closing the exact
+  // window `disabled={isBusy}` cannot close on its own.
+  const committingRef = useRef(false)
 
   async function handleFile(file: File) {
     setStage({ name: 'previewing', file })
@@ -123,6 +132,8 @@ export default function UploadPage() {
 
   async function handleCommit() {
     if (stage.name !== 'previewed') return
+    if (committingRef.current) return
+    committingRef.current = true
     const { file, preview } = stage
     setStage({ name: 'committing', file, preview })
     try {
@@ -133,6 +144,8 @@ export default function UploadPage() {
       setStage({ name: 'committed', result })
     } catch (caught) {
       setStage({ name: 'commit_error', file, preview, message: explainRequestFailure(caught) })
+    } finally {
+      committingRef.current = false
     }
   }
 

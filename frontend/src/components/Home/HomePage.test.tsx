@@ -1,22 +1,9 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import HomePage from './HomePage'
-
-// jsdom has no ResizeObserver; Radix's Tooltip needs one to position itself
-// on open. Scoped to this file like ChatPanel's/AskPage's own tests.
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    globalThis.ResizeObserver = ResizeObserverStub
-  }
-})
 
 /**
  * Renders `HomePage` inside a real router with stub destination routes, so

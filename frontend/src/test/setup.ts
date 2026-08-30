@@ -79,6 +79,24 @@ if (typeof globalThis.AnimationEvent === 'undefined') {
   }
   globalThis.AnimationEvent = AnimationEventPolyfill as unknown as typeof AnimationEvent
 }
+// jsdom has no ResizeObserver. This started as a stub local to
+// Chat/ChatPanel.test.tsx ("scoped to the one component that pulls in
+// Radix's ScrollArea"), but Shell/Sidebar.tsx's MobileNavBar now uses one
+// too (QA-round-5's scroll-fade-affordance fix) — and MobileNavBar renders
+// inside every AppShell, which is most of this app's component tree.
+// Scoping the stub per-file stopped making sense the moment a SECOND,
+// widely-rendered component needed it: every test that mounts AppShell (or
+// anything under it) would otherwise need its own copy. Promoted here,
+// once, guarded the same way as every other polyfill in this file.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  class ResizeObserverPolyfill implements ResizeObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  globalThis.ResizeObserver = ResizeObserverPolyfill as unknown as typeof ResizeObserver
+}
+
 if (typeof globalThis.TransitionEvent === 'undefined') {
   class TransitionEventPolyfill extends Event {
     propertyName: string
