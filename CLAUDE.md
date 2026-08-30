@@ -29,7 +29,24 @@ This split must be documented and easy to point at in a demo.
 ## Stack
 
 - **Backend:** Go — ingestion, reconciliation engine, margin/delta calculation,
-  the API the frontend and MCP server both sit on.
+  the API the frontend and MCP server both sit on. One binary, one origin, in
+  three named layers:
+  - `internal/bff` — the **backend-for-frontend boundary** (`specs/013-bff-layer`).
+    The composition root: one route table declared as data, from which the CORS
+    preflight, the 405 policy, and the startup log are all *derived* rather than
+    hand-maintained beside it. It shapes and routes; it computes nothing. This is
+    a **modular** BFF, not a service — one experience, one consumer, one team, so
+    a separate deployable would buy a boundary that already holds and charge a
+    network hop and a pipeline for it. Also deliberately without retries,
+    breakers, or bulkheads: the connector "upstream" is an in-process function
+    call, and simulating flakiness so resilience code has something to catch
+    would be fiction stacked on fiction.
+  - `internal/httpapi` — the handlers behind that table: request shaping,
+    orchestration, and rendering for the one client. No arithmetic, no domain
+    rules.
+  - The deterministic core — `internal/ingest`, `internal/reconcile`,
+    `internal/pipeline`, `internal/platformconnector`, `internal/storage`. Every
+    number lives here.
 - **Database:** PostgreSQL — raw ingested records, computed reconciliations,
   per-interaction instrumentation log.
 - **MCP server:** exposes the Go reconciliation engine as a fixed set of typed
