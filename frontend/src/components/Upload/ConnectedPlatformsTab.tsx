@@ -62,6 +62,12 @@ interface ConnectorDayTotalsApi {
   commissions: string
   duplicates_removed: number
   unresolved_overlaps: number
+  /** The simulated day's statable cause, absent on an ordinary day —
+   *  "Severe weather — couriers scarce and almost no walk-in trade". A
+   *  property of the DATE, so every source's row for the same day carries
+   *  the same note. Without it the connector's day-to-day variance would
+   *  read as an unexplained dip. */
+  trading_note?: string
 }
 
 interface ConnectorDedupDecisionApi {
@@ -140,6 +146,7 @@ function toTableRows(days: ConnectorDayTotalsApi[]): string[][] {
     // free, which is a different and wrong claim.
     day.platform === 'pos' ? '—' : formatUsd(day.commissions),
     dedupCell(day),
+    day.trading_note || '—',
   ])
 }
 
@@ -463,7 +470,16 @@ export default function ConnectedPlatformsTab() {
           <DataGrid
             className="mt-4"
             title="Simulated orders by source and day"
-            columns={['Date', 'Source', 'Orders', 'Gross sales', 'Refunds', 'Commission', 'Duplicates']}
+            columns={[
+              'Date',
+              'Source',
+              'Orders',
+              'Gross sales',
+              'Refunds',
+              'Commission',
+              'Duplicates',
+              'Trading day',
+            ]}
             rows={toTableRows(preview.days)}
             // Column header filters: up to 31 days times every connected
             // platform can interleave into 60+ rows for a wide preview
