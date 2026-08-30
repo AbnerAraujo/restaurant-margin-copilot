@@ -30,6 +30,7 @@ import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getJson } from '@/lib/api'
+import { summarizeFlags } from '@/lib/discrepancyFlags'
 import { explainRequestFailure } from '@/lib/requestFailure'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
@@ -642,9 +643,7 @@ export default function HomePage() {
                                 </button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                {day.discrepancy_flags
-                                  .map((flag) => flag.detail)
-                                  .join(' · ')}
+                                {summarizeFlags(day.discrepancy_flags)}
                               </TooltipContent>
                             </Tooltip>
                           ) : (
