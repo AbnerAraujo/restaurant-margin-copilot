@@ -12,6 +12,77 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Chat persistence: one broken model, three symptoms
+
+A state-persistence QA pass on `/ask` found three defects that turned out to
+be one defect. `localStorage` was treated as a mirror of whatever snapshot a
+component happened to be holding, and written back wholesale. Each fix was
+therefore a redesign of the model rather than a patch to a symptom, and
+fixing any one of them narrowly would have made another worse.
+
+- **Fixed** an in-flight answer being destroyed by a reload or a navigation.
+  The question was persisted before its request resolved, but the fact that
+  an answer was *coming* lived only in React state — so unmounting
+  `ChatPanel` discarded a completed, HTTP 200, genuinely billed answer and
+  left the thread showing an orphaned question with no answer, no error, and
+  no retry, permanently. A `pending` assistant message is now persisted
+  **with** the question before the request starts; the verdict is written by
+  a plain module-level commit from the settled promise, which does not care
+  whether anything is still mounted; and on the next mount any pending
+  message this document is not actually waiting on resolves into a retryable
+  error that says plainly that the question ran and may already have been
+  charged. Verified live in Chromium: navigating to `/help` mid-request and
+  returning now shows the real answer and the spend it incurred.
+- **Fixed** two tabs destroying each other's history. There was no `storage`
+  listener and no merge, so the last tab to write silently won. Every
+  mutation is now a read-modify-write transaction against live storage, and
+  divergent stores are reconciled by union with a resolution lattice
+  (`pending` < interrupted-`error` < a real verdict) deciding conflicts.
+  That lattice is also what makes the interruption recovery safe to run
+  eagerly: if another tab really was still waiting, its answer supersedes
+  the "lost" marker automatically — no timeout, heartbeat, or cross-tab
+  lock.
+- **Fixed** the running cost total resetting to $0.000 on reload while the
+  durable thread that earned it was still fully on screen, and showing two
+  different figures in two tabs. Cost now rides back on the assistant
+  message and is written to an append-only, message-attributed, deduplicated
+  spend ledger by the same commit that persists the answer — so it survives
+  a reload, matches what is rendered, is identical in every tab, and records
+  even the answer that completed after the page unmounted. The shell's
+  `logInteractions` side-effect channel was removed: two competing cost
+  channels, one persistent and one ephemeral, *was* the inconsistency. The
+  pill is relabelled **"Model spend"**, because it no longer resets and
+  calling it a session cost would be a new inaccuracy. The ledger
+  deliberately outlives thread eviction and the chat-crash `Reset` — a total
+  that can go *down* is under-reporting by another name (Constitution
+  Principle V).
+- **Fixed** the composer's textarea growing without bound on a long paste,
+  which pushed the Send button off screen. `max-h` plus internal scrolling,
+  on the shared `ui/textarea.tsx` primitive as well as the chat instance
+  that overrides its sizing.
+- **Found by driving a real browser, not by reading the code** — and worth
+  recording because both would have let the pass ship looking correct.
+  (1) Reloading mid-request does not merely orphan the request: the browser
+  *aborts* it, and that rejection reaches the catch block **before** the page
+  tears down. The interruption was therefore being written as a "couldn't
+  reach your data" transport error — false, since the request had already
+  been sent, and destructive, since it overwrote the pending record the next
+  load needed. A `beforeunload`/`pagehide` flag suppresses that write;
+  measured, a `pagehide`-only flag loses the race and is still false when the
+  rejection lands. (2) Two tabs opening on an empty key each minted their own
+  thread id, so reloading the first tab landed the reader on the second
+  tab's thread — nothing destroyed, but a confusing echo of the very bug
+  being fixed.
+- **Tested**: 15 new tests covering the merge, the lattice, the ledger's
+  durability and dedupe, an answer resolving after unmount, an
+  abort-on-teardown, and the cost total across a reload. Each was
+  mutation-checked against a reintroduction of the original bug. Plus a
+  19-check Playwright pass driving the real repros in Chromium — reload
+  mid-flight, navigate-away mid-flight, two live tabs, cost across reload
+  and remount, and the textarea ceiling — all green.
+
+---
+
 ## 2026-08-29 — Correction: date-range comparison was never the model's job
 
 A review of the model-swap entry below surfaced an architectural problem the
