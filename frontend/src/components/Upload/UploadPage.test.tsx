@@ -1,5 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import UploadPage from './UploadPage'
@@ -25,6 +26,26 @@ async function selectFile(file: File) {
   await user.upload(input, file)
 }
 
+/**
+ * `UploadPage` now calls `useUnsavedChangesGuard`, which calls React
+ * Router's `useBlocker` — only valid inside a data router
+ * (`createMemoryRouter`/`RouterProvider`, matching `router.test.tsx`'s own
+ * pattern), never a bare `render()`. A second route stands in for
+ * "anywhere else in the app" — `/close` specifically, since that's the real
+ * page the QA report names as the natural next stop mid-preview.
+ */
+function renderPage() {
+  const router = createMemoryRouter(
+    [
+      { path: '/upload', element: <UploadPage /> },
+      { path: '/close', element: <p>Today's Close</p> },
+    ],
+    { initialEntries: ['/upload'] },
+  )
+  render(<RouterProvider router={router} />)
+  return router
+}
+
 describe('UploadPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -35,7 +56,7 @@ describe('UploadPage', () => {
       error: 'invalid_cost_sheet',
       detail: 'ingest: cost_sheet.csv row 3: amount: money: invalid value "n/a"',
     })
-    render(<UploadPage />)
+    renderPage()
 
     await selectFile(testFile())
 
@@ -71,7 +92,7 @@ describe('UploadPage', () => {
         },
       ],
     })
-    render(<UploadPage />)
+    renderPage()
 
     await selectFile(testFile())
 
@@ -87,7 +108,7 @@ describe('UploadPage', () => {
   })
 
   it('re-validates and reports the before/after margin effect on commit', async () => {
-    render(<UploadPage />)
+    renderPage()
 
     stubFetchOnce(true, {
       row_count: 1,
@@ -121,7 +142,7 @@ describe('UploadPage', () => {
   })
 
   it('reports "no prior data" honestly rather than a fabricated zero on a first-ever commit', async () => {
-    render(<UploadPage />)
+    renderPage()
 
     stubFetchOnce(true, {
       row_count: 1,
@@ -166,7 +187,7 @@ describe('UploadPage', () => {
       total_amount: '0.00',
       rows: [],
     })
-    render(<UploadPage />)
+    renderPage()
 
     await selectFile(testFile())
 
@@ -178,12 +199,124 @@ describe('UploadPage', () => {
   })
 
   it('offers a template download link pointing at the real backend endpoint', () => {
-    render(<UploadPage />)
+    renderPage()
 
     const link = screen.getByRole('link', { name: /download template/i })
     expect(link).toHaveAttribute(
       'href',
       expect.stringContaining('/api/ingest/cost-sheet/template'),
     )
+  })
+
+  describe('unsaved-changes guard', () => {
+    it('does not warn navigating away from the idle, untouched picker', async () => {
+      const router = renderPage()
+
+      await router.navigate('/close')
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+    })
+
+    it('warns before an in-app navigation discards a staged, uncommitted preview', async () => {
+      stubFetchOnce(true, {
+        row_count: 1,
+        total_amount: '100.00',
+        rows: [
+          {
+            invoice_id: 'INV-TEST-001',
+            invoice_date: '2026-08-01',
+            supplier: 'Test Produce Co.',
+            category: 'produce',
+            amount: '100.00',
+            notes: '',
+            source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+          },
+        ],
+      })
+      const router = renderPage()
+
+      await selectFile(testFile())
+      await screen.findByText('INV-TEST-001')
+
+      void router.navigate('/close')
+
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+        /discard this cost sheet preview/i,
+      )
+
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      // The staged preview is still right there — Cancel never lost it.
+      expect(screen.getByText('INV-TEST-001')).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/upload')
+    })
+
+    it('discards the staged preview and completes the navigation on explicit confirm', async () => {
+      stubFetchOnce(true, {
+        row_count: 1,
+        total_amount: '100.00',
+        rows: [
+          {
+            invoice_id: 'INV-TEST-001',
+            invoice_date: '2026-08-01',
+            supplier: 'Test Produce Co.',
+            category: 'produce',
+            amount: '100.00',
+            notes: '',
+            source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+          },
+        ],
+      })
+      const router = renderPage()
+
+      await selectFile(testFile())
+      await screen.findByText('INV-TEST-001')
+
+      void router.navigate('/close')
+
+      const user = userEvent.setup()
+      await user.click(await screen.findByRole('button', { name: /discard preview/i }))
+
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/close')
+    })
+
+    it('does not warn navigating away once the cost sheet has actually been committed', async () => {
+      stubFetchOnce(true, {
+        row_count: 1,
+        total_amount: '100.00',
+        rows: [
+          {
+            invoice_id: 'INV-TEST-001',
+            invoice_date: '2026-08-01',
+            supplier: 'Test Produce Co.',
+            category: 'produce',
+            amount: '100.00',
+            notes: '',
+            source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+          },
+        ],
+      })
+      const router = renderPage()
+      await selectFile(testFile())
+      await screen.findByText('INV-TEST-001')
+
+      stubFetchOnce(true, {
+        rows_committed: 1,
+        before: { days: 14, margin: '1000.00' },
+        after: { days: 14, margin: '950.00' },
+      })
+      const user = userEvent.setup()
+      await user.click(screen.getByRole('button', { name: /replace cost sheet/i }))
+      await screen.findByText(/cost sheet ingested/i)
+
+      await router.navigate('/close')
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+    })
   })
 })
