@@ -46,6 +46,10 @@ import {
   type ThreadStore,
 } from '@/lib/chatStorage'
 import AnswerText from '@/components/Chat/AnswerText'
+import {
+  findAdvisoryCapability,
+  type BusinessInsightKind,
+} from '@/capabilities'
 import BusinessInsightChip, {
   type BusinessInsightTeaser,
   type ResolveBusinessInsight,
@@ -183,6 +187,20 @@ export interface AnswerChatMessage {
    * (see {@link BusinessInsightChip}), never auto-fetched.
    */
   businessInsight?: BusinessInsightTeaser
+  /**
+   * Set only when this answer was produced by the guided composer's ADVISORY
+   * path (`QuestionComposer`'s `onRequestAdvice`) — the insight kind the owner
+   * deliberately asked for advice about.
+   *
+   * It exists to make one outcome honest. The advisory path computes the
+   * pattern first and the teaser is derived from that real result, so a clean
+   * period legitimately produces no teaser at all. Without this field, that
+   * outcome is indistinguishable from "advice was never requested": the owner
+   * asked a question about discrepancies, got a perfectly good answer, and no
+   * chip — with no way to know their advice request was answered by the
+   * absence of a problem. With it, {@link AnswerBubble} can say so.
+   */
+  requestedInsightKind?: BusinessInsightKind
   askedAt: string
 }
 
@@ -868,6 +886,26 @@ function AnswerBubble({
             />
           </div>
         ) : null}
+
+        {/* The advisory path's honest empty outcome: advice was deliberately
+            requested, the pattern was computed, and it simply isn't there.
+            That is a real answer to the request, not a failure and not
+            silence — and no model call was made, so nothing was charged.
+            Wears the same dashed warning language as the chip it stands in
+            for, so it reads as the advisory lane's outcome rather than as
+            part of the computed answer above it. */}
+        {message.requestedInsightKind && !message.businessInsight ? (
+          <div className="border-t border-border pt-2.5">
+            <p className="rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3.5 py-2.5 text-xs leading-relaxed text-muted-foreground">
+              <span className="mr-1.5 font-semibold uppercase tracking-wide text-warning-text">
+                No advice needed
+              </span>
+              {findAdvisoryCapability(message.requestedInsightKind)
+                ?.unavailableNote ??
+                'The pattern you asked for advice about is not present in this period.'}
+            </p>
+          </div>
+        ) : null}
       </div>
     </li>
   )
@@ -1246,7 +1284,17 @@ export default function ChatPanel({
   }, [])
 
   const submitQuestion = React.useCallback(
-    async (rawText: string) => {
+    async (
+      rawText: string,
+      /**
+       * Present only for the guided composer's advisory path — see
+       * {@link AnswerChatMessage.requestedInsightKind}. Every other caller
+       * (typed question, example chip, follow-up chip, retry, clarification
+       * option) is typed `(text: string) => void` and cannot pass it, so the
+       * normal ask path is unchanged by its existence.
+       */
+      requestedInsightKind?: BusinessInsightKind,
+    ) => {
       const text = rawText.trim()
       if (!text || isPending) return
 
@@ -1279,7 +1327,15 @@ export default function ChatPanel({
           pendingClarification,
           previousExchange,
         )
-        setMessages((previous) => [...previous, answer])
+        // Tagged only on a real answer: a refusal or a clarifying question
+        // has no computed result to have found (or not found) a pattern in,
+        // so claiming "we checked and it's clean" there would be a lie.
+        setMessages((previous) => [
+          ...previous,
+          requestedInsightKind && answer.kind === 'answer'
+            ? { ...answer, requestedInsightKind }
+            : answer,
+        ])
       } catch (error) {
         // Nielsen #9, help users recognize and recover from errors. Before
         // this pass a failed `/api/ask` (backend down, non-2xx) rejected into
@@ -1723,6 +1779,16 @@ export default function ChatPanel({
         onAsk={(question) => {
           setComposerOpen(false)
           void submitQuestion(question)
+        }}
+        // The advisory path stays a distinct action all the way through: it
+        // submits the grounding question through the same guaranteed-
+        // answerable `/api/ask` flow, but carries the requested insight kind
+        // with it so the answer can account for the advice request either
+        // way. The billed advice call itself still happens only on an
+        // explicit tap of the chip (spec FR-014) — never automatically here.
+        onRequestAdvice={(request) => {
+          setComposerOpen(false)
+          void submitQuestion(request.question, request.insightKind)
         }}
         minDate={coverage.start}
         maxDate={coverage.end}
