@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import LogReplacementForm, { type FlaggedCampaign } from './LogReplacementForm'
@@ -35,6 +36,29 @@ function findPromotionsPostCall(fetchMock: ReturnType<typeof vi.fn>) {
   return call
 }
 
+/**
+ * `LogReplacementForm` now calls `useUnsavedChangesGuard`, which calls
+ * React Router's `useBlocker` — only valid inside a data router
+ * (`createMemoryRouter`/`RouterProvider`, matching `router.test.tsx`'s own
+ * pattern), never a bare `render()`. A second route stands in for "anywhere
+ * else in the app" so tests can drive an in-app navigation away and observe
+ * whether the discard-confirmation guard actually fires.
+ */
+function renderForm(props: {
+  flaggedCampaigns: FlaggedCampaign[]
+  onCreated: () => void
+}) {
+  const router = createMemoryRouter(
+    [
+      { path: '/promotions', element: <LogReplacementForm {...props} /> },
+      { path: '/close', element: <p>Today's Close</p> },
+    ],
+    { initialEntries: ['/promotions'] },
+  )
+  render(<RouterProvider router={router} />)
+  return router
+}
+
 async function fillRequiredFields(
   user: ReturnType<typeof userEvent.setup>,
   overrides: { campaignId?: string; spend?: string } = {},
@@ -57,7 +81,7 @@ describe('LogReplacementForm', () => {
   })
 
   it('renders every FR-005 field plus the optional replaces dropdown', () => {
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     expect(screen.getByLabelText(/platform/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/campaign identifier/i)).toBeInTheDocument()
@@ -68,7 +92,7 @@ describe('LogReplacementForm', () => {
   })
 
   it('constrains the platform field to a <select> offering ONLY the known platforms, never free text', () => {
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     const platformField = screen.getByLabelText<HTMLSelectElement>(/^platform$/i)
     // A real <select>, not a text <input> an owner could type "Ifood" into
@@ -88,7 +112,7 @@ describe('LogReplacementForm', () => {
   })
 
   it('populates the replaces dropdown ONLY from the flagged campaigns already on screen', () => {
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     const select = screen.getByLabelText(/replacing a flagged campaign/i)
     expect(
@@ -100,7 +124,7 @@ describe('LogReplacementForm', () => {
   })
 
   it('disables the dropdown and says so plainly when there are no flagged campaigns', () => {
-    render(<LogReplacementForm flaggedCampaigns={[]} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: [], onCreated: vi.fn() })
 
     const select = screen.getByLabelText<HTMLSelectElement>(
       /replacing a flagged campaign/i,
@@ -120,7 +144,7 @@ describe('LogReplacementForm', () => {
       earned_campaign_creation_badge: true,
     })
     const onCreated = vi.fn()
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={onCreated} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated })
 
     await fillRequiredFields(user)
     await user.selectOptions(
@@ -160,7 +184,7 @@ describe('LogReplacementForm', () => {
       },
       earned_campaign_creation_badge: false,
     })
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     await fillRequiredFields(user, { campaignId: 'JET-CAMP-STANDALONE' })
     await user.click(screen.getByRole('button', { name: /log promotion/i }))
@@ -180,7 +204,7 @@ describe('LogReplacementForm', () => {
       error: 'replaces_not_flagged_negative',
       detail: 'campaign_id "IFOOD-CAMP-BOOST01" is not currently flagged negative-ROI.',
     })
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     await fillRequiredFields(user)
     await user.click(screen.getByRole('button', { name: /log promotion/i }))
@@ -194,7 +218,7 @@ describe('LogReplacementForm', () => {
     const user = userEvent.setup()
     const fetchSpy = vi.fn()
     vi.stubGlobal('fetch', fetchSpy)
-    render(<LogReplacementForm flaggedCampaigns={FLAGGED} onCreated={vi.fn()} />)
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
 
     await fillRequiredFields(user, { spend: '-5' })
     // The input's own min="0" constraint blocks native form submission
@@ -209,5 +233,49 @@ describe('LogReplacementForm', () => {
     expect(
       fetchSpy.mock.calls.some(([url]) => String(url).includes('/api/promotions')),
     ).toBe(false)
+  })
+
+  describe('unsaved-changes guard', () => {
+    it('does not warn navigating away from a genuinely untouched form', async () => {
+      const router = renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+      await router.navigate('/close')
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+    })
+
+    it('warns before an in-app navigation discards a real in-progress draft, and Cancel keeps the draft and stays on the page', async () => {
+      const user = userEvent.setup()
+      const router = renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+      await user.type(screen.getByLabelText(/campaign identifier/i), 'JET-CAMP-DRAFT')
+      void router.navigate('/close')
+
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+        /discard this campaign draft/i,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(screen.getByLabelText(/campaign identifier/i)).toHaveValue('JET-CAMP-DRAFT')
+      expect(router.state.location.pathname).toBe('/promotions')
+    })
+
+    it('discards the draft and completes the navigation on explicit confirm', async () => {
+      const user = userEvent.setup()
+      const router = renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+      await user.type(screen.getByLabelText(/campaign identifier/i), 'JET-CAMP-DRAFT')
+      void router.navigate('/close')
+
+      await user.click(
+        await screen.findByRole('button', { name: /discard draft/i }),
+      )
+
+      expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/close')
+    })
   })
 })

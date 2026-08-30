@@ -1,19 +1,25 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter } from 'react-router-dom'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import PromotionsPage from './PromotionsPage'
 
 // PromotionsPage now calls useNavigate() (spec 008 FR-001, chart click-to-ask
 // navigates to /ask) — every render needs a Router ancestor, the same fix
-// PointsCard.test.tsx already applied for its own <Link>.
-function renderPage(initialEntries: string[] = ['/promotions']) {
-  return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <PromotionsPage />
-    </MemoryRouter>,
+// PointsCard.test.tsx already applied for its own <Link>. A real DATA
+// router (createMemoryRouter/RouterProvider), not the plain <MemoryRouter>
+// this used to be: PromotionsPage renders LogReplacementForm, which now
+// calls useBlocker (the unsaved-changes discard guard) — that hook throws
+// outside a data router, matching router.test.tsx's own pattern. Still
+// takes `initialEntries` so the URL-filter-restoration tests can render on
+// a specific path+search string, same as the old MemoryRouter version did.
+function renderPage(initialEntries: string[] = ['/']) {
+  const router = createMemoryRouter(
+    [{ path: '/promotions', element: <PromotionsPage /> }, { path: '/', element: <PromotionsPage /> }],
+    { initialEntries },
   )
+  return render(<RouterProvider router={router} />)
 }
 
 const PROMOTIONS_RESPONSE = {

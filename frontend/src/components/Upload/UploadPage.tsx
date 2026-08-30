@@ -10,8 +10,10 @@ import {
 
 import { Button } from '@/components/ui/button'
 import DataGrid from '@/components/Charts/DataGrid'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Chip, PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
 import { API_BASE, ApiError, postMultipart } from '@/lib/api'
+import { useUnsavedChangesGuard } from '@/lib/useUnsavedChangesGuard'
 
 // ---------------------------------------------------------------------------
 // specs/007-cost-sheet-upload: the owner uploading a corrected/new supplier
@@ -163,6 +165,15 @@ export default function UploadPage() {
   // page hasn't anticipated — the UI never lets a 0-row preview look like
   // an ordinary one with Confirm & Ingest quietly enabled underneath it.
   const previewHasNoRows = preview !== null && preview.row_count === 0
+
+  // "Meaningful in-progress content" for this page: anything staged past a
+  // blank picker and short of an actual commit — a file mid-preview, a
+  // successfully previewed table sitting on the commit button, or either
+  // one's error state. `idle` (nothing picked yet) and `committed` (the
+  // work is already saved) must never trigger the guard — see
+  // UploadPage.test.tsx.
+  const hasUnsavedChanges = stage.name !== 'idle' && stage.name !== 'committed'
+  const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesGuard(hasUnsavedChanges)
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -324,6 +335,15 @@ export default function UploadPage() {
           </Button>
         </Panel>
       ) : null}
+
+      <ConfirmDialog
+        open={isBlocked}
+        title="Discard this cost sheet preview?"
+        description="Nothing has been committed yet. Leaving this page now discards the staged file and its preview — you'd need to re-pick it and re-run the preview from scratch."
+        confirmLabel="Discard preview"
+        onConfirm={confirmDiscard}
+        onCancel={cancelDiscard}
+      />
     </PageContainer>
   )
 }

@@ -132,6 +132,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return () => query.removeEventListener('change', handleChange)
   }, [])
 
+  // Cross-tab sync. The browser only fires `storage` in OTHER tabs/windows
+  // than the one that called `localStorage.setItem` — never the origin tab
+  // — which is exactly the gap this closes: without it, a second open tab
+  // kept showing its OLD preference (both applied and in the Settings
+  // radiogroup's `aria-checked`, since that's driven straight off this
+  // `preference` state) until it was manually reloaded, so two tabs of the
+  // same single-owner app visibly disagreed about what was picked. Setting
+  // `preference` here re-derives `resolvedTheme` and re-runs the
+  // DOM-application effect above for free — no separate re-apply needed.
+  useEffect(() => {
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== THEME_STORAGE_KEY) return
+      setPreferenceState(isThemePreference(event.newValue) ? event.newValue : 'system')
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => window.removeEventListener('storage', handleStorage)
+  }, [])
+
   const value = useMemo<ThemeContextValue>(
     () => ({
       preference,
