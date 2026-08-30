@@ -1219,7 +1219,7 @@ components:
         breakdown:
           type: array
           items: { $ref: "#/components/schemas/PointsLine" }
-        spent: { type: integer, description: Points already redeemed against a promotion's spend (POST /api/promotions, payment_method:points), all-time — never scoped by ?start/?end, even when total is. }
+        spent: { type: integer, description: "Points already redeemed against a promotion's spend (POST /api/promotions, payment_method:points), all-time — never scoped by ?start/?end, even when total is." }
         available: { type: integer, description: "max(0, total - spent) — what's actually left to redeem right now. Always clamped at zero server-side, so a ?start/?end query narrow enough to make total < spent still reports 0 rather than a negative number; the true redeemable balance is always the no-period call." }
       required: [total, breakdown, spent, available]
 
