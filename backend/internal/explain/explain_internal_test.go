@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -301,6 +302,28 @@ func TestBuildSystemPrompt_AnswersDataCoreBeforeDecliningAdvice(t *testing.T) {
 	require.Contains(t, prompt, "isn't something this tool computes or has data for")
 }
 
+// TestBuildSystemPrompt_FollowUpMustRecallToolNotMemory is the narration
+// step's half of the live bug this fixes: "how can I replicate it on other
+// days?" asked right after an answer that already stated a day's margin.
+// The mixed-data-advice rule above told the model to "answer the
+// data-answerable part in full first," and on a follow-up the model
+// satisfied that by restating the figure it already saw in the previous
+// turn's text — with zero tool calls in THIS interaction — rather than
+// calling get_daily_summary again. That is indistinguishable, from this
+// package's own Finding-13 guard, from a hallucinated number, and gets
+// refused (see TestExplain_ZeroToolCallCurrencyAnswerIsRefused). This test
+// asserts the prompt fix: an explicit instruction that a figure seen
+// earlier in the conversation is background only, and answering a
+// follow-up's data-answerable core still requires a fresh tool call this
+// turn, never a recall from memory of an earlier reply.
+func TestBuildSystemPrompt_FollowUpMustRecallToolNotMemory(t *testing.T) {
+	prompt := buildSystemPrompt("2026-08-01", "2026-08-14")
+
+	require.Contains(t, prompt, "Call the relevant tool again in THIS turn",
+		"a follow-up referencing an earlier answer's figure must still be answered from a fresh tool call, not narrated from memory of the earlier turn")
+	require.Contains(t, prompt, "background, not something you may restate as this turn's answer from memory")
+}
+
 // --- Explain's tool-calling loop, against the fake llmCaller --------------
 
 func costFor(t *testing.T, inputTokens, outputTokens int64) float64 {
@@ -339,6 +362,31 @@ func TestExplain_ZeroToolCallCurrencyAnswerIsRefused(t *testing.T) {
 	// itself is refused — this was still a real, billed API call.
 	require.Equal(t, int64(100), result.InputTokens)
 	require.Equal(t, int64(20), result.OutputTokens)
+
+	// Live bug: internal/httpapi.HandleAsk forwards IncompleteReason
+	// verbatim as AskResponse.RefusalReason, and the frontend renders it
+	// verbatim in the chat bubble — so this string reaches a restaurant
+	// owner exactly as written. It must never carry the internal
+	// vocabulary of how this guard works ("MCP", "provenance", "the
+	// deterministic layer", "currency-shaped", "tool call"), only plain
+	// language a non-technical owner can act on. Mirrors
+	// ingest_test.go's TestParseCostSheet_MalformedAmountErrorIsCleanAndHumanReadable
+	// ("must never leak Go's internal parser trace to the user") and
+	// ask_error_handling_test.go's "the raw internal error must never
+	// reach the HTTP response body" — the same discipline applied to this
+	// package's own refusal copy.
+	for _, jargon := range []string{
+		"MCP",
+		"tool call",
+		"provenance",
+		"deterministic layer",
+		"currency-shaped",
+	} {
+		require.NotContains(t, result.IncompleteReason, jargon,
+			"refusal message must never leak this internal implementation term to a restaurant owner")
+	}
+	require.Contains(t, strings.ToLower(result.IncompleteReason), "guess",
+		"the owner-facing rewrite should still say plainly that it's refusing rather than guessing")
 }
 
 // TestExplain_ZeroToolCallNonCurrencyAnswerStillAllowed proves the guard

@@ -12,6 +12,48 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Owner-facing refusal wording, and the follow-up that triggered it
+
+Reported live: a follow-up like "how can I replicate it on other days?"
+(asked right after an answer that already stated a day's margin) came back
+refused with `"model stated a currency-shaped figure without making any
+MCP tool call or collecting any provenance — refusing rather than trusting
+a number that cannot trace to the deterministic layer"` — raw internal
+debugging language ("MCP", "provenance", "the deterministic layer")
+verbatim in the restaurant owner's chat.
+
+Traced to `internal/explain/explain.go`'s Finding-13 guard: a correct,
+intentional check (Constitution Principle I) that refuses any final answer
+which states a currency-shaped figure without this interaction having made
+a single MCP tool call — a number that cannot trace to a tool result cannot
+be trusted, whatever the model claims. The check itself was right; two
+things around it were not.
+
+**Root cause, not just wording:** the same-day "mixed data-plus-advice"
+fix's new instruction ("answer the data-answerable part in full first")
+had no guidance for a *follow-up* question. Given an earlier turn's answer
+in context, the model satisfied "answer in full" by restating the figure
+it already saw in that earlier text — genuinely correct, but with zero
+tool calls in *this* interaction — which the guard (correctly) cannot
+distinguish from a hallucinated number, and refused. Live reproduction
+before the fix: 16 of 17 tries of a "replicate this on other days"-style
+follow-up hit this refusal. Added an explicit rule to
+`explain.go`'s system prompt: an earlier turn's figure is background only;
+answering a follow-up's data-answerable core still requires calling the
+relevant tool again in *this* turn. Re-verified after the fix: 0 of 17
+identical tries refused (plus 3 additional adversarial phrasings
+explicitly asking the model not to re-check — still 0 refusals), with the
+model now re-calling `get_daily_summary` on the follow-up as intended.
+
+**Wording, for whenever the guard still legitimately fires:** rewrote the
+refusal text itself to the same plain, owner-facing voice already used
+elsewhere (`internal/ambiguity/daterange.go`'s `precheckRefusalReason`,
+`gate.go`'s writer pass) — what happened, why, what to do next, no
+internal component names. New test
+(`TestExplain_ZeroToolCallCurrencyAnswerIsRefused` in
+`explain_internal_test.go`) asserts the message never contains "MCP",
+"tool call", "provenance", "deterministic layer", or "currency-shaped".
+
 ## 2026-08-30 — Fixed a chat refusal that promised data it never delivered
 
 Reported live: asking "what should I change about staffing, menu, or
