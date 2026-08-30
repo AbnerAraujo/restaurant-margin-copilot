@@ -5,7 +5,7 @@ spirit of [Keep a Changelog](https://keepachangelog.com/), adapted for how this
 project actually shipped: a single continuous take-home build across two real
 dates, not versioned releases. Entries are grouped by date and then by
 milestone, reverse-chronological. Every entry below is derived from this
-repo's own `git log` (146 commits, 2026-08-27 through 2026-08-29) — nothing
+repo's own `git log` (2026-08-27 through 2026-08-30) — nothing
 here is invented, and honest bugs/regressions are named, not smoothed over,
 matching this project's own stated documentation discipline (Constitution
 Principle V: report what happened, including failures).
@@ -81,7 +81,122 @@ fixing any one of them narrowly would have made another worse.
   mid-flight, navigate-away mid-flight, two live tabs, cost across reload
   and remount, and the textarea ceiling — all green.
 
+## 2026-08-30 — One catalog of what this product can do, and advice you can ask for
+
+- **Fixed the class of bug behind two shipped defects**, rather than the
+  defects themselves. Both the Help page's hardcoded "seven tools" (after an
+  eighth shipped) and `Chat/exampleQuestions.ts`'s still-missing eighth entry
+  had one cause: several independent hand-maintained capability lists, none of
+  which anything checked. `frontend/src/capabilities.ts` is now the one
+  catalog — the 8 typed MCP tools and the 5 business-insight kinds — and
+  `capabilities.test.ts` holds it against the real Go code, parsing
+  `internal/mcptools/*.go` for every registered `mcp.NewTool`,
+  `internal/advisor/advisor.go` for every insight `Kind` constant, and
+  `contracts/mcp-tools.md`, asserting agreement in both directions. A shared
+  TypeScript module alone would not have caught either bug — every consumer
+  would have agreed on the same incomplete list. Ship a ninth tool without
+  surfacing it and the frontend suite now goes red naming it. Deliberately a
+  drift alarm, not a codegen pipeline: the plain-language labels are human
+  copy no generator could write.
+- **Changed** `GUIDED_CATEGORIES` from a second hand-maintained list into a
+  derivation of that catalog. The Help page already imported it, so both
+  surfaces now read one list. Public names are unchanged.
+- **Added** a business-advice path to the guided composer. The Business
+  Insight Advisor was previously reachable only by asking an ordinary
+  question and hoping a teaser chip appeared; the composer now offers it
+  deliberately, one topic per insight kind, visually separated from the 8
+  computed categories and wearing `BusinessInsightChip`'s own dashed
+  warning surface, lightbulb, and "AI suggestion" label rather than a
+  second visual language invented for it.
+- **Recorded** the constraint that shaped it, since the obvious design is
+  wrong: advice cannot be requested directly. `HandleBusinessInsight`
+  refuses any request whose posted `tool_calls` don't re-derive to the
+  claimed kind (spec SC-005), and the chip may only fetch on an explicit
+  tap (FR-014). So the composer computes the pattern first — through the
+  same `/api/ask` flow and the same date-bounds gate as the other 8, using
+  literally the same `composeGuidedQuestion` output, so it cannot reach a
+  question the computed path wouldn't have — and leaves the billed call to
+  the owner's tap. Verified live against the real backend and Postgres:
+  the composer's own composed platform-comparison question for August 2024
+  returned iFood at a 22.62% effective rate with a `high_commission`
+  teaser, and the advice call returned real grounded guidance for $0.006568
+  on `claude-sonnet-5` (1,524 in / 352 out, 4.7s), disclaimed and priced on
+  screen. The two refusal paths were confirmed too: an ungrounded request
+  is a 400, and a clean `list_discrepancies` result is a 422 — the composer
+  has no route around grounding.
+- **Added** the honest empty outcome. A clean period produces no teaser,
+  which was previously indistinguishable from an advice request going
+  nowhere. An answer tagged with a requested insight kind but carrying no
+  teaser now says so in the advisory lane's own styling, at no cost.
+- **Known gap, disclosed:** `Chat/exampleQuestions.ts` still has no eighth
+  entry and still keeps its own list. Migrating it to the catalog is a
+  content decision (one example question per capability) deliberately left
+  as follow-up rather than folded into this change.
+
 ---
+
+## 2026-08-30 — The evaluation harness had been grading its own cache
+
+Every KR, accuracy, cost and points figure in the README, PRD and deck was
+re-derived from the real database and real harness runs. Several moved
+downward, and the reason is itself the finding. Full method, every failure
+by name, and the reproducing SQL: `docs/product-strategy.md`, entry of the
+same date.
+
+- **Fixed** the measurement itself. The harness runs against its own backend
+  on `:8092` so it never disturbs the running app, but that instance still
+  shared the product's `answer_cache` table — so a re-run was served largely
+  from the *previous* run's cached answers (**25 of 35 questions**, two
+  suites finishing in **0s**). It was reporting a pass rate for the cache,
+  not for the model path it exists to grade. `cmd/server` now takes
+  **`-eval-no-answer-cache`**, wiring `POST /api/ask` with a nil `Cache` for
+  that process only — a mode `httpapi.Deps` already supported. It never
+  clears the shared cache.
+- **Changed** the reported numbers accordingly, from two full uncached runs
+  (both reported, not the better one, because the model layer is not
+  deterministic): accuracy **14/15 and 14/15** (was 15/15), consistency
+  **13/15 and 15/15** (was 15/15), refusal **5/5 and 4/5** (was 5/5), cost
+  **$0.0313/question** over 70 questions and 142 model calls (was ~$0.025),
+  against KR4's unchanged $0.05 bar.
+- **Fixed** a real 502 the uncached runs exposed: "How was the weekend?" —
+  the canonical ambiguity example in `CLAUDE.md` — failed **twice in four
+  attempts** with `gate_failed`, because the ambiguity gate hit its
+  1536-token output cap mid-clarification. An ambiguous verdict is the
+  gate's true worst case: it must classify, then write both a clarifying
+  question and its options in one budget. Cap raised to **2560**, the third
+  such raise and, as with the previous two, made on measured evidence rather
+  than precautionarily. Not recurred since.
+- **Added** regression guards for the two key results that were true only by
+  construction — nothing would have failed if the real data stopped
+  satisfying them. `TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance`
+  (KR3) asserts the live database still yields a flagged negative-ROI
+  campaign at the hand-computed −$450.75 with file+row provenance.
+  `TestOpeningWindow_PersistedWithZeroSilentDataLoss` (KR2) reads the
+  persisted opening window back and asserts all 14 days present exactly once
+  plus one check per deliberate irregularity — the permanent form of the
+  hand-run `psql` query that once caught 13 rows where there should have
+  been 14.
+- **Not fixed, and named instead.** Accuracy's **A15** failed in *every*
+  uncached run: asked for delivery revenue net of the refund, the model
+  returns gross $446.25 and the $62.25 refund with provenance and then
+  declines to net them to $384.00, because no tool returns that figure and
+  it will not present its own arithmetic as computed. That is Principle I
+  working; the defect is a **gap in the tool contract**, left open. Two
+  grading regexes that rejected correct answers (refusal R1's blanket
+  "$0.00" guard, consistency C3's wording list) were also **deliberately
+  left untuned** — editing a grader right after watching it fail makes the
+  resulting number unreadable.
+- **Corrected** a unit error the old figures rested on: a
+  `question_interaction` row is one **model call**, and an answered question
+  writes two, so "$7.3698 across 635 logged interactions" conflated calls
+  with questions and understated a question's cost by roughly half. It also
+  omitted the `business_insight_interaction` ledger. Current real totals:
+  **$12.6855 across 1,006 model calls**.
+- **Corrected** the live points figure everywhere, including a stale doc
+  comment in `internal/badges` that quoted it: **12,345 points from 775
+  badges** (458 Clean Close, 301 Discrepancy Catcher, 16 Growth), not the
+  200 shown previously — that figure dated from when the database held 14
+  days rather than 759. No badge logic changed.
 
 ## 2026-08-29 — Correction: date-range comparison was never the model's job
 

@@ -201,11 +201,20 @@ const (
 
 // CentsPerPoint is the fixed, disclosed rate a Steward point redeems for
 // when an owner pays for a promotion's spend with points instead of money
-// (POST /api/promotions, internal/httpapi) — 1 point = $0.10. A round,
-// modest rate: at this build's real 200-point balance, that's $20.00 of
-// campaign spend fundable from points alone. Never adjusted per-owner or
-// per-promotion — one rate, everywhere, so "how many points is this" is
-// always the same arithmetic.
+// (POST /api/promotions, internal/httpapi) — 1 point = $0.10. Never
+// adjusted per-owner or per-promotion — one rate, everywhere, so "how many
+// points is this" is always the same arithmetic.
+//
+// This comment used to add "at this build's real 200-point balance, that's
+// $20.00 of campaign spend fundable from points alone". That was true of a
+// database holding 14 days. Against the 759 days it holds now the real
+// balance is 12,345 points (GET /api/badges, 2026-08-30), and the rate
+// stops reading as modest at that scale. Deliberately not re-tuned here:
+// the rate is a disclosed product decision, the balance is a consequence of
+// how much history is loaded, and a comment that quotes a live number ages
+// into a false one — which is exactly what happened. Any real
+// discussion of the redemption economics belongs in
+// docs/product-strategy.md, not in a constant's doc comment.
 const CentsPerPoint = 10
 
 // PointsNeededForSpend converts a campaign's spend into the whole number of

@@ -105,7 +105,24 @@ var ErrEmptyQuestion = errors.New("ambiguity: question is empty")
 // loosening into open-ended prose — a response that still hits it is
 // caught explicitly by the stop_reason check in Classify, never silently
 // trusted.
-const MaxOutputTokens = 1536
+//
+// Raised a THIRD time, from 1536 to 2560, on 2026-08-30, after the
+// evaluation harness was re-run with the answer cache disabled
+// (cmd/server -eval-no-answer-cache) and every question therefore reached
+// the model instead of being served from a previous run's cached answer.
+// That measured refusal.yaml four times and truncated twice — both on
+// "How was the weekend?", the canonical ambiguity example in CLAUDE.md,
+// which the owner sees as a generic 502 "the ambiguity check failed".
+// Worth noting WHY the flagship ambiguous question is the expensive one:
+// an ambiguous verdict has to classify, then compose a clarifying
+// question AND its list of clarifying options, all inside this one
+// budget — strictly more output than either an answerable verdict (a
+// classification and nothing else) or the unanswerable verdict that
+// forced the previous raise. So the observed ceiling was never the real
+// worst case; this is. 2560 is sized for that worst case with headroom,
+// and the stop_reason check below still turns any future overrun into a
+// loud, logged failure rather than a truncated verdict quietly trusted.
+const MaxOutputTokens = 2560
 
 // Decision is the gate's classification of one question, plus the
 // token/cost/latency figures the caller (internal/httpapi) hands straight

@@ -32,15 +32,23 @@ whole build follows.
 
 ## What's real right now
 
-Queried live against the running Postgres database on 2026-08-29:
+Queried live against the running Postgres database on 2026-08-30:
 
 | | |
 |---|---|
-| Reconciled days in the database | **759** — one continuous dataset, 2024-08-01 through 2026-08-29 (today), whose first 14 days are hand-authored ground truth — see [below](#one-dataset-hand-authored-opening-generated-history) |
-| Logged model interactions | **635**, cumulative real Anthropic API spend **$7.3698**, per-call in `question_interaction` |
-| Accuracy on the eval harness's known-answer questions | **15/15 (100%)**, grounded in the dataset's hand-authored opening window — see [Real evaluation results](#real-evaluation-results) |
+| Reconciled days in the database | **759** — one continuous dataset, 2024-08-01 through 2026-08-29, whose first 14 days are hand-authored ground truth — see [below](#one-dataset-hand-authored-opening-generated-history) |
+| Logged model calls | **1,006**, cumulative real Anthropic API spend **$12.6855** — $12.6387 across 999 rows in `question_interaction`, $0.0468 across 7 in `business_insight_interaction` |
+| Measured cost per question | **$0.0313** — 70 questions through the full uncached gate+explain path, 142 model calls, $2.1931 (KR4's bar is $0.05) |
+| Accuracy on the eval harness's known-answer questions | **14/15**, twice, with the cache disabled — the one failure is a real tool-contract gap, described in [Real evaluation results](#real-evaluation-results) |
+| Earned Steward points | **12,345** (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
 | MCP tools exposed to the model | **7** typed, read-only tools — no open SQL, no free-form computation |
 | Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Settings |
+
+A note on units, because the earlier version of this table blurred them: a
+row in `question_interaction` is one **model call**, not one question. An
+answered question writes two (the ambiguity gate, then the explanation), so
+the per-question figure above — the one KR4 is stated over — is measured
+over a known question count, not by averaging the ledger.
 
 Shipped since the original take-home submission, in addition to the core
 product: a **points-payment feature** (fund a promotion's spend with earned
@@ -189,21 +197,67 @@ total, all grounded in the dataset's hand-authored opening window — the only
 slice whose correct answers were computed independently of this system's own
 code), reported honestly including the failures — see
 `docs/product-strategy.md`'s dated fix sections for the full breakdown,
-root-cause analysis, and every before/after re-run, including the 2026-08-29
-harness rebuild after the dataset unification.
+root-cause analysis, and every before/after re-run.
 
-| Metric | Result (2026-08-29 run, sequential, fresh cache) |
-|---|---|
-| Accuracy | 15/15 (100%) — the two long-standing failures (A7, a grading-regex false negative; A15, refund-by-source attribution) were fixed by the harness rebuild and an earlier tool-contract fix respectively |
-| Consistency (5 questions × 3 phrasings each) | 15/15 after two grading-artifact fixes; the first pass scored 10/15, with all 5 failures hand-verified as correct answers tripping over-strict assertions (documented in `docs/product-strategy.md`) |
-| Refusal correctness (5 unanswerable questions) | 5/5 (100%) |
-| Cost per interaction, this eval run | ~$0.025/question average |
-| Cumulative real API spend, all activity to date | $7.3698 across 635 logged interactions, queried live from `question_interaction` (2026-08-29) |
+**These numbers replaced a higher, wrong set on 2026-08-30.** The harness
+runs against its own backend on `:8092`, but that instance still shared the
+product's `answer_cache` table, so a re-run was being served largely from
+the *previous* run's cached answers — 25 of 35 questions, two suites
+finishing in 0s. It was grading the cache, not the model. `cmd/server` now
+takes `-eval-no-answer-cache`, and everything below is measured with it on,
+so every graded answer is a real gate + explain round trip. Because the
+model layer is not deterministic, the suite was run twice end to end and
+both runs are reported rather than the better one.
+
+| Metric | Run A | Run B |
+|---|---|---|
+| Accuracy (15 known-answer questions) | 14/15 | 14/15 |
+| Consistency (5 questions × 3 phrasings) | 13/15 | 15/15 |
+| Refusal correctness (5 unanswerable questions) | 5/5 | 4/5 |
+| Cost | 70 questions across both runs · 142 model calls · **$2.1931** · **$0.0313/question** |||
+
+Every failure was hand-read from the raw JSON. None was a wrong number:
+
+- **A15 — "Delivery revenue on 2024-08-02, net of the refund?" (failed in
+  every uncached run).** The model returns gross $446.25 and the $62.25
+  refund, both with provenance, and then explicitly declines to net them to
+  $384.00 because no tool returns a net-of-refund delivery figure and it
+  will not present its own arithmetic as a computed result. That is
+  Constitution Principle I behaving exactly as designed. The real defect is
+  a **gap in the tool contract**, not in the model: `get_daily_summary`
+  exposes gross and refunds separately and nothing exposes the net. This is
+  the most useful thing the re-measurement found, and it is open, not fixed.
+- **R1 — the missing-delivery day.** The answer states the source is
+  missing and explicitly disclaims the `$0.00` as an absence rather than a
+  real zero, which is the required behavior, but trips `refusal.yaml`'s
+  blanket "no `$0.00` anywhere" guard. That same guard was diagnosed and
+  removed from `consistency.yaml`'s C5 on 2026-08-29; `refusal.yaml` never
+  got the matching fix. It is **deliberately left in place** — tuning a
+  grader after watching it fail is how a number stops meaning anything.
+- **C1a (run A).** One of three phrasings asked a clarifying question
+  ("both platforms, or one?") instead of answering. A genuine consistency
+  divergence — precisely what this suite exists to catch.
+- **C3 (run A).** A correct, provenanced answer (−$450.75 on $610.00 spend
+  against $159.25 attributed revenue) that says "lost money", which the
+  assertion's `negative|not profitable|loss|underperform` vocabulary does
+  not match. Also left untouched, for the same reason as R1.
+
+A fifth failure was found and **fixed**: on the pre-fix runs, "How was the
+weekend?" returned a 502 twice in four attempts because the ambiguity
+gate's response hit its 1536-token output cap mid-clarification. An
+ambiguous verdict is the gate's true worst case — it must classify, then
+write both a clarifying question and its options in one budget. The cap is
+now 2560 (`internal/ambiguity/gate.go`, the third such measured raise), and
+the truncation has not recurred.
 
 The deterministic reconciliation/ingestion/MCP-tool layer showed **zero
-defects** across the full run — every failure traced to the model layer's
-date-grounding and tool/entity-selection behavior, which is the specific
-boundary this architecture's Go/model split is designed to contain.
+defects** across every run — as before, every failure sits in the model
+layer or in the grader, which is the specific boundary this architecture's
+Go/model split is designed to contain. KR2 and KR3 are no longer taken on
+trust either: `TestOpeningWindow_PersistedWithZeroSilentDataLoss`
+(`internal/storage`) and
+`TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance`
+(`internal/mcptools`) assert both against the real persisted dataset.
 
 **Why refusal correctness is the only pre-committed target here.** Accuracy
 and consistency are measured and reported honestly, failures included, but
@@ -216,13 +270,21 @@ Principle II states the reasoning directly — "a confidently wrong margin
 figure is a worse outcome than a refusal" — because in a margin-tracking
 tool, a plausible-looking wrong number can drive a real business decision
 (cutting a shift, dropping a supplier), where an honest "I don't have that
-data" costs nothing. The 5/5 result is scored against
+data" costs nothing. The result is scored against
 `evaluation/promptfoo/refusal.yaml`'s five deliberately unanswerable-or-
 ambiguous questions (a missing delivery-source day, an unattributable
 promo's ROI, a data source that doesn't exist, a date before the dataset
 begins, and a genuinely ambiguous "how was the weekend") — each one
 engineered against a real gap the ambiguity gate has to catch *before* any
 tool call runs, not a softball.
+
+And it is the one target where the honest answer is now **5/5 and 4/5, not
+a flat 5/5**. The single miss is R1's grader, described above: the system
+refused correctly and said why, and the assertion rejected the wording. The
+pre-committed claim was 100% refusal *correctness*, and on a hand-read of
+all ten graded answers across both runs it holds — but the number printed
+by the harness is 9/10, and that is the number reported, because a target
+you get to re-score yourself is not a target.
 
 ## Stack
 
