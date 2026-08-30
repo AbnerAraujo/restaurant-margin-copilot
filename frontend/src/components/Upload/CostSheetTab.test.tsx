@@ -433,4 +433,54 @@ describe('CostSheetTab', () => {
 
     expect(mockFetch).toHaveBeenCalledTimes(1)
   })
+
+  it('a Supplier column filter narrows the preview to just that supplier\'s rows', async () => {
+    stubFetchOnce(true, {
+      row_count: 3,
+      total_amount: '250.25',
+      rows: [
+        {
+          invoice_id: 'INV-TEST-001',
+          invoice_date: '2026-08-01',
+          supplier: 'Test Produce Co.',
+          category: 'produce',
+          amount: '100.00',
+          notes: '',
+          source_row_ref: { file: 'cost_sheet.csv', row: 2 },
+        },
+        {
+          invoice_id: 'INV-TEST-002',
+          invoice_date: '2026-08-02',
+          supplier: 'Test Beverage Co.',
+          category: 'beverage',
+          amount: '50.25',
+          notes: '',
+          source_row_ref: { file: 'cost_sheet.csv', row: 3 },
+        },
+        {
+          invoice_id: 'INV-TEST-003',
+          invoice_date: '2026-08-03',
+          supplier: 'Test Produce Co.',
+          category: 'produce',
+          amount: '100.00',
+          notes: '',
+          source_row_ref: { file: 'cost_sheet.csv', row: 4 },
+        },
+      ],
+    })
+    renderPage()
+    await selectFile(testFile())
+    await screen.findByText('INV-TEST-001')
+
+    await userEvent.click(screen.getByRole('button', { name: /filter by supplier/i }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Test Beverage Co.' }))
+
+    expect(screen.getByText('INV-TEST-002')).toBeInTheDocument()
+    expect(screen.queryByText('INV-TEST-001')).not.toBeInTheDocument()
+    expect(screen.queryByText('INV-TEST-003')).not.toBeInTheDocument()
+    // The commit button and its underlying data are untouched by this
+    // client-side view filter — narrowing what's SHOWN never narrows what
+    // gets committed.
+    expect(screen.getByRole('button', { name: /replace cost sheet/i })).toBeEnabled()
+  })
 })
