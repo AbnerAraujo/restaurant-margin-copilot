@@ -163,6 +163,63 @@ describe('ThemeProvider / useTheme', () => {
     expect(screen.getByTestId('preference')).toHaveTextContent('system')
   })
 
+  it('re-syncs preference and the resolved theme when another tab changes the stored value', () => {
+    renderWithProvider()
+    expect(screen.getByTestId('preference')).toHaveTextContent('system')
+
+    // A real cross-tab change never touches this tab's own localStorage
+    // write path — the browser fires `storage` directly, with the new
+    // value already in place, and never in the tab that made the change.
+    act(() => {
+      window.localStorage.setItem(THEME_STORAGE_KEY, 'dark')
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: THEME_STORAGE_KEY,
+          newValue: 'dark',
+          oldValue: null,
+        }),
+      )
+    })
+
+    expect(screen.getByTestId('preference')).toHaveTextContent('dark')
+    expect(screen.getByTestId('resolved')).toHaveTextContent('dark')
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+
+  it('falls back to "system" when another tab clears the stored preference', () => {
+    window.localStorage.setItem(THEME_STORAGE_KEY, 'dark')
+    renderWithProvider()
+    expect(screen.getByTestId('preference')).toHaveTextContent('dark')
+
+    act(() => {
+      window.localStorage.removeItem(THEME_STORAGE_KEY)
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: THEME_STORAGE_KEY,
+          newValue: null,
+          oldValue: 'dark',
+        }),
+      )
+    })
+
+    expect(screen.getByTestId('preference')).toHaveTextContent('system')
+  })
+
+  it('ignores storage events for unrelated keys', () => {
+    renderWithProvider()
+
+    act(() => {
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: 'mbs.some.other.key',
+          newValue: 'dark',
+        }),
+      )
+    })
+
+    expect(screen.getByTestId('preference')).toHaveTextContent('system')
+  })
+
   it('throws when useTheme is called outside a ThemeProvider', () => {
     // Suppress the expected React error-boundary console noise for this one
     // assertion; the whole point of the test is that it throws.
