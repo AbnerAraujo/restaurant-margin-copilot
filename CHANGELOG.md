@@ -179,6 +179,76 @@ produced the identical margin, the identical 50 removals and the identical 5
 unresolved overlaps — the determinism the flags depend on, since a re-synced day has
 to carry byte-identical discrepancy flags to reconcile to the same numbers.
 
+## 2026-08-30 — Promotions chart: newest campaigns no longer scroll out of view unnoticed
+
+Reported by the product owner: "not all campaigns are in the chart, add all
+of them and show from the right to the left side." Investigated live against
+the real dataset (30 campaigns on file, backend on `:8080`) with Playwright
+screenshots at several viewport widths before changing anything, per this
+project's own discipline of tracing root cause instead of assuming one.
+
+**This was a discoverability gap, not a data-loss bug.** Every campaign was
+already reaching `PromoRoiChart` as a real, focusable bar —
+`PromotionsPage.tsx`'s `displayedPromotions` never slices or caps the list
+(confirmed by the existing `PromotionsPage.test.tsx` regression test
+guarding exactly this at 30-campaign scale, which was already passing), and
+`PromoRoiChart.tsx`'s own `chartableData = data` has carried every record
+unfiltered since an earlier QA fix. Screenshots proved it: at a wide
+viewport (1440px) all 30 bars, including the two "Unattributable" refusals,
+rendered and fit with no scrolling. At a common laptop width (1024px) all
+30 bars were STILL in the DOM (`aria-label="...across 30 promotion
+campaigns"` matched the header's "30 campaigns" chip exactly) — but the
+chart's `overflow-x-auto` wrapper defaulted to its scrolled-to-the-LEFT
+position, showing only the OLDEST campaigns, with no visual cue that more
+existed off-screen to the right. The owner's reading ("not all campaigns are
+in the chart") was a fair one: the newest, most-actionable campaigns — the
+ones a "needs a decision" reader most wants — were also the ones most likely
+scrolled out of view on first load.
+
+**Fix, two parts, both scoped to `PromoRoiChart.tsx`:**
+
+1. **Default scroll position.** The chart's own data order is chronological,
+   oldest-first (the API's natural order — see `toChartDatum`'s neighboring
+   comment in `PromotionsPage.tsx`), the same left-to-right time convention
+   `MarginTrendChart` already uses. That chart already mounts scrolled to
+   its own right edge for the identical reason ("today first, history a
+   deliberate scroll away") — this applies the same fix here via a new
+   `initialScrollToEnd` prop (default `true`), rather than reversing the
+   chronological axis itself, which would read backwards against every
+   other time-ordered chart in this app and the dataviz skill's own
+   convention. The one case that opts out: `PromotionsPage`'s ROI sort
+   toggle ("Highest first"/"Lowest first") already puts the campaign the
+   owner asked to see first at the left — auto-scrolling right there would
+   hide it, so `PromotionsPage` passes `initialScrollToEnd={roiSortDirection
+   === null}`.
+2. **Scroll-fade affordance.** Reused this codebase's one existing answer to
+   "an `overflow-x-auto` row gives no visual reason to suspect there's
+   more" — `Shell/Sidebar.tsx`'s `MobileNavBar` edge fade, fixed earlier
+   this week for the identical problem on the mobile nav bar. Added the same
+   pattern to `PromoRoiChart`, bidirectionally: a left fade shown only while
+   scrolled away from the start (real history sits further left) and a
+   right fade shown only while not scrolled all the way to the end — never
+   a permanent decoration in either direction.
+
+Interpreted "show from the right to the left side" as: start the reader at
+the right (the newest campaigns), with older history a deliberate scroll to
+the left — not a request to reverse the chronological axis itself (which
+would contradict "recent reads as rightmost," this app's own
+`MarginTrendChart` precedent, and standard time-series chart convention).
+
+Verified live: at 1024px the chart now mounts showing campaigns through the
+newest (`IFOOD_CAMP_02`, period ending 2026-09-30) with a left fade
+indicating older history; scrolling to the start flips to a right fade with
+no left fade. Header chip, chart `aria-label`, and table row count agree on
+"30" in every case — the chart and the table never disagree about how many
+campaigns exist. Added 9 tests to `PromoRoiChart.test.tsx`: an explicit
+30-campaign bar-count assertion pinned to the real dataset's own scale, four
+covering the default-scroll-to-end behavior (including that it does NOT
+fire when `initialScrollToEnd` is false, and that it doesn't fight a
+reader's manual scroll on an unrelated re-render), and four covering the
+fade's visibility in each direction. `npx tsc -b --noEmit` and the full
+frontend suite (579 tests) pass.
+
 ## 2026-08-30 — Close's Period totals no longer truncate to a plausible-looking wrong number
 
 Reported live: filtering Today's Close to a period showed a total margin cut
@@ -239,6 +309,75 @@ internal component names. New test
 (`TestExplain_ZeroToolCallCurrencyAnswerIsRefused` in
 `explain_internal_test.go`) asserts the message never contains "MCP",
 "tool call", "provenance", "deterministic layer", or "currency-shaped".
+
+## 2026-08-30 — Inline Grounded Advice: the advisor now answers the questions that ask for it (spec 011)
+
+The product owner's direction, verbatim: "the advisor should advise
+whatever the customer asks and use the data in context for it — not
+bringing wrong data or hallucination, but using an advisor that gets all
+the rich data we have and brings suggestions is something of value to the
+product strategy and vision." Until now the Business Insight Advisor
+(spec 009) could only be reached one way: Go detected one of five fixed
+patterns in an answer's data and offered a teaser chip. A question that
+*explicitly asked* for a suggestion — "how can I improve my margin
+overall?", "should I focus more on delivery or dine-in?" — got its data
+core answered and its advice part plainly declined (the 2026-08-30
+mixed-question fix below), even though an advisor with exactly the right
+grounding discipline was sitting one package away.
+
+`specs/011-inline-grounded-advice/` adds a second avenue into the same
+advisor, additive by construction — the five-kind teaser path is untouched
+and live-verified unchanged:
+
+- **Trigger** (`internal/ambiguity`): the gate now reports a separate
+  boolean, `advice_requested`, alongside its three-way classification —
+  never a fourth classification, and structurally unsettable by the
+  second-pass prose writer (`writerResponse` has no such field), the same
+  guarantee the classification itself already had. Groundable advice
+  questions classify answerable + flagged; ungroundable ones ("what should
+  I pay my staff?") stay refused exactly as before, verified live.
+- **Grounding**: no new tool-calling loop. The normal narration answers
+  the data core first through the existing budgeted MCP loop, and the one
+  bounded advisor call is grounded exclusively in `ToolInvocations` from
+  that same answer. No grounding → no advice call at all.
+- **Dynamic prompt** (`internal/advisor/question_advice.go`): the system
+  prompt is assembled per-question in plain Go — spec 009's
+  non-fabrication rules verbatim, plus researched-practice sections
+  selected by the NAMES of the tools that actually ran (new sourced
+  content: Restaurant365's prime-cost bands, Kasavana & Smith's 1982 menu
+  engineering matrix, Toast/ChowNow direct-channel steering; unverifiable
+  vendor figures deliberately excluded, same as 009's absent "~52%"
+  claim). The five 009 kind templates are never consulted on this path.
+- **Cost honesty**: every inline call writes a `business_insight_interaction`
+  row (new kind `question_advice`, migration 000013 — the "migration plus
+  a reviewed prompt" cost migration 000010's comment prescribed) and
+  appears as its own `interactions` entry; a failed advice call degrades
+  to the unchanged data answer, never a failed request.
+- **UI**: the suggestion renders in the teaser chip's dashed-warning
+  "AI suggestion" language with the same wire-carried disclaimer, after
+  and never blended into the provenance-backed answer.
+
+One real defect found and fixed during live verification, worth naming:
+the gate's raw model reply carried `"advice_requested": true` correctly,
+and every parser-level unit test passed — but `Classify`'s field-by-field
+copy from the parsed decision onto the usage-carrying `Decision` omitted
+the new field, silently dropping the signal on every live request. The
+symptom (grounded advice questions answered with the old decline, zero
+advisor calls) only surfaced against the live instance. Fixed with the
+one-line copy plus a new Classify-level scripted-fake test
+(`TestClassify_CarriesAdviceRequestedThroughToTheReturnedDecision`) that
+fails without it — the parser tests alone provably could not catch this
+class of drop.
+
+Live verification against an isolated instance (own Postgres, own port,
+real `ANTHROPIC_API_KEY`): "How can I improve my margin overall?" gathered
+`get_period_totals`/`get_margin_delta`/`list_negative_roi_promotions` and
+returned a suggestion anchored to the real computed figures (July→August
+margin move, IFOOD-CAMP-025's own spend/revenue) while stating plainly
+that labor/menu-item data doesn't exist in this product; "What should I
+pay my staff?" still refused with zero tool calls and zero advisor calls;
+the negative-promo teaser + tap flow behaved exactly as before, and
+`POST /api/business-insight` rejects kind `question_advice` (400).
 
 ## 2026-08-30 — Fixed a chat refusal that promised data it never delivered
 

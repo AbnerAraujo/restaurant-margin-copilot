@@ -2085,3 +2085,70 @@ describe('the user message avatar shows the saved profile photo', () => {
     expect(container.querySelector('img')).toBeNull()
   })
 })
+
+describe('inline grounded advice (spec 011)', () => {
+  const answeredWithAdvice: ChatMessage[] = [
+    {
+      id: 'u1',
+      role: 'user',
+      text: 'How can I improve my margin overall?',
+      askedAt: '2026-08-30T10:00:00Z',
+    },
+    {
+      id: 'a1',
+      role: 'assistant',
+      kind: 'answer',
+      text: 'Here is what the period totals show.',
+      provenance: [],
+      advice: {
+        text: 'Owners in this situation typically review their largest cost line first.',
+        disclaimer:
+          'AI suggestion — general industry practice connected to your computed numbers, not a computed fact about your business. Verify against your own contracts and records before acting.',
+        interaction: {
+          model_used: 'claude-sonnet-5',
+          input_tokens: 900,
+          output_tokens: 150,
+          estimated_cost_usd: 0.0093,
+          latency_ms: 1200,
+        },
+      },
+      askedAt: '2026-08-30T10:00:05Z',
+    },
+  ]
+
+  it('renders the advice block, visually labeled as an AI suggestion, with the wire disclaimer', () => {
+    render(<ChatPanel initialMessages={answeredWithAdvice} />)
+
+    const advice = screen.getByRole('group', { name: /ai business suggestion/i })
+    const withinAdvice = within(advice)
+    expect(
+      withinAdvice.getByText(/you asked for advice/i),
+    ).toBeInTheDocument()
+    expect(
+      withinAdvice.getByText(/typically review their largest cost line first/i),
+    ).toBeInTheDocument()
+    // The backend's own disclaimer travels verbatim — the UI never writes
+    // its own statement of what this content is (same rule as the chip).
+    expect(
+      withinAdvice.getByText(/not a computed fact about your business/i),
+    ).toBeInTheDocument()
+  })
+
+  it('renders no advice block when the answer carries none', () => {
+    const plainAnswer: ChatMessage[] = [
+      {
+        id: 'a2',
+        role: 'assistant',
+        kind: 'answer',
+        text: 'Margin was $612.40.',
+        provenance: [],
+        askedAt: '2026-08-30T10:01:00Z',
+      },
+    ]
+    render(<ChatPanel initialMessages={plainAnswer} />)
+
+    expect(
+      screen.queryByText(/you asked for advice/i),
+    ).not.toBeInTheDocument()
+  })
+})

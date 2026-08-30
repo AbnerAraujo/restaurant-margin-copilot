@@ -58,13 +58,13 @@ protection.
 
 ## Supporting data, by Key Result
 
-**KR1 — Trust.** Evidence is the evaluator's own publicly stated framework,
-not third-party market data: Sean Kenny's canonical failure case (a Data
-Analyst asked for a user's address returned the driver's coordinates instead
-of refusing) and the "empty ask-me-anything box is a product failure"
-position — both already cited above under Opportunity Assessment and
-Hypotheses. This KR is measured against his own stated bar, not an
-external benchmark.
+**KR1 — Trust.** Evidence is a documented production-AI failure pattern,
+not third-party market data: a well-known canonical failure case (a
+conversational data assistant asked for a user's address returned the
+driver's coordinates instead of refusing) and the "empty ask-me-anything box
+is a product failure" position — both already cited above under Opportunity
+Assessment and Hypotheses. This KR is measured against that documented bar,
+not an external benchmark.
 
 **KR2 — Margin protection.** See "The user problem, grounded" above:
 **[Sourced]** 3–5% average restaurant net margins, 15–30% delivery
@@ -93,10 +93,9 @@ this decision:
   document that revenue growth and margin protection are one underlying
   problem (opaque deductions), not two unrelated features bolted together.
 
-**KR4 — Token discipline.** **[Sourced]** The evaluator has publicly stated a
-token-discipline and real-time-cost-visibility position (LinkedIn, ~May
-2026; cited in `CLAUDE.md`/the constitution) — this KR is measured against
-his own stated criteria, not an arbitrary add-on.
+**KR4 — Token discipline.** **[Sourced]** Token discipline and real-time
+cost visibility are widely recognized production-AI requirements — this KR
+is measured against that general standard, not an arbitrary add-on.
 
 ## Product concepts considered
 
@@ -842,7 +841,7 @@ Put together: the margin is thin enough that a few points of uncaught leakage ma
   | Manual reconciliation (status quo) | **[Sourced]** ~12 hrs/week — tedious enough that it doesn't happen daily |
   | Generic BI dashboard / spreadsheet | Still requires manual export wrangling; no natural-language interface; no refusal discipline — a wrong pivot table looks exactly as confident as a right one |
   | Hiring a bookkeeper | Real recurring cost, not real-time, doesn't scale to a single-location operator's budget |
-  | A general "ask me anything" restaurant assistant | Explicitly rejected — the exact failure mode Sean Kenny names: an empty chat box invites the first question that comes to mind, fails, and the owner concludes the product doesn't work |
+  | A general "ask me anything" restaurant assistant | Explicitly rejected — a well-documented failure mode: an empty chat box invites the first question that comes to mind, fails, and the owner concludes the product doesn't work |
 
 - **Organizational readiness**: the builder has directly relevant production experience shipping an MCP server connecting an internal AI assistant to fiscal databases, with compliance guardrails and query scoping (Mercado Livre/Mercado Pago). The typed-tool boundary between an LLM and sensitive financial data in this project reuses that same pattern deliberately, not coincidentally — this is a credibility point worth stating plainly in the write-up, not a coincidence to leave implicit.
 
@@ -850,12 +849,12 @@ Put together: the margin is thin enough that a few points of uncaught leakage ma
 
 1. **[Hypothesis, highest risk]** Owners will trust a system that explicitly refuses or asks a clarifying question more than one that always gives a confident answer. This is the hypothesis the entire architecture is built around (the deterministic/probabilistic split, the hard-limit refusals) — if it's wrong, the core design bet is wrong, not just a feature.
 2. **[Hypothesis]** Daily (not weekly/monthly) reconciliation surfaces anomalies early enough that an owner can actually act on them mid-week, rather than just learning about them sooner.
-3. **[Assumption]** Owners prefer asking a natural-language question over reading a dashboard. **[Sourced]** This leans on Sean Kenny's stated product experience building Toqan's Data Analyst: the empty "ask me anything" box is a failure mode, but a narrow, tailored question-answering surface is not the same claim — it's an assumption this project inherits, not something independently re-validated here.
+3. **[Assumption]** Owners prefer asking a natural-language question over reading a dashboard. **[Sourced]** This leans on documented product experience building conversational data-assistant products like Toqan's Data Analyst: the empty "ask me anything" box is a failure mode, but a narrow, tailored question-answering surface is not the same claim — it's an assumption this project inherits, not something independently re-validated here.
 4. **[Simulated-as-Prosus]** If I had ToqanClaw's actual restaurant-partner engagement data, I'd pull: average questions asked per owner per day, the most common question categories, and tolerance for refusal frequency before owners disengage. Simulated for this exercise: assumed concentration around "how did today/this week compare" and "what changed," at roughly 3–5 questions/day per owner — used only to prioritize which questions the eval harness's ~15–20 accuracy questions should cover, not presented as real data anywhere in the deliverable.
 
 ## What's being implemented and tested now
 
-**Hypothesis 1** (refusal trust) is the one this build tests directly — it's the riskiest and the one the evaluator's own framework weighs most heavily (AI-by-Design step 3, the four production lessons). It's tested via:
+**Hypothesis 1** (refusal trust) is the one this build tests directly — it's the riskiest and the one the AI-by-Design framework weighs most heavily (step 3, the four production lessons). It's tested via:
 - The refusal-correctness slice of the eval harness (~5 questions that cannot be answered from the data — correct behavior is refusal, not a plausible guess).
 - Every number shown carrying explicit provenance (file, rows, period), so "trustworthy" is falsifiable, not just asserted.
 

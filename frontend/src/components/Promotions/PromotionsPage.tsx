@@ -640,6 +640,14 @@ export default function PromotionsPage() {
           // renderings that could drift.
           defaultTableOpen
           onDataPointClick={handleChartDataPointClick}
+          // `displayedPromotions`'s own default order is the API's, which is
+          // chronological (oldest first) — see toChartDatum's neighboring
+          // comment. Scroll to the newest campaigns (the right edge) ONLY in
+          // that natural order; once the owner picks a ROI sort, the
+          // campaign they asked to see first is already at the left, and
+          // auto-scrolling right would hide it (see PromoRoiChart's
+          // `initialScrollToEnd` doc comment).
+          initialScrollToEnd={roiSortDirection === null}
         />
       ) : null}
 
