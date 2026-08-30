@@ -23,6 +23,21 @@ const ALLOWED_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 /** Mirrors backend/internal/httpapi/profile.go's maxProfilePhotoBytes. */
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
+/**
+ * Mirrors backend/internal/httpapi/profile.go's profile*MaxLen constants —
+ * a client-side `maxLength` on each field so a user discovers the real
+ * cap by typing into it, rather than only after a round-trip 400 (QA
+ * finding). The server enforces these independently and remains the
+ * authority; this is purely a faster feedback loop.
+ */
+const PROFILE_FIELD_MAX_LENGTHS = {
+  name: 200,
+  address: 300,
+  phone: 40,
+  email: 254,
+  description: 1000,
+} as const
+
 interface ProfileApi {
   name: string
   address: string
@@ -72,8 +87,24 @@ function errorMessage(caught: unknown): string {
   return String(caught)
 }
 
-function formatMegabytes(bytes: number): string {
-  return (bytes / (1024 * 1024)).toFixed(1)
+/**
+ * Describes a photo already known to exceed `limitBytes`, for the "that
+ * photo is over the limit" message — guaranteeing the displayed size never
+ * reads as at-or-under the limit. Plain one-decimal rounding turns a file
+ * exactly 1 byte over a whole-MB cap (e.g. 5,242,881 bytes against a 5MB
+ * cap) into "5.0MB", which self-contradicts "...over the 5MB limit" (QA
+ * finding). Ordinary oversized files still get the familiar "6.0MB" form;
+ * only the boundary case falls back to an honest "just over" phrasing
+ * rather than showing a misleadingly precise decimal.
+ */
+function describeOversizedPhoto(bytes: number, limitBytes: number): string {
+  const megabytes = bytes / (1024 * 1024)
+  const limitMegabytes = limitBytes / (1024 * 1024)
+  const oneDecimal = megabytes.toFixed(1)
+  if (parseFloat(oneDecimal) > limitMegabytes) {
+    return `${oneDecimal}MB`
+  }
+  return `just over ${limitMegabytes}MB`
 }
 
 /** Reads a File as a base64 data URI — the exact wire format PUT /api/profile expects. */
@@ -146,7 +177,7 @@ export default function ProfilePage() {
     }
     if (file.size > MAX_PHOTO_BYTES) {
       setPhotoError(
-        `That photo is ${formatMegabytes(file.size)}MB, which is over the 5MB limit — choose a smaller image or compress it first.`,
+        `That photo is ${describeOversizedPhoto(file.size, MAX_PHOTO_BYTES)}, which is over the 5MB limit — choose a smaller image or compress it first.`,
       )
       return
     }
@@ -186,6 +217,12 @@ export default function ProfilePage() {
         email: form.email.trim(),
         description: form.description.trim(),
         photo,
+        // Optimistic concurrency: echo back exactly the updated_at this tab
+        // last loaded. If another tab (or another save from this one) has
+        // since changed the profile, the backend's updated_at will have
+        // moved on and this PUT is refused with 409 rather than silently
+        // reverting that other save (the QA two-tab lost-update finding).
+        updated_at: updatedAt,
       })
       setForm({
         name: response.name,
@@ -316,6 +353,7 @@ export default function ProfilePage() {
                   onChange={(event) => updateField('name', event.target.value)}
                   required
                   aria-required="true"
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.name}
                 />
               </div>
 
@@ -328,6 +366,7 @@ export default function ProfilePage() {
                   placeholder="123 Main St, Springfield"
                   value={form.address}
                   onChange={(event) => updateField('address', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.address}
                 />
               </div>
 
@@ -341,6 +380,7 @@ export default function ProfilePage() {
                   placeholder="+1 555 123 4567"
                   value={form.phone}
                   onChange={(event) => updateField('phone', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.phone}
                 />
               </div>
 
@@ -354,6 +394,7 @@ export default function ProfilePage() {
                   placeholder="owner@yourrestaurant.com"
                   value={form.email}
                   onChange={(event) => updateField('email', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.email}
                 />
               </div>
 
@@ -366,13 +407,28 @@ export default function ProfilePage() {
                   placeholder="Tell customers what makes your restaurant special"
                   value={form.description}
                   onChange={(event) => updateField('description', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.description}
                 />
               </div>
             </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={submitting}>
+            <Button
+              type="submit"
+              disabled={submitting}
+              onClick={() => {
+                // Fires on every submit ATTEMPT, including one the
+                // browser's native `type="email"`/`required` validation
+                // goes on to block before `handleSubmit` ever runs. Without
+                // this, a stale error from a previously-fixed field (e.g.
+                // phone) stays on screen describing a field that's now
+                // fine, while the actual blocker (e.g. email) shows no
+                // error at all — the QA "stale field error" finding.
+                setSubmitError(null)
+                setSaved(false)
+              }}
+            >
               {submitting ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : null}
               {submitting ? 'Saving…' : 'Save profile'}
             </Button>

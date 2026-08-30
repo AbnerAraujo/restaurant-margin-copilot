@@ -22,6 +22,14 @@ package httpapi
 // one row (no partial-patch semantics): a client that wants to keep the
 // existing photo must resubmit the exact data URI GET /api/profile just
 // handed it; omitting or nulling the field clears the photo.
+//
+// PUT is optimistic-concurrency-checked (QA's two-tab lost-update finding):
+// the client must echo back the updated_at it last read, and a PUT whose
+// updated_at no longer matches the row's current value — because a save
+// from elsewhere landed in between — is refused with 409 Conflict rather
+// than silently overwriting that other save. See UpsertRestaurantProfile's
+// doc comment in restaurant_profile.sql for the actual WHERE-clause
+// mechanism.
 
 import (
 	"context"
@@ -30,6 +38,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -103,6 +112,15 @@ type ProfileRequest struct {
 	Email       string  `json:"email"`
 	Description string  `json:"description"`
 	Photo       *string `json:"photo"`
+	// UpdatedAt is the updated_at this client last saw from GET or PUT
+	// /api/profile — RFC 3339 (nanosecond precision), or "" when the client
+	// loaded the profile before it had ever been saved. Echoed back on every
+	// write for optimistic concurrency (see the 409 handling in
+	// handlePutProfile): a client whose UpdatedAt no longer matches the
+	// row's current value is stale and must reload before it can save,
+	// rather than silently overwriting a newer save made elsewhere (the QA
+	// two-tab lost-update finding).
+	UpdatedAt string `json:"updated_at"`
 }
 
 // ProfileStore is the two calls this handler needs — a narrow interface
@@ -202,21 +220,57 @@ func handlePutProfile(w http.ResponseWriter, r *http.Request, store ProfileStore
 		return
 	}
 
+	expectedUpdatedAt, parseErr := parseExpectedUpdatedAt(req.UpdatedAt)
+	if parseErr != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid_input",
+			"the profile's updated_at wasn't in a format the server understands — reload the page and try again")
+		return
+	}
+
 	saved, err := store.UpsertRestaurantProfile(r.Context(), storage.UpsertRestaurantProfileParams{
-		Name:             name,
-		Address:          address,
-		Phone:            phone,
-		Email:            email,
-		Description:      description,
-		PhotoData:        photoData,
-		PhotoContentType: photoContentType,
+		Name:              name,
+		Address:           address,
+		Phone:             phone,
+		Email:             email,
+		Description:       description,
+		PhotoData:         photoData,
+		PhotoContentType:  photoContentType,
+		ExpectedUpdatedAt: expectedUpdatedAt,
 	})
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// The ON CONFLICT DO UPDATE's WHERE clause matched no row —
+			// someone else saved a newer version of the profile in between
+			// this client's load and this save (see the query's own doc
+			// comment in restaurant_profile.sql). Refuse rather than
+			// silently overwrite their change (the QA two-tab lost-update
+			// finding).
+			writeJSONError(w, http.StatusConflict, "profile_conflict",
+				"this profile was updated elsewhere since you loaded it — reload to see the latest before saving your changes")
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, renderProfileView(saved))
+}
+
+// parseExpectedUpdatedAt parses the client's echoed-back updated_at into the
+// nullable timestamp UpsertRestaurantProfile compares against the row's
+// current value. An empty string (a client that loaded the profile before
+// it had ever been saved) becomes an explicit NULL/invalid value — which
+// correctly never matches a real timestamp, so a profile someone else has
+// since created is still treated as a conflict (see restaurant_profile.sql).
+func parseExpectedUpdatedAt(raw string) (pgtype.Timestamptz, error) {
+	if raw == "" {
+		return pgtype.Timestamptz{Valid: false}, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return pgtype.Timestamptz{}, err
+	}
+	return pgtype.Timestamptz{Time: parsed, Valid: true}, nil
 }
 
 // checkFieldLength returns a clear, actionable error — what's wrong, why,
@@ -311,11 +365,31 @@ func decodeProfilePhoto(photo *string) ([]byte, pgtype.Text, *profileFieldError)
 	}
 	if len(data) > maxProfilePhotoBytes {
 		return nil, pgtype.Text{}, &profileFieldError{http.StatusRequestEntityTooLarge, "photo_too_large",
-			fmt.Sprintf("that photo is %.1fMB, which is over the %dMB limit — choose a smaller image or compress it first",
-				float64(len(data))/(1<<20), maxProfilePhotoBytes>>20)}
+			fmt.Sprintf("that photo is %s, which is over the %dMB limit — choose a smaller image or compress it first",
+				describeOversizedPhoto(len(data), maxProfilePhotoBytes), maxProfilePhotoBytes>>20)}
 	}
 
 	return data, pgtype.Text{String: contentType, Valid: true}, nil
+}
+
+// describeOversizedPhoto describes a photo already known to exceed
+// limitBytes, for the "over the limit" rejection message — guaranteeing
+// the displayed size never reads as at-or-under the limit. Plain
+// one-decimal rounding turns a file exactly 1 byte over a whole-MB cap
+// (e.g. 5,242,881 bytes against a 5MB cap) into "5.0MB", which
+// self-contradicts "...over the 5MB limit" (the same QA finding the
+// frontend's own describeOversizedPhoto in ProfilePage.tsx fixes).
+// Ordinary oversized files still get the familiar "6.0MB" form; only the
+// boundary case falls back to an honest "just over" phrasing rather than a
+// misleadingly precise decimal.
+func describeOversizedPhoto(bytes, limitBytes int) string {
+	megabytes := float64(bytes) / (1 << 20)
+	limitMegabytes := float64(limitBytes) / (1 << 20)
+	oneDecimal := fmt.Sprintf("%.1f", megabytes)
+	if reparsed, err := strconv.ParseFloat(oneDecimal, 64); err == nil && reparsed > limitMegabytes {
+		return oneDecimal + "MB"
+	}
+	return fmt.Sprintf("just over %gMB", limitMegabytes)
 }
 
 // renderProfileView converts a storage row into the wire shape, rebuilding
@@ -333,7 +407,15 @@ func renderProfileView(row storage.RestaurantProfile) ProfileView {
 		view.Photo = &dataURI
 	}
 	if row.UpdatedAt.Valid {
-		view.UpdatedAt = row.UpdatedAt.Time.Format(time.RFC3339)
+		// RFC3339Nano, not RFC3339: this value is echoed straight back on
+		// the next PUT as the optimistic-concurrency check (see
+		// ProfileRequest.UpdatedAt and parseExpectedUpdatedAt). Postgres's
+		// timestamptz carries microsecond precision, and RFC3339's bare
+		// seconds would silently truncate it — a client that never edited
+		// anything would then send back a timestamp that no longer equals
+		// the row's real updated_at, turning a perfectly fresh save into a
+		// false-positive 409.
+		view.UpdatedAt = row.UpdatedAt.Time.Format(time.RFC3339Nano)
 	}
 	return view
 }

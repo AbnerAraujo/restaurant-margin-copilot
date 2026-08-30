@@ -51,17 +51,19 @@ ON CONFLICT (id) DO UPDATE SET
     photo_data         = EXCLUDED.photo_data,
     photo_content_type = EXCLUDED.photo_content_type,
     updated_at         = now()
+WHERE restaurant_profile.updated_at = $8
 RETURNING id, name, address, phone, email, description, photo_data, photo_content_type, created_at, updated_at
 `
 
 type UpsertRestaurantProfileParams struct {
-	Name             string      `json:"name"`
-	Address          string      `json:"address"`
-	Phone            string      `json:"phone"`
-	Email            string      `json:"email"`
-	Description      string      `json:"description"`
-	PhotoData        []byte      `json:"photo_data"`
-	PhotoContentType pgtype.Text `json:"photo_content_type"`
+	Name              string             `json:"name"`
+	Address           string             `json:"address"`
+	Phone             string             `json:"phone"`
+	Email             string             `json:"email"`
+	Description       string             `json:"description"`
+	PhotoData         []byte             `json:"photo_data"`
+	PhotoContentType  pgtype.Text        `json:"photo_content_type"`
+	ExpectedUpdatedAt pgtype.Timestamptz `json:"expected_updated_at"`
 }
 
 // Writer: internal/httpapi's profile handler only (PUT /api/profile).
@@ -69,6 +71,19 @@ type UpsertRestaurantProfileParams struct {
 // 000011) — this is a full replace of that one row, not a partial patch,
 // so the caller must pass every field's intended final value, including an
 // unchanged photo it read back from GET /api/profile.
+//
+// Optimistic concurrency (QA finding, lost-update fix): ExpectedUpdatedAt
+// must equal the row's CURRENT updated_at for the ON CONFLICT branch to take
+// effect. A caller passes back exactly the updated_at it last read from
+// GET/PUT /api/profile; if someone else has saved in between, the row's
+// updated_at has moved on and this WHERE clause is false, so the DO UPDATE
+// is skipped entirely and RETURNING yields zero rows — surfaced to Go as
+// pgx.ErrNoRows, which profile.go maps to 409 Conflict rather than silently
+// overwriting the newer save. A caller with no profile loaded yet passes an
+// invalid/NULL ExpectedUpdatedAt: on a genuinely empty table the INSERT
+// branch runs unconditionally (no row to conflict with, so no check is
+// needed), and if a row already exists by then, NULL never equals a real
+// timestamp, so this correctly refuses as a conflict too.
 func (q *Queries) UpsertRestaurantProfile(ctx context.Context, arg UpsertRestaurantProfileParams) (RestaurantProfile, error) {
 	row := q.db.QueryRow(ctx, upsertRestaurantProfile,
 		arg.Name,
@@ -78,6 +93,7 @@ func (q *Queries) UpsertRestaurantProfile(ctx context.Context, arg UpsertRestaur
 		arg.Description,
 		arg.PhotoData,
 		arg.PhotoContentType,
+		arg.ExpectedUpdatedAt,
 	)
 	var i RestaurantProfile
 	err := row.Scan(
