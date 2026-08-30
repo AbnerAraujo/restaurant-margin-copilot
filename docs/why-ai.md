@@ -1,7 +1,10 @@
 # Why AI — and where it deliberately stops
 
-Written to be said out loud, not just read. This answers his own AI-by-Design
-step 3 directly: is AI actually required, and where.
+Written to be said out loud, not just read. This design follows widely
+applicable production-AI principles: deterministic financial calculation,
+explicit uncertainty, constrained tools, and measured reliability — starting
+with AI-by-Design step 3's most basic question: is AI actually required, and
+where.
 
 ## The honest starting position
 
@@ -55,11 +58,11 @@ This is the failure mode I designed against on purpose. Asking a model to
 read the CSVs and compute margin directly would be faster to prototype and
 would look identical in a demo — right up until it silently produces a
 plausible-but-wrong number, which is worse than the system saying "I can't
-compute this." That's not a hypothetical: it's the same class of error this
-evaluator has said publicly he refuses to accept in a production financial
-tool, and it's why the Data Analyst he built doesn't use light models where
-errors carry real cost. I'm not guessing at his standard here — I'm
-building to it.
+compute this." That's not a hypothetical: it's a well-documented class of
+error that production financial tools cannot tolerate, and it's why systems
+handling financial data generally avoid light models where errors carry real
+cost. This design follows that same widely applicable production-AI
+principle.
 
 ## The one-sentence version, if asked directly
 
