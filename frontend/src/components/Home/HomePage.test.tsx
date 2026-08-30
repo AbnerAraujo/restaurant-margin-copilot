@@ -390,7 +390,7 @@ describe('HomePage', () => {
 
     await userEvent.type(
       within(panel).getByLabelText('Search recent closes by date'),
-      '2026-08-99',
+      '2026-08-99{Enter}',
     )
 
     expect(

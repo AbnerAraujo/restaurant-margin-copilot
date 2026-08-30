@@ -301,7 +301,7 @@ describe('PlatformsPage', () => {
     await screen.findAllByText('iFood')
     expect(screen.getAllByText('Just Eat Takeaway').length).toBeGreaterThan(0)
 
-    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood')
+    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood{Enter}')
 
     expect(screen.getAllByText('iFood').length).toBeGreaterThan(0)
     expect(screen.queryByText('Just Eat Takeaway')).not.toBeInTheDocument()
@@ -323,7 +323,7 @@ describe('PlatformsPage', () => {
     await screen.findAllByText('iFood')
     expect(screen.queryByText('Overall')).not.toBeInTheDocument()
 
-    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood')
+    await userEvent.type(screen.getByLabelText('Search platforms'), 'ifood{Enter}')
 
     // "2 platforms compared" stays the honest total of every platform on
     // file even though the table/chart now show just 1 — the label makes
@@ -339,7 +339,7 @@ describe('PlatformsPage', () => {
     await screen.findAllByText('iFood')
     await userEvent.type(
       screen.getByLabelText('Search platforms'),
-      'no-such-platform',
+      'no-such-platform{Enter}',
     )
 
     expect(

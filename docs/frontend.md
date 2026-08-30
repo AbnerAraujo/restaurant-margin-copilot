@@ -218,12 +218,16 @@ variants (`default`, `destructive`, `outline`, `secondary`, `ghost`, `link`)
 × 8 sizes (`default`, `xs`, `sm`, `lg`, `icon`, `icon-xs`, `icon-sm`,
 `icon-lg`), confirmed by reading the `cva` config directly. Focus is a 3px
 `ring-ring/50` plus a border shift, never suppressed. Real consumers
-(re-verified by import 2026-08-30): **13** — `ChatPanel.tsx`,
-`ClosePage.tsx`, `ConnectedPlatformsTab.tsx`, `CostSheetTab.tsx`,
-`LogReplacementForm.tsx`, `NotFoundPage.tsx`, `ProfilePage.tsx`,
-`PromotionsPage.tsx`, `QuestionComposer.tsx`, `SettingsPage.tsx`,
-`ThemeToggle.tsx`, `confirm-dialog.tsx`, `filter-bar.tsx`. Visual specimen
-for every variant/size pair: `docs/architecture.html` §"Buttons".
+(re-verified by import 2026-08-30, column-header-filters work): **15** —
+`ChatPanel.tsx`, `ClosePage.tsx`, `ConnectedPlatformsTab.tsx`,
+`CostSheetTab.tsx`, `DataGrid.tsx`, `LogReplacementForm.tsx`,
+`NotFoundPage.tsx`, `ProfilePage.tsx`, `PromotionsPage.tsx`,
+`QuestionComposer.tsx`, `SettingsPage.tsx`, `ThemeToggle.tsx`,
+`column-filter.tsx`, `confirm-dialog.tsx`, `filter-bar.tsx` — up from 13:
+`DataGrid.tsx`'s new opt-in "Clear filters" action and `column-filter.tsx`'s
+own "Apply" buttons (see that file's own section below) are the two new
+consumers. Visual specimen for every variant/size pair:
+`docs/architecture.html` §"Buttons".
 
 ### The tab strip on `/upload` — a pattern, deliberately not a primitive
 
@@ -251,6 +255,38 @@ Two decisions inside it are worth keeping written down:
   the accessibility and the state-preservation come from one decision
   rather than two.
 
+### `ColumnFilterButton` / `useColumnFilters` — `frontend/src/components/ui/column-filter.tsx`, `frontend/src/lib/useColumnFilters.ts`
+
+Added 2026-08-30 for Excel/Sheets-style per-column header filters — a
+SECOND, additive filtering surface layered onto a grid that already has its
+own `useTableFilter`-backed filter bar (search box, dropdown, chips) above
+it, not a replacement for one. See that date's CHANGELOG entry for the full
+survey of which tables did and didn't get this, and why.
+
+The hook (`useColumnFilters`) owns filter state and matching for three
+types — `categorical` (a checklist of the column's own distinct values,
+never hardcoded), `text` (substring, case-insensitive), and `numeric` (a
+min/max range, parsing a `DataGrid` cell's already-FORMATTED string, so
+`"$1,234.56"` and `"—"` both parse correctly — the latter to `null`,
+excluded from a numeric filter's results rather than guessed at). The
+component (`ColumnFilterButton`) is the header's small filter icon plus its
+popover, built on Radix `Popover` (`radix-ui`, already a project dependency
+via `ui/tooltip.tsx`'s `Tooltip` — not a new one) for the accessible
+plumbing: focus moves into the panel on open, `Escape` closes it and
+returns focus to the trigger, and a click outside closes it too. A filter
+with an active value renders both a colour change AND a small dot on the
+icon, with the trigger's own `aria-label` stating the active value in
+words — never colour alone.
+
+`DataGrid.tsx` (`frontend/src/components/Charts/DataGrid.tsx`) is the one
+wired-in consumer today, via an opt-in
+`columnFilters` prop keyed by column index; every other `DataGrid` caller
+(chat's `AnswerVisualizationView`, `PlatformsPage`) omits it and renders
+exactly as before. `FilterSearchInput` (`ui/filter-bar.tsx`) independently
+picked up the same "type locally, apply on Enter/click" discipline the same
+day, for the SAME reason (an explicit apply action, not a debounce) — see
+that file's own doc comment and the CHANGELOG entry.
+
 ### The rest of `components/ui/` — thin shadcn wrappers, mostly single-consumer
 
 A systematic pass over `frontend/src/components/ui/` turns up four more
@@ -258,7 +294,7 @@ files, none padded into this doc as more "shared" than they actually are:
 
 | File | Real consumers |
 |---|---|
-| `input.tsx` | `ClosePage.tsx`, `LogReplacementForm.tsx` (2) |
+| `input.tsx` | `ClosePage.tsx`, `LogReplacementForm.tsx`, `ProfilePage.tsx`, `QuestionComposer.tsx`, `ConnectedPlatformsTab.tsx`, `filter-bar.tsx`, `column-filter.tsx` (7 — re-verified by import 2026-08-30; the previous count of 2 had already gone stale before this pass, uncaught until this recount) |
 | `textarea.tsx` | `ChatPanel.tsx` (1 — the composer's `field-sizing: content` textarea) |
 | `avatar.tsx` | `ChatPanel.tsx` (1 — the assistant/user message avatars) |
 | `scroll-area.tsx` | `ChatPanel.tsx` (1 — the Radix `ScrollArea` wrapping the message list; see "The floating composer" below for a real bug this component was at the center of) |

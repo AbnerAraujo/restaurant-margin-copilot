@@ -157,6 +157,38 @@ describe('ConnectedPlatformsTab', () => {
     expect(screen.getByRole('button', { name: /sync simulated orders/i })).toBeEnabled()
   })
 
+  it('a Platform column filter narrows the preview to just that connector\'s day rows', async () => {
+    const user = userEvent.setup()
+    render(<ConnectedPlatformsTab />)
+    await user.click(screen.getByRole('button', { name: /preview orders/i }))
+    await screen.findByText(/nothing has been saved yet/i)
+
+    await user.click(screen.getByRole('button', { name: /filter by platform/i }))
+    await user.click(await screen.findByRole('checkbox', { name: 'Just Eat Takeaway' }))
+
+    expect(screen.getByText('19')).toBeInTheDocument()
+    expect(screen.queryByText('22')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2 shown')).toBeInTheDocument()
+  })
+
+  it('an Orders numeric range filter stages the typed bound and only applies once submitted', async () => {
+    const user = userEvent.setup()
+    render(<ConnectedPlatformsTab />)
+    await user.click(screen.getByRole('button', { name: /preview orders/i }))
+    await screen.findByText(/nothing has been saved yet/i)
+
+    await user.click(screen.getByRole('button', { name: /filter by orders/i }))
+    const min = await screen.findByLabelText(/minimum, orders/i)
+    await user.type(min, '20')
+    // Not applied yet — both rows still visible mid-type.
+    expect(screen.getByText('19')).toBeInTheDocument()
+    expect(screen.getByText('22')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Apply' }))
+    expect(screen.getByText('22')).toBeInTheDocument()
+    expect(screen.queryByText('19')).not.toBeInTheDocument()
+  })
+
   it('refuses to make an empty range a one-click sync', async () => {
     stubFetchByPath({
       '/api/connectors/platforms': { body: PLATFORMS_RESPONSE },

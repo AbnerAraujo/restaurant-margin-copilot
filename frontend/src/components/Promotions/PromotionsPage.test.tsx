@@ -486,7 +486,7 @@ describe('PromotionsPage', () => {
 
     await userEvent.type(
       screen.getByLabelText('Search campaigns'),
-      'BOOST01',
+      'BOOST01{Enter}',
     )
 
     expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
@@ -509,7 +509,7 @@ describe('PromotionsPage', () => {
 
     await userEvent.type(
       screen.getByLabelText('Search campaigns'),
-      'BOOST01',
+      'BOOST01{Enter}',
     )
 
     // Filtered: the header chip ("2 campaigns") and the now-1-row table
@@ -567,7 +567,7 @@ describe('PromotionsPage', () => {
     await screen.findAllByText('IFOOD-CAMP-BOOST01')
     await userEvent.type(
       screen.getByLabelText('Search campaigns'),
-      'no-such-campaign',
+      'no-such-campaign{Enter}',
     )
 
     expect(
