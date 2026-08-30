@@ -15,6 +15,7 @@ import {
   Send,
   Compass,
   SquarePen,
+  Unplug,
   User,
   Wand2,
   Wrench,
@@ -33,15 +34,23 @@ import { cn } from '@/lib/utils'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import type { CostInteraction } from '@/components/CostPanel/CostPanel'
 import {
   activeThread,
   addSavedPrompt,
+  clearRequestInFlight,
+  commitThreadMessages,
+  isRequestInFlight,
   loadSavedPrompts,
-  loadThreadStore,
+  markRequestInFlight,
+  mergeThreadStores,
   openThread,
-  persistActiveThread,
+  reconcileInterruptedMessages,
+  recordSpend,
   removeSavedPrompt,
+  replaceMessage,
   startNewThread,
+  subscribeToThreadStore,
   type SavedPrompt,
   type ThreadStore,
 } from '@/lib/chatStorage'
@@ -124,7 +133,26 @@ export interface UserChatMessage {
   askedAt: string
 }
 
-export interface AnswerChatMessage {
+/**
+ * The model calls that produced an assistant message, as measured by the
+ * backend (`httpapi.AskResponse.interactions`).
+ *
+ * Carried on the message purely as transport: `ChatPanel` moves it into the
+ * durable spend ledger (`chatStorage.recordSpend`) in the same commit that
+ * persists the message, then strips it, so cost lives in exactly one place
+ * and can never be double-counted by being both persisted and re-logged.
+ *
+ * Attaching it to the message at all — rather than reporting it up to the
+ * shell as a side effect the way this used to work — is what makes the
+ * running total durable: the same commit that survives an unmount also
+ * records the spend, so an answer the owner was already billed for can
+ * never arrive with its cost silently dropped.
+ */
+export interface CostAttributedMessage {
+  interactions?: CostInteraction[]
+}
+
+export interface AnswerChatMessage extends CostAttributedMessage {
   id: string
   role: 'assistant'
   kind: 'answer'
@@ -198,7 +226,7 @@ export interface ChatToolCall {
   result_json: unknown
 }
 
-export interface ClarificationChatMessage {
+export interface ClarificationChatMessage extends CostAttributedMessage {
   id: string
   role: 'assistant'
   kind: 'clarification'
@@ -209,7 +237,7 @@ export interface ClarificationChatMessage {
   askedAt: string
 }
 
-export interface RefusalChatMessage {
+export interface RefusalChatMessage extends CostAttributedMessage {
   id: string
   role: 'assistant'
   kind: 'refusal'
@@ -217,6 +245,30 @@ export interface RefusalChatMessage {
   /** What's missing that prevents a real answer — never a guessed figure. */
   missing: string[]
   cache?: AnswerCacheInfo
+  askedAt: string
+}
+
+/**
+ * A question that has been asked and persisted but has no verdict yet.
+ *
+ * This exists as a real, PERSISTED message rather than a transient `isPending`
+ * boolean because of the defect it fixes: a question was written to storage
+ * the moment it was asked, but the fact that an answer was on its way lived
+ * only in React state. Reloading or navigating away therefore left a question
+ * with no answer, no error, and no retry — silent, permanent limbo — while
+ * the backend went right on completing the request and billing for it.
+ *
+ * Writing the pending record BEFORE the request starts means the interrupted
+ * case is always recoverable: on the next mount, `chatStorage`'s
+ * `reconcileInterruptedMessages` turns any pending message this document is
+ * not actually waiting on into an honest, retryable {@link ErrorChatMessage}.
+ */
+export interface PendingChatMessage {
+  id: string
+  role: 'assistant'
+  kind: 'pending'
+  /** The question in flight, so an interruption can be retried verbatim. */
+  question: string
   askedAt: string
 }
 
@@ -234,6 +286,20 @@ export interface ErrorChatMessage {
   role: 'assistant'
   kind: 'error'
   text: string
+  /**
+   * Why there is no answer. The same distinction one level down from the
+   * refusal/error split above, and for the same reason — the two failures
+   * owe the reader different things:
+   *
+   * - `transport` (the default): the request itself failed. Nothing ran, so
+   *   nothing was charged, and retrying is free.
+   * - `interrupted`: the request was very likely COMPLETED by the backend,
+   *   and therefore very likely billed, but the page that was waiting for it
+   *   went away. Saying "I couldn't reach your data" here would be a lie in
+   *   the flattering direction — it would hide spend the owner has already
+   *   incurred — so this case says so plainly instead.
+   */
+  cause?: 'transport' | 'interrupted'
   /** The failed question, so the retry affordance can resend it verbatim. */
   question: string
   askedAt: string
@@ -244,6 +310,7 @@ export type AssistantChatMessage =
   | ClarificationChatMessage
   | RefusalChatMessage
   | ErrorChatMessage
+  | PendingChatMessage
 
 export type ChatMessage = UserChatMessage | AssistantChatMessage
 
@@ -311,6 +378,32 @@ let messageSequence = 0
 function nextMessageId(prefix: string): string {
   messageSequence += 1
   return `${prefix}-${messageSequence}`
+}
+
+/**
+ * Reads the cost transport field off whichever assistant kind carries it.
+ * Only `AnswerChatMessage`/`ClarificationChatMessage`/`RefusalChatMessage`
+ * declare it, so a narrowing-free accessor keeps the call sites from
+ * re-discriminating the union just to find out whether a call was billed.
+ */
+function readInteractions(
+  message: AssistantChatMessage,
+): CostInteraction[] | undefined {
+  return (message as { interactions?: CostInteraction[] }).interactions
+}
+
+/**
+ * Strips the cost transport field before the message is persisted.
+ *
+ * Cost has exactly one home — the durable spend ledger — and persisting a
+ * second copy on the message would be an invitation to double-count it
+ * later. See {@link CostAttributedMessage}.
+ */
+function withoutInteractions(message: AssistantChatMessage): AssistantChatMessage {
+  if (!readInteractions(message)) return message
+  const copy: Record<string, unknown> = { ...message }
+  delete copy.interactions
+  return copy as unknown as AssistantChatMessage
 }
 
 /**
@@ -731,11 +824,32 @@ function AnswerBubble({
   message,
   onSuggestionSelect,
   resolveBusinessInsight,
+  onSpend,
 }: {
   message: AnswerChatMessage
   onSuggestionSelect: (text: string) => void
   resolveBusinessInsight?: ResolveBusinessInsight
+  /** Records what a tapped business-insight call cost, against this answer. */
+  onSpend: (messageId: string, interactions: CostInteraction[]) => void
 }) {
+  // The advice call behind a business-insight chip is the app's only billed
+  // request that isn't an /api/ask turn, and it used to report its cost to a
+  // separate, purely in-memory channel — so it vanished on reload exactly
+  // like the chat total did. Wrapping the resolver here routes it through
+  // the same durable, message-attributed ledger every other model call now
+  // uses, which is what lets the running total have ONE definition rather
+  // than a persistent part and an ephemeral part.
+  const resolveInsightAndRecordSpend = React.useMemo<
+    ResolveBusinessInsight | undefined
+  >(() => {
+    if (!resolveBusinessInsight) return undefined
+    return async (kind, toolCalls) => {
+      const advice = await resolveBusinessInsight(kind, toolCalls)
+      onSpend(message.id, [advice.interaction])
+      return advice
+    }
+  }, [message.id, onSpend, resolveBusinessInsight])
+
   const sourceCount = message.provenance.length
   const followUps = message.followUps ?? []
   const toolCalls = message.toolCalls ?? []
@@ -859,12 +973,12 @@ function AnswerBubble({
             into computed facts. Rendered only when both the teaser and a
             resolver exist; the full advice is fetched exclusively on tap
             inside the chip, never here. */}
-        {message.businessInsight && resolveBusinessInsight ? (
+        {message.businessInsight && resolveInsightAndRecordSpend ? (
           <div className="border-t border-border pt-2.5">
             <BusinessInsightChip
               teaser={message.businessInsight}
               toolCalls={toolCalls}
-              resolveBusinessInsight={resolveBusinessInsight}
+              resolveBusinessInsight={resolveInsightAndRecordSpend}
             />
           </div>
         ) : null}
@@ -962,20 +1076,33 @@ function ErrorBubble({
   message: ErrorChatMessage
   onRetry: (question: string) => void
 }) {
+  const interrupted = message.cause === 'interrupted'
   return (
     <li className="flex items-start gap-2">
       <ChatAvatar role="assistant" tone="warning" />
       <div className="max-w-[85%] space-y-2 rounded-2xl rounded-tl-sm border border-border bg-muted/50 px-4 py-3">
         <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-          <PlugZap className="size-3.5 text-muted-foreground" aria-hidden="true" />
-          I couldn&apos;t reach your data just now
+          {interrupted ? (
+            <Unplug className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          ) : (
+            <PlugZap className="size-3.5 text-muted-foreground" aria-hidden="true" />
+          )}
+          {interrupted
+            ? 'This answer never made it back to you'
+            : "I couldn't reach your data just now"}
         </p>
         <p className="text-sm leading-relaxed text-foreground">
           {message.text}
         </p>
+        {/* The honest version of what happened, in both directions. A
+            transport failure cost nothing; an interruption very likely DID
+            run and therefore very likely was charged, and this product's
+            instrumentation principle ("never hide or under-report spend")
+            means saying so rather than letting it read as a free retry. */}
         <p className="text-xs text-muted-foreground">
-          This is a connection problem, not a refusal — your question was never
-          answered either way.
+          {interrupted
+            ? 'Your question ran, so it may already have been charged to the session total below — asking again will cost again.'
+            : 'This is a connection problem, not a refusal — your question was never answered either way.'}
         </p>
         <button
           type="button"
@@ -1077,18 +1204,40 @@ export default function ChatPanel({
   // Restored synchronously in the initializer, not in an effect: mounting
   // empty and then swapping in the saved thread a frame later would flash
   // the empty state on every reload.
+  //
+  // `reconcileInterruptedMessages` rather than a plain `loadThreadStore`: a
+  // question left pending by a previous page load has to be resolved to an
+  // honest, retryable state HERE, before the first paint, or the reader sees
+  // their own question sitting under a spinner that will never stop.
   const [threadStore, setThreadStore] = React.useState<ThreadStore | null>(() =>
-    persistConversation ? loadThreadStore() : null,
+    persistConversation ? reconcileInterruptedMessages() : null,
   )
   const [savedPrompts, setSavedPrompts] = React.useState<SavedPrompt[]>(() =>
     persistConversation ? loadSavedPrompts() : [],
   )
-  const [messages, setMessages] = React.useState<ChatMessage[]>(() => {
-    if (threadStore) return activeThread(threadStore)?.messages ?? []
-    return initialMessages ?? SEED_MESSAGES
-  })
+  // Only used when this panel is NOT persisting (tests, embeddings). When it
+  // is, storage is the source of truth and `messages` below is a view of it —
+  // see chatStorage's doc comment for why that inversion is the whole fix.
+  const [localMessages, setLocalMessages] = React.useState<ChatMessage[]>(() =>
+    persistConversation ? [] : (initialMessages ?? SEED_MESSAGES),
+  )
+  const messages = React.useMemo<ChatMessage[]>(() => {
+    if (!persistConversation) return localMessages
+    return threadStore ? (activeThread(threadStore)?.messages ?? []) : []
+  }, [localMessages, persistConversation, threadStore])
   const [draft, setDraft] = React.useState('')
-  const [isPending, setIsPending] = React.useState(false)
+  // Derived, never stored. A boolean "is something in flight" was itself part
+  // of the bug: it lived only in React state, so unmounting erased the fact
+  // that an answer was coming. The pending MESSAGE is the durable record; the
+  // in-flight registry (document-scoped, not persisted) is what says whether
+  // THIS document is the one still waiting on it. Another tab's pending
+  // question therefore shows its bubble here without freezing this composer.
+  const isPending = messages.some(
+    (message) =>
+      message.role === 'assistant' &&
+      message.kind === 'pending' &&
+      isRequestInFlight(message.id),
+  )
   const viewportRef = React.useRef<HTMLDivElement>(null)
   const [isPinnedToBottom, setIsPinnedToBottom] = React.useState(true)
   const pinnedRef = React.useRef(true)
@@ -1103,13 +1252,85 @@ export default function ChatPanel({
   // fires once.
   const [composerHeight, setComposerHeight] = React.useState(112)
 
-  // Persist after every change to the thread. Cheap (a JSON write of a few
-  // KB) and, unlike a debounce, cannot lose the last message if the tab is
-  // closed immediately after an answer arrives.
+  // Absorbs a store written by anything else — another tab through the
+  // browser's `storage` event, or this panel's own commit from a settled
+  // request — by MERGING it into what this panel already has rather than
+  // replacing it.
+  //
+  // This is the direct fix for two tabs destroying each other's history. The
+  // old code had no listener at all and re-persisted its whole mount-time
+  // snapshot on every render, so the last tab to write silently won. Merging
+  // is safe here precisely because messages are append-only and only move
+  // forward through the resolution lattice (see chatStorage).
+  //
+  // `previous.activeId` is preserved on purpose: which thread this tab is
+  // looking at is this reader's choice, and must not follow another tab's.
   React.useEffect(() => {
     if (!persistConversation) return
-    setThreadStore((store) => (store ? persistActiveThread(store, messages) : store))
-  }, [messages, persistConversation])
+    return subscribeToThreadStore((incoming) => {
+      setThreadStore((previous) =>
+        previous ? mergeThreadStores(incoming, previous, previous.activeId) : incoming,
+      )
+    })
+  }, [persistConversation])
+
+  // The other half of the same story: a pending question this document is
+  // not waiting on can only be resolved by whichever tab notices it. Mount
+  // covers the reload case; coming back to a backgrounded tab covers "the
+  // tab that owned the request was closed", which would otherwise leave a
+  // spinner running forever in every OTHER tab. Safe to run eagerly because
+  // the placeholder it writes ranks below a real verdict — if the owning tab
+  // is in fact still working, its answer supersedes this automatically.
+  React.useEffect(() => {
+    if (!persistConversation) return
+    function reconcileWhenVisible() {
+      if (document.visibilityState !== 'visible') return
+      setThreadStore((previous) => reconcileInterruptedMessages(previous ?? undefined))
+    }
+    document.addEventListener('visibilitychange', reconcileWhenVisible)
+    return () => document.removeEventListener('visibilitychange', reconcileWhenVisible)
+  }, [persistConversation])
+
+  /**
+   * The one write path for conversation changes.
+   *
+   * Deliberately NOT a `setMessages` call with a persist effect hanging off
+   * it. `commitThreadMessages` is a plain module function that read-modify-
+   * writes live storage, so it behaves identically whether this component is
+   * still mounted or was unmounted the instant after the request was sent —
+   * which is exactly the case that used to throw completed, already-billed
+   * answers away. The `setThreadStore` that follows is only the local view
+   * catching up, and is a no-op after unmount rather than the thing that
+   * makes the write happen.
+   */
+  // The panel's own view of the store, readable from a settled promise long
+  // after the render that produced it. Passed to every commit as the base to
+  // fold storage into, so a thread this panel created but has not yet
+  // written (the very first question of a fresh browser) is still known to
+  // the commit rather than being treated as a stranger.
+  const threadStoreRef = React.useRef<ThreadStore | null>(threadStore)
+  React.useEffect(() => {
+    threadStoreRef.current = threadStore
+  }, [threadStore])
+
+  const commitMessages = React.useCallback(
+    (threadId: string | null, mutate: (messages: ChatMessage[]) => ChatMessage[]) => {
+      if (threadId === null) {
+        setLocalMessages(mutate)
+        return
+      }
+      const next = commitThreadMessages(
+        threadId,
+        mutate,
+        threadStoreRef.current ?? undefined,
+      )
+      threadStoreRef.current = next
+      setThreadStore((previous) =>
+        previous ? mergeThreadStores(next, previous, previous.activeId) : next,
+      )
+    },
+    [],
+  )
 
   // Auto-scroll, fixed. Three defects were live here before this pass, all
   // confirmed by measuring the real page rather than reading the code:
@@ -1245,18 +1466,47 @@ export default function ChatPanel({
     return () => viewport.removeEventListener('scroll', handleScroll)
   }, [])
 
+  const activeThreadId = persistConversation ? (threadStore?.activeId ?? null) : null
+
+  /**
+   * Records spend for a model call that did not produce a new message —
+   * today only the business-insight advice call. Skipped entirely when this
+   * panel isn't persisting, because there is no ledger to write to and a
+   * non-persisting panel is by definition not the live, billed surface.
+   */
+  const recordMessageSpend = React.useCallback(
+    (messageId: string, interactions: CostInteraction[]) => {
+      if (activeThreadId === null) return
+      recordSpend(activeThreadId, `${messageId}:insight`, interactions)
+    },
+    [activeThreadId],
+  )
+
+  // A ref, not the derived `isPending` above, guards re-entry: `isPending`
+  // is computed from a render's snapshot of `messages`, so two submissions
+  // dispatched inside one tick would both see `false`. The ref flips
+  // synchronously.
+  const submitLockRef = React.useRef(false)
+
   const submitQuestion = React.useCallback(
     async (rawText: string) => {
       const text = rawText.trim()
-      if (!text || isPending) return
+      if (!text || submitLockRef.current) return
+      submitLockRef.current = true
+
+      // Captured now, not read later: an answer must land in the thread its
+      // question was asked in even if the reader opens a different thread —
+      // or a different tab does — while the request is in flight.
+      const threadId = persistConversation ? (threadStore?.activeId ?? null) : null
+      const history = messages
 
       // Derived from the history BEFORE this message is appended — the
       // clarification being answered (or the answer this might be a
       // follow-up to) is the one currently on screen. Mutually exclusive by
       // construction (see each function's doc comment): at most one of
       // these is ever defined for a given submission.
-      const pendingClarification = derivePendingClarification(messages)
-      const previousExchange = derivePreviousExchange(messages)
+      const pendingClarification = derivePendingClarification(history)
+      const previousExchange = derivePreviousExchange(history)
 
       const userMessage: UserChatMessage = {
         id: nextMessageId('user'),
@@ -1264,47 +1514,77 @@ export default function ChatPanel({
         text,
         askedAt: new Date().toISOString(),
       }
-      setMessages((previous) => [...previous, userMessage])
+      // The pending placeholder is written with the question, in the SAME
+      // commit, before the request is made. Its id is then reused as the id
+      // of whatever verdict comes back, so resolving is an in-place update of
+      // one message rather than an append that a merge could duplicate.
+      const pendingMessage: PendingChatMessage = {
+        id: nextMessageId('assistant'),
+        role: 'assistant',
+        kind: 'pending',
+        question: text,
+        askedAt: new Date().toISOString(),
+      }
+
+      markRequestInFlight(pendingMessage.id)
+      commitMessages(threadId, (previous) => [...previous, userMessage, pendingMessage])
       setDraft('')
-      setIsPending(true)
       // Asking always re-pins: the reader just acted, so the newest message
       // is unambiguously what they want to see.
       pinnedRef.current = true
       setIsPinnedToBottom(true)
 
+      /**
+       * Writes the verdict, and the spend it cost, in one commit.
+       *
+       * Called from a settled promise, so it must not depend on this
+       * component still being mounted — and it doesn't: `recordSpend` and
+       * `commitThreadMessages` (inside `commitMessages`) both write storage
+       * directly. That is the whole of the "an answer completed after the
+       * reader navigated away is not thrown on the floor" fix.
+       */
+      function settle(verdict: AssistantChatMessage) {
+        if (threadId !== null) {
+          recordSpend(threadId, pendingMessage.id, readInteractions(verdict))
+        }
+        const stored = { ...withoutInteractions(verdict), id: pendingMessage.id }
+        commitMessages(threadId, (previous) =>
+          replaceMessage(previous, pendingMessage.id, stored),
+        )
+      }
+
       try {
         const answer = await (resolveAnswer ?? mockResolveAnswer)(
           text,
-          [...messages, userMessage],
+          [...history, userMessage],
           pendingClarification,
           previousExchange,
         )
-        setMessages((previous) => [...previous, answer])
+        settle(answer)
       } catch (error) {
         // Nielsen #9, help users recognize and recover from errors. Before
         // this pass a failed `/api/ask` (backend down, non-2xx) rejected into
         // a bare `finally`: the spinner vanished and NOTHING appeared, so a
         // dead backend was indistinguishable from a question that silently
         // did nothing.
-        setMessages((previous) => [
-          ...previous,
-          {
-            id: nextMessageId('assistant'),
-            role: 'assistant',
-            kind: 'error',
-            text:
-              error instanceof Error
-                ? error.message
-                : 'The request failed before an answer could be computed.',
-            question: text,
-            askedAt: new Date().toISOString(),
-          },
-        ])
+        settle({
+          id: pendingMessage.id,
+          role: 'assistant',
+          kind: 'error',
+          cause: 'transport',
+          text:
+            error instanceof Error
+              ? error.message
+              : 'The request failed before an answer could be computed.',
+          question: text,
+          askedAt: new Date().toISOString(),
+        })
       } finally {
-        setIsPending(false)
+        clearRequestInFlight(pendingMessage.id)
+        submitLockRef.current = false
       }
     },
-    [isPending, messages, resolveAnswer],
+    [commitMessages, messages, persistConversation, resolveAnswer, threadStore],
   )
 
   // Populates the draft only — never submits on the owner's behalf. Guarded
@@ -1375,9 +1655,9 @@ export default function ChatPanel({
             <button
               type="button"
               onClick={() => {
-                const next = startNewThread(threadStore)
-                setThreadStore(next)
-                setMessages(activeThread(next)?.messages ?? [])
+                // `messages` is a view of the store now, so switching
+                // threads is one state change, not two that could disagree.
+                setThreadStore(startNewThread(threadStore))
                 setHistoryOpen(false)
                 pinnedRef.current = true
                 setIsPinnedToBottom(true)
@@ -1401,9 +1681,7 @@ export default function ChatPanel({
                     <button
                       type="button"
                       onClick={() => {
-                        const next = openThread(threadStore, thread.id)
-                        setThreadStore(next)
-                        setMessages(activeThread(next)?.messages ?? [])
+                        setThreadStore(openThread(threadStore, thread.id))
                         setHistoryOpen(false)
                         pinnedRef.current = true
                         setIsPinnedToBottom(true)
@@ -1452,7 +1730,7 @@ export default function ChatPanel({
             className="space-y-4 px-4 pt-4 sm:px-6"
             style={{ paddingBottom: composerHeight }}
           >
-            {messages.length === 0 && !isPending ? (
+            {messages.length === 0 ? (
               <EmptyState
                 suggestions={suggestions}
                 onSelect={submitQuestion}
@@ -1467,6 +1745,7 @@ export default function ChatPanel({
                   message={message}
                   onSuggestionSelect={submitQuestion}
                   resolveBusinessInsight={resolveBusinessInsight}
+                  onSpend={recordMessageSpend}
                 />
               ) : message.kind === 'clarification' ? (
                 <ClarificationBubble
@@ -1480,6 +1759,13 @@ export default function ChatPanel({
                   message={message}
                   onRetry={submitQuestion}
                 />
+              ) : message.kind === 'pending' ? (
+                /* Driven by the persisted pending message rather than by a
+                   transient boolean appended after the list. That is what
+                   makes the spinner survive an in-page navigation away and
+                   back, and what makes an interrupted question resolvable
+                   into something honest instead of vanishing. */
+                <PendingBubble key={message.id} />
               ) : (
                 <RefusalBubble
                   key={message.id}
@@ -1488,7 +1774,6 @@ export default function ChatPanel({
                 />
               ),
             )}
-            {isPending ? <PendingBubble /> : null}
           </ol>
           </div>
         </ScrollArea>
@@ -1641,8 +1926,18 @@ export default function ChatPanel({
               rows={1}
               aria-label="Ask a question about your margin"
               aria-describedby={composerHintId}
-              className="min-h-10 resize-none border-0 bg-transparent shadow-none
-                focus-visible:ring-0 dark:bg-transparent"
+              /* max-h + overflow-y-auto, not just min-h. `field-sizing:
+                 content` (ui/textarea.tsx) genuinely grows the box with its
+                 value and has NO upper bound of its own, so pasting a long
+                 question grew the composer until it filled — and then
+                 outgrew — the panel, taking the Send button off screen with
+                 it. 10rem is about six lines: enough to see a multi-line
+                 question whole, after which the textarea scrolls internally
+                 instead of the page. Set here as well as on the shared
+                 primitive because this instance overrides the primitive's
+                 own sizing classes. */
+              className="min-h-10 max-h-40 resize-none overflow-y-auto border-0 bg-transparent
+                shadow-none focus-visible:ring-0 dark:bg-transparent"
             />
             {/* These two composer buttons used to carry their hint on a
                 native `title=` attribute — the browser's own unstyled
