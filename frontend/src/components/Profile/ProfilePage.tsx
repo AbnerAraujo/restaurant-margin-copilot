@@ -2,11 +2,14 @@ import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'r
 import { AlertTriangle, CheckCircle2, ImageOff, Loader2, Store, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { PageContainer, PageHeader, Panel, PanelHeader } from '@/components/ui/page'
-import { getJson, putJson } from '@/lib/api'
+import { ApiError, getJson, putJson } from '@/lib/api'
 import { explainRequestFailure, isNetworkFailure } from '@/lib/requestFailure'
+import { useUnsavedChangesGuard } from '@/lib/useUnsavedChangesGuard'
+import { notifyProfileSaved } from './useProfile'
 
 // ---------------------------------------------------------------------------
 // The restaurant owner's own company information and photo — a single-row
@@ -64,6 +67,14 @@ const EMPTY_FORM: ProfileFormState = {
   email: '',
   description: '',
 }
+
+/** The form fields plus the photo, together — what "the last known-saved
+ * state" means for the unsaved-changes guard below. */
+interface ProfileSnapshot extends ProfileFormState {
+  photo: string | null
+}
+
+const EMPTY_SNAPSHOT: ProfileSnapshot = { ...EMPTY_FORM, photo: null }
 
 /**
  * This page's network-failure handling (QA found a blocked CORS preflight on
@@ -126,6 +137,12 @@ export default function ProfilePage() {
   const [photo, setPhoto] = useState<string | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
 
+  // The last state this tab actually knows to be saved — either what GET
+  // just loaded, or what the most recent successful PUT echoed back.
+  // Compared against the live `form`/`photo` below to decide whether
+  // there's real in-progress work a navigation would silently discard.
+  const [savedSnapshot, setSavedSnapshot] = useState<ProfileSnapshot>(EMPTY_SNAPSHOT)
+
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
@@ -137,15 +154,17 @@ export default function ProfilePage() {
     getJson<ProfileApi>('/api/profile')
       .then((data) => {
         if (cancelled) return
-        setForm({
+        const loadedForm = {
           name: data.name,
           address: data.address,
           phone: data.phone,
           email: data.email,
           description: data.description,
-        })
+        }
+        setForm(loadedForm)
         setPhoto(data.photo)
         setUpdatedAt(data.updated_at)
+        setSavedSnapshot({ ...loadedForm, photo: data.photo })
       })
       .catch((caught) => {
         if (!cancelled) setLoadError(explainRequestFailure(caught))
@@ -219,22 +238,52 @@ export default function ProfilePage() {
         // reverting that other save (the QA two-tab lost-update finding).
         updated_at: updatedAt,
       })
-      setForm({
+      const savedForm = {
         name: response.name,
         address: response.address,
         phone: response.phone,
         email: response.email,
         description: response.description,
-      })
+      }
+      setForm(savedForm)
       setPhoto(response.photo)
       setUpdatedAt(response.updated_at)
+      setSavedSnapshot({ ...savedForm, photo: response.photo })
       setSaved(true)
+      // Sidebar (and any other surface reading `useProfile`) lives outside
+      // this page and never remounts on its own — without this, a save here
+      // would sit unseen for the rest of the session (QA finding).
+      notifyProfileSaved()
     } catch (caught) {
       setSubmitError(saveErrorMessage(caught))
+      if (caught instanceof ApiError && caught.status === 409) {
+        // Someone else's save landed in between — refresh every other
+        // surface reading the profile (the sidebar) to that real, current
+        // value now, rather than leaving it frozen on what this tab loaded
+        // while the error above tells the owner to reload. This form's own
+        // fields are left alone: they're the owner's own attempted edit,
+        // not something to silently discard.
+        notifyProfileSaved()
+      }
     } finally {
       setSubmitting(false)
     }
   }
+
+  // "Meaningful in-progress content" for this form: the live field/photo
+  // values no longer match the last state actually known to be saved. A
+  // freshly-loaded (or just-saved) form's `form`/`photo` and `savedSnapshot`
+  // are identical, so this never fires on an untouched page — see
+  // ProfilePage.test.tsx's "unsaved-changes guard" tests.
+  const hasUnsavedChanges =
+    form.name !== savedSnapshot.name ||
+    form.address !== savedSnapshot.address ||
+    form.phone !== savedSnapshot.phone ||
+    form.email !== savedSnapshot.email ||
+    form.description !== savedSnapshot.description ||
+    photo !== savedSnapshot.photo
+
+  const { isBlocked, confirmDiscard, cancelDiscard } = useUnsavedChangesGuard(hasUnsavedChanges)
 
   if (loading) {
     return (
@@ -448,6 +497,15 @@ export default function ProfilePage() {
           </div>
         </form>
       </Panel>
+
+      <ConfirmDialog
+        open={isBlocked}
+        title="Discard your profile changes?"
+        description="The changes you've made to your restaurant's name, details, or photo haven't been saved yet. Leaving this page now discards them."
+        confirmLabel="Discard changes"
+        onConfirm={confirmDiscard}
+        onCancel={cancelDiscard}
+      />
     </PageContainer>
   )
 }
