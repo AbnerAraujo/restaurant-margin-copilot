@@ -23,6 +23,21 @@ const ALLOWED_PHOTO_TYPES = ['image/png', 'image/jpeg', 'image/webp']
 /** Mirrors backend/internal/httpapi/profile.go's maxProfilePhotoBytes. */
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 
+/**
+ * Mirrors backend/internal/httpapi/profile.go's profile*MaxLen constants —
+ * a client-side `maxLength` on each field so a user discovers the real
+ * cap by typing into it, rather than only after a round-trip 400 (QA
+ * finding). The server enforces these independently and remains the
+ * authority; this is purely a faster feedback loop.
+ */
+const PROFILE_FIELD_MAX_LENGTHS = {
+  name: 200,
+  address: 300,
+  phone: 40,
+  email: 254,
+  description: 1000,
+} as const
+
 interface ProfileApi {
   name: string
   address: string
@@ -315,6 +330,7 @@ export default function ProfilePage() {
                   onChange={(event) => updateField('name', event.target.value)}
                   required
                   aria-required="true"
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.name}
                 />
               </div>
 
@@ -327,6 +343,7 @@ export default function ProfilePage() {
                   placeholder="123 Main St, Springfield"
                   value={form.address}
                   onChange={(event) => updateField('address', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.address}
                 />
               </div>
 
@@ -340,6 +357,7 @@ export default function ProfilePage() {
                   placeholder="+1 555 123 4567"
                   value={form.phone}
                   onChange={(event) => updateField('phone', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.phone}
                 />
               </div>
 
@@ -353,6 +371,7 @@ export default function ProfilePage() {
                   placeholder="owner@yourrestaurant.com"
                   value={form.email}
                   onChange={(event) => updateField('email', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.email}
                 />
               </div>
 
@@ -365,6 +384,7 @@ export default function ProfilePage() {
                   placeholder="Tell customers what makes your restaurant special"
                   value={form.description}
                   onChange={(event) => updateField('description', event.target.value)}
+                  maxLength={PROFILE_FIELD_MAX_LENGTHS.description}
                 />
               </div>
             </div>
