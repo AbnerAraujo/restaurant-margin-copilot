@@ -1,5 +1,6 @@
 import type { ChatMessage, ErrorChatMessage } from '@/components/Chat/ChatPanel'
 import type { CostInteraction } from '@/components/CostPanel/CostPanel'
+import { createUniqueId } from '@/lib/id'
 
 /**
  * Client-side persistence for the chat: the current thread, a short history
@@ -346,7 +347,7 @@ function isWellFormedMessage(message: unknown): message is ChatMessage {
 }
 
 function newId(): string {
-  return `t-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  return `t-${createUniqueId()}`
 }
 
 /**
