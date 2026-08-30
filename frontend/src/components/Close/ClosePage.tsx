@@ -689,7 +689,16 @@ export default function ClosePage() {
               <Stat
                 label="Gross sales"
                 value={formatUsd(grossSalesTotal(latest))}
-                caption={`${Object.keys(latest.gross_sales_by_source).length} sources`}
+                // "channels", not "sources" — this Stat sits right beside
+                // Margin's own ProvenanceTag footer, which ALSO says "N
+                // sources" but counts a completely different thing (distinct
+                // provenance FILES, not distinct SALES CHANNELS). Same word,
+                // same row, two different denominators reads as if a source
+                // were missing from one of them when neither is wrong — a
+                // QA pass found exactly that confusion. Naming this one
+                // "channels" (iFood, Just Eat Takeaway, POS, ...) makes the
+                // two counts unambiguous next to each other.
+                caption={`${Object.keys(latest.gross_sales_by_source).length} ${Object.keys(latest.gross_sales_by_source).length === 1 ? 'channel' : 'channels'}`}
               />
               <Stat
                 label="Commissions"
@@ -724,7 +733,7 @@ export default function ClosePage() {
               onDataPointClick={handleChartDataPointClick}
             />
 
-            {/* Gross sales by source: one stat per source, so "3 sources"
+            {/* Gross sales by source: one stat per channel, so "3 channels"
                 above is checkable rather than an assertion. Amounts are
                 printed exactly as the API sent them; the source label is
                 humanized via the same ifood/just_eat_takeaway/pos ->

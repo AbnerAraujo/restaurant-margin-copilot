@@ -77,14 +77,18 @@ describe('ProvenanceTag', () => {
     expect(screen.queryByRole('group', { name: /source citations/i })).not.toBeInTheDocument()
   })
 
-  it('shows a source count trigger and lists every ref when multiple sources back one number', async () => {
+  // "source files", not the bare "sources" this used to say — that bare
+  // word, right beside Close/ClosePage.tsx's unrelated "N sources" (sales
+  // channels) caption, is exactly the ambiguity a QA pass found (bug fix).
+  it('shows a "N source files" trigger and lists every ref when multiple files back one number', async () => {
     const user = userEvent.setup()
     render(<ProvenanceTag refs={[posExportRef, deliveryPlatformRef]} />)
 
-    const trigger = screen.getByRole('button', { name: '2 sources' })
+    const trigger = screen.getByRole('button', { name: '2 source files' })
     await user.click(trigger)
 
     const panel = screen.getByRole('group', { name: /source citations/i })
+    expect(panel).toHaveTextContent('Source files')
     expect(panel).toHaveTextContent('pos_export_2026-08-21.csv')
     expect(panel).toHaveTextContent('ifood_delivery_export_wk34.csv')
   })
