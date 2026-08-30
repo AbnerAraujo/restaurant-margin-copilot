@@ -324,6 +324,19 @@ export default function CostSheetTab() {
             title="Parsed cost sheet rows"
             columns={['Invoice ID', 'Date', 'Supplier', 'Category', 'Amount', 'Notes']}
             rows={toTableRows(preview.rows)}
+            // Column header filters (Excel/Sheets-style), additive to
+            // nothing else on this page — there is no other filter surface
+            // here to compose with. A real supplier cost sheet can run to
+            // dozens of line items across several suppliers and categories,
+            // and this is a review-before-commit step: an owner spot-checking
+            // one supplier's or one category's rows before replacing the
+            // whole file on file benefits from narrowing to just those rows.
+            // Invoice ID gets a text filter (each one is close to unique, so
+            // a checklist wouldn't scale); Supplier/Category get a checklist
+            // (both genuinely categorical, options drawn from this file's own
+            // rows, never hardcoded).
+            columnFilters={{ 0: 'text', 2: 'categorical', 3: 'categorical' }}
+            filterEmptyLabel="No cost sheet rows match these filters."
           />
         </Panel>
       ) : null}

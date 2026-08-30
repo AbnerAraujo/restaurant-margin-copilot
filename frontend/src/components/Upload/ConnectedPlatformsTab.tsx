@@ -465,6 +465,16 @@ export default function ConnectedPlatformsTab() {
             title="Simulated orders by source and day"
             columns={['Date', 'Source', 'Orders', 'Gross sales', 'Refunds', 'Commission', 'Duplicates']}
             rows={toTableRows(preview.days)}
+            // Column header filters: up to 31 days times every connected
+            // platform can interleave into 60+ rows for a wide preview
+            // range, and Platform is a genuine (if currently 2-value)
+            // categorical column worth isolating one connector's day-by-day
+            // figures from. Orders gets a numeric range filter as this
+            // feature's one live demonstration of that filter type — see
+            // CHANGELOG for why CostSheetTab's columns all stayed
+            // categorical/text instead.
+            columnFilters={{ 1: 'categorical', 2: 'numeric' }}
+            filterEmptyLabel="No simulated orders match these filters."
           />
         </Panel>
       ) : null}

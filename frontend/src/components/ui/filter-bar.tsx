@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Search, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -72,9 +72,29 @@ function FilterField({
   )
 }
 
-/** The shared text-search box: matches a row's visible primary fields (never
- * a hidden id), debounce-free since filtering is a cheap in-memory pass over
- * already-fetched data. */
+/**
+ * The shared text-search box: matches a row's visible primary fields (never
+ * a hidden id).
+ *
+ * Reported live by the product owner: this used to call `onChange` — and so
+ * narrow the grid — on every keystroke. The owner wants an explicit action
+ * to apply a typed search instead of a live-as-you-type one (unlike the
+ * dropdown/chip filters beside it, which stay instant: a single discrete
+ * click doesn't warrant a confirm step the way open-ended typing does). This
+ * is deliberately NOT a debounce — a debounce still applies automatically,
+ * only delayed, which isn't what was asked for.
+ *
+ * `value`/`onChange` still name the APPLIED filter value (the prop contract
+ * every caller already wires to `useTableFilter`'s `searchQuery`/
+ * `setSearchQuery` is unchanged) — this component now stages what's typed in
+ * local `draft` state and only calls `onChange` on Enter or the search-icon
+ * button. `draft` re-syncs from `value` whenever the APPLIED value changes
+ * out from under the user's own typing (Clear filters, a browser back/
+ * forward restoring a different search from the URL) — that effect never
+ * fires from typing itself, since typing only ever touches `draft`, so
+ * nothing here can make the input's visible text lag a keystroke or fight
+ * the user mid-edit.
+ */
 export function FilterSearchInput({
   id,
   label,
@@ -88,18 +108,45 @@ export function FilterSearchInput({
   onChange: (value: string) => void
   placeholder: string
 }) {
+  const [draft, setDraft] = useState(value)
+  // Adjusted during render, not an effect (React's own recommended pattern
+  // for "reset local state when a prop changes"): an effect would commit the
+  // stale `draft` to the screen for one frame before re-running, and would
+  // also cost this component a second render on every APPLIED-value change.
+  // Comparing against the last APPLIED value we've seen keeps this from ever
+  // firing off the user's own typing, which only ever touches `draft`.
+  const [lastSeenValue, setLastSeenValue] = useState(value)
+  if (value !== lastSeenValue) {
+    setLastSeenValue(value)
+    setDraft(value)
+  }
+
+  function apply() {
+    onChange(draft)
+  }
+
   return (
     <FilterField id={id} label={label}>
       <div className="relative">
-        <Search
-          className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
-          aria-hidden="true"
-        />
+        <button
+          type="button"
+          onClick={apply}
+          aria-label="Apply search"
+          className="absolute left-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <Search className="size-3.5" aria-hidden="true" />
+        </button>
         <Input
           id={id}
           type="search"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault()
+              apply()
+            }
+          }}
           placeholder={placeholder}
           className="h-8 w-48 pl-8"
         />

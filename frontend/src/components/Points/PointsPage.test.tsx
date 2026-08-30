@@ -173,7 +173,7 @@ describe('PointsPage redemption history (spec 008 FR-014)', () => {
     await screen.findByText('IFOOD-CAMP-EARLY')
     await userEvent.type(
       screen.getByLabelText('Search redemption history'),
-      'no-such-campaign',
+      'no-such-campaign{Enter}',
     )
 
     expect(

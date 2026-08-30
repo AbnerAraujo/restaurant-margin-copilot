@@ -12,6 +12,135 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Excel-style per-column header filters, and the search boxes that stopped filtering on every keystroke
+
+Two related, additive changes to how a grid gets narrowed, both explicitly
+scoped by the `dataviz`/`ux-writing` skills rather than added everywhere on
+reflex.
+
+**Per-column header filters.** Every existing `useTableFilter` grid
+(`PromotionsPage`, `PlatformsPage`, `HomePage`, `PointsPage`) already had its
+own filter bar (search box, dropdown, chips) above the table — the product
+owner asked for a SECOND, additive filtering surface: a small filter icon in
+a column header, Excel/Sheets-style, opening a checklist/text/range popup
+scoped to just that column, composing with (never replacing) the filter bar.
+
+Surveyed every `<table>` under `frontend/src/components/**`, not just the
+four `useTableFilter` pages, and applied real judgment rather than adding
+the affordance everywhere:
+
+- **`CostSheetTab.tsx`** and **`ConnectedPlatformsTab.tsx`** (both
+  `/upload`) — INCLUDED. Both render `DataGrid` as a standalone
+  preview-before-commit table (no accompanying chart to stay in sync with,
+  unlike every other `DataGrid`/chart-table caller below), with real scale
+  (a real supplier cost sheet can run to dozens of line items; up to 31 days
+  times every connected platform can interleave into 60+ preview rows) and a
+  genuine categorical dimension worth narrowing by (Supplier/Category;
+  Platform). `CostSheetTab` demonstrates the text and categorical filter
+  types (Invoice ID; Supplier, Category); `ConnectedPlatformsTab`
+  demonstrates categorical and numeric range (Source; Orders).
+- **`HomePage`'s "Recent closes"** — EXCLUDED. Capped at 7 rows
+  (`RECENT_CLOSE_ROWS`), and its one categorical dimension (Status: clean/
+  flagged) is already a 2-value toggle sitting directly above the table as
+  visible chips — a column checklist for the same 2 values one line down
+  adds a second control for no new narrowing power.
+- **`PlatformsPage`'s side-by-side `DataGrid`** — EXCLUDED. Row count is
+  bounded by how many delivery platforms this restaurant has on file (2
+  today), the platform name IS each row's identity (already the page's own
+  search box), and `DataGrid`'s own doc comment is explicit that it's
+  "deliberately plain: no sorting, no filtering... every interactive
+  affordance added here would be a control the reader has to understand
+  before trusting the number" — true here as much as anywhere else it's
+  quoted below.
+- **`PointsPage`'s rules table** (5 fixed rows: Clean Close, Discrepancy
+  Catcher, Growth, Week One, Campaign Launcher) — EXCLUDED, too small and
+  non-growing, no real categorical dimension (the rule name IS the row).
+  **`PointsPage`'s redemption history** — EXCLUDED, it's a `<ul>` of flex
+  rows, not a `<table>` with column headers to hang the affordance off, and
+  its one categorical dimension (platform) is already covered by the
+  existing filter bar's dropdown.
+- **Every "View as table" chart fallback** (`MarginTrendChart`,
+  `CategoryBarChart`, `CompositionPieChart`, `EffectiveRateTrendChart`,
+  `PromoRoiChart`'s embedded table) and **`DataGrid` inside chat's
+  `AnswerVisualizationView`** — EXCLUDED as one consistent class. These are
+  accessibility-parity twins of a chart or a compact answer citation, not
+  independent explorable grids; filtering a fallback table without also
+  filtering the chart it's supposed to mirror would let the two disagree
+  about what's on screen — the exact "two renderings of one number that can
+  drift" failure this product's provenance discipline exists to prevent —
+  and chat's `DataGrid` renders "a handful of rows scoped to one answer"
+  by explicit design.
+
+Built as one reusable pair, not a bespoke implementation per table:
+`frontend/src/lib/useColumnFilters.ts` (categorical/text/numeric filter
+state and matching, operating on `DataGrid`'s own `columns: string[]` /
+`rows: string[][]` shape) and `frontend/src/components/ui/column-filter.tsx`
+(`ColumnFilterButton`, the header trigger + popover, built on Radix
+`Popover` — already a project dependency via `ui/tooltip.tsx`, not a new
+one — for the accessible-popover plumbing: focus into the panel on open,
+Escape closes and returns focus to the trigger, click-outside closes).
+`DataGrid.tsx` takes an opt-in `columnFilters` prop keyed by column index;
+every caller that omits it (chat, `PlatformsPage`) renders exactly as
+before. State is local `useState`, not URL-synced like `useTableFilter` —
+both wired-in tables are one-shot preview-before-commit steps with no route
+of their own and no existing synced-state precedent to extend (reloading
+`/upload` mid-preview already discards the staged `File` regardless of what
+a URL remembers), so persisting column-filter choices there would promise
+something this flow can't keep. A future caller that already syncs its
+`useTableFilter` state to the URL should extend that same discipline to its
+own column filters rather than copy this local-state approach as-is.
+
+The active-column indicator is never color alone: the trigger's
+`aria-label` states "active" plus a plain-language summary ("2 values
+selected", a quoted query, or the numeric bound), and a small dot renders
+beside the icon in addition to the color change.
+
+**Search boxes now apply on Enter/click, not on every keystroke.** Reported
+by the product owner: `FilterSearchInput` (the shared search box behind
+"Search campaigns", "Search redemption history", "Search platforms", and
+Home's "Search recent closes by date") narrowed the grid on every
+keystroke. Changed to require an explicit action — Enter, or clicking the
+search icon (now a real button) — deliberately NOT a debounce, which would
+still apply automatically, only delayed, and specifically not what was
+asked for. The input's own visible text still updates every keystroke
+(local `draft` state); only the actual `onChange` call that narrows the
+grid is deferred. `draft` re-syncs from the applied `value` whenever it
+changes from outside the user's own typing (Clear filters, a browser
+back/forward restoring a different search from the URL) via React's
+render-time state-adjustment pattern (compare against the last-seen applied
+value during render) rather than a `useEffect` — an effect here would both
+cost an extra render on every apply and, per this repo's now-enabled
+`react-hooks/set-state-in-effect` lint rule, is the wrong tool for
+"reset local state when a prop changes" in the first place. The same
+discipline was applied to the new column-header text/numeric filters for
+consistency; a column's checklist filter still applies immediately per
+checkbox, same reasoning as the existing status/ROI-sign chips (a single
+discrete choice doesn't warrant a confirm step).
+
+Existing tests for the four search boxes asserted immediate `onChange` on
+`userEvent.type` — updated (`HomePage.test.tsx`, `PlatformsPage.test.tsx`,
+`PointsPage.test.tsx`, `PromotionsPage.test.tsx`) to press Enter before
+asserting the narrowed result, alongside `filter-bar.test.tsx`'s new
+explicit cases: typing alone doesn't apply, Enter applies, clicking the
+search button applies, and the input re-syncs when the applied value
+changes externally. New `useColumnFilters.test.ts` (13 cases: options in
+first-seen order, AND-composition across columns, numeric parsing of
+formatted currency cells with an unparseable cell excluded rather than
+guessed, clear-one vs. clear-all) and `DataGrid.test.tsx` (opens, filters,
+clears, keyboard-reaches-and-opens-via-Enter, empty state) cover the
+reusable pieces directly; `CostSheetTab.test.tsx` and
+`ConnectedPlatformsTab.test.tsx` each gained one integration case proving a
+column filter narrows the real preview table.
+
+Verified live against the shared backend (`:8080`, untouched) on a frontend
+dev server on `:5273`: uploaded a real 5-row cost sheet CSV and applied a
+Supplier checklist filter (5 rows → 2), previewed a real 347-row simulated
+connector sync and applied a Platform checklist filter (14 preview rows → 7)
+and an Orders numeric-range filter, and typed an unmatched search into
+Promotions' "Search campaigns" (30 campaigns still shown, unapplied) then
+pressed Enter (0 of 30 shown, the real "No campaigns match these filters"
+empty state).
+
 ## 2026-08-30 — POS connector, and the cross-source duplicate it creates (spec 012)
 
 `specs/012-pos-connector-dedup/`. Two changes that had to ship together,

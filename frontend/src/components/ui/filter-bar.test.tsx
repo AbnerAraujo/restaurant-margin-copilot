@@ -38,7 +38,20 @@ describe('FilterBar', () => {
 })
 
 describe('FilterSearchInput', () => {
-  it('renders a real label (not just a placeholder) and reports typed text', async () => {
+  it('renders a real label, not just a placeholder', () => {
+    render(
+      <FilterSearchInput
+        id="test-search"
+        label="Search campaigns"
+        value=""
+        onChange={() => {}}
+        placeholder="Search by campaign ID"
+      />,
+    )
+    expect(screen.getByLabelText('Search campaigns')).toBeInTheDocument()
+  })
+
+  it('updates the visible text immediately as the user types, without applying the filter yet', async () => {
     const onChange = vi.fn()
     render(
       <FilterSearchInput
@@ -50,8 +63,66 @@ describe('FilterSearchInput', () => {
       />,
     )
     const input = screen.getByLabelText('Search campaigns')
-    await userEvent.type(input, 'a')
-    expect(onChange).toHaveBeenCalledWith('a')
+    await userEvent.type(input, 'lunch')
+    expect(input).toHaveValue('lunch')
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  it('applies the typed text once Enter is pressed', async () => {
+    const onChange = vi.fn()
+    render(
+      <FilterSearchInput
+        id="test-search"
+        label="Search campaigns"
+        value=""
+        onChange={onChange}
+        placeholder="Search by campaign ID"
+      />,
+    )
+    const input = screen.getByLabelText('Search campaigns')
+    await userEvent.type(input, 'lunch{Enter}')
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('lunch')
+  })
+
+  it('applies the typed text when the search button is clicked, same as Enter', async () => {
+    const onChange = vi.fn()
+    render(
+      <FilterSearchInput
+        id="test-search"
+        label="Search campaigns"
+        value=""
+        onChange={onChange}
+        placeholder="Search by campaign ID"
+      />,
+    )
+    const input = screen.getByLabelText('Search campaigns')
+    await userEvent.type(input, 'lunch')
+    await userEvent.click(screen.getByRole('button', { name: 'Apply search' }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('lunch')
+  })
+
+  it('re-syncs its visible text when the applied value changes from outside (e.g. Clear filters)', () => {
+    const { rerender } = render(
+      <FilterSearchInput
+        id="test-search"
+        label="Search campaigns"
+        value="lunch"
+        onChange={() => {}}
+        placeholder="Search by campaign ID"
+      />,
+    )
+    expect(screen.getByLabelText('Search campaigns')).toHaveValue('lunch')
+
+    rerender(
+      <FilterSearchInput
+        id="test-search"
+        label="Search campaigns"
+        value=""
+        onChange={() => {}}
+        placeholder="Search by campaign ID"
+      />,
+    )
+    expect(screen.getByLabelText('Search campaigns')).toHaveValue('')
   })
 })
 
