@@ -76,7 +76,7 @@ const MOBILE_LINK_BASE_CLASSES =
  */
 function RestaurantIdentity({ compact = false }: { compact?: boolean }) {
   const { data } = useProfile()
-  const name = data?.name.trim()
+  const name = data?.name?.trim()
   if (!name) return null
 
   const avatar = (
