@@ -300,6 +300,22 @@ func ParseCostSheet(r io.Reader, sourceFile string) ([]CostInvoiceRecord, error)
 		if err != nil {
 			return nil, fmt.Errorf("ingest: %s row %d: amount: %w", sourceFile, rowNum, err)
 		}
+		// Unlike a delivery-platform subtotal/commission/net_payout (where a
+		// negative value is a documented, legitimate refund reversal row —
+		// cmd/gendata/opening/README.md irregularity #2), this ingestion
+		// contract has no concept of a supplier credit/return: a cost-sheet
+		// "amount" column is always an invoiced cost. A negative value here
+		// is therefore either a sign/export error or a credit note this
+		// product does not yet model — either way, silently letting it
+		// through would quietly REDUCE input_costs and inflate margin with
+		// no discrepancy flag anywhere to explain why (Constitution
+		// Principle II: refuse rather than guess at a confidently wrong
+		// margin figure). Refusing here matches this exact class of
+		// validation POST /api/promotions' spend field already enforces
+		// ("spend must not be negative") for the identical reason.
+		if amountCents < 0 {
+			return nil, fmt.Errorf("ingest: %s row %d: amount: %q is negative — a supplier cost sheet amount must not be negative (this ingestion contract has no concept of a supplier credit/return)", sourceFile, rowNum, get(row, colAmount))
+		}
 
 		rec := CostInvoiceRecord{
 			Ref:         SourceRowRef{File: sourceFile, Row: rowNum},

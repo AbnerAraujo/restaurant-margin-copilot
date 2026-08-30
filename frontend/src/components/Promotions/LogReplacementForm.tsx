@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useRef, useState, type FormEvent } from 'react'
 import { AlertTriangle, CheckCircle2, Coins, Rocket } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -67,6 +67,13 @@ export default function LogReplacementForm({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('money')
 
   const [submitting, setSubmitting] = useState(false)
+  // Found live (same bug as Upload/UploadPage.tsx's committingRef): a fast
+  // double-click on "Log promotion" fires two synchronous submit events
+  // before React's re-render disables the button — setSubmitting(true) from
+  // the first is batched, so the second, still-synchronous invocation reads
+  // the same pre-update `submitting` and would double-POST. A ref mutates
+  // synchronously, closing that window `disabled={submitting}` cannot.
+  const submittingRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<{
     campaignId: string
@@ -127,6 +134,8 @@ export default function LogReplacementForm({
       return
     }
 
+    if (submittingRef.current) return
+    submittingRef.current = true
     setSubmitting(true)
     try {
       const response = await postJson<CreatePromotionResponseApi>(
@@ -150,6 +159,7 @@ export default function LogReplacementForm({
     } catch (caught) {
       setError(explainRequestFailure(caught))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }

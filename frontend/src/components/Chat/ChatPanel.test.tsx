@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '@/lib/api'
 
@@ -38,20 +38,6 @@ function simulateOtherTabWrite(mutate: (store: ThreadStore) => ThreadStore): voi
     new StorageEvent('storage', { key: THREADS_KEY, newValue }),
   )
 }
-
-// jsdom has no ResizeObserver; Radix's ScrollArea needs one to mount. This
-// stub is local to this file rather than the shared test setup so it stays
-// scoped to the one component that pulls in ScrollArea.
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    globalThis.ResizeObserver = ResizeObserverStub
-  }
-})
 
 /** A promise plus its resolver, for asserting on an in-flight pending state. */
 function deferred<T>() {

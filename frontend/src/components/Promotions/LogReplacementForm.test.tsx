@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -349,5 +349,50 @@ describe('LogReplacementForm', () => {
       expect(await screen.findByText(/today's close/i)).toBeInTheDocument()
       expect(router.state.location.pathname).toBe('/close')
     })
+  })
+
+  // QA-round-5 finding: same bug class as Upload/UploadPage.tsx's
+  // committingRef — a fast double-click fires two submit events before
+  // React's re-render disables the button, and setSubmitting(true) from
+  // the first is batched, so a second, still-synchronous invocation of
+  // handleSubmit reads the same pre-update `submitting` and would
+  // double-POST. Both clicks are wrapped in one shared `act()` (rather
+  // than two ordinary `fireEvent.click` calls, each of which auto-flushes
+  // its own `act()` and would hide this exact race) so the DOM's disabled
+  // attribute has no chance to commit between them — the real race two
+  // events landing before React's own re-render has committed anything.
+  it('never double-posts the promotion when the button is double-clicked before it disables', async () => {
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn())
+    renderForm({ flaggedCampaigns: FLAGGED, onCreated: vi.fn() })
+
+    await fillRequiredFields(user)
+
+    // Left unresolved deliberately — this test only cares how many times
+    // the endpoint was CALLED, not what happens once it resolves.
+    const postPromise = new Promise<{
+      ok: boolean
+      status: number
+      json: () => Promise<unknown>
+      text: () => Promise<string>
+    }>(() => {
+      /* never resolves within this test */
+    })
+    const mockFetch = vi.mocked(fetch)
+    mockFetch.mockImplementation(() => postPromise as unknown as ReturnType<typeof fetch>)
+    // usePoints' own GET /api/badges (the points-needed preview) already
+    // used this same mock at least once while filling the form above —
+    // clear its call count so the assertion below counts only what the
+    // double-click itself triggers.
+    mockFetch.mockClear()
+
+    const button = screen.getByRole('button', { name: /log promotion/i })
+    act(() => {
+      fireEvent.click(button)
+      fireEvent.click(button)
+    })
+
+    const postCalls = mockFetch.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST')
+    expect(postCalls).toHaveLength(1)
   })
 })

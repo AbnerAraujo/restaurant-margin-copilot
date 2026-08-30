@@ -1,25 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Outlet, Route, Routes } from 'react-router-dom'
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ShellOutletContext } from '@/components/Shell/AppShell'
 import CostPanel from '@/components/CostPanel/CostPanel'
 import { useSpendLedger } from '@/lib/useSpendLedger'
 import AskPage from './AskPage'
-
-// jsdom has no ResizeObserver; Radix's ScrollArea (inside ChatPanel) needs
-// one to mount. Scoped to this file like ChatPanel's own test.
-beforeAll(() => {
-  if (!('ResizeObserver' in globalThis)) {
-    class ResizeObserverStub {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-    globalThis.ResizeObserver = ResizeObserverStub
-  }
-})
 
 const HAIKU_GATE_USD = 0.00051
 const SONNET_EXPLAIN_USD = 0.00476

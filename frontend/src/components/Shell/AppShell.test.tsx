@@ -181,3 +181,32 @@ describe('AppShell skip-to-content link', () => {
     )
   })
 })
+
+// QA-round-5 finding: <main> is overflow-y-auto only, no overflow-x set —
+// per the CSS spec, that makes its COMPUTED overflow-x "auto" too (an
+// element can't have overflow-y anything-but-visible and overflow-x
+// visible at the same time: https://www.w3.org/TR/css-overflow-3/
+// #overflow-properties), so any page whose content is even slightly wider
+// than the viewport (found live: Close's Period date-range row not
+// wrapping at 375px) quietly made <main> itself horizontally scrollable.
+// That combination is worse than a plain visible overflow: focusing an
+// off-canvas descendant (e.g. clicking/tabbing to a button pushed past the
+// right edge) triggers the browser's native focus-follows-scroll behavior,
+// shifting <main>'s scrollLeft and clipping the START of every other line
+// on the page, with no scrollbar and no way back except undoing whatever
+// focused the off-canvas element. jsdom has no layout engine, so this
+// can't reproduce the overflow itself — it asserts the actual fix
+// (overflow-x-hidden forecloses the CSS quirk regardless of what any given
+// page renders), verified live with Playwright screenshots at 375px/768px.
+describe('AppShell main content region', () => {
+  it('sets overflow-x-hidden on <main>, so no page can make it horizontally scrollable', async () => {
+    renderShellAt('/')
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Page One' })).toBeInTheDocument()
+    })
+
+    const main = document.querySelector('main')
+    expect(main).toHaveClass('overflow-x-hidden')
+    expect(main).toHaveClass('overflow-y-auto')
+  })
+})

@@ -371,7 +371,24 @@ export default function AppShell() {
           // user's next Tab starts from here, not back at the top of the
           // nav) — never a stop in ordinary Tab order, which -1 guarantees.
           tabIndex={-1}
-          className="min-h-0 flex-1 overflow-y-auto px-4 py-6 outline-none transition-none sm:px-6 lg:px-8"
+          // overflow-x-hidden is deliberate, not decorative: per the CSS
+          // spec, an element with overflow-y set to anything but visible
+          // computes its own overflow-x of "visible" up to "auto" instead
+          // (https://www.w3.org/TR/css-overflow-3/#overflow-properties) —
+          // so overflow-y-auto ALONE quietly makes this element horizontally
+          // scrollable too, the moment any descendant (found live: Close's
+          // Period date-range row not wrapping at 375px) is even slightly
+          // wider than the viewport. That combination is worse than a
+          // visible overflow: clicking/tabbing to the off-canvas content
+          // triggers the browser's native focus-follows-scroll behavior,
+          // which shifts THIS container's scrollLeft and clips the START of
+          // every other line of text on the page with no scrollbar, no
+          // affordance, and no way back except undoing whatever focused
+          // the off-canvas element. overflow-x-hidden forecloses the whole
+          // failure mode at the one shared ancestor every route renders
+          // into, rather than requiring every current and future page to
+          // remember to wrap every flex row itself.
+          className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-6 outline-none transition-none sm:px-6 lg:px-8"
           // Reserves real clearance under every route for the fixed
           // CostPanel's actual measured height (see the effect above) —
           // never a guess — so a page's own scrolled content or an h-full
