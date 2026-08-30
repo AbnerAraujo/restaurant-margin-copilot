@@ -38,7 +38,10 @@ internal/ingest, cmd/server  ──▶  internal/reconcile (pure domain core, ze
                                         ▼
                                  internal/mcptools (typed tool port) ◀── Principle III boundary ──▶
                                                                           internal/explain (Sonnet 5)
+                                                                            └─▶ internal/answerverify (pure Go, no model: checks the
+                                                                                narration's figures against the tool results before serving)
                                                                           internal/ambiguity (Sonnet 5 gate, Haiku 4.5 paraphrase match, no data access at all)
+                                                                            └─▶ daterange.go, weekend.go (pure Go pre-checks, no model)
                                         both log to → internal/instrumentation
 ```
 
@@ -55,7 +58,7 @@ Seven fixed tools (`get_daily_summary`, `get_margin_delta`, `list_discrepancies`
 ### Request flow
 
 1. Daily (batch): `ingest` → `reconcile` → `storage` — no LLM involved.
-2. Per question: a deterministic Go pre-check (`internal/ambiguity/daterange.go`) parses any explicit, fully-specified dates in the question and compares them against the known data window (`storage.LoadDataDateRange`, resolved once at startup) — if every explicit date is out of range, the question is refused right here, with zero model calls and zero tokens, instrumented as a no-model interaction → otherwise the `ambiguity` gate classifies (answerable/ambiguous/unanswerable), receiving any in-range date verdicts as precomputed facts it may not re-derive → if answerable, `explain` calls `mcptools` → `storage` → narrates the typed result. If not, refusal/clarification returns directly, bypassing `explain` entirely.
+2. Per question: two deterministic Go pre-checks run first, both with zero model calls and zero tokens, both instrumented as no-model interactions. `internal/ambiguity/daterange.go` parses any explicit, fully-specified dates and compares them against the known data window (`storage.LoadDataDateRange`, resolved once at startup) — if every explicit date is out of range, the question is refused right here. `internal/ambiguity/weekend.go` catches a standalone "weekend" with no days named and no explicit date, and asks which days count, because that is a definition this product does not have rather than a judgment call → otherwise the `ambiguity` gate classifies (answerable/ambiguous/unanswerable), receiving any in-range date verdicts as precomputed facts it may not re-derive → if answerable, `explain` calls `mcptools` → `storage` → narrates the typed result, and `internal/answerverify` checks that narration's figures against those same tool results before it is served, refusing rather than serving one that doesn't match. If not, refusal/clarification returns directly, bypassing `explain` entirely.
 
 **Gate/explain prompt discipline, added post-launch against a real measured eval failure (full before/after numbers in `docs/product-strategy.md`):** the two-step summary above elides three refinements worth naming. The gate classifies a subjective-sounding word ("underperforming", "losing money") as answerable, not ambiguous, whenever a typed tool already defines it deterministically (`list_negative_roi_promotions`, `get_period_totals`), rather than asking the user to define a threshold the product can already compute. `explain`'s prompt separately bans reconstructing a missing period aggregate by calling `get_daily_summary` once per day — the real cause of an earlier turn/token-budget blowup — now that `get_period_totals` answers that shape in one call. And a bare follow-up to the previous *answer* (not a reply to a clarifying question) — "and the day before?", "why?" — is resolved via `ambiguity.ComposeAnswerFollowUp` against exactly one prior exchange (`PreviousExchange{Question, AnswerText}`), deliberately never an accumulating transcript, before either prompt classifies or narrates it.
 
@@ -96,7 +99,7 @@ contradicts the "trustworthy, same-day" framing this product is built around.
 
 | Risk | Mitigation |
 |---|---|
-| Model call inside `internal/explain` accidentally computes rather than narrates a number | Caught by table-driven tests on `internal/reconcile` proving the number independent of any model output; code review checks `explain.go` never does arithmetic on tool results, only formats them |
+| Model call inside `internal/explain` accidentally computes rather than narrates a number | No longer left to review. `internal/answerverify` runs after every narration and before it is served: it extracts each money/percentage figure the answer states and requires it to match a value the tool results returned, or a value Go can rederive from two of them in one operation. A mismatch is a refusal (`numeric_validation_failed`), not a served answer. Still backed by table-driven tests on `internal/reconcile` proving the number independent of any model output |
 | Ambiguity gate cost/latency goes unlogged when a request never reaches `explain` | Caught by `/speckit-analyze` during planning (see `tasks.md` T022/T026 note); fixed before implementation started |
 | Real restaurant export files don't match this project's own column assumptions | `research.md`'s real-file-compatibility decision: generic column-name matching, never exact-header-only; failures logged to `docs/plan.md`'s mistakes log rather than silently patched |
 
