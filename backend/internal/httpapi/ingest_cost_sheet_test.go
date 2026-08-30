@@ -6,18 +6,21 @@ package httpapi
 // in-memory parsing (spec FR-005), and template is a static file, so both
 // exercise real behavior without touching storage.Querier at all.
 //
-// The commit endpoint's happy path (write + full pipeline re-run) is
-// deliberately NOT exercised here: it mutates internal/livedata.Dir and
-// persists real DailyReconciliation rows via the real pipeline, which would
-// either require a live database (making this an integration test in a file
-// that's otherwise a fast unit test) or a fake store elaborate enough to be
-// its own maintenance burden. That path is verified live instead, per
-// specs/007-cost-sheet-upload/plan.md's "Manual/live verification" section —
-// this file DOES cover commit's pre-write validation refusal, which runs
-// before any database or filesystem interaction and needs no store at all.
+// The commit endpoint's pre-write validation refusal is covered here too,
+// which runs before any database or filesystem interaction and needs no
+// store at all. TestHandleCommitCostSheet_SerializesConcurrentCommits is the
+// one exception: it DOES exercise the real commit happy path against a live
+// Postgres, because the concurrency behavior it proves (commitMu actually
+// serializing two overlapping commits) cannot be verified any other way.
+// That test cleans up its own daily_reconciliation rows in t.Cleanup — any
+// future test doing the same must do likewise, since this is otherwise a
+// DB-free file and a stray committed row here would silently corrupt
+// reconciliation totals for anyone running the suite against a shared
+// Postgres instance.
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -354,14 +357,41 @@ func withReadyLiveDataDir(t *testing.T) {
 // disk ends the test as B's content, uncontested, and A's own pipeline run
 // is proven to have seen only its own file.
 func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
-	_, q := httpapiConnectOrSkip(t)
+	conn, q := httpapiConnectOrSkip(t)
 	withReadyLiveDataDir(t)
 
+	// 1999 dates, matching internal/mcptools/reconciliation_tools_test.go's
+	// own sentinelDate convention: this test commits through the REAL
+	// handler and the real pipeline against a live Postgres, so its dates
+	// must fall outside the canonical dataset's real range (2024-08-01
+	// onward). The original version of this test used 2026-01-05..07 — real
+	// in-range dates — and a backend-regression pass (2026-08-30) found this
+	// permanently drifted the canonical $1,078,340.64 total to
+	// $1,081,910.28 when run against any shared Postgres, silently, because
+	// nothing restored the pre-existing canonical row for those days. A
+	// cleanup-DELETE alone would have been WORSE, not better: it deletes the
+	// row outright rather than restoring the original canonical value,
+	// leaving a hole in the dataset instead of a wrong-but-present one.
+	// Genuinely out-of-range dates make the whole class of failure
+	// impossible rather than relying on cleanup to catch it after the fact.
 	const fileA = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
-		"INV-RACE-A,2026-01-05,Race Supplier A,produce,10.00,file A\n"
+		"INV-RACE-A,1999-01-05,Race Supplier A,produce,10.00,file A\n"
 	const fileB = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
-		"INV-RACE-B1,2026-01-06,Race Supplier B,produce,20.00,file B row 1\n" +
-		"INV-RACE-B2,2026-01-07,Race Supplier B,produce,30.00,file B row 2\n"
+		"INV-RACE-B1,1999-01-06,Race Supplier B,produce,20.00,file B row 1\n" +
+		"INV-RACE-B2,1999-01-07,Race Supplier B,produce,30.00,file B row 2\n"
+
+	// Defensive cleanup, matching deleteDay's own belt-and-suspenders
+	// discipline elsewhere: nothing legitimate should ever exist on these
+	// dates, but this keeps a repeated run against a persistent (non-ephemeral)
+	// Postgres from accumulating stale race-test rows across runs.
+	t.Cleanup(func() {
+		_, err := conn.Exec(context.Background(),
+			"DELETE FROM daily_reconciliation WHERE date IN ($1, $2, $3)",
+			"1999-01-05", "1999-01-06", "1999-01-07")
+		if err != nil {
+			t.Logf("cleanup: failed to delete race-test reconciliation rows: %v", err)
+		}
+	})
 
 	reachedHook := make(chan []byte, 1)
 	proceed := make(chan struct{})

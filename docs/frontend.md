@@ -307,7 +307,7 @@ files, none padded into this doc as more "shared" than they actually are:
 | File | Real consumers |
 |---|---|
 | `input.tsx` | `ClosePage.tsx`, `LogReplacementForm.tsx`, `ProfilePage.tsx`, `QuestionComposer.tsx`, `ConnectedPlatformsTab.tsx`, `filter-bar.tsx`, `column-filter.tsx` (7 — re-verified by import 2026-08-30; the previous count of 2 had already gone stale before this pass, uncaught until this recount) |
-| `textarea.tsx` | `ChatPanel.tsx` (1 — the composer's `field-sizing: content` textarea) |
+| `textarea.tsx` | `ChatPanel.tsx`, `QuestionComposer.tsx`, `ProfilePage.tsx` (3 — re-verified by import 2026-08-30; the previous count of 1 had already gone stale, missing the guided-question dialog and the profile bio field) |
 | `avatar.tsx` | `ChatPanel.tsx` (1 — the assistant/user message avatars) |
 | `scroll-area.tsx` | `ChatPanel.tsx` (1 — the Radix `ScrollArea` wrapping the message list; see "The floating composer" below for a real bug this component was at the center of) |
 
