@@ -38,7 +38,7 @@ the affordance everywhere:
   genuine categorical dimension worth narrowing by (Supplier/Category;
   Platform). `CostSheetTab` demonstrates the text and categorical filter
   types (Invoice ID; Supplier, Category); `ConnectedPlatformsTab`
-  demonstrates categorical and numeric range (Platform; Orders).
+  demonstrates categorical and numeric range (Source; Orders).
 - **`HomePage`'s "Recent closes"** — EXCLUDED. Capped at 7 rows
   (`RECENT_CLOSE_ROWS`), and its one categorical dimension (Status: clean/
   flagged) is already a 2-value toggle sitting directly above the table as
