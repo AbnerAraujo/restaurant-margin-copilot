@@ -12,6 +12,47 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — The Close page stopped dumping every discrepancy flag's raw detail into one badge
+
+Reported live: a day with a POS-heavy connector sync (2026-08-30, 40 flags —
+32 cross-source duplicates, 6 amount mismatches, 1 voided sale, 1 anomaly)
+rendered its "Discrepancy Catcher" badge as all 40 flags' raw `detail`
+sentences joined with " · " — internal type names, `simulated://...`
+provenance URIs, and row numbers, all packed into one paragraph-length pill
+that `BadgeDisplay.tsx`'s own type comment says should carry "one line of
+context." The owner's own words: "treat it for a message for the user and
+not a technical [dump]."
+
+Root cause: `ClosePage.tsx`'s `toBadges` built the badge's `detail` with
+`day.discrepancy_flags.map((flag) => flag.detail).join(' · ')` — no cap, no
+grouping, no summarization, and every real day's flag count landed straight
+in the UI verbatim regardless of how many there were.
+
+Fix: a new `summarizeFlags` function groups flags by type, counts them, and
+renders a short plain-language phrase per type — no internal type names, no
+provenance URIs — ordered by what the owner actually needs to act on (an
+unresolved overlap outranks an amount difference, which outranks an
+already-resolved duplicate), then capped to the two most important groups
+with the rest folded into "N more things flagged" rather than spelled out in
+full. A type this list doesn't know about yet still counts toward the total
+("N other items flagged") rather than vanishing silently. The accessible
+label reuses the same summarized text, so a screen reader gets the plain
+summary rather than a worse version of the original wall of text.
+
+Verified against today's real 2026-08-30 data (40 flags, four distinct
+types): the badge now reads "6 orders with a promotion-driven amount
+difference, an unusual change in revenue, and 2 more things flagged" instead
+of the full raw dump. Same fix automatically covers the period view, which
+reuses `toBadges` per day inside its own collapse-to-a-summary-pill logic.
+5 new tests in `ClosePage.test.tsx` cover: many same-type flags grouping into
+one counted phrase, mixed-type priority ordering with the two-phrase cap, a
+single unresolved overlap in correctly singular language, an unrecognized
+flag type still being counted rather than dropped, and the accessible label
+carrying the summary rather than the raw text. `npx tsc -b --noEmit` clean;
+full frontend suite 618/618 passing (613 baseline + 5 new).
+
+---
+
 ## 2026-08-30 — One upload, one reconciliation: cost-sheet commit can pull its own dates' revenue, and simulated days stop being uniformly profitable
 
 Two requests, both about the same complaint: what the product shows after an
