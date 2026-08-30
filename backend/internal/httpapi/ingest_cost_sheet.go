@@ -34,6 +34,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/answercache"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
@@ -62,6 +63,10 @@ const maxCostSheetUploadBytes = 5 << 20
 // traversal via a crafted filename is not a runtime check to get right — it
 // is a code shape that cannot occur.
 const liveCostSheetFilename = "supplier_cost_sheet.csv"
+
+// afterCommitWriteForTests is a test-only seam, always nil in production —
+// see its call site in HandleCommitCostSheet for what it exists to prove.
+var afterCommitWriteForTests func()
 
 // CostSheetRowView is one parsed invoice row, rendered for the preview
 // response. Amount is a decimal string (internal/money.FormatCents),
@@ -152,7 +157,23 @@ func HandlePreviewCostSheet(w http.ResponseWriter, r *http.Request) {
 // rationale — this is the one place besides the CLI flags that changes
 // persisted reconciliation data, so it must uphold the same invalidation
 // discipline.
+//
+// commitMu (below) serializes the write-then-reconcile critical section
+// across concurrent requests. Found live: two tabs (or a double-submit)
+// committing close together could otherwise interleave — request A writes
+// its validated bytes to the fixed livedata path, request B overwrites that
+// same path with a *different* file before A's pipeline run reads it back,
+// and A's response then reports A's own row count and before/after margin
+// snapshot while the database was actually just reconciled against B's
+// content. That is a confidently wrong report of what got persisted — worse
+// than a refusal (CLAUDE.md's own stated bar) — and it was reachable with no
+// error, no conflict signal, nothing. A single in-process mutex closes it:
+// this is a single-process server (cmd/server/main.go), so no cross-process
+// locking is needed for a prototype of this shape. The lock is scoped to
+// this handler's closure rather than a package global so it only ever
+// contends with itself.
 func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) http.HandlerFunc {
+	var commitMu sync.Mutex
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
@@ -182,6 +203,12 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 			return
 		}
 
+		// From here on, this request touches the shared livedata file and the
+		// shared persisted reconciliation state — see commitMu's doc comment
+		// above for the exact interleaving this closes.
+		commitMu.Lock()
+		defer commitMu.Unlock()
+
 		ctx := r.Context()
 
 		before, err := loadMarginSnapshot(ctx, store)
@@ -199,6 +226,17 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 		if err := os.WriteFile(destPath, content, 0o644); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "write_failed", fmt.Sprintf("writing %s: %v", liveCostSheetFilename, err))
 			return
+		}
+
+		// A seam for ingest_cost_sheet_test.go ONLY (nil in production, and in
+		// every other test in this package): the one point in this critical
+		// section where a test can deterministically pause a request that has
+		// already written its file but not yet run the pipeline against it,
+		// to prove a second, concurrent commit cannot write over it before
+		// this one reads it back — see commitMu's doc comment above and
+		// TestHandleCommitCostSheet_SerializesConcurrentCommits.
+		if afterCommitWriteForTests != nil {
+			afterCommitWriteForTests()
 		}
 
 		if cache != nil {

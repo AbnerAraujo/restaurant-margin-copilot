@@ -24,6 +24,7 @@ export interface ExampleQuestion {
     | 'list_negative_roi_promotions'
     | 'compare_platform_economics'
     | 'get_period_totals'
+    | 'get_expense_pattern_by_day_of_month'
   /** Short label for grouping in the "what can I ask" surface. */
   topic: string
 }
@@ -63,6 +64,11 @@ export const EXAMPLE_QUESTIONS: ExampleQuestion[] = [
     text: 'What was our best day between 2026-08-01 and 2026-08-14, and what was the total margin for the period?',
     tool: 'get_period_totals',
     topic: 'Period totals',
+  },
+  {
+    text: 'Which day of the month costs the most, on average, between 2026-08-01 and 2026-08-14?',
+    tool: 'get_expense_pattern_by_day_of_month',
+    topic: 'Recurring costs',
   },
 ]
 

@@ -23,9 +23,15 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/livedata"
 )
 
 // multipartCostSheetRequest builds a multipart/form-data POST request with
@@ -286,4 +292,142 @@ func TestHandleCostSheetTemplate_RejectsWrongMethod(t *testing.T) {
 	HandleCostSheetTemplate(rec, req)
 
 	require.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+}
+
+// withReadyLiveDataDir makes livedata.EnsureReady() pass for the duration of
+// the calling test, backing up whatever real dataset already sits at
+// livedata.Dir (this machine's own `cmd/gendata` output, if any) and
+// restoring it verbatim afterward via t.Cleanup — mirroring
+// livedata_test.go's own withMissingDir backup/restore pattern, just in the
+// opposite direction. A lone seed.csv is enough to satisfy EnsureReady (it
+// only checks for >=1 CSV) without findSourceFiles ever mistaking it for a
+// delivery/POS/cost-sheet source (its name contains none of those keywords).
+func withReadyLiveDataDir(t *testing.T) {
+	t.Helper()
+	backup := livedata.Dir + ".commit-race-test-backup"
+	if _, err := os.Stat(livedata.Dir); err == nil {
+		require.NoError(t, os.RemoveAll(backup))
+		require.NoError(t, os.Rename(livedata.Dir, backup))
+		t.Cleanup(func() {
+			require.NoError(t, os.RemoveAll(livedata.Dir))
+			require.NoError(t, os.Rename(backup, livedata.Dir))
+		})
+	} else {
+		t.Cleanup(func() {
+			require.NoError(t, os.RemoveAll(livedata.Dir))
+		})
+	}
+	require.NoError(t, os.MkdirAll(livedata.Dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(livedata.Dir, "seed.csv"), []byte("placeholder\n"), 0o644))
+}
+
+// TestHandleCommitCostSheet_SerializesConcurrentCommits is a regression test
+// for a real, live-reproducible race: two commits close together used to be
+// able to interleave their write-then-reconcile steps, so one request could
+// end up running the FULL reconciliation pipeline against the OTHER
+// request's file while reporting its own row count and margin snapshot —
+// a confidently wrong report of what actually got persisted (CLAUDE.md: "a
+// confidently wrong margin figure is worse than a refusal"). commitMu now
+// serializes the whole write -> pipeline-run -> re-read section.
+//
+// This test proves mutual exclusion directly rather than hoping to catch a
+// timing-dependent corruption after the fact: request A is paused (via the
+// afterCommitWriteForTests seam) immediately after writing its own file,
+// still holding commitMu. While A is paused, request B is started
+// concurrently and must be unable to make ANY progress — specifically, it
+// must not have overwritten the live file yet. Only once A is allowed to
+// finish (and release the lock) does B get to run at all, so the file on
+// disk ends the test as B's content, uncontested, and A's own pipeline run
+// is proven to have seen only its own file.
+func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
+	_, q := httpapiConnectOrSkip(t)
+	withReadyLiveDataDir(t)
+
+	const fileA = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-RACE-A,2026-01-05,Race Supplier A,produce,10.00,file A\n"
+	const fileB = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-RACE-B1,2026-01-06,Race Supplier B,produce,20.00,file B row 1\n" +
+		"INV-RACE-B2,2026-01-07,Race Supplier B,produce,30.00,file B row 2\n"
+
+	reachedHook := make(chan []byte, 1)
+	proceed := make(chan struct{})
+	var callNum int32
+
+	afterCommitWriteForTests = func() {
+		if atomic.AddInt32(&callNum, 1) == 1 {
+			// This is request A: capture what's actually on disk right now
+			// (proving it's still A's own content, not a peer's) and pause
+			// here, still holding commitMu, until the test says to continue.
+			onDisk, err := os.ReadFile(filepath.Join(livedata.Dir, liveCostSheetFilename))
+			require.NoError(t, err)
+			reachedHook <- onDisk
+			<-proceed
+		}
+	}
+	t.Cleanup(func() { afterCommitWriteForTests = nil })
+
+	handler := HandleCommitCostSheet(q, nil)
+	destPath := filepath.Join(livedata.Dir, liveCostSheetFilename)
+
+	doneA := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "a.csv", fileA)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		doneA <- rec
+	}()
+
+	var onDiskDuringA []byte
+	select {
+	case onDiskDuringA = <-reachedHook:
+	case <-time.After(5 * time.Second):
+		t.Fatal("request A never reached the post-write hook — commitMu or the seam is wired wrong")
+	}
+	require.Equal(t, fileA, string(onDiskDuringA), "the file on disk while A is paused must still be A's own upload")
+
+	doneB := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "b.csv", fileB)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		doneB <- rec
+	}()
+
+	// B must be blocked on commitMu.Lock() — give it a real window to prove
+	// it, then confirm neither B finished nor B's write landed.
+	select {
+	case <-doneB:
+		t.Fatal("request B completed while A was still mid-commit — commitMu did not serialize them")
+	case <-time.After(200 * time.Millisecond):
+	}
+	stillOnDisk, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	require.Equal(t, fileA, string(stillOnDisk), "B must not have written over A's file while A was still mid-commit")
+
+	close(proceed) // let A finish; only then can B acquire the lock
+
+	var recA, recB *httptest.ResponseRecorder
+	select {
+	case recA = <-doneA:
+	case <-time.After(10 * time.Second):
+		t.Fatal("request A never finished after being unpaused")
+	}
+	select {
+	case recB = <-doneB:
+	case <-time.After(10 * time.Second):
+		t.Fatal("request B never finished after A released commitMu")
+	}
+
+	require.Equal(t, http.StatusOK, recA.Code, "request A: %s", recA.Body.String())
+	require.Equal(t, http.StatusOK, recB.Code, "request B: %s", recB.Body.String())
+
+	var respA, respB CommitCostSheetResponse
+	require.NoError(t, json.Unmarshal(recA.Body.Bytes(), &respA))
+	require.NoError(t, json.Unmarshal(recB.Body.Bytes(), &respB))
+	require.Equal(t, 1, respA.RowsCommitted)
+	require.Equal(t, 2, respB.RowsCommitted)
+
+	finalOnDisk, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	require.Equal(t, fileB, string(finalOnDisk), "B ran strictly after A released commitMu, so B's file must be what's left on disk")
 }

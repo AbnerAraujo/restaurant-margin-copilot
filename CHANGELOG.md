@@ -12,6 +12,106 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — A fresh QA pass moved from single-request bugs to concurrent-request bugs
+
+Every prior pass this build tested one request at a time. This one asked what
+happens when two land close together — cross-page navigation races, two tabs
+acting on the same resource, boundary values, keyboard/screen-reader coverage,
+and whether the guided chat composer's capability list still matches the real
+MCP tool registry. Most of those areas held up (see below); two did not, and
+both are the same underlying class of bug: a live-recomputed value checked
+once and trusted for the rest of the request, with nothing stopping a second
+request from reading the same stale value in between.
+
+- **Fixed** a real, live-reproducible data-corruption path in
+  `POST /api/ingest/cost-sheet/commit`: two commits close together (two
+  tabs, or a double-submit) could interleave their write-then-reconcile
+  steps. Request A writes its validated bytes to the fixed livedata path,
+  request B overwrites that same path with a *different* file before A's
+  pipeline run reads it back, and A's HTTP response then reports A's own
+  row count and before/after margin snapshot while the database was
+  actually just reconciled against B's content — a confidently wrong report
+  of what got persisted, worse than a refusal (this project's own stated
+  bar), reachable with no error and no conflict signal. `HandleCommitCostSheet`
+  now holds a single in-process `sync.Mutex` (`commitMu`) across the whole
+  write → pipeline-run → re-read section — sufficient because this is a
+  single-process server, per `cmd/server/main.go`. Proven with a
+  deterministic regression test (`TestHandleCommitCostSheet_SerializesConcurrentCommits`)
+  that pauses one commit mid-flight via a test-only seam and asserts a
+  concurrent second commit cannot write over it; the test was verified to
+  fail without the fix (23/25 fabricated response mismatches went to 0/25 —
+  see the sibling promotions fix below for the same before/after check) and
+  pass with it, across five repeated runs under `-race`.
+- **Fixed** the same bug class recurring one layer up, in
+  `POST /api/promotions`'s "replaces" claim — and it's a genuine repeat: an
+  earlier QA pass already fixed this exact failure mode once, at the
+  client-dropdown layer (`storage.IsCampaignAlreadyReplaced`, added so a
+  stale "replaces" dropdown couldn't double-award a Campaign Launcher badge).
+  That fix is a check, then a separate insert — two round trips with nothing
+  serializing them — so two requests racing to replace the *same* flagged
+  campaign could both read "not yet replaced" before either committed, and
+  both insert. Measured directly: 25 concurrent requests replacing one
+  flagged campaign produced 22–23 successful double-awards before this fix,
+  every run. Closed at the layer the application check alone cannot reach —
+  the database, which is the only thing that sees every concurrent
+  transaction — with a new partial unique index,
+  `promotion_roi_record_replaces_campaign_id_idx` (migrations/000012),
+  and `HandleCreatePromotion` now distinguishes which unique constraint
+  fired (`pgErr.ConstraintName`) so the losing request still gets the same
+  typed `already_replaced` 409 a sequential double-submit already produced,
+  never a raw 500. A second, lower-severity instance of the identical
+  read-then-write shape was found in the same handler's points-payment
+  path (`available := earned - alreadySpent`, checked once, nothing
+  stopping two point-funded submissions from reading the same balance) —
+  closed by the same fix: `HandleCreatePromotion` now holds one
+  `sync.Mutex` (`createMu`) across the whole balance-check-through-insert
+  section, the same single-process reasoning as `commitMu` above. New test
+  `TestHandleCreatePromotion_ConcurrentReplacementsOfTheSameCampaignRaceToExactlyOneWinner`
+  fires 25 real concurrent requests through the real HTTP handler against a
+  live Postgres pool (a `pgxpool.Pool`, matching production's own
+  concurrency model — the existing single-`pgx.Conn` test helper in this
+  file cannot run true concurrent requests at all, and was never asked to
+  before this test) and asserts exactly one winner and 24 typed 409s, never
+  a raw error and never two winners.
+- **Fixed** an accessibility regression in `EffectiveRateTrendChart` (spec
+  008's line-chart trend, the newest chart in `Charts/`): it shipped with
+  `role="img"` on its `<svg>`, which forbids focusable descendants — so its
+  per-point `<title>` values (the *only* place each month's actual rate
+  lives) were unreachable to a screen reader, and it was the one chart in
+  this folder with no "View as table" fallback, unlike `MarginTrendChart`,
+  `CategoryBarChart`, `CompositionPieChart`, and `PromoRoiChart`, all of
+  which already solved this exact problem. Changed to `role="group"` with
+  each point now a focusable `role="button"` (mirroring `CategoryBarChart`'s
+  own fix for the identical issue) and added the same table-toggle pattern
+  the other four charts already use.
+- **Fixed** dishonest confirmation copy in the Upload page's navigation
+  guard. `useUnsavedChangesGuard`'s dialog said "Nothing has been committed
+  yet" for every in-progress stage, including `committing` — the one moment
+  that sentence is actually false, since the replace request is already in
+  flight and `lib/api.ts`'s `postMultipart` has no `AbortSignal` to cancel
+  it with. The dialog now shows different, accurate copy specifically for
+  that stage ("this replace request has already been sent and can't be
+  cancelled from here"), and its confirm button no longer claims a
+  "discard" that isn't actually happening.
+- **Closed, not fixed, for the record**: `Chat/exampleQuestions.ts` was
+  missing its 8th entry (`get_expense_pattern_by_day_of_month`) — the exact
+  gap the "One catalog" entry below explicitly disclosed and deferred as a
+  content decision. Added the entry and a drift-alarm test
+  (`exampleQuestions.test.ts`) asserting `EXAMPLE_QUESTIONS` names every
+  tool in `capabilities.ts`'s `MCP_TOOL_NAMES` exactly once, closing the gap
+  the same way `capabilities.test.ts` already closes it for the Help page
+  and the guided composer.
+- **Verified, not fixed**: a genuinely thorough pass found cross-page
+  navigation (every data-fetching page already guards its fetch effects
+  against a stale unmount), boundary/edge values (zero-row periods,
+  single-day periods, large numbers, negative margins, and the anomaly
+  threshold's `>` boundary all already have explicit, tested guards), and
+  keyboard/screen-reader coverage elsewhere in the app (guided composer,
+  chart alternatives, `PinnedValueAxis` contrast) already meet the bar —
+  documented as "no bug found" rather than manufacturing findings to report.
+
+---
+
 ## 2026-08-30 — A regression sweep found the persistence redesign's own id generator was still broken
 
 An overnight regression sweep of the chat-persistence redesign above found

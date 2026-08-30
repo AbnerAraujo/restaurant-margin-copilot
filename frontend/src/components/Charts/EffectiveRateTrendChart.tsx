@@ -8,6 +8,8 @@
 // (native <title>, kept intentionally lightweight for this first version
 // rather than a custom crosshair layer).
 
+import { useState } from 'react'
+
 import { buildLinearTickScale, formatAxisPercent } from '@/lib/chartScale'
 
 export interface EffectiveRateTrendPlatformPoint {
@@ -62,6 +64,8 @@ export default function EffectiveRateTrendChart({
   periods,
   className,
 }: EffectiveRateTrendChartProps) {
+  const [tableOpen, setTableOpen] = useState(false)
+
   if (periods.length < 2) return null
 
   // Stable series order: every platform source seen across any period,
@@ -104,7 +108,13 @@ export default function EffectiveRateTrendChart({
     <div className={className}>
       <svg
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        role="img"
+        // role="group", not role="img": each point below is a focusable
+        // role="button" for keyboard/screen-reader users, and role="img"
+        // forbids focusable descendants — it would have made the per-point
+        // <title> values (the only place each month's rate lives) genuinely
+        // unreachable to assistive tech, matching the same fix already
+        // applied to CategoryBarChart/PromoRoiChart.
+        role="group"
         aria-label={`Effective commission rate trend across ${periods.length} months, for ${seriesOrder
           .map((s) => displayNames.get(s))
           .join(' and ')}`}
@@ -186,21 +196,26 @@ export default function EffectiveRateTrendChart({
               ))}
               {/* >=8px markers with a 2px ring in the surface colour, per the
                   dataviz mark spec — the ring is what keeps a dot legible
-                  where two platforms' lines cross. */}
+                  where two platforms' lines cross. Each point is its own
+                  focusable role="button" (matching CategoryBarChart's
+                  established fix for this exact problem): the <title>
+                  tooltip below is invisible to a screen reader unless its
+                  element is actually reachable, which role="img" on the
+                  parent <svg> would otherwise forbid. */}
               {points.map((p) => (
-                <circle
+                <g
                   key={p.month}
-                  cx={p.x}
-                  cy={p.y}
-                  r={4}
-                  fill={color}
-                  stroke="var(--card)"
-                  strokeWidth={2}
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${displayNames.get(source)} — ${monthLabel(p.month)}: ${p.rate.toFixed(2)}%`}
+                  className="cursor-pointer [outline:none] [&:focus-visible]:[outline:2px_solid_var(--ring)] [&:focus-visible]:[outline-offset:2px]"
                 >
-                  <title>
-                    {displayNames.get(source)} — {monthLabel(p.month)}: {p.rate.toFixed(2)}%
-                  </title>
-                </circle>
+                  <circle cx={p.x} cy={p.y} r={4} fill={color} stroke="var(--card)" strokeWidth={2}>
+                    <title>
+                      {displayNames.get(source)} — {monthLabel(p.month)}: {p.rate.toFixed(2)}%
+                    </title>
+                  </circle>
+                </g>
               ))}
             </g>
           )
@@ -219,6 +234,62 @@ export default function EffectiveRateTrendChart({
           </div>
         ))}
       </div>
+
+      {/* Text/table alternative to the SVG line chart above — every sibling
+          chart in this folder (MarginTrendChart, CategoryBarChart,
+          CompositionPieChart, PromoRoiChart) already offers this; this was
+          the one that shipped without it (a QA-found accessibility gap: a
+          screen-reader user got only the one static aria-label sentence and
+          none of the underlying month-by-month percentages). */}
+      <div className="mt-3 flex flex-wrap items-center justify-end border-t border-border/60 pt-2.5">
+        <button
+          type="button"
+          onClick={() => setTableOpen((wasOpen) => !wasOpen)}
+          aria-expanded={tableOpen}
+          className="text-xs text-muted-foreground underline decoration-dotted underline-offset-2 hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:rounded-sm"
+        >
+          {tableOpen ? 'Hide table' : 'View as table'}
+        </button>
+      </div>
+
+      {tableOpen ? (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[320px] text-left text-xs">
+            <caption className="sr-only">
+              Effective commission rate trend across {periods.length} months, for{' '}
+              {seriesOrder.map((s) => displayNames.get(s)).join(' and ')}
+            </caption>
+            <thead>
+              <tr className="border-b border-border text-muted-foreground">
+                <th scope="col" className="py-1.5 pr-3 font-medium">
+                  Month
+                </th>
+                {seriesOrder.map((source) => (
+                  <th key={source} scope="col" className="py-1.5 pr-3 font-medium">
+                    {displayNames.get(source)}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {periods.map((period) => (
+                <tr key={period.month} className="border-b border-border/60">
+                  <td className="py-1.5 pr-3 text-foreground">{monthLabel(period.month)}</td>
+                  {seriesOrder.map((source) => {
+                    const platform = period.platforms.find((p) => p.source === source)
+                    const rate = platform ? parsePercent(platform.effective_rate) : null
+                    return (
+                      <td key={source} className="py-1.5 pr-3 tabular-nums text-foreground">
+                        {rate === null ? 'No sales' : `${rate.toFixed(2)}%`}
+                      </td>
+                    )
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   )
 }

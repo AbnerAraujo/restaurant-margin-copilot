@@ -261,7 +261,10 @@ describe('PlatformsPage', () => {
 
     const panel = await screen.findByRole('region', { name: 'Effective rate trend' })
     expect(panel).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: /effective commission rate trend/i })).toBeInTheDocument()
+    // role="group", not role="img": role="img" forbids focusable
+    // descendants, which would make EffectiveRateTrendChart's per-point
+    // role="button" markers unreachable to assistive tech.
+    expect(screen.getByRole('group', { name: /effective commission rate trend/i })).toBeInTheDocument()
   })
 
   it('omits the effective-rate trend chart with fewer than 2 real trailing months, never a single-point chart (FR-013)', async () => {
