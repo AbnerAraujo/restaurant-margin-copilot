@@ -191,6 +191,16 @@ type AskResponse struct {
 	// /api/business-insight), which is what keeps the probabilistic,
 	// billed half of the advisor strictly opt-in.
 	BusinessInsight *BusinessInsightTeaser `json:"business_insight,omitempty"`
+	// Advice is specs/011-inline-grounded-advice's question-initiated
+	// suggestion: present only when the owner's question itself asked for
+	// advice (the gate's typed AdviceRequested signal), the answer
+	// succeeded with at least one real tool invocation to ground it, and
+	// the one bounded advisor call succeeded. Structurally separate from
+	// AnswerText by design — probabilistic advice never blends into the
+	// provenance-backed answer (the same epistemic split BusinessInsight's
+	// teaser path established) — and its cost appears both here and as its
+	// own Interactions entry.
+	Advice *InlineAdviceView `json:"advice,omitempty"`
 	// ResolvedPeriod is spec 008 FR-004's "the answered question's actual
 	// resolved dates" — the real [start, end] this answer was grounded in,
 	// extracted from whichever period-shaped tool actually ran
@@ -371,6 +381,20 @@ type Deps struct {
 	// feature existed (spec FR-006 — this must never weaken the existing
 	// exact-match cache's own behavior).
 	ParaphraseMatcher ParaphraseClassifier
+	// QuestionAdviser, when non-nil, enables specs/011-inline-grounded-advice's
+	// inline advice path: one bounded advisor call after a successful
+	// narration, for exactly the questions the gate flagged as
+	// advice-requesting. Optional and additive, the same pattern Cache and
+	// ParaphraseMatcher established: a Deps without it behaves exactly as
+	// this handler did before the feature existed — the narration then
+	// keeps its pre-existing plain-decline wording for advice-shaped parts
+	// (explain's mixed-question rule), because no AdviceHandoffNote is
+	// appended either.
+	QuestionAdviser QuestionAdviser
+	// InsightStore is the business_insight_interaction ledger the inline
+	// advice call writes (kind question_advice — Constitution Principle
+	// VI). Same store POST /api/business-insight's teaser path uses.
+	InsightStore BusinessInsightStore
 	// DataStart/DataEnd are the real, actual [start, end] this product has
 	// reconciled data for (internal/storage.LoadDataDateRange, resolved once
 	// at process start — cmd/server/main.go's buildAskDeps), in YYYY-MM-DD.
@@ -556,7 +580,25 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		// The explanation step gets the RESOLVED question. Handing it the bare
 		// reply ("yes") would leave it narrating a fragment even though the
 		// gate had already worked out what was being asked.
-		result, err := deps.Explainer.Explain(ctx, resolved, decision.AssumptionStated)
+		//
+		// When the gate flagged this question as advice-requesting AND an
+		// adviser is configured to actually follow through, the handoff
+		// note (explain.AdviceHandoffNote) rides along so the narration
+		// presents the data without declining the advice part an inline
+		// advisor call is about to deliver (spec 011 FR-011). Appended to
+		// the EXPLAIN INPUT only — never to `resolved` itself, which is
+		// also the cache key and must stay exactly the composed question.
+		explainInput := resolved
+		if decision.AdviceRequested && deps.QuestionAdviser != nil {
+			explainInput = resolved + "\n\n" + explain.AdviceHandoffNote
+			// Deliberately logged: the inline-advice path arming is the one
+			// per-request decision on this route with no other observable
+			// server-side trace until the advisor call itself runs (or is
+			// skipped for lack of grounding) — one line makes a live "why
+			// did/didn't advice appear?" question answerable from the log.
+			log.Printf("httpapi: inline advice armed (gate flagged advice_requested; question=%q)", req.Question)
+		}
+		result, err := deps.Explainer.Explain(ctx, explainInput, decision.AssumptionStated)
 		if err != nil {
 			// Explain still returns a non-nil *Result on a mid-loop failure,
 			// carrying whatever tokens/cost this interaction's earlier turns
@@ -631,6 +673,15 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 		}
 		if decision.Result == instrumentation.GateAmbiguous {
 			resp.AssumptionStated = decision.AssumptionStated
+		}
+		// specs/011-inline-grounded-advice: the owner explicitly asked for
+		// a suggestion, and this answer's own tool results are the
+		// grounding. Runs only on the answered path (a refusal or
+		// clarification never reaches here), only when the gate flagged
+		// the request, and degrades to the unchanged answer on any
+		// failure — see maybeAttachInlineAdvice.
+		if decision.AdviceRequested {
+			deps.maybeAttachInlineAdvice(ctx, &resp, resolved, result.ToolInvocations)
 		}
 		deps.writeAndCache(ctx, w, resolved, resp)
 	}

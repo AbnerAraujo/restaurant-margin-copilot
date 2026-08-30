@@ -14,6 +14,7 @@ import {
   Lightbulb,
   Send,
   Compass,
+  Sparkles,
   SquarePen,
   Unplug,
   User,
@@ -234,7 +235,33 @@ export interface AnswerChatMessage extends CostAttributedMessage {
    * absence of a problem. With it, {@link AnswerBubble} can say so.
    */
   requestedInsightKind?: BusinessInsightKind
+  /**
+   * Spec 011 (inline grounded advice): set when the owner's question
+   * itself asked for a suggestion and the backend's one bounded advisor
+   * call succeeded, grounded in this answer's own tool results
+   * (`AskResponse.advice`). Unlike {@link businessInsight} — a teaser for
+   * advice that does not exist yet — this IS the advice, already
+   * generated and already paid for (its cost rides in `interactions`
+   * like the gate/explain calls). Rendered in the same dashed-warning
+   * "AI suggestion" language as the chip: probabilistic advice never
+   * blends into the provenance-backed answer above it.
+   */
+  advice?: InlineAdvice
   askedAt: string
+}
+
+/** Mirrors `httpapi.InlineAdviceView`'s wire shape (spec 011). */
+export interface InlineAdvice {
+  text: string
+  /** The backend's own statement of what this content is and is not. */
+  disclaimer: string
+  interaction: {
+    model_used: string
+    input_tokens: number
+    output_tokens: number
+    estimated_cost_usd: number
+    latency_ms: number
+  }
 }
 
 /** Mirrors `httpapi.ResolvedPeriodView`'s wire shape. */
@@ -1042,6 +1069,34 @@ function AnswerBubble({
               toolCalls={toolCalls}
               resolveBusinessInsight={resolveInsightAndRecordSpend}
             />
+          </div>
+        ) : null}
+
+        {/* Spec 011: inline grounded advice — the owner explicitly asked
+            for a suggestion, so it arrives already generated, in the same
+            dashed-warning AI-suggestion language the teaser chip uses:
+            advice is a different epistemic category from every
+            provenance-backed number above it and must read that way at a
+            glance. Its cost is already in this message's interactions, so
+            no separate cost line is drawn here. */}
+        {message.advice ? (
+          <div className="border-t border-border pt-2.5">
+            <div
+              role="group"
+              aria-label="AI business suggestion"
+              className="space-y-2 rounded-lg border border-dashed border-warning/40 bg-warning/5 px-3.5 py-3"
+            >
+              <p className="text-xs font-semibold uppercase tracking-wide text-warning-text">
+                AI suggestion — you asked for advice
+              </p>
+              <p className="whitespace-pre-line text-sm leading-relaxed text-foreground">
+                {message.advice.text}
+              </p>
+              <p className="flex items-start gap-1.5 border-t border-dashed border-warning/30 pt-2 text-micro text-muted-foreground">
+                <Sparkles className="mt-0.5 size-3 shrink-0" aria-hidden="true" />
+                <span>{message.advice.disclaimer}</span>
+              </p>
+            </div>
           </div>
         ) : null}
 
