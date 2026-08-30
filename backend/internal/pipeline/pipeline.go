@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
@@ -41,6 +42,60 @@ import (
 // (tasks.md T029-T030), not User Story 1's — this function does not touch
 // it.
 func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
+	return RunIngestionPipelineWithDeliveryOverlay(dataDir, store, nil)
+}
+
+// DeliveryOverlay replaces the CSV-sourced delivery rows for one inclusive
+// calendar-date range with records obtained some other way — today, from
+// internal/platformconnector's simulated iFood and Just Eat Takeaway
+// partner APIs (specs/010-platform-connector-proxy).
+//
+// It is a range and a record slice, not a callback or a source enum, on
+// purpose: the pipeline must not know or care where these records came
+// from. They are ingest.DeliveryRecord values, the exact type
+// ParseDeliveryExport produces, so internal/reconcile cannot tell them
+// apart from CSV rows and is not asked to (spec FR-004 — this is a new
+// data SOURCE, not a new computation path).
+type DeliveryOverlay struct {
+	// From and To are inclusive calendar dates. Comparison is done on the
+	// formatted YYYY-MM-DD key rather than on time.Time ordering, because
+	// CSV-parsed dates are UTC midnight while connector-sourced dates are
+	// midnight in the merchant's own zone — the same calendar day, two
+	// different instants, and a Before/After comparison between them would
+	// silently drop a boundary day.
+	From time.Time
+	To   time.Time
+
+	// Records are authoritative for [From, To]. An empty slice for a day
+	// inside the range is meaningful and is honored: it means the platform
+	// reported no orders that day, and internal/reconcile's existing
+	// missing_delivery_source flag surfaces it, exactly as it does for a
+	// gap in a CSV export.
+	Records []ingest.DeliveryRecord
+}
+
+// RunIngestionPipelineWithDeliveryOverlay is RunIngestionPipeline with an
+// optional range-scoped delivery overlay. A nil overlay makes it identical
+// to RunIngestionPipeline, which is why that function is now one line.
+//
+// Semantics, stated plainly because "what happens to the days I did not
+// sync" is the question this shape exists to answer: CSV-parsed delivery
+// rows whose order date falls inside the overlay's range are DROPPED and
+// replaced by the overlay's records; rows outside the range are kept
+// verbatim. POS and supplier-cost parsing are untouched.
+//
+// Every affected day is then recomputed from all three sources, not just
+// from delivery. That is not incidental — margin is gross sales minus
+// commissions minus refunds minus input costs, so a day whose delivery
+// revenue changed cannot have its margin updated without its POS revenue
+// and its supplier invoices in hand. Recomputing the whole day from the
+// full source set is the only way the resulting number stays true rather
+// than becoming a partial figure that looks complete.
+//
+// Days outside the range are provably untouched: they are reconciled from
+// exactly the inputs they were reconciled from before, and re-persisted to
+// the same values.
+func RunIngestionPipelineWithDeliveryOverlay(dataDir string, store *storage.Queries, overlay *DeliveryOverlay) error {
 	deliveryPath, posPath, costPath, err := findSourceFiles(dataDir)
 	if err != nil {
 		return err
@@ -50,6 +105,7 @@ func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
 	if err != nil {
 		return err
 	}
+	delivery = applyDeliveryOverlay(delivery, overlay)
 	pos, err := parseIfPresent(posPath, ingest.ParsePOSExport)
 	if err != nil {
 		return err
@@ -58,8 +114,12 @@ func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
 	if err != nil {
 		return err
 	}
-	if deliveryPath == "" {
+	if deliveryPath == "" && overlay == nil {
 		fmt.Printf("pipeline: no delivery-platform export found in %s — every day will carry a %s flag\n", dataDir, reconcile.FlagMissingDeliverySource)
+	}
+	if overlay != nil {
+		fmt.Printf("pipeline: delivery overlay active for %s..%s — %d record(s) replace the CSV export's rows for those dates\n",
+			overlay.From.Format(dateKeyLayout), overlay.To.Format(dateKeyLayout), len(overlay.Records))
 	}
 
 	days := reconcile.ComputeDailyReconciliations(delivery, pos, costs)
@@ -79,6 +139,39 @@ func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
 	fmt.Printf("---\n%d day(s) reconciled and persisted. Period total margin: %s\n", len(days), money.FormatCents(totalMarginCents))
 
 	return nil
+}
+
+// dateKeyLayout is the YYYY-MM-DD key internal/reconcile groups days by.
+// Overlay range membership is decided on this key, never on time.Time
+// ordering — see DeliveryOverlay.From's doc comment for why.
+const dateKeyLayout = "2006-01-02"
+
+// applyDeliveryOverlay drops CSV-sourced delivery rows inside the
+// overlay's date range and appends the overlay's records in their place.
+// A nil overlay returns the input untouched, which is what keeps
+// RunIngestionPipeline's behavior bit-for-bit unchanged for the -ingest
+// CLI flag and the cost-sheet upload.
+func applyDeliveryOverlay(csvRecords []ingest.DeliveryRecord, overlay *DeliveryOverlay) []ingest.DeliveryRecord {
+	if overlay == nil {
+		return csvRecords
+	}
+
+	from := overlay.From.Format(dateKeyLayout)
+	to := overlay.To.Format(dateKeyLayout)
+
+	merged := make([]ingest.DeliveryRecord, 0, len(csvRecords)+len(overlay.Records))
+	for _, rec := range csvRecords {
+		key := rec.OrderDate.Format(dateKeyLayout)
+		// Dates in YYYY-MM-DD sort lexicographically the same as
+		// chronologically, which is what makes a plain string comparison
+		// correct here (the same property reconcile.ComputeDailyReconciliations
+		// already relies on to sort its date keys).
+		if key >= from && key <= to {
+			continue
+		}
+		merged = append(merged, rec)
+	}
+	return append(merged, overlay.Records...)
 }
 
 // findSourceFiles scans dataDir for files recognizable as a delivery-

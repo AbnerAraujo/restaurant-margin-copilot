@@ -84,34 +84,46 @@ file's own doc comment names this as the origin. Four primitives, each with
 a distinct job:
 
 - **`PageContainer`** — the one content-measure wrapper (`max-w-content`)
-  every route composes itself from. Real consumers (verified by import):
-  **6** — `ClosePage.tsx`, `HomePage.tsx`, `PlatformsPage.tsx`,
-  `PointsPage.tsx`, `PromotionsPage.tsx`, `UploadPage.tsx`. That's every
-  routed page except `AskPage` (which asks for `className="max-w-none"` on
-  `ChatPanel` instead, since chat is meant to fill the viewport, not sit in
-  a measured column).
+  every route composes itself from. Real consumers (re-verified by import
+  2026-08-30): **10** — `ClosePage.tsx`, `HelpPage.tsx`, `HomePage.tsx`,
+  `NotFoundPage.tsx`, `PlatformsPage.tsx`, `PointsPage.tsx`,
+  `ProfilePage.tsx`, `PromotionsPage.tsx`, `SettingsPage.tsx`,
+  `UploadPage.tsx`. That's every routed page except `AskPage` (which asks
+  for `className="max-w-none"` on `ChatPanel` instead, since chat is meant
+  to fill the viewport, not sit in a measured column). The earlier count of
+  6 predated the Help, Profile, Settings, and NotFound pages; recounted
+  while adding spec 010's connector tab, since a count published as
+  "verified by import" is worth nothing once it has quietly drifted.
 - **`PageHeader`** — title + optional eyebrow + a `meta` slot typed as
   `ReactNode`, not a description string. The type comment states the
   rationale directly: page context should "arrive as structured metadata,
   not as a paragraph under the heading" — chips and counts, not prose.
-  Same **6** consumers as `PageContainer`.
+  Same **10** consumers as `PageContainer`.
 - **`Panel`** — a content surface (`rounded-xl border border-border`) with
   a `tone` prop: `"card"` (default, `bg-card`) or `"muted"` (`bg-muted/40`,
   the recessed step). `tone="muted"` is used specifically so a block that
   must read as "not live" — the points roadmap half of `PointsCard` — is
-  carried by the surface itself, not only by its copy. Real consumers:
-  **8** — the 6 above, plus `PointsCard.tsx` and
-  `Promotions/LogReplacementForm.tsx` (both sub-components, not routed
-  pages, which is why they don't also pull `PageContainer`/`PageHeader`).
-  `PanelHeader` (the panel-level analogue of `PageHeader`, same file) has
-  **2** consumers: `LogReplacementForm.tsx` and `UploadPage.tsx`.
+  carried by the surface itself, not only by its copy. It does the same job
+  again for spec 010's simulation notice on the connector tab: the block
+  that says "these connections are simulated" is recessed, so the surface
+  itself reads as not-live before the words are read. Real consumers:
+  **13** — the 10 above minus `UploadPage.tsx` (now a tab shell that
+  composes panels from its two children rather than rendering any itself),
+  plus `PointsCard.tsx`, `Promotions/LogReplacementForm.tsx`,
+  `Upload/CostSheetTab.tsx`, and `Upload/ConnectedPlatformsTab.tsx` (all
+  sub-components, not routed pages, which is why they don't also pull
+  `PageContainer`/`PageHeader`). `PanelHeader` (the panel-level analogue of
+  `PageHeader`, same file) has **6** consumers: `CostSheetTab.tsx`,
+  `ConnectedPlatformsTab.tsx`, `HelpPage.tsx`, `LogReplacementForm.tsx`,
+  `ProfilePage.tsx`, and `SettingsPage.tsx`.
 - **`Chip`** — a metadata pill with 5 tones (`neutral`, `brand`, `success`,
   `warning`, `destructive`), each pairing colour with a word (and an icon
   where supplied) so a chip is never read by hue alone. Real consumers
-  (verified by import): **9** — `ClosePage.tsx`, `HomePage.tsx`,
-  `PlatformsPage.tsx`, `PointsPage.tsx`, `PointsCard.tsx`,
-  `PromotionsPage.tsx`, `UploadPage.tsx`, `Points/CompositionBar.tsx`, and
-  `Chat/ChatPanel.tsx` — the widest reach of any primitive in `page.tsx`,
+  (re-verified by import 2026-08-30): **12** — `ChatPanel.tsx`,
+  `ClosePage.tsx`, `CompositionBar.tsx`, `ConnectedPlatformsTab.tsx`,
+  `HelpPage.tsx`, `HomePage.tsx`, `NotFoundPage.tsx`, `PlatformsPage.tsx`,
+  `PointsCard.tsx`, `PointsPage.tsx`, `PromotionsPage.tsx`, and
+  `SettingsPage.tsx` — the widest reach of any primitive in `page.tsx`,
   since it's the one piece small enough to drop into a chat bubble as well
   as a page header.
 
@@ -206,9 +218,38 @@ variants (`default`, `destructive`, `outline`, `secondary`, `ghost`, `link`)
 × 8 sizes (`default`, `xs`, `sm`, `lg`, `icon`, `icon-xs`, `icon-sm`,
 `icon-lg`), confirmed by reading the `cva` config directly. Focus is a 3px
 `ring-ring/50` plus a border shift, never suppressed. Real consumers
-(verified by import): **4** — `ChatPanel.tsx`, `ClosePage.tsx`,
-`LogReplacementForm.tsx`, `UploadPage.tsx`. Visual specimen for every
-variant/size pair: `docs/architecture.html` §"Buttons".
+(re-verified by import 2026-08-30): **13** — `ChatPanel.tsx`,
+`ClosePage.tsx`, `ConnectedPlatformsTab.tsx`, `CostSheetTab.tsx`,
+`LogReplacementForm.tsx`, `NotFoundPage.tsx`, `ProfilePage.tsx`,
+`PromotionsPage.tsx`, `QuestionComposer.tsx`, `SettingsPage.tsx`,
+`ThemeToggle.tsx`, `confirm-dialog.tsx`, `filter-bar.tsx`. Visual specimen
+for every variant/size pair: `docs/architecture.html` §"Buttons".
+
+### The tab strip on `/upload` — a pattern, deliberately not a primitive
+
+`frontend/src/components/Upload/UploadPage.tsx` (spec 010) is the only
+two-tab surface in the product, and it builds its tab strip inline from
+`role="tablist"` / `role="tab"` / `role="tabpanel"`, `aria-selected`,
+`aria-controls`, and roving focus (arrow keys, `Home`/`End`, one tab stop),
+rather than adding a `Tabs` component to `components/ui/`. Extracting a
+general primitive for a single caller would be guessing at the second
+caller's requirements before it exists — the same reasoning `governance`
+applies to promoting anything into a design system.
+
+Two decisions inside it are worth keeping written down:
+
+- **Selection is never carried by colour alone.** The active tab changes
+  surface (`bg-card shadow-sm` against the strip's `bg-muted/40`) *and*
+  carries `aria-selected`, so it reads correctly to a screen reader and to
+  anyone who can't distinguish the two backgrounds.
+- **Both panels stay mounted; the inactive one is `hidden`.** A staged
+  cost-sheet preview and a staged connector preview are both real
+  uncommitted work, and unmounting would discard either silently on a tab
+  click — the exact loss `useUnsavedChangesGuard` exists to prevent on
+  navigation, arriving through a door the guard doesn't watch. `hidden` on
+  an inactive tabpanel is also what the WAI-ARIA tabs pattern asks for, so
+  the accessibility and the state-preservation come from one decision
+  rather than two.
 
 ### The rest of `components/ui/` — thin shadcn wrappers, mostly single-consumer
 

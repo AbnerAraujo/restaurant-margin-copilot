@@ -858,7 +858,7 @@
 
       <figure>
         <div class="figscroll">
-        <svg viewBox="0 0 1240 1012" role="img" aria-label="Diagram of the deterministic reconciliation pipeline in four numbered stages, plus a stage zero. Stage zero: every ingestion run clears the whole answer cache before a single row is written. Stage one: three source CSV files — a delivery-platform export, a POS export and a supplier cost sheet — feed into stage two. Stage two: internal/ingest parses each with a typed parser, matching columns by keyword and resolving two different date formats, refusing rather than misparsing anything else. Stage three: internal/reconcile, pure domain logic with no I/O, performs duplicate removal and refund netting, computes margin per calendar day as gross minus commission minus refunds minus input costs, applies a twenty percent anomaly threshold against a trailing three-day average, emits five named discrepancy flags, and computes promotion ROI by tag-joining on campaign identifier, leaving ROI nil rather than zero when attribution is unavailable. Stage four: results are persisted to PostgreSQL in the daily_reconciliation and promotion_roi_record tables.">
+        <svg viewBox="0 0 1240 1012" role="img" aria-label="Diagram of the deterministic reconciliation pipeline in four numbered stages, plus a stage zero. Stage zero: every ingestion run clears the whole answer cache before a single row is written. Stage one: three sources feed into stage two — a delivery-platform export, a POS export and a supplier cost sheet. The delivery-platform rows can arrive either as a CSV export or from the simulated platform connector proxy, which produces the identical record type. Stage two: internal/ingest parses each with a typed parser, matching columns by keyword and resolving two different date formats, refusing rather than misparsing anything else. Stage three: internal/reconcile, pure domain logic with no I/O, performs duplicate removal and refund netting, computes margin per calendar day as gross minus commission minus refunds minus input costs, applies a twenty percent anomaly threshold against a trailing three-day average, emits five named discrepancy flags, and computes promotion ROI by tag-joining on campaign identifier, leaving ROI nil rather than zero when attribution is unavailable. Stage four: results are persisted to PostgreSQL in the daily_reconciliation and promotion_roi_record tables.">
 
           <defs>
             <marker id="rArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -874,10 +874,11 @@
           <text x="64" y="115" font-size="11.5" fill="currentColor">clearing only on success could leave answers cached against data that has already been partly rewritten.</text>
 
           <!-- stage 1 -->
-          <text x="40" y="164" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">1 &#183; SOURCE FILES</text>
+          <text x="40" y="164" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">1 &#183; SOURCES</text>
           <rect x="40" y="176" width="360" height="80" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
-          <text x="220" y="206" text-anchor="middle" font-size="13" fill="currentColor">Delivery-platform export</text>
-          <text x="220" y="228" text-anchor="middle" font-size="11" fill="var(--muted)">orders, commission, refunds, campaign tags</text>
+          <text x="220" y="202" text-anchor="middle" font-size="13" fill="currentColor">Delivery-platform orders</text>
+          <text x="220" y="222" text-anchor="middle" font-size="11" fill="var(--muted)">orders, commission, refunds, campaign tags</text>
+          <text x="220" y="240" text-anchor="middle" font-size="11" fill="var(--muted)">CSV export &#183; or the simulated connector proxy (below)</text>
 
           <rect x="440" y="176" width="360" height="80" rx="9" fill="var(--paper-raised)" stroke="var(--rule)"/>
           <text x="620" y="206" text-anchor="middle" font-size="13" fill="currentColor">In-house POS export</text>
@@ -967,10 +968,118 @@
         <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Hard limit &mdash; refuses rather than guesses</span>
       </div>
 
+      <div class="callout" style="margin-top:26px;">
+        <strong>Still zero model involvement.</strong> The connector layer below is ordinary Go: a seeded pseudorandom order model, two JSON decoders, and a contract check. No prompt, no API key, no Anthropic call anywhere in the fetch, the normalization, or the reconciliation that follows it. It is a new <em>source</em>, not a new kind of computation.
+      </div>
+    </section>
+
+    <section style="margin-top:44px;">
+      <h2>Stage 1, second route: the Platform Connector Proxy</h2>
+
+      <p class="prose"><strong>Both upstreams below are simulated.</strong> This project has no iFood partner-API credentials and no Just Eat Takeaway partner-API credentials, and will not have them. Every order the connector returns is generated locally from a seeded model. What is real is everything between the mock upstreams and the reconciliation engine &mdash; the interface, the two adapters, the normalization, the contract check &mdash; and it is real because a mock is only worth building if the thing sitting on top of it is the thing you actually mean to ship.</p>
+
+      <p class="prose">The two mocks are deliberately incompatible with each other. That is the entire point: a proxy over two APIs that already agreed would be a rename. iFood speaks page-numbered JSON in <code>snake_case</code>, with money as decimal strings inside nested currency objects, RFC 3339 timestamps carrying the merchant&rsquo;s offset, an explicit <code>rate_percent</code>, and a cancelled order reported with <em>positive</em> amounts alongside a cancellation block. Just Eat Takeaway speaks cursor-paginated JSON in <code>camelCase</code>, with money as integer minor units, epoch-millisecond timestamps in UTC, <em>no commission rate at all</em>, and a refund reported already <em>negative</em>.</p>
+
+      <figure>
+        <div class="figscroll">
+        <svg viewBox="0 0 1240 604" role="img" aria-label="Diagram of the platform connector proxy. On the left, two simulated upstreams: a mock iFood partner API emitting page-numbered JSON in snake_case with decimal-string money, RFC 3339 timestamps, an explicit commission rate, and refunds reported positive with a cancellation block; and a mock Just Eat Takeaway partner API emitting cursor-paginated JSON in camelCase with integer minor units, epoch-millisecond UTC timestamps, no commission rate, and refunds reported already negative. Each feeds its own adapter, which decodes that platform's own JSON and normalizes it. In the middle, the proxy dispatches per platform, enforces a thirty-one day range cap and a twenty page per day cap, and verifies six contract properties on every record, refusing rather than correcting anything that fails. On the right, the output is the same ingest DeliveryRecord type the CSV parser produces, carrying a simulated colon slash slash provenance URI, which then enters stage 3 of the reconciliation pipeline completely unchanged.">
+          <defs>
+            <marker id="cArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0,0 L10,5 L0,10 z" fill="var(--det)"/>
+            </marker>
+          </defs>
+
+          <!-- simulated upstreams -->
+          <text x="40" y="30" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">SIMULATED UPSTREAMS &#183; NOT REAL APIS</text>
+
+          <rect x="40" y="44" width="360" height="164" rx="9" fill="var(--alert-soft)" stroke="var(--alert)" stroke-dasharray="6 4"/>
+          <text x="64" y="72" font-size="13" font-weight="600" fill="currentColor">Mock iFood partner API</text>
+          <text x="64" y="94" font-size="11" fill="var(--muted)">page-numbered envelope &#183; snake_case</text>
+          <text x="64" y="112" font-size="11" fill="var(--muted)">money as decimal strings, nested {currency, amount}</text>
+          <text x="64" y="130" font-size="11" fill="var(--muted)">RFC 3339 timestamps with the merchant&rsquo;s offset</text>
+          <text x="64" y="148" font-size="11" fill="var(--muted)">reports an explicit rate_percent</text>
+          <text x="64" y="166" font-size="11" fill="var(--muted)">CONCLUDED / CANCELLED</text>
+          <text x="64" y="188" font-size="11" font-weight="600" fill="currentColor">refund reported POSITIVE + cancellation block</text>
+
+          <rect x="40" y="230" width="360" height="164" rx="9" fill="var(--alert-soft)" stroke="var(--alert)" stroke-dasharray="6 4"/>
+          <text x="64" y="258" font-size="13" font-weight="600" fill="currentColor">Mock Just Eat Takeaway partner API</text>
+          <text x="64" y="280" font-size="11" fill="var(--muted)">opaque-cursor envelope &#183; camelCase</text>
+          <text x="64" y="298" font-size="11" fill="var(--muted)">money as integer minor units (4200)</text>
+          <text x="64" y="316" font-size="11" fill="var(--muted)">epoch-millisecond timestamps, in UTC</text>
+          <text x="64" y="334" font-size="11" font-weight="600" fill="currentColor">reports NO commission rate &mdash; derived</text>
+          <text x="64" y="352" font-size="11" fill="var(--muted)">DELIVERED / REFUNDED</text>
+          <text x="64" y="374" font-size="11" font-weight="600" fill="currentColor">refund reported ALREADY NEGATIVE</text>
+
+          <!-- adapters -->
+          <line x1="400" y1="126" x2="452" y2="126" stroke="var(--det)" stroke-width="1.5" marker-end="url(#cArrow)"/>
+          <line x1="400" y1="312" x2="452" y2="312" stroke="var(--det)" stroke-width="1.5" marker-end="url(#cArrow)"/>
+
+          <text x="456" y="30" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">ADAPTERS &#183; ONE PER PLATFORM</text>
+          <rect x="456" y="76" width="290" height="100" rx="9" fill="var(--paper-raised)" stroke="var(--det)"/>
+          <text x="601" y="104" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">ifoodAdapter</text>
+          <text x="601" y="126" text-anchor="middle" font-size="11" fill="var(--muted)">decimal string &rarr; cents, &ldquo;23.00&rdquo; &rarr; 2300 bps</text>
+          <text x="601" y="144" text-anchor="middle" font-size="11" fill="var(--muted)">date read in the offset it carries</text>
+          <text x="601" y="162" text-anchor="middle" font-size="11" fill="var(--muted)">negates a cancelled order</text>
+
+          <rect x="456" y="262" width="290" height="100" rx="9" fill="var(--paper-raised)" stroke="var(--det)"/>
+          <text x="601" y="290" text-anchor="middle" font-size="12.5" font-weight="600" fill="currentColor">jetAdapter</text>
+          <text x="601" y="312" text-anchor="middle" font-size="11" fill="var(--muted)">derives rate bps from commission / gross</text>
+          <text x="601" y="330" text-anchor="middle" font-size="11" fill="var(--muted)">epoch &rarr; merchant zone, THEN the date</text>
+          <text x="601" y="348" text-anchor="middle" font-size="11" fill="var(--muted)">passes the sign through unchanged</text>
+
+          <!-- proxy -->
+          <path d="M746,126 L790,126 L790,219" fill="none" stroke="var(--det)" stroke-width="1.5"/>
+          <path d="M746,312 L790,312 L790,219" fill="none" stroke="var(--det)" stroke-width="1.5"/>
+          <line x1="790" y1="219" x2="826" y2="219" stroke="var(--det)" stroke-width="1.5" marker-end="url(#cArrow)"/>
+
+          <text x="830" y="30" font-family="var(--font-mono)" font-size="12" letter-spacing="1" fill="var(--muted)">PROXY</text>
+          <rect x="830" y="44" width="370" height="350" rx="10" fill="var(--paper-raised)" stroke="var(--det)"/>
+          <text x="854" y="72" font-size="13" font-weight="600" fill="currentColor">internal/platformconnector.Proxy</text>
+          <text x="854" y="96" font-size="11" fill="var(--muted)">Dispatches per platform. Walks the range in a fixed order,</text>
+          <text x="854" y="114" font-size="11" fill="var(--muted)">so two runs of the same request are byte-identical.</text>
+          <text x="854" y="144" font-size="11.5" font-weight="600" fill="currentColor">Caps, enforced &mdash; not advisory</text>
+          <text x="854" y="164" font-size="11" fill="var(--muted)">31 days per sync &#183; 20 pages per day</text>
+          <text x="854" y="194" font-size="11.5" font-weight="600" fill="currentColor">Six contract checks on every record</text>
+          <text x="854" y="214" font-size="11" fill="var(--muted)">1. platform name matches the bucket it will land in</text>
+          <text x="854" y="232" font-size="11" fill="var(--muted)">2. order date is the date that was requested</text>
+          <text x="854" y="250" font-size="11" fill="var(--muted)">3. commission = subtotal &times; rate, within a cent</text>
+          <text x="854" y="268" font-size="11" fill="var(--muted)">4. payout = subtotal &minus; commission, exactly</text>
+          <text x="854" y="286" font-size="11" fill="var(--muted)">5. a refund is negative and dated; a sale is neither</text>
+          <text x="854" y="304" font-size="11" fill="var(--muted)">6. provenance carries the simulated:// scheme</text>
+          <text x="854" y="334" font-size="11.5" font-weight="600" fill="currentColor">A failure is a refusal, never a correction</text>
+          <text x="854" y="354" font-size="11" fill="var(--muted)">A proxy that quietly repaired an upstream&rsquo;s numbers</text>
+          <text x="854" y="372" font-size="11" fill="var(--muted)">would be estimating. This product does not estimate money.</text>
+
+          <!-- output -->
+          <line x1="1015" y1="394" x2="1015" y2="440" stroke="var(--det)" stroke-width="1.5" marker-end="url(#cArrow)"/>
+          <rect x="40" y="450" width="1160" height="120" rx="10" fill="var(--det-soft)" stroke="var(--det)"/>
+          <text x="64" y="480" font-size="13.5" font-weight="600" fill="currentColor">Output: <tspan font-family="var(--font-mono)">ingest.DeliveryRecord</tspan> &mdash; the same type the CSV parser produces</text>
+          <text x="64" y="504" font-size="11.5" fill="currentColor">Same struct, same fields, same units, same conventions. internal/reconcile cannot tell a connector-sourced day from a CSV-sourced one,</text>
+          <text x="64" y="522" font-size="11.5" fill="currentColor">and is not asked to &mdash; it has a zero-line diff from this feature. The only visible difference is provenance:</text>
+          <text x="64" y="546" font-family="var(--font-mono)" font-size="11.5" fill="currentColor">simulated://ifood-partner-api/v2/merchants/SIMULATED-MERCHANT-0417/orders?date=2026-08-18&amp;page=1</text>
+        </svg>
+        </div>
+        <figcaption>Reached from <code>POST /api/connectors/sync</code>, which re-runs the same <code>internal/pipeline</code> the <code>-ingest</code> flag runs, with the fetched records overlaid onto the synced date range only. No network call happens anywhere in this diagram: the &ldquo;upstreams&rdquo; are functions that return JSON bytes.</figcaption>
+      </figure>
+
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--det-soft);border-color:var(--det)"></i>Deterministic &mdash; code, no model, ground truth</span>
+        <span><i class="swatch" style="background:var(--alert-soft);border-color:var(--alert)"></i>Simulated &mdash; stands in for an API this project has no access to</span>
+      </div>
+
+      <p class="prose" style="margin-top:22px;"><strong>Why the mocks emit real JSON bytes.</strong> Each mock marshals to <code>[]byte</code> and its adapter unmarshals it back. Skipping that round trip would be simpler and would also make the whole exercise vacuous &mdash; if the mock handed back records the adapter merely copied, there would be no normalization to demonstrate. The heterogeneity has to exist on the wire for the work to be real. It is the one place this feature spends complexity on purpose.</p>
+
+      <p class="prose"><strong>Two conversions carry the actual risk</strong>, and both fail silently rather than loudly if they are wrong. Just Eat Takeaway reports no commission rate, but <code>DeliveryRecord.CommissionRateBps</code> is what <code>reconcile.recomputeCommissionCents</code> independently cross-checks against &mdash; derive it wrong and every JET order raises a <code>commission_mismatch</code> flag, burying the genuine discrepancies under integration noise. And the two platforms disagree about the sign of a refund, so one adapter negates and the other must not &mdash; get <em>that</em> wrong and a refund is counted as revenue, raising a day&rsquo;s margin because money went out. Contract checks 3 and 5 exist because of exactly these two.</p>
+
+      <p class="prose"><strong>Determinism, and why it is not a shortcut.</strong> Each (platform, date) pair seeds its own generator from an FNV-64a hash of a fixed salt, the platform key, and the date. <code>cmd/gendata</code> uses a single seeded stream consumed in file order, which is right for generating a dataset once, top to bottom; it is wrong here, because a connector fetch is random access. An owner may sync one day, or five, or the same day twice, in either platform order &mdash; and with a shared stream the same date would return different orders depending on what had been fetched before it, so the same day would reconcile to a different margin depending on the order someone happened to click in. Hashing the key into its own seed makes every day an independent, order-insensitive draw.</p>
+
       <div class="roadmap" style="margin-top:26px;">
-        <p class="eyebrow">Where stage 1 would have to go &mdash; not built</p>
+        <p class="eyebrow">What is still not built</p>
+        <h3>From an emulated connector to a real feed</h3>
+        <p>The connector layer above is built and exercised; the credentials are not, and neither is any of the operational machinery a real feed needs. Deliberately absent, each for a stated reason: <strong>no OAuth, token refresh, or credential storage</strong> (there is no credential &mdash; an auth flow against a fake upstream validates nothing and would misrepresent how far along the integration is); <strong>no retries, backoff, rate limiting, or circuit breaking</strong> (in-process function calls do not fail transiently, and simulating flakiness so resilience code has something to catch would be fiction stacked on fiction); <strong>no webhooks or scheduling</strong> (pull-on-demand only, from a button an owner presses); <strong>no third platform and no plugin registry</strong> (exactly two, registered explicitly).</p>
+        <p class="eyebrow" style="margin-top:20px;">The original roadmap entry, kept &mdash; the strategic move has not changed</p>
         <h3>Closing the manual-file gap: direct platform feeds, not just direct upload</h3>
-        <p>All three of stage 1's sources arrive as files today &mdash; a delivery-platform export, a POS export, a supplier cost sheet &mdash; and spec 007 already replaced one manual step (a developer running <code>-ingest</code> from a terminal) with a web upload. The larger, still-unbuilt objective is replacing the human export step itself: a scheduled Go worker pulling each day's confirmed orders and settlement data directly from the <strong>iFood</strong> and <strong>Just Eat Takeaway merchant/partner APIs</strong>, normalizing the response into the exact typed record shape stage 2's parser already produces, and handing it to stage 3 completely unchanged. The API replaces file arrival, nothing downstream &mdash; Claude still never touches arithmetic, and Go still computes every margin. The supplier cost sheet gets the equivalent treatment from the other direction: invoice photo/PDF capture with Claude vision extracting into the same typed shape, then direct supplier feeds through Prosus's own merchant network. Both are one strategic move viewed from two sides: every number this pipeline consumes stops arriving as a manually produced file.</p>
+        <p>Stage 1's sources still arrive as files by default &mdash; a delivery-platform export, a POS export, a supplier cost sheet &mdash; and spec 007 already replaced one manual step (a developer running <code>-ingest</code> from a terminal) with a web upload. The connector above replaces a second one, for delivery revenue, against upstreams that are emulated. The objective that remains genuinely unbuilt is doing it against the real thing: a <em>scheduled</em> Go worker pulling each day's confirmed orders and settlement data from the actual <strong>iFood</strong> and <strong>Just Eat Takeaway merchant/partner APIs</strong> under real credentials, normalizing the response into the exact typed record shape stage 2's parser already produces, and handing it to stage 3 completely unchanged. The shape of that work is now built and tested; what is missing is partner access, a scheduler, and the settlement-timing handling below. The API replaces file arrival, nothing downstream &mdash; Claude still never touches arithmetic, and Go still computes every margin. The supplier cost sheet gets the equivalent treatment from the other direction: invoice photo/PDF capture with Claude vision extracting into the same typed shape, then direct supplier feeds through Prosus's own merchant network. Both are one strategic move viewed from two sides: every number this pipeline consumes stops arriving as a manually produced file.</p>
         <p><strong>Why this is roadmap, not backlog.</strong> iFood integration is comparatively warm &mdash; it operates a real merchant developer platform in Brazil, and inside Prosus this is an internal conversation rather than a cold partner ask. Just Eat Takeaway's merchant integrations run through an approved-partner program, so it follows rather than leads. Sequenced after the cost-sheet's OCR phase specifically because OCR is a capability this product controls end-to-end and can ship unilaterally; API access depends on a partner-approval process outside engineering's control.</p>
         <p><strong>The honest risk, named rather than sold past:</strong> a platform's real-time order feed and its end-of-period payout statement &mdash; where actual commission, refunds, and adjustments land &mdash; routinely disagree for days. Per this system's own refuse-rather-than-guess discipline, a day whose settlement data hasn't arrived would be flagged <em>provisional</em>, never silently estimated. &ldquo;Automated&rdquo; would not mean &ldquo;instant.&rdquo;</p>
       </div>
@@ -1348,6 +1457,7 @@
           <tbody>
             <tr><td class="mono">internal/reconcile</td><td class="mono">ingest, money</td><td class="no">no</td><td class="no">no &mdash; no I/O at all</td></tr>
             <tr><td class="mono">internal/ingest</td><td class="mono">money</td><td class="no">no</td><td class="no">no</td></tr>
+            <tr><td class="mono">internal/platformconnector</td><td class="mono">ingest, money</td><td class="no">no &mdash; a seeded generator, not a model</td><td class="no">no</td></tr>
             <tr><td class="mono">internal/storage</td><td class="mono">ingest, reconcile, instrumentation, money</td><td class="no">no</td><td class="yes">yes &mdash; sqlc + pgx</td></tr>
             <tr><td class="mono">internal/mcptools</td><td class="mono">reconcile, storage, money</td><td class="no">no</td><td class="yes">read-only</td></tr>
             <tr><td class="mono">internal/answercache</td><td class="mono">storage</td><td class="no">no</td><td class="yes">yes</td></tr>
@@ -1356,7 +1466,7 @@
             <tr><td class="mono">internal/explain</td><td class="mono">llmclient, mcptools</td><td class="yes">Sonnet 5</td><td class="no">only through typed tools</td></tr>
             <tr><td class="mono">internal/advisor</td><td class="mono">llmclient</td><td class="yes">Sonnet 5 (opt-in, per tap)</td><td class="no"><strong>no import path exists</strong></td></tr>
             <tr><td class="mono">internal/paraphrase</td><td class="mono">llmclient, answercache</td><td class="yes">Haiku 4.5 (cache miss only)</td><td class="no">no &mdash; candidates are handed in</td></tr>
-            <tr><td class="mono">internal/httpapi</td><td class="mono">advisor, ambiguity, explain, answercache, paraphrase, mcptools, instrumentation, llmclient, ingest, pipeline, livedata, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
+            <tr><td class="mono">internal/httpapi</td><td class="mono">advisor, ambiguity, explain, answercache, paraphrase, mcptools, instrumentation, llmclient, ingest, pipeline, platformconnector, livedata, reconcile, storage, money</td><td class="no">orchestrates only</td><td class="yes">yes</td></tr>
           </tbody>
         </table>
       </div>

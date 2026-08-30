@@ -84,7 +84,7 @@ Full list with acceptance criteria: `specs/001-margin-reconciliation-qa/spec.md`
 
 **Explicitly out of scope for this build** (see `docs/product-strategy.md`'s roadmap sections for why):
 - Multi-tenant / multi-location support
-- Real delivery-platform API integrations (CSV exports only)
+- Real delivery-platform API integrations (CSV exports only — superseded in part by section 12's *simulated* connector layer, which is explicitly not a real integration)
 - Growth, Engagement, and Campaign-Creation badge categories (Reconciliation category only is built)
 - The semantic-memory/cache/LLMOps harness discussed and explicitly deferred as a Phase 2 vision, not part of this build
 - Non-Prosus-customer market segment (Segment 2 in the market-sizing section)
@@ -127,3 +127,46 @@ Section 3's "explicitly out of scope" list is being worked through, not abandone
 - **Segment 2 (non-Prosus customers)** — implies real multi-tenancy. `specs/005-multi-tenant/spec.md` plus `docs/rfc-multi-tenant.md` define what this requires; **implementation is explicitly gated on review of that RFC**, not bundled with the other three, given a tenant-isolation defect is a data-breach class of bug, not a UX defect.
 - **Cost sheet upload through the web UI** — `specs/007-cost-sheet-upload/`. Closes the "a developer with terminal access is required to update input costs" gap the CLI-only `-ingest` flag left open; a zero-model feature (pure deterministic parsing/validation, reusing `internal/ingest.ParseCostSheet` unchanged) that turns the one input source the owner personally produces (supplier billing, on an irregular cadence) into something they can update themselves.
 - **Business Insight Advisor** — `specs/009-business-insight-advisor/`. The first feature that deliberately produces probabilistic content, built so the deterministic/probabilistic split runs through its middle: WHETHER an insight exists (a discrepancy flag, a money-losing promotion, a premium-band commission rate, a day-of-month expense spike, a material margin decline) is decided in plain Go at zero cost on every answered question, while the advice TEXT is a separate, owner-initiated, re-verified, and individually-ledgered Claude Sonnet 5 call — rendered in its own visually-distinct "AI suggestion" bubble with its real cost shown, never blended into the provenance-backed answer. Trigger thresholds and prompts are grounded in researched industry practice (commission tiers, payout-dispute mechanics, ordering-cadence cost control), tagged Sourced vs. Judgment per `product-strategy.md`'s discipline.
+- **Platform Connector Proxy (simulated)** — `specs/010-platform-connector-proxy/`. Section 3 lists real delivery-platform API integrations as out of scope, and they still are: this builds the *connector layer* for real — two mock upstreams with incompatible wire formats, one normalizing proxy, the unchanged reconciliation engine behind it — while stubbing the only part that cannot be built without credentials, and labels the result as emulated in five independent places. Full rationale, including what is deliberately not built (OAuth, retries, webhooks, a plugin registry), in section 12 below.
+
+## 12. Platform Connector Proxy — simulated iFood and Just Eat Takeaway
+
+`specs/010-platform-connector-proxy/`. The one section of this PRD whose most important sentence is about what the feature *is not*.
+
+### The problem
+
+Delivery-platform revenue is roughly a third of this restaurant's gross sales (`cmd/gendata`: 17% iFood + 17% Just Eat Takeaway against 66% POS), and until now it could reach the product exactly one way — somebody exports `delivery_platform_export.csv` from each merchant portal and it gets ingested from disk. That is a real gap for a daily-close product: the whole value proposition is "know today's margin today", and today's margin depends on a file a human has to remember to fetch.
+
+The obvious fix is the platforms' partner APIs. This project has no iFood partner-API credentials and no Just Eat Takeaway partner-API credentials, and will not get them for a take-home prototype. Section 3 listed "real delivery-platform API integrations" as out of scope for exactly that reason, and that remains true.
+
+### The solution
+
+Build the connector layer for real; stub only the part that cannot be built.
+
+- **Two simulated upstreams** emitting deliberately incompatible wire formats. iFood: page-numbered JSON, `snake_case`, decimal-string amounts in nested currency objects, RFC 3339 timestamps, `CONCLUDED`/`CANCELLED`, cancelled orders reported with *positive* amounts plus a cancellation block. Just Eat Takeaway: cursor-paginated JSON, `camelCase`, integer minor units, epoch-millisecond UTC timestamps, `DELIVERED`/`REFUNDED`, refunds reported already *negative*, and **no commission rate reported at all**.
+- **One proxy** (`backend/internal/platformconnector`) that dispatches per platform and normalizes both into `ingest.DeliveryRecord` — the exact type the CSV parser already produces — then verifies six contract properties on every record before it is allowed downstream.
+- **One reconciliation engine, unchanged.** `internal/reconcile` has a zero-line diff from this feature. A connector-sourced day and a CSV-sourced day are indistinguishable to reconciliation, to the MCP tools, to chat answers, and to badges — except by their provenance strings.
+
+The normalization is genuine work, not a rename. Two examples worth naming because both are silent-failure shaped: Just Eat Takeaway reports no commission rate, so the connector derives it in basis points — get it wrong and every JET order raises a `commission_mismatch` flag, burying the real discrepancies under integration noise. And the two platforms disagree about the sign of a refund, so one adapter negates and the other must not — get *that* wrong and a refund is counted as revenue, raising a day's margin with nothing anywhere to explain why.
+
+### Why this is honest rather than deceptive
+
+A synthetic number presented as a settled platform payout would be the single most damaging thing this product could ship, given that its stated bar is "a confidently wrong margin figure is worse than a refusal". The disclosure is therefore redundant by design — five independent statements, any four of which survive the removal of the fifth:
+
+1. The tab is labeled **"Connected platforms (simulated)"**, so the word arrives before the panel is opened.
+2. A persistent, non-dismissible notice sits above every control: *"These connections are simulated. No real iFood or Just Eat Takeaway account is connected."*
+3. Each platform row carries its own "Simulated connection" marker, so a screenshot cropped past the banner still discloses.
+4. Every API response body carries a top-level `"simulated": true` and the same notice text, so a client that ignores the UI entirely still cannot render these numbers undisclosed.
+5. Every record's provenance is a `simulated://ifood-partner-api/...` URI rather than a plausible-looking filename — and that prefix is *enforced* by the proxy's contract check, not merely intended.
+
+The values are synthetic, but they are not a guess at real figures, and nothing in the product presents them as one. Determinism is part of the honesty: the same platform and date always produce the same orders, so a demo, a re-run, and an evaluator all see identical numbers rather than a figure that quietly changes each time it is looked at.
+
+### Explicitly out of scope
+
+- **Real OAuth, token refresh, or credential storage.** There is no credential. An auth flow against a fake upstream validates nothing and would misrepresent the integration's maturity.
+- **Retries, backoff, rate limiting, circuit breakers.** In-process function calls do not fail transiently; simulating flakiness so resilience code has something to catch would be fiction stacked on fiction.
+- **Webhooks or push delivery.** Pull-on-demand only.
+- **A third platform or a plugin registry.** Exactly two, registered explicitly.
+- **Historical backfill.** A sync covers an owner-chosen range, capped at 31 days.
+- **A simulated POS or supplier API.** Delivery revenue only; POS and input costs still come from the dataset and the cost-sheet upload.
+- **Persisting raw platform payloads.** The raw envelopes live inside one function call; storing them would imply an audit trail this data does not deserve.

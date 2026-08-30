@@ -12,6 +12,185 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Delivery revenue can now come from the platforms, not just a CSV — with both platforms simulated, said five times over
+
+`specs/010-platform-connector-proxy`. Requested directly: revenue should come
+from iFood and Just Eat Takeaway, "but we don't have those APIs nowadays" —
+so build a proxy that solves the two different APIs, back it with a mocked
+service, and let a reconciliation pull from the proxy instead of an uploaded
+file.
+
+**The gap this closes, and the one it does not.** Delivery-platform revenue is
+about a third of this restaurant's gross sales (`cmd/gendata`: 17% iFood +
+17% Just Eat Takeaway against 66% POS), and until now it could reach the
+product exactly one way — a human exports `delivery_platform_export.csv` from
+each merchant portal and it gets ingested from disk. For a product whose
+entire pitch is "know today's margin today", depending on a file somebody has
+to remember to fetch is a real hole. The fix is the platforms' partner APIs,
+and this project has credentials for neither and will not get them. So the
+connector layer is built for real and only the upstreams are stubbed. The
+README, the PRD, and `docs/architecture.html` all still say real platform
+integrations are not built, because they are not.
+
+**New package `backend/internal/platformconnector`.** One `Client` interface
+(`Platform`, `Describe`, `FetchDeliveryRevenue`), two mock upstreams that emit
+raw JSON bytes, two adapters that decode and normalize them, and a `Proxy`
+that dispatches, caps, and verifies. Output is `ingest.DeliveryRecord` — the
+exact type `ingest.ParseDeliveryExport` already produces — so
+`internal/reconcile` has a **zero-line diff** from this feature and cannot
+tell a connector-sourced day from a CSV-sourced one.
+
+**The two mocks disagree on everything, deliberately.** A proxy over two APIs
+that already agreed would be a rename with extra steps, so: iFood speaks
+page-numbered JSON in `snake_case`, money as decimal strings inside nested
+`{currency, amount}` objects, RFC 3339 timestamps carrying the merchant's
+offset, an explicit `rate_percent`, `CONCLUDED`/`CANCELLED`, and reports a
+cancelled order with **positive** amounts plus a separate cancellation block.
+Just Eat Takeaway speaks cursor-paginated JSON in `camelCase`, money as
+integer minor units, epoch-millisecond timestamps in **UTC**,
+`DELIVERED`/`REFUNDED`, **no commission rate at all**, and reports a refund
+already **negative**. Each mock marshals to `[]byte` and its adapter
+unmarshals it back — the round trip is deliberate, because a mock that handed
+back records the adapter merely copied would make the whole exercise vacuous.
+
+**Two conversions carry the actual risk, and both fail silently rather than
+loudly.** Just Eat Takeaway reports no rate, but
+`ingest.DeliveryRecord.CommissionRateBps` is precisely what
+`reconcile.recomputeCommissionCents` independently cross-checks commission
+against — derive it wrong and every JET order raises a `commission_mismatch`
+flag, burying the real discrepancies this product exists to surface under
+integration noise. And the two platforms disagree about the sign of a refund,
+so `ifoodAdapter` must negate and `jetAdapter` must not — get that one wrong
+and a refund is counted as revenue, so a day's margin goes **up** because
+money went out, with nothing anywhere to explain it. There is a test for each.
+
+**The proxy verifies rather than trusts, and refuses rather than corrects.**
+Six contract checks run on every record, including records produced by the two
+mocks in the same package: platform name matches the bucket it will land in
+(a typo here silently opens a third `GrossSalesBySource` key and every
+platform-comparison surface keeps working while under-reporting), order date
+matches the date requested, commission equals subtotal × rate within one cent
+(the same tolerance and the same `money.DivRoundHalfUp`
+`reconcile.computeOneDay` uses, so the proxy can never pass a record
+reconciliation would then flag), payout equals subtotal minus commission
+exactly, a refund is negative and dated while a sale is neither, and
+provenance carries the `simulated://` scheme. A failure is a refusal, never a
+repair — a proxy that quietly fixed an upstream's numbers would be
+estimating, and this product does not estimate money. Also refused: an
+inverted range, a range over 31 days, an unregistered platform, an empty
+platform list, and **any single platform failing**, because committing iFood
+alone for a range would replace that range's delivery revenue with half of it
+and drop margin with no flag to explain why.
+
+**Determinism, and why `cmd/gendata`'s own mechanism was wrong here.** Each
+`(platform, date)` seeds its own generator from an FNV-64a hash of a fixed
+salt, the platform key, and the date. `cmd/gendata` uses one seeded stream
+(`randSeed = 20260815`) consumed in file order, which is right for generating
+a dataset once, top to bottom. It is wrong for a connector, because a fetch is
+random access: an owner may sync one day, or five, or the same day twice, in
+either platform order — and with a shared stream what a day returned would
+depend on what had been fetched before it, so the same date would reconcile to
+a different margin depending on the order someone happened to click in. Same
+discipline as `cmd/gendata` ("deterministic — same seed, same dataset, every
+regen"), different mechanism, for a stated reason. Scale constants
+(23%/20% commission, $32 mean ticket, 2% refund rate) are lifted from
+`cmd/gendata`'s own tuned values so a synced day lands next to real dataset
+days without standing out.
+
+**Pipeline change: a range-scoped overlay, not a second pipeline.**
+`pipeline.RunIngestionPipelineWithDeliveryOverlay` drops CSV delivery rows
+inside `[From, To]`, appends the connector's records in their place, and
+leaves rows outside the range verbatim. `RunIngestionPipeline` is now a
+one-line delegation with a nil overlay, so `-ingest` and the cost-sheet commit
+are bit-for-bit unchanged. Range membership is decided on the formatted
+`YYYY-MM-DD` key rather than on `time.Time` ordering, because CSV-parsed dates
+are UTC midnight while connector dates are midnight in the merchant's own
+zone — the same calendar day, three hours apart, and a `Before`/`After`
+comparison between them would silently drop a boundary day. Every affected day
+is recomputed from all three sources, because margin cannot be updated from
+delivery alone without inventing a partial-day figure.
+
+**Rejected alternative:** having the connector write a CSV into
+`livedata.Dir` and re-running the plain pipeline. It would have reused more
+code, but `pipeline.findSourceFiles` matches one delivery file by filename
+keyword, so a connector-written file would either collide with
+`delivery_platform_export.csv` or be silently ignored — and normalizing
+records only to re-serialize and re-parse them can lose information
+(`OrderTime` formatting, note text) for no benefit.
+
+**Three endpoints**, mirroring the cost-sheet upload's preview/commit shape
+because it is the same job: `GET /api/connectors/platforms` (static, names
+each platform's wire format so the heterogeneity is visible in the product,
+not only in the source tree), `POST /api/connectors/sync/preview` (persists
+nothing — the handler is never even given the store), and `POST
+/api/connectors/sync` (re-fetches from scratch, clears the answer cache
+first, runs the overlay pipeline, reports margin before and after). Every
+response body carries a top-level `"simulated": true` and the notice text,
+because a client that ignores the UI entirely must still not be able to render
+these numbers undisclosed.
+
+**A pre-existing lock had to widen.** `HandleCommitCostSheet` held a mutex
+scoped to its own closure, correct when it was the only path that wrote
+`livedata.Dir` and re-ran the pipeline against it. The connector sync is a
+second one — it writes no file but re-runs the same pipeline over the same
+directory and reads a before/after margin snapshot around it — so a
+cost-sheet commit interleaving with a sync would reproduce exactly the failure
+that closure-scoped mutex was introduced to close (each request truthfully
+reporting its own inputs while the database reflects the other's), one
+endpoint wider. Lifted to a package-level `ingestMu` in `internal/httpapi`,
+which also stays correct if a third write path is added.
+
+**The disclosure is redundant on purpose.** A synthetic number presented as a
+settled platform payout would be the single most damaging thing this product
+could ship, given its stated bar that a confidently wrong margin figure is
+worse than a refusal. So it is stated five independent times, any four of
+which survive the removal of the fifth: the tab is labeled "Connected
+platforms (simulated)" so the word arrives before the panel is opened; a
+persistent, non-dismissible notice sits above every control; each platform row
+carries its own "Simulated connection" marker so a screenshot cropped past the
+banner still discloses; every API response carries `"simulated": true`; and
+every record's provenance is a `simulated://ifood-partner-api/...` URI rather
+than a plausible-looking filename — *enforced* by contract check 6, not merely
+intended. Order IDs read `IFOOD-SIM-…` / `JET-SIM-…` and campaign codes read
+`…-SIMULATED-…` for the same reason.
+
+**Frontend.** `/upload` became a two-tab page: the existing cost-sheet flow
+moved verbatim into `CostSheetTab.tsx` with no behavioral change, and
+`ConnectedPlatformsTab.tsx` is a sibling. Both panels stay mounted with the
+inactive one `hidden` rather than unmounting — a staged preview in either tab
+is real uncommitted work, and discarding it on a tab click is the exact loss
+`useUnsavedChangesGuard` exists to prevent on navigation; `hidden` is also
+what the WAI-ARIA tabs pattern asks for, so the accessibility and the
+state-preservation fall out of one decision. The tab strip is one tab stop
+with arrow-key roving focus. A preview that returns zero orders disables the
+sync button and says why: syncing an empty range would *clear* the delivery
+revenue on file for those days, not leave them alone.
+
+**Deliberately not built,** so the absences read as decisions: no OAuth, token
+refresh, or credential storage (there is no credential — an auth flow against
+a fake upstream validates nothing and would misrepresent how far along the
+integration is); no retries, backoff, rate limiting, or circuit breaking
+(in-process calls do not fail transiently, and simulating flakiness so
+resilience code has something to catch is fiction stacked on fiction); no
+webhooks or scheduling; no third platform and no plugin registry; no
+historical backfill; no persisted raw payloads; and **no new MCP tool** — the
+model must not be able to trigger a data-mutating sync.
+
+**Verified.** `go build ./... && go vet ./... && go test ./...` clean against
+an isolated Postgres on `:55432` in a dedicated worktree (never the shared dev
+database on `:5432`), with `cmd/gendata` + `-ingest` + `-ingest-promo` run
+into it first. Frontend `tsc -b --noEmit`, `npm test -- --run` (570 tests, 48
+files), and `npm run build` all clean. Exercised end to end against an
+isolated backend on `:8099`: syncing 2026-08-18..20 moved 2026-08-18's iFood
+gross from $747.37 to $572.54 and its margin from $4,014.71 to $3,947.67, left
+POS gross untouched at $2,901.46, produced **zero** discrepancy flags (so both
+adapters' commission math — including JET's derived rate — agrees with
+`reconcile`'s independent recomputation), wrote 39 `simulated://` provenance
+refs alongside 76 CSV ones for that day, and left 2026-08-17 with zero
+simulated refs and an unchanged margin. Re-running the identical sync returned
+a byte-identical before/after margin of $1,078,977.36, confirming determinism
+through the full HTTP → proxy → pipeline → Postgres path.
+
 ## 2026-08-30 — Close's Period view no longer opens to a blank state
 
 Requested directly: Period should always show results for whatever range is

@@ -68,6 +68,23 @@ const liveCostSheetFilename = "supplier_cost_sheet.csv"
 // see its call site in HandleCommitCostSheet for what it exists to prove.
 var afterCommitWriteForTests func()
 
+// ingestMu serializes every request path that writes into livedata.Dir and
+// then re-runs the reconciliation pipeline against it.
+//
+// It was originally a mutex scoped to HandleCommitCostSheet's own closure,
+// when the cost-sheet commit was the only such path and could therefore
+// only ever race with itself. specs/010-platform-connector-proxy added a
+// second one: POST /api/connectors/sync writes no file but does re-run the
+// same pipeline over the same directory, and its response reports a
+// before/after margin snapshot read around that run. A cost-sheet commit
+// interleaving with a connector sync would produce exactly the failure the
+// closure-scoped mutex was introduced to close — each request truthfully
+// reporting its own inputs while the persisted numbers reflect the other's
+// — one endpoint wider. A package-level lock is the smallest change that
+// makes the guarantee hold across both, and it stays correct if a third
+// write path is ever added, which a per-handler lock would not.
+var ingestMu sync.Mutex
+
 // CostSheetRowView is one parsed invoice row, rendered for the preview
 // response. Amount is a decimal string (internal/money.FormatCents),
 // matching every other money field this API returns — never a float.
@@ -158,7 +175,7 @@ func HandlePreviewCostSheet(w http.ResponseWriter, r *http.Request) {
 // persisted reconciliation data, so it must uphold the same invalidation
 // discipline.
 //
-// commitMu (below) serializes the write-then-reconcile critical section
+// ingestMu (below) serializes the write-then-reconcile critical section
 // across concurrent requests. Found live: two tabs (or a double-submit)
 // committing close together could otherwise interleave — request A writes
 // its validated bytes to the fixed livedata path, request B overwrites that
@@ -169,11 +186,8 @@ func HandlePreviewCostSheet(w http.ResponseWriter, r *http.Request) {
 // than a refusal (CLAUDE.md's own stated bar) — and it was reachable with no
 // error, no conflict signal, nothing. A single in-process mutex closes it:
 // this is a single-process server (cmd/server/main.go), so no cross-process
-// locking is needed for a prototype of this shape. The lock is scoped to
-// this handler's closure rather than a package global so it only ever
-// contends with itself.
+// locking is needed for a prototype of this shape.
 func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) http.HandlerFunc {
-	var commitMu sync.Mutex
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSONError(w, http.StatusMethodNotAllowed, "method_not_allowed", "only POST is supported")
@@ -204,10 +218,10 @@ func HandleCommitCostSheet(store *storage.Queries, cache *answercache.Cache) htt
 		}
 
 		// From here on, this request touches the shared livedata file and the
-		// shared persisted reconciliation state — see commitMu's doc comment
+		// shared persisted reconciliation state — see ingestMu's doc comment
 		// above for the exact interleaving this closes.
-		commitMu.Lock()
-		defer commitMu.Unlock()
+		ingestMu.Lock()
+		defer ingestMu.Unlock()
 
 		ctx := r.Context()
 
