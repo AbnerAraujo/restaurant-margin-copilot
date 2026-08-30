@@ -235,6 +235,25 @@ func HandleCreatePromotion(q storage.Querier) http.HandlerFunc {
 					fmt.Sprintf("campaign_id %q is not currently flagged negative-ROI by list_negative_roi_promotions — refusing the replaces claim. The promotion can still be logged without a replaces reference.", replaces))
 				return
 			}
+
+			// Defense against exactly the double-award bug a QA pass found:
+			// a flagged campaign stayed offered in the frontend's "replaces"
+			// dropdown after it had already been replaced once (a stale
+			// client-side derivation), and submitting it again minted a
+			// SECOND Campaign Launcher badge and a second points award for
+			// the same real replacement. Re-verified here against live data
+			// — a campaign can only genuinely be replaced once — rather
+			// than trusting the client to have refreshed its own dropdown.
+			alreadyReplaced, err := storage.IsCampaignAlreadyReplaced(r.Context(), q, replaces)
+			if err != nil {
+				writeJSONError(w, http.StatusInternalServerError, "query_failed", err.Error())
+				return
+			}
+			if alreadyReplaced {
+				writeJSONError(w, http.StatusConflict, "already_replaced",
+					fmt.Sprintf("campaign_id %q has already been replaced by another promotion record — a flagged campaign can only be replaced once. Log this promotion without a replaces reference instead.", replaces))
+				return
+			}
 			replacesPtr = &replaces
 		}
 

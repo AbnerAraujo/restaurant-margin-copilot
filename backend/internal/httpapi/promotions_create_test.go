@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/require"
 
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/badges"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
@@ -368,6 +369,106 @@ func TestHandleCreatePromotion_RejectsAnUnrecognizedPlatform(t *testing.T) {
 	var count int
 	require.NoError(t, conn.QueryRow(context.Background(), "SELECT count(*) FROM promotion_roi_record WHERE campaign_id = $1", campaignID).Scan(&count))
 	require.Equal(t, 0, count, "a refused platform value must never be persisted")
+}
+
+// TestHandleCreatePromotion_RejectsASecondReplacementOfAnAlreadyReplacedCampaign
+// is the fix for the real double-award currency bug a QA pass found: after
+// one promotion record was logged replacing a flagged campaign, that SAME
+// flagged campaign stayed offered in the frontend's "replaces" dropdown (a
+// stale client-side derivation — Promotions/PromotionsPage.tsx's own fix),
+// and submitting it again minted a SECOND Campaign Launcher badge (and a
+// second real points award, at 10 cents/point) for one real replacement.
+// This is the server-side half of the fix: POST /api/promotions must refuse
+// a "replaces" claim naming a campaign_id some OTHER already-persisted
+// record already names, regardless of what the client's own UI currently
+// shows — the same "re-verify against live data" discipline FR-007's
+// flagged_negative re-check already applies a few lines above this new
+// check in the handler.
+func TestHandleCreatePromotion_RejectsASecondReplacementOfAnAlreadyReplacedCampaign(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+
+	flaggedID := "TEST-HTTPAPI-SENTINEL-DOUBLE-AWARD-FLAGGED"
+	firstReplacementID := "TEST-HTTPAPI-SENTINEL-DOUBLE-AWARD-FIRST"
+	secondReplacementID := "TEST-HTTPAPI-SENTINEL-DOUBLE-AWARD-SECOND"
+	t.Cleanup(func() {
+		_, _ = conn.Exec(context.Background(),
+			"DELETE FROM promotion_roi_record WHERE campaign_id IN ($1, $2, $3)",
+			flaggedID, firstReplacementID, secondReplacementID)
+	})
+
+	// A real, persisted, NEGATIVE-roi (i.e. genuinely flagged_negative=true)
+	// sentinel campaign — a purpose-built fixture rather than depending on
+	// JET-CAMP-LUNCHFIX's real state, since other tests/runs may have
+	// already replaced that specific campaign.
+	roiNeg := int64(-5000)
+	_, err := storage.SavePromotionRoiRecord(context.Background(), q, reconcile.PromotionRoiRecord{
+		Platform:                          "TestPlatform",
+		CampaignID:                        flaggedID,
+		PeriodStart:                       time.Date(1999, 5, 1, 0, 0, 0, 0, time.UTC),
+		PeriodEnd:                         time.Date(1999, 5, 3, 0, 0, 0, 0, time.UTC),
+		SpendCents:                        6000,
+		AttributedIncrementalOrders:       intPtrHTTP(1),
+		AttributedIncrementalRevenueCents: int64PtrHTTP(1000),
+		ROICents:                          &roiNeg,
+		FlaggedNegative:                   true,
+	})
+	require.NoError(t, err)
+
+	// First replacement: succeeds and earns the badge, exactly as
+	// TestHandleCreatePromotion_AcceptsAReplacesClaimAgainstARealFlaggedCampaign
+	// already proves for the success path in isolation.
+	first := doCreatePromotion(t, q, map[string]any{
+		"platform":    "iFood",
+		"campaign_id": firstReplacementID,
+		"period":      map[string]string{"start": "1999-06-01", "end": "1999-06-07"},
+		"spend":       "50.00",
+		"replaces":    flaggedID,
+	})
+	require.Equal(t, http.StatusCreated, first.Code)
+	var firstBody CreatePromotionResponse
+	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &firstBody))
+	require.True(t, firstBody.EarnedCampaignBadge)
+
+	// Second replacement of the SAME already-replaced campaign: this is the
+	// exact repro from the QA finding (the dropdown offering it again) —
+	// must be refused with a typed, specific error, and must NOT be
+	// persisted at all.
+	second := doCreatePromotion(t, q, map[string]any{
+		"platform":    "iFood",
+		"campaign_id": secondReplacementID,
+		"period":      map[string]string{"start": "1999-07-01", "end": "1999-07-07"},
+		"spend":       "50.00",
+		"replaces":    flaggedID,
+	})
+	require.Equal(t, http.StatusConflict, second.Code)
+
+	var secondBody map[string]string
+	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &secondBody))
+	require.Equal(t, "already_replaced", secondBody["error"])
+
+	var count int
+	require.NoError(t, conn.QueryRow(context.Background(),
+		"SELECT count(*) FROM promotion_roi_record WHERE campaign_id = $1", secondReplacementID,
+	).Scan(&count))
+	require.Equal(t, 0, count, "the refused second replacement must not have been persisted")
+
+	// The actual currency guarantee: even setting the write-time refusal
+	// aside, the badge/points evaluator itself must never award a second
+	// Campaign Launcher badge for one real replacement — re-load every
+	// persisted record for these sentinels and confirm exactly one badge
+	// exists naming flaggedID as replaced.
+	all, err := storage.LoadAllPromotionRoiRecords(context.Background(), q)
+	require.NoError(t, err)
+	sentinelOnly := make([]reconcile.PromotionRoiRecord, 0, 2)
+	for _, p := range all {
+		if p.CampaignID == flaggedID || p.CampaignID == firstReplacementID || p.CampaignID == secondReplacementID {
+			sentinelOnly = append(sentinelOnly, p)
+		}
+	}
+	campaignBadges := badges.EvaluateCampaignCreationBadges(sentinelOnly)
+	require.Len(t, campaignBadges, 1, "exactly one Campaign Launcher badge for one real replacement, never two")
+	require.Equal(t, flaggedID, campaignBadges[0].ReplacesCampaignID)
+	require.Equal(t, firstReplacementID, campaignBadges[0].CampaignID, "the EARLIEST replacement wins the badge")
 }
 
 func intPtrHTTP(v int) *int       { return &v }

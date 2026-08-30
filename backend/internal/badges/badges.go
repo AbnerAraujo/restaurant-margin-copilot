@@ -433,13 +433,28 @@ func uniqueSortedDays(usageDays []time.Time) []time.Time {
 // to a flagged problem specifically, not promotion-logging in general, a
 // deliberate modeling choice stated here rather than left implicit.
 //
+// A flagged campaign can only genuinely be "replaced" once: this is the
+// source-of-truth fix for a QA-found double-award bug where the SAME
+// already-replaced campaign_id was offered again in the replaces dropdown
+// (a stale frontend derivation) and, on a second submission, earned a
+// SECOND Campaign Launcher badge and a second points award for one real
+// replacement. POST /api/promotions (internal/httpapi/promotions_create.go)
+// now refuses to CREATE a second record naming an already-replaced
+// campaign_id, but this evaluator stays independently defensive — a race
+// between two concurrent requests, a direct API call bypassing that check,
+// or any future write path into this table must never be able to make the
+// badge/points system itself double-count. Only the EARLIEST
+// owner_created record (by CreatedAt) naming a given ReplacesCampaignID
+// earns the badge; any later record naming that same target is treated as
+// the duplicate it is and earns nothing.
+//
 // Dated to CreatedAt — the act of logging the replacement is what this badge
 // acknowledges, not the replaced campaign's own dates or the new
 // promotion's own period (spec Edge Cases: a badge earned for creating a
 // record is honestly gone if that record is later deleted, which CreatedAt
 // naturally reflects since it can only exist while the row does).
 func EvaluateCampaignCreationBadges(promotions []reconcile.PromotionRoiRecord) []Badge {
-	out := make([]Badge, 0)
+	candidates := make([]reconcile.PromotionRoiRecord, 0, len(promotions))
 	for _, p := range promotions {
 		if p.Origin != reconcile.OriginOwnerCreated {
 			continue
@@ -447,13 +462,32 @@ func EvaluateCampaignCreationBadges(promotions []reconcile.PromotionRoiRecord) [
 		if p.ReplacesCampaignID == nil || *p.ReplacesCampaignID == "" {
 			continue
 		}
+		candidates = append(candidates, p)
+	}
+
+	// Sort a copy by CreatedAt ascending — the input order here is whatever
+	// storage.LoadAllPromotionRoiRecords returns (period, then campaign_id),
+	// not creation order, so "earliest replacement wins" must sort
+	// explicitly rather than trust caller order.
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].CreatedAt.Before(candidates[j].CreatedAt)
+	})
+
+	out := make([]Badge, 0, len(candidates))
+	alreadyReplaced := make(map[string]struct{}, len(candidates))
+	for _, p := range candidates {
+		replaces := *p.ReplacesCampaignID
+		if _, dup := alreadyReplaced[replaces]; dup {
+			continue
+		}
+		alreadyReplaced[replaces] = struct{}{}
 		out = append(out, Badge{
 			Date:               p.CreatedAt.Format(dateLayout),
 			Code:               CodeCampaignCreation,
 			Name:               names[CodeCampaignCreation],
 			Category:           categories[CodeCampaignCreation],
 			CampaignID:         p.CampaignID,
-			ReplacesCampaignID: *p.ReplacesCampaignID,
+			ReplacesCampaignID: replaces,
 		})
 	}
 	return out
