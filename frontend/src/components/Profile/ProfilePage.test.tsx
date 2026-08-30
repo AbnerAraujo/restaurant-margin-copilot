@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { createMemoryRouter, RouterProvider } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import ProfilePage from './ProfilePage'
@@ -35,6 +36,26 @@ function tinyPngFile(name = 'storefront.png') {
   })
 }
 
+/**
+ * `ProfilePage` now calls `useUnsavedChangesGuard`, which calls React
+ * Router's `useBlocker` — only valid inside a data router
+ * (`createMemoryRouter`/`RouterProvider`, matching
+ * `LogReplacementForm.test.tsx`'s own pattern), never a bare `render()`. A
+ * second route stands in for "anywhere else in the app" so the
+ * unsaved-changes-guard tests can drive an in-app navigation away.
+ */
+function renderProfilePage() {
+  const router = createMemoryRouter(
+    [
+      { path: '/profile', element: <ProfilePage /> },
+      { path: '/elsewhere', element: <p>Elsewhere</p> },
+    ],
+    { initialEntries: ['/profile'] },
+  )
+  render(<RouterProvider router={router} />)
+  return router
+}
+
 describe('ProfilePage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -56,7 +77,7 @@ describe('ProfilePage', () => {
       },
     ])
 
-    render(<ProfilePage />)
+    renderProfilePage()
 
     expect(await screen.findByDisplayValue('Trattoria Bellavista')).toBeInTheDocument()
     expect(screen.getByDisplayValue('123 Main St')).toBeInTheDocument()
@@ -66,7 +87,7 @@ describe('ProfilePage', () => {
   it('renders an empty, ready-to-fill form on first run (no profile saved yet)', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
 
-    render(<ProfilePage />)
+    renderProfilePage()
 
     expect(await screen.findByLabelText(/restaurant name/i)).toHaveValue('')
     // A first-run empty profile is a normal state, never an error.
@@ -76,7 +97,7 @@ describe('ProfilePage', () => {
   it('shows the backend load failure plainly rather than a blank form', async () => {
     stubFetch([{ ok: false, status: 500, body: { error: 'query_failed', detail: 'db down' } }])
 
-    render(<ProfilePage />)
+    renderProfilePage()
 
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/couldn't load your profile/i)
@@ -84,7 +105,7 @@ describe('ProfilePage', () => {
 
   it('marks the restaurant name as required, matching the form copy', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
-    render(<ProfilePage />)
+    renderProfilePage()
 
     const nameInput = await screen.findByLabelText(/restaurant name/i)
     expect(nameInput).toBeRequired()
@@ -94,7 +115,7 @@ describe('ProfilePage', () => {
   it('blocks a blank restaurant name natively and never calls the save endpoint', async () => {
     const fetchMock = stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     const nameInput = await screen.findByLabelText(/restaurant name/i)
     const saveButton = screen.getByRole('button', { name: /save profile/i })
@@ -110,7 +131,7 @@ describe('ProfilePage', () => {
   it('refuses to submit a whitespace-only restaurant name (passes native required, fails the trim check)', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/restaurant name/i), '   ')
     await user.click(screen.getByRole('button', { name: /save profile/i }))
@@ -121,7 +142,7 @@ describe('ProfilePage', () => {
   it('shows a clear, actionable message when the save request never reaches the server', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
 
@@ -138,7 +159,7 @@ describe('ProfilePage', () => {
   it('previews a chosen photo before saving, using a client-side data URI', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await screen.findByLabelText(/restaurant name/i)
     expect(screen.queryByAltText(/restaurant photo preview/i)).not.toBeInTheDocument()
@@ -158,7 +179,7 @@ describe('ProfilePage', () => {
   it('rejects an oversized photo client-side without ever touching the file reader result', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await screen.findByLabelText(/restaurant name/i)
     const oversized = new File([new Uint8Array(5 * 1024 * 1024 + 1)], 'huge.png', {
@@ -178,7 +199,7 @@ describe('ProfilePage', () => {
     // runtime check must reject it too. `applyAccept: false` simulates that
     // rather than relying on user-event's own accept-attribute filtering.
     const user = userEvent.setup({ applyAccept: false })
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await screen.findByLabelText(/restaurant name/i)
     const svg = new File(['<svg></svg>'], 'logo.svg', { type: 'image/svg+xml' })
@@ -205,7 +226,7 @@ describe('ProfilePage', () => {
       },
     ])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
     await user.type(screen.getByLabelText(/^address$/i), '9 Ocean Ave')
@@ -232,7 +253,7 @@ describe('ProfilePage', () => {
       },
     ])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
     await user.click(screen.getByRole('button', { name: /save profile/i }))
@@ -254,7 +275,7 @@ describe('ProfilePage', () => {
       },
     ])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await screen.findByDisplayValue('Cafe Luz')
     await user.click(screen.getByRole('button', { name: /save profile/i }))
@@ -279,7 +300,7 @@ describe('ProfilePage', () => {
       },
     ])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/^address$/i), '9 Ocean Ave')
     await user.click(screen.getByRole('button', { name: /save profile/i }))
@@ -304,7 +325,7 @@ describe('ProfilePage', () => {
       },
     ])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
     await user.type(screen.getByLabelText(/^phone$/i), 'call-us-maybe')
@@ -333,7 +354,7 @@ describe('ProfilePage', () => {
   it('rejects a photo exactly 1 byte over the limit without a self-contradictory size in the message', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
     const user = userEvent.setup()
-    render(<ProfilePage />)
+    renderProfilePage()
 
     await screen.findByLabelText(/restaurant name/i)
     // 1 byte over 5MB: naive one-decimal rounding renders this as "5.0MB",
@@ -351,7 +372,7 @@ describe('ProfilePage', () => {
 
   it('caps the About textarea height and scrolls internally rather than growing without bound', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
-    render(<ProfilePage />)
+    renderProfilePage()
 
     const textarea = await screen.findByLabelText(/about/i)
     expect(textarea.className).toMatch(/max-h-/)
@@ -360,12 +381,89 @@ describe('ProfilePage', () => {
 
   it('sets maxLength on every profile field, matching the backend limits', async () => {
     stubFetch([{ ok: true, body: EMPTY_PROFILE }])
-    render(<ProfilePage />)
+    renderProfilePage()
 
     expect(await screen.findByLabelText(/restaurant name/i)).toHaveAttribute('maxLength', '200')
     expect(screen.getByLabelText(/^address$/i)).toHaveAttribute('maxLength', '300')
     expect(screen.getByLabelText(/^phone$/i)).toHaveAttribute('maxLength', '40')
     expect(screen.getByLabelText(/^email$/i)).toHaveAttribute('maxLength', '254')
     expect(screen.getByLabelText(/about/i)).toHaveAttribute('maxLength', '1000')
+  })
+
+  describe('unsaved-changes guard', () => {
+    it('does not warn navigating away from a genuinely untouched, just-loaded form', async () => {
+      stubFetch([
+        { ok: true, body: { ...EMPTY_PROFILE, name: 'Trattoria Bellavista' } },
+      ])
+      const router = renderProfilePage()
+      await screen.findByDisplayValue('Trattoria Bellavista')
+
+      await router.navigate('/elsewhere')
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/elsewhere/i)).toBeInTheDocument()
+    })
+
+    it('warns before an in-app navigation discards a real edit, and Cancel keeps the edit and stays on the page', async () => {
+      stubFetch([
+        { ok: true, body: { ...EMPTY_PROFILE, name: 'Trattoria Bellavista' } },
+      ])
+      const user = userEvent.setup()
+      const router = renderProfilePage()
+      await screen.findByDisplayValue('Trattoria Bellavista')
+
+      await user.type(screen.getByLabelText(/^address$/i), '9 Ocean Ave')
+      void router.navigate('/elsewhere')
+
+      expect(await screen.findByRole('alertdialog')).toHaveTextContent(
+        /discard your profile changes/i,
+      )
+
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(screen.getByLabelText(/^address$/i)).toHaveValue('9 Ocean Ave')
+      expect(router.state.location.pathname).toBe('/profile')
+    })
+
+    it('discards the edit and completes the navigation on explicit confirm', async () => {
+      stubFetch([
+        { ok: true, body: { ...EMPTY_PROFILE, name: 'Trattoria Bellavista' } },
+      ])
+      const user = userEvent.setup()
+      const router = renderProfilePage()
+      await screen.findByDisplayValue('Trattoria Bellavista')
+
+      await user.type(screen.getByLabelText(/^address$/i), '9 Ocean Ave')
+      void router.navigate('/elsewhere')
+
+      await user.click(
+        await screen.findByRole('button', { name: /discard changes/i }),
+      )
+
+      expect(await screen.findByText(/elsewhere/i)).toBeInTheDocument()
+      expect(router.state.location.pathname).toBe('/elsewhere')
+    })
+
+    it('does not warn navigating away right after a successful save', async () => {
+      stubFetch([
+        { ok: true, body: EMPTY_PROFILE },
+        {
+          ok: true,
+          body: { ...EMPTY_PROFILE, name: 'Cafe Luz', updated_at: '2026-08-27T09:00:00Z' },
+        },
+      ])
+      const user = userEvent.setup()
+      const router = renderProfilePage()
+
+      await user.type(await screen.findByLabelText(/restaurant name/i), 'Cafe Luz')
+      await user.click(screen.getByRole('button', { name: /save profile/i }))
+      await screen.findByText(/profile saved/i)
+
+      await router.navigate('/elsewhere')
+
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument()
+      expect(await screen.findByText(/elsewhere/i)).toBeInTheDocument()
+    })
   })
 })
