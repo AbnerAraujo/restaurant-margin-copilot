@@ -156,6 +156,13 @@ export default function UploadPage() {
   const isBusy = stage.name === 'previewing' || stage.name === 'committing'
   const errorText =
     stage.name === 'preview_error' || stage.name === 'commit_error' ? stage.message : null
+  // Defense in depth: the backend now refuses a 0-data-row file outright
+  // (ingest.ParseCostSheet's "no data rows found" check), so `preview` here
+  // should never actually carry row_count 0. This guard exists so that if
+  // it ever does — a future parser change, a file shaped in some way this
+  // page hasn't anticipated — the UI never lets a 0-row preview look like
+  // an ordinary one with Confirm & Ingest quietly enabled underneath it.
+  const previewHasNoRows = preview !== null && preview.row_count === 0
 
   return (
     <PageContainer className="flex flex-col gap-5">
@@ -248,7 +255,11 @@ export default function UploadPage() {
                 <Button variant="outline" size="sm" onClick={reset} disabled={isBusy}>
                   Choose a different file
                 </Button>
-                <Button size="sm" onClick={() => void handleCommit()} disabled={isBusy}>
+                <Button
+                  size="sm"
+                  onClick={() => void handleCommit()}
+                  disabled={isBusy || previewHasNoRows}
+                >
                   {stage.name === 'committing' ? (
                     <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                   ) : null}
@@ -257,11 +268,21 @@ export default function UploadPage() {
               </div>
             }
           />
-          <p className="mt-1 text-xs text-muted-foreground">
-            Nothing has been saved yet — {preview.row_count} row
-            {preview.row_count === 1 ? '' : 's'} parsed, totalling{' '}
-            {formatUsd(preview.total_amount)}. Review before confirming.
-          </p>
+          {previewHasNoRows ? (
+            <p role="alert" className="mt-1 flex items-start gap-1.5 text-xs text-destructive-text">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+              <span>
+                This file has no data rows — nothing to ingest. Confirming would replace the
+                current cost sheet with an empty one. Choose a different file.
+              </span>
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">
+              Nothing has been saved yet — {preview.row_count} row
+              {preview.row_count === 1 ? '' : 's'} parsed, totalling{' '}
+              {formatUsd(preview.total_amount)}. Review before confirming.
+            </p>
+          )}
 
           <DataGrid
             className="mt-4"
