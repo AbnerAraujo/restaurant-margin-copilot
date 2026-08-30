@@ -12,6 +12,29 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Close's Period view no longer opens to a blank state
+
+Requested directly: Period should always show results for whatever range is
+currently set, but editing the dates should keep requiring the explicit
+"Show results" click rather than auto-fetching on every keystroke.
+
+Previously, switching to Period pre-filled `rangeStart`/`rangeEnd` with a
+sensible default (the last week of real data) but never fetched — the owner
+always had to click "Show results" once just to see the range the app had
+already picked for them. `handleModeChange` now auto-applies whatever range
+is current the moment Period is entered (seeding the default first, if the
+fields are still empty), so the view never opens to a "choose dates,
+then Show results" prompt in the common case. Editing either date field
+afterward is unchanged: `handleRangeStartChange`/`handleRangeEndChange`
+still only update local state, never fetch, and "Show results" is still
+required to apply an edit — the original fix for the two-fields-racing-
+each-other bug this page already had is untouched.
+
+Verified live against the running dev server: clicking Period fires exactly
+one request for the seeded default range with no further click; editing a
+date field fires none; clicking Show results afterward fires exactly one
+more, for the edited range.
+
 ## 2026-08-30 — Coordinator fix: docs/openapi.yaml was genuinely invalid YAML
 
 Found while independently verifying QA round 9's `/api/profile` addition to

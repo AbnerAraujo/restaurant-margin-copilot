@@ -290,10 +290,16 @@ describe('ClosePage', () => {
   // Reported live: Period's two date fields each triggered their own
   // (debounced) fetch as soon as they changed — one for a range the owner
   // hadn't finished picking yet, then a second once the other field
-  // changed too. The fix replaces auto-fetch with an explicit "Show
-  // results" confirm; editing either field now fetches nothing at all.
-  describe('Period view requires an explicit "Show results" click — no auto-fetch on date edits', () => {
-    it('fetches nothing when Period\'s date fields change, only once Show results is clicked', async () => {
+  // changed too. The fix replaces per-field auto-fetch with an explicit
+  // "Show results" confirm; editing either field fetches nothing at all.
+  //
+  // Landing ON Period is a separate concern from EDITING while already
+  // there: switching into the view auto-applies whatever range is
+  // currently set (seeding "last week of real data" the first time) so
+  // the owner never faces a blank state they have to click through —
+  // that's the one exception to "Period never fetches without a click."
+  describe('Period view always shows results for its current range, but requires an explicit "Show results" click to apply an edit', () => {
+    it('auto-applies the seeded default range on entering Period, then fetches nothing on date edits until Show results is clicked', async () => {
       stubFetch(RECONCILIATION_RESPONSE)
       renderPage()
 
@@ -302,24 +308,9 @@ describe('ClosePage', () => {
       expect(fetch).toHaveBeenCalledTimes(1)
 
       fireEvent.click(screen.getByRole('button', { name: 'Period' }))
-      // Switching to Period pre-fills rangeStart/rangeEnd but must not fetch.
-      expect(fetch).toHaveBeenCalledTimes(1)
-
-      const fromInput = screen.getByLabelText('From')
-      fireEvent.change(fromInput, { target: { value: '2026-08-01' } })
-      expect(fetch).toHaveBeenCalledTimes(1)
-
-      const toInput = screen.getByLabelText('To')
-      fireEvent.change(toInput, { target: { value: '2026-08-03' } })
-      expect(fetch).toHaveBeenCalledTimes(1)
-
-      // A real, unmocked wait — long enough to have caught the old 500ms
-      // debounce firing on its own. Still nothing.
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      expect(fetch).toHaveBeenCalledTimes(1)
-
-      fireEvent.click(screen.getByRole('button', { name: 'Show results' }))
-
+      // Switching to Period seeds rangeStart/rangeEnd from the real data's
+      // own bounds (2026-08-01..03) and immediately applies that range —
+      // no click required for the range the app already chose.
       await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
       expect(fetch).toHaveBeenLastCalledWith(
         expect.stringContaining('start=2026-08-01'),
@@ -327,24 +318,52 @@ describe('ClosePage', () => {
       expect(fetch).toHaveBeenLastCalledWith(
         expect.stringContaining('end=2026-08-03'),
       )
+
+      const fromInput = screen.getByLabelText('From')
+      fireEvent.change(fromInput, { target: { value: '2026-08-02' } })
+      expect(fetch).toHaveBeenCalledTimes(2)
+
+      const toInput = screen.getByLabelText('To')
+      fireEvent.change(toInput, { target: { value: '2026-08-03' } })
+      expect(fetch).toHaveBeenCalledTimes(2)
+
+      // A real, unmocked wait — long enough to have caught the old 500ms
+      // debounce firing on its own. Still nothing.
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      expect(fetch).toHaveBeenCalledTimes(2)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show results' }))
+
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
+      expect(fetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('start=2026-08-02'),
+      )
+      expect(fetch).toHaveBeenLastCalledWith(
+        expect.stringContaining('end=2026-08-03'),
+      )
     })
 
-    it('shows a "choose dates" prompt rather than a loading skeleton for an unapplied Period range', async () => {
+    it('shows a "choose dates" prompt once the owner clears a field while already in Period view', async () => {
       stubFetch(RECONCILIATION_RESPONSE)
       renderPage()
 
       await screen.findByText('-$120.26')
       fireEvent.click(screen.getByRole('button', { name: 'Period' }))
+      // The auto-applied default range resolves first.
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+      const fromInput = screen.getByLabelText('From')
+      fireEvent.change(fromInput, { target: { value: '' } })
 
       expect(
         await screen.findByText(/show results to load that period/i),
       ).toBeInTheDocument()
-      // Never the generic loading skeleton — no request is in flight yet.
+      // Never the generic loading skeleton — no request is in flight.
       expect(screen.queryByRole('status')).not.toBeInTheDocument()
     })
 
-    it('shows the real loading state (not the "choose dates" prompt) once Show results is clicked', async () => {
-      let resolvePeriodFetch!: (value: unknown) => void
+    it('shows the real loading state (not the "choose dates" prompt) once Show results is clicked after an edit', async () => {
+      let resolveEditFetch!: (value: unknown) => void
       vi.stubGlobal(
         'fetch',
         vi
@@ -352,11 +371,15 @@ describe('ClosePage', () => {
           .mockResolvedValueOnce({
             ok: true,
             json: async () => RECONCILIATION_RESPONSE,
-          })
+          }) // initial "latest" fetch
+          .mockResolvedValueOnce({
+            ok: true,
+            json: async () => RECONCILIATION_RESPONSE,
+          }) // Period's auto-applied default range
           .mockImplementationOnce(
             () =>
               new Promise((resolve) => {
-                resolvePeriodFetch = resolve
+                resolveEditFetch = resolve
               }),
           ),
       )
@@ -364,14 +387,18 @@ describe('ClosePage', () => {
 
       await screen.findByText('-$120.26')
       fireEvent.click(screen.getByRole('button', { name: 'Period' }))
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+      const fromInput = screen.getByLabelText('From')
+      fireEvent.change(fromInput, { target: { value: '2026-08-02' } })
       fireEvent.click(screen.getByRole('button', { name: 'Show results' }))
 
       expect(
         screen.queryByText(/show results to load that period/i),
       ).not.toBeInTheDocument()
 
-      resolvePeriodFetch({ ok: true, json: async () => RECONCILIATION_RESPONSE })
-      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+      resolveEditFetch({ ok: true, json: async () => RECONCILIATION_RESPONSE })
+      await waitFor(() => expect(fetch).toHaveBeenCalledTimes(3))
     })
 
     it('disables Show results while a date field is empty', async () => {

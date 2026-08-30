@@ -416,10 +416,34 @@ export default function ClosePage() {
     if (mode === 'day' && !selectedDate) {
       setSelectedDate(bounds?.end ?? '')
     }
-    if (mode === 'period' && (!rangeStart || !rangeEnd)) {
-      const end = bounds?.end ?? ''
-      setRangeStart(bounds ? shiftDateClamped(end, -6, bounds.start) : end)
-      setRangeEnd(end)
+    if (mode === 'period') {
+      // Entering Period always shows results for whatever range is
+      // CURRENTLY set (seeding the sensible "last week of real data"
+      // default the first time rangeStart/rangeEnd are empty) — landing on
+      // this view should never show a blank state the owner has to click
+      // through. Editing either field afterward still requires the
+      // explicit "Show results" button (handleRangeStartChange/
+      // handleRangeEndChange never fetch) — this only auto-applies the
+      // range as it already stands at the moment of switching INTO the
+      // view, never a range the owner is actively changing.
+      let start = rangeStart
+      let end = rangeEnd
+      if (!start || !end) {
+        end = bounds?.end ?? ''
+        start = bounds ? shiftDateClamped(end, -6, bounds.start) : end
+        setRangeStart(start)
+        setRangeEnd(end)
+      }
+      setViewMode(mode)
+      setError(null)
+      setData(null)
+      if (start && end) {
+        setPeriodLoading(true)
+        fetchReconciliation(`?start=${start}&end=${end}`, 'period')
+      } else {
+        setPeriodLoading(false)
+      }
+      return
     }
     setViewMode(mode)
     setData(null)
