@@ -65,7 +65,11 @@ export default function PinnedValueAxis({
         className,
       )}
     >
-      <span className="absolute left-0 top-1 text-[10px] leading-none text-muted-foreground">
+      {/* whitespace-nowrap and allowed to spill right into the empty band
+          above the topmost gridline: "Margin (USD)" does not fit a 56px
+          gutter on one line, and wrapping it to two lines crowded the first
+          tick (caught in the live rendering pass). */}
+      <span className="absolute left-0 top-1 whitespace-nowrap text-[10px] leading-none text-muted-foreground">
         {title}
       </span>
       {ticks.map((tick) => (
@@ -78,8 +82,17 @@ export default function PinnedValueAxis({
         </span>
       ))}
       {/* The axis rule itself — a hairline one step off the surface, per the
-          dataviz mark spec, and the visual seam between frozen and scrolling. */}
-      <span className="absolute inset-y-0 right-0 w-px bg-border" />
+          dataviz mark spec, and the visual seam between frozen and scrolling.
+          Spans exactly the gridlines, not the whole SVG: full height ran it
+          through the axis title above and trailed past the last tick below,
+          both visible in the live rendering pass. */}
+      <span
+        style={{
+          top: `${(yToPixel(ticks[0]) / chartHeight) * 100}%`,
+          bottom: `${100 - (yToPixel(ticks[ticks.length - 1]) / chartHeight) * 100}%`,
+        }}
+        className="absolute right-0 w-px bg-border"
+      />
     </div>
   )
 }

@@ -590,7 +590,12 @@ function PromoRoiChart({
   return (
     <figure
       aria-label="Promotion ROI"
-      className={cn('rounded-lg border border-border bg-card p-4 sm:p-5', className)}
+      // See MarginTrendChart: min-w-0 keeps a definite-width plot from
+      // widening an `auto` grid track and scrolling the whole page.
+      className={cn(
+        'min-w-0 rounded-lg border border-border bg-card p-4 sm:p-5',
+        className,
+      )}
     >
       <figcaption className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

@@ -384,6 +384,11 @@ function MarginTrendChart({
   // illegible smear of overlapping text.
   const tickLabelStep =
     display.length <= 14 ? 1 : Math.ceil(display.length / 14)
+  // A bare day-of-month tick ("10", "17", "24") is only unambiguous while the
+  // chart stays inside one month. Caught in the live rendering pass: the
+  // default 90-day period spans three, so the axis read "10 17 24 1 8 15 …"
+  // with nothing to say which month any of them belonged to.
+  const spansMultipleMonths = firstDate.slice(0, 7) !== lastDate.slice(0, 7)
 
   const { ticks, step, yToPixel, baselineY } = buildScale(display)
   const bars = buildBars(display, yToPixel, plotWidth)
@@ -426,7 +431,15 @@ function MarginTrendChart({
   return (
     <figure
       aria-label="Daily margin trend"
-      className={cn('rounded-lg border border-border bg-card p-4 sm:p-5', className)}
+      // min-w-0: this figure is routinely a grid/flex item, and the plot
+      // beside the frozen axis now carries a definite pixel width. Without
+      // it, an `auto` grid track sizes itself to that full width and the
+      // whole PAGE scrolls sideways instead of the chart scrolling inside
+      // its own panel — caught in the live rendering pass, not by any test.
+      className={cn(
+        'min-w-0 rounded-lg border border-border bg-card p-4 sm:p-5',
+        className,
+      )}
     >
       <figcaption className="mb-4">
         <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -435,6 +448,17 @@ function MarginTrendChart({
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           {data.length}-Day Margin Trend
         </h2>
+        {/* The months the chart actually covers. This used to be drawn inside
+            the SVG at its far right edge, which put it thousands of pixels
+            off-screen on any chart wide enough to scroll — a caption that
+            described the chart only if you happened to be scrolled to the
+            end. It belongs with the title, which never scrolls.
+            formatChartMonthContext spans the full range honestly ("Aug 2024 –
+            Aug 2026") and collapses to one month when the data genuinely
+            doesn't leave it. */}
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {formatChartMonthContext(firstDate, lastDate)}
+        </p>
         {bucketDays > 1 ? (
           <p className="mt-0.5 text-xs text-muted-foreground">
             Grouped into {display.length} {bucketDays}-day totals so{' '}
@@ -653,7 +677,9 @@ function MarginTrendChart({
                     textAnchor="middle"
                     className="fill-muted-foreground text-[10px] tabular-nums"
                   >
-                    {bucketDays > 1 ? formatMonthDay(datum.date) : dayOfMonth(datum.date)}
+                    {bucketDays > 1 || spansMultipleMonths
+                      ? formatMonthDay(datum.date)
+                      : dayOfMonth(datum.date)}
                   </text>
                 ) : null}
                 {isMissing ? (
@@ -669,24 +695,6 @@ function MarginTrendChart({
               </g>
             )
           })}
-
-          {/* Month/year context rather than repeating it per tick. Sits
-              ABOVE the plot: on the tick row it overlapped the last
-              day-of-month tick once the day count came from live data.
-              Reported live as a real bug: this used to show only the LAST
-              date's month ("Aug 2026") even when the chart spanned a full
-              year or more, which reads as if the entire chart were that one
-              month — formatChartMonthContext spans the full range honestly
-              ("Aug 2024 – Aug 2026") and only collapses to one month when
-              the data genuinely doesn't leave it. */}
-          <text
-            x={chartWidth - MARGIN.right}
-            y={MARGIN.top - 14}
-            textAnchor="end"
-            className="fill-muted-foreground text-[10px]"
-          >
-            {formatChartMonthContext(firstDate, lastDate)}
-          </text>
 
         </svg>
 
