@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ShieldAlert } from 'lucide-react'
 
 import { buildLinearTickScale, formatAxisCurrency } from '@/lib/chartScale'
@@ -161,6 +161,30 @@ export interface PromoRoiChartProps {
    * the existing hover/focus tooltip) when not provided.
    */
   onDataPointClick?: (point: { campaignId: string; campaignName: string }) => void
+  /**
+   * Reported live: at the real ~30-campaign scale every campaign was
+   * already reaching the chart as a real bar (see `chartableData` below —
+   * nothing here has ever sliced or capped `data`), but a plain
+   * `overflow-x-auto` viewport defaults to scrolled-to-the-LEFT, i.e. the
+   * OLDEST campaigns — with nothing on screen suggesting more content sits
+   * off to the right. The owner read that as "not all campaigns are in the
+   * chart," which is a fair reading: the newest, most actionable campaigns
+   * (the ones a "needs a decision" reader most wants) are also the ones
+   * most likely to be scrolled out of view on first load.
+   *
+   * Default `true`: `data`'s own natural order is chronological, oldest
+   * first (see `PromotionsPage`'s `toChartDatum`/API ordering comment) —
+   * the same left-to-right time convention `MarginTrendChart` already
+   * uses, which is why THAT chart already mounts scrolled to its own right
+   * edge ("today first, history a deliberate scroll away"). This applies
+   * the identical fix here. The one case that must opt OUT: ROI-sorted
+   * order (`PromotionsPage`'s "Highest first"/"Lowest first" toggle) reorders
+   * `data` so the campaign the owner explicitly asked to see first is
+   * already at index 0 (the left) — auto-scrolling right there would hide
+   * exactly what sorting was for. `PromotionsPage` passes `false` while a
+   * sort is active for that reason.
+   */
+  initialScrollToEnd?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -250,6 +274,14 @@ const MAX_AXIS_TICKS = 8
 // slots are wide enough to afford it.
 const HIT_RECT_MAX_PADDING = 14
 const HIT_RECT_MIN_PADDING = 2
+
+// Tolerates the sub-pixel rounding a browser's own scroll math can leave
+// behind (scrollLeft can land at e.g. 0.4 or scrollWidth-0.6 on a display
+// with a fractional device pixel ratio) — without it, "is there real
+// unscrolled content past this edge" could stay permanently true (or
+// false) by less than a pixel. Same constant, same rationale, as
+// Shell/Sidebar.tsx's MobileNavBar fade — the same affordance, applied here.
+const SCROLL_EDGE_SLACK_PX = 1
 
 // Reported live at 29 real campaigns, scrolled all the way to the chart's
 // own right edge: the last axis tick ("JET-CAMP-NEWMENU") rendered as
@@ -477,6 +509,7 @@ function PromoRoiChart({
   className,
   defaultTableOpen = false,
   onDataPointClick,
+  initialScrollToEnd = true,
 }: PromoRoiChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(defaultTableOpen)
@@ -510,6 +543,11 @@ function PromoRoiChart({
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  // Scroll-fade affordance state — see the effect below `chartWidth`'s own
+  // computation, which is what this actually needs to react to.
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
 
   // Reported live (QA pass): a `not_yet_attributed` campaign used to be
   // filtered out of the chart entirely here — "nothing to plot yet" — which
@@ -592,6 +630,54 @@ function PromoRoiChart({
   const minIndex = chartableData.findIndex((d) => d.net === minNet)
   const refusedCount = bars.filter((bar) => bar.isRefused).length
 
+  // Mount (and every genuinely new order) scrolled to the RIGHT edge — the
+  // newest campaigns — rather than the oldest history a plain
+  // `overflow-x-auto` container defaults to. Exactly `MarginTrendChart`'s
+  // own fix for the identical problem (see that chart's matching
+  // `useLayoutEffect` and its "today first, history a deliberate scroll
+  // away" comment); `initialScrollToEnd`'s own doc comment above explains
+  // the one case (`PromotionsPage`'s ROI sort) that opts out. `useLayoutEffect`,
+  // not `useEffect`, so this runs before paint — no visible flash of the
+  // oldest campaigns before jumping to the newest. Keyed on the first/last
+  // campaign actually plotted (not `data`'s own array identity, a fresh
+  // reference on every parent re-render even for the SAME campaigns) so
+  // re-scrolling fires only when the plotted order genuinely changes —
+  // never on an unrelated re-render that would yank a reader back to the
+  // right after they scrolled left on purpose to review history.
+  const firstPlottedId = chartableData[0]?.campaignId
+  const lastPlottedId = chartableData[chartableData.length - 1]?.campaignId
+  useLayoutEffect(() => {
+    if (!initialScrollToEnd) return
+    const container = containerRef.current
+    if (!container) return
+    container.scrollLeft = container.scrollWidth
+  }, [initialScrollToEnd, firstPlottedId, lastPlottedId, chartableData.length, chartWidth])
+
+  // Scroll-fade affordance: whether there is real unscrolled content past
+  // either edge of the viewport RIGHT NOW. Same pattern Shell/Sidebar.tsx's
+  // MobileNavBar already established for an identical problem (an
+  // `overflow-x-auto` row that gives no visual reason to suspect there's
+  // more) — this codebase's one shared answer, applied here rather than a
+  // second bespoke one. Runs after the scroll-to-end layout effect above
+  // (layout effects flush before effects), so the very first read already
+  // reflects where that effect left `scrollLeft`. Recomputed on every
+  // scroll (dragging the chart) and whenever `chartWidth` changes (new
+  // data, or a container resize) — `chartWidth` is what actually drives
+  // `scrollWidth`, so it's the one dependency that matters here.
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const updateScrollFade = () => {
+      setCanScrollLeft(el.scrollLeft > SCROLL_EDGE_SLACK_PX)
+      setCanScrollRight(
+        el.scrollLeft + el.clientWidth < el.scrollWidth - SCROLL_EDGE_SLACK_PX,
+      )
+    }
+    updateScrollFade()
+    el.addEventListener('scroll', updateScrollFade, { passive: true })
+    return () => el.removeEventListener('scroll', updateScrollFade)
+  }, [chartWidth])
+
   return (
     <figure
       aria-label="Promotion ROI"
@@ -621,6 +707,12 @@ function PromoRoiChart({
           the moment a bar chart with 20+ campaigns grows past CHART_WIDTH
           and starts scrolling, so every overlay would render squeezed
           into the visible viewport instead of tracking its actual bar. */}
+      {/* Relative wrapper solely so the two scroll-fade overlays below can
+          be positioned against the viewport's own edges regardless of
+          scroll offset — they are siblings of the scrolling div, not
+          children of it, so they never scroll away with the content they're
+          hinting at. */}
+      <div className="relative">
       <div
         ref={containerRef}
         className="flex w-full overflow-x-auto overscroll-x-contain"
@@ -884,6 +976,29 @@ function PromoRoiChart({
           </div>
         ) : null}
         </div>
+      </div>
+
+      {/* Scroll-fade affordance (Shell/Sidebar.tsx's MobileNavBar pattern):
+          shown only while there is real unscrolled content past that edge,
+          never a permanent decoration that would misleadingly persist once
+          the reader has actually scrolled all the way there. The left fade
+          starts at MARGIN.left, right where the pinned value-axis gutter
+          ends — it must never bleed over the axis's own opaque numbers. */}
+      {canScrollLeft ? (
+        <div
+          aria-hidden="true"
+          data-testid="promo-roi-chart-scroll-fade-left"
+          className="pointer-events-none absolute inset-y-0 w-8 bg-gradient-to-r from-card to-transparent"
+          style={{ left: MARGIN.left }}
+        />
+      ) : null}
+      {canScrollRight ? (
+        <div
+          aria-hidden="true"
+          data-testid="promo-roi-chart-scroll-fade-right"
+          className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-card to-transparent"
+        />
+      ) : null}
       </div>
 
       {/* Legend — mandatory secondary encoding, same CVD reasoning as

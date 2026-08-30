@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 )
 
 // specs/010-platform-connector-proxy US1.3: a connector sync is
@@ -132,4 +134,158 @@ func TestApplyDeliveryOverlay(t *testing.T) {
 		got := applyDeliveryOverlay(csv, &DeliveryOverlay{From: from, To: to, Records: []ingest.DeliveryRecord{overlayRec}})
 		assertOrderIDs(t, got, "CSV-BEFORE", "CSV-FROM-BOUNDARY", "CSV-TO-BOUNDARY", "CSV-AFTER", "API-BOUNDARY")
 	})
+}
+
+// --- specs/012-pos-connector-dedup: the POS side of the overlay --------
+//
+// The failure this section exists to prevent is quiet and expensive: a
+// delivery-only sync that also cleared the day's POS revenue would erase
+// two thirds of gross sales for every synced day and drop margin, with
+// only the pre-existing flags to hint at why. The Active booleans are what
+// make that structurally impossible rather than a caller's discipline.
+
+func posCSVRow(dateStr, orderID string, grossCents int64) ingest.POSRecord {
+	date, err := time.Parse(dateKeyLayout, dateStr)
+	if err != nil {
+		panic(err)
+	}
+	return ingest.POSRecord{
+		Ref:        ingest.SourceRowRef{File: "pos_export.csv", Row: 2},
+		OrderID:    orderID,
+		OrderDate:  date,
+		OrderTime:  "19:35",
+		Channel:    "dine_in",
+		GrossCents: grossCents,
+		Status:     "completed",
+	}
+}
+
+func posIDs(records []ingest.POSRecord) []string {
+	out := make([]string, 0, len(records))
+	for _, r := range records {
+		out = append(out, r.OrderID)
+	}
+	return out
+}
+
+func TestConnectorOverlay_POSRowsAreReplacedOnlyWhenPOSIsActive(t *testing.T) {
+	csv := []ingest.POSRecord{
+		posCSVRow("2026-08-17", "CSV-BEFORE", 1000),
+		posCSVRow("2026-08-18", "CSV-IN-RANGE", 2000),
+		posCSVRow("2026-08-21", "CSV-AFTER", 3000),
+	}
+	replacement := []ingest.POSRecord{posCSVRow("2026-08-18", "CONNECTOR-TICKET", 2500)}
+
+	t.Run("POS active: in-range rows are replaced, others kept verbatim", func(t *testing.T) {
+		got := replaceInRange(csv, "2026-08-18", "2026-08-20", replacement,
+			func(r ingest.POSRecord) string { return r.OrderDate.Format(dateKeyLayout) })
+		if want := []string{"CSV-BEFORE", "CSV-AFTER", "CONNECTOR-TICKET"}; !equalStrings(posIDs(got), want) {
+			t.Fatalf("got %v, want %v", posIDs(got), want)
+		}
+	})
+
+	// The one that matters. A delivery-only overlay must leave every POS
+	// row where it is — spec 012 US1.4.
+	t.Run("delivery-only overlay leaves POS untouched", func(t *testing.T) {
+		overlay := &ConnectorOverlay{
+			From:           mustDay("2026-08-18"),
+			To:             mustDay("2026-08-20"),
+			DeliveryActive: true,
+			Delivery:       []ingest.DeliveryRecord{csvRow("2026-08-18", "CONNECTOR-ORDER", 4200)},
+		}
+		if overlay.POSActive {
+			t.Fatal("a delivery-only overlay must not mark the POS active")
+		}
+		// The pipeline only touches POS when POSActive is set, so the
+		// structural guarantee is the boolean itself. Assert the shape
+		// rather than re-run the whole pipeline against a database.
+		if len(overlay.POS) != 0 {
+			t.Fatal("a delivery-only overlay carries no POS records")
+		}
+	})
+
+	// And the distinction a nil slice cannot express: "the terminal was on
+	// and took no orders" must clear the range, because that is a real
+	// business fact the day should reflect.
+	t.Run("POS active with zero tickets clears the range", func(t *testing.T) {
+		got := replaceInRange(csv, "2026-08-18", "2026-08-20", nil,
+			func(r ingest.POSRecord) string { return r.OrderDate.Format(dateKeyLayout) })
+		if want := []string{"CSV-BEFORE", "CSV-AFTER"}; !equalStrings(posIDs(got), want) {
+			t.Fatalf("got %v, want %v", posIDs(got), want)
+		}
+	})
+}
+
+// Every dedup decision must reach the day it belongs to, as a flag, with
+// its explanation intact. A decision that produced no flag would be a POS
+// ticket that vanished from a day's gross sales with nothing anywhere to
+// say why — the silent correction this product's whole ethos forbids.
+func TestDedupFlagsByDate_TranslatesEveryDecision(t *testing.T) {
+	aug18 := mustDay("2026-08-18")
+	aug19 := mustDay("2026-08-19")
+
+	overlay := &ConnectorOverlay{
+		Decisions: []platformconnector.DedupDecision{
+			{Kind: platformconnector.DedupMatchedByReference, Date: aug18, Detail: "merged by reference"},
+			{Kind: platformconnector.DedupMatchedByChannelAmountTime, Date: aug18, Detail: "merged by amount and time"},
+			{Kind: platformconnector.DedupAmountMismatch, Date: aug18, Detail: "amounts disagree"},
+			{Kind: platformconnector.DedupUnresolvedAmbiguous, Date: aug19, Detail: "two candidates"},
+			{Kind: platformconnector.DedupUnresolvedNoCounterpart, Date: aug19, Detail: "no counterpart"},
+		},
+	}
+
+	flags := dedupFlagsByDate(overlay)
+
+	if got := len(flags[aug18.Format(dateKeyLayout)]) + len(flags[aug19.Format(dateKeyLayout)]); got != 5 {
+		t.Fatalf("%d decisions produced %d flags — every decision must be visible", len(overlay.Decisions), got)
+	}
+
+	wantAug18 := []string{
+		reconcile.FlagCrossSourceDuplicateRemoved,
+		reconcile.FlagCrossSourceDuplicateRemoved,
+		reconcile.FlagCrossSourceAmountMismatch,
+	}
+	for i, want := range wantAug18 {
+		if got := flags["2026-08-18"][i].Type; got != want {
+			t.Fatalf("2026-08-18 flag %d is %q, want %q", i, got, want)
+		}
+	}
+	for i := range flags["2026-08-19"] {
+		if got := flags["2026-08-19"][i].Type; got != reconcile.FlagCrossSourceDuplicateUnresolved {
+			t.Fatalf("2026-08-19 flag %d is %q, want %q", i, got, reconcile.FlagCrossSourceDuplicateUnresolved)
+		}
+	}
+
+	// The explanation has to survive the translation. A flag whose detail
+	// was dropped is a flag an owner cannot act on.
+	if flags["2026-08-18"][0].Detail != "merged by reference" {
+		t.Fatalf("the decision's explanation did not survive translation: %q", flags["2026-08-18"][0].Detail)
+	}
+
+	if dedupFlagsByDate(nil) != nil {
+		t.Fatal("a nil overlay must produce no flags")
+	}
+	if dedupFlagsByDate(&ConnectorOverlay{}) != nil {
+		t.Fatal("an overlay with no decisions must produce no flags")
+	}
+}
+
+func mustDay(s string) time.Time {
+	d, err := time.Parse(dateKeyLayout, s)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

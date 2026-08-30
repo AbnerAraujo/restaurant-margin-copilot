@@ -36,6 +36,43 @@ const (
 	FlagCommissionMismatch       = "commission_mismatch"
 	FlagPOSNonCompletedExcluded  = "pos_non_completed_row_excluded"
 	FlagAnomalyThresholdExceeded = "anomaly_threshold_exceeded"
+
+	// The cross-source family (specs/012-pos-connector-dedup). These
+	// describe an overlap BETWEEN two sources, which is a different
+	// condition from FlagDuplicateOrderRemoved — that one is one export
+	// repeating a row within itself (a webhook retry), decided by exact
+	// byte equality on a shared order id. These three are decided across
+	// two systems that share no id at all, which is why they can be
+	// uncertain and why two of the three exist to say so.
+	//
+	// This package does not raise them. They are produced by
+	// internal/platformconnector's matcher and carried in by
+	// internal/pipeline, which is the layer that knows both packages. The
+	// constants live here because this package owns the flag vocabulary,
+	// and a flag type spelled slightly differently in two places is a
+	// filter that silently returns nothing.
+
+	// FlagCrossSourceDuplicateRemoved: a POS ticket was identified as the
+	// same real-world order as a delivery-platform order and was removed,
+	// so the order is counted once. The delivery record is always the one
+	// kept — it carries the commission, the payout and the refund state
+	// the POS ticket knows nothing about.
+	FlagCrossSourceDuplicateRemoved = "cross_source_duplicate_removed"
+
+	// FlagCrossSourceDuplicateUnresolved: a POS ticket the POS itself
+	// tagged as arriving through a delivery platform could not be paired
+	// with confidence — either no counterpart was found, or more than one
+	// reading of the day was equally consistent. NOTHING was merged. This
+	// day may therefore count that order twice, and the flag exists so
+	// that possibility is disclosed rather than either silently accepted
+	// or silently "fixed" by a guess.
+	FlagCrossSourceDuplicateUnresolved = "cross_source_duplicate_unresolved"
+
+	// FlagCrossSourceAmountMismatch: a pair whose identity was established
+	// independently of amount reports two different amounts — typically a
+	// platform-funded promotion the POS never saw. The merge stands; the
+	// disagreement is reported rather than absorbed.
+	FlagCrossSourceAmountMismatch = "cross_source_amount_mismatch"
 )
 
 // DailyReconciliation is the deterministic, provenanced daily margin

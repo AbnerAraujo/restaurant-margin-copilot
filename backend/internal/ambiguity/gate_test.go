@@ -502,7 +502,10 @@ func TestBuildSystemPrompt_MonthHasADeterministicAnchor(t *testing.T) {
 func TestBuildSystemPrompt_MixedDataAdviceQuestionsAreNotFlatlyUnanswerable(t *testing.T) {
 	prompt := buildSystemPrompt(testDataStart, testDataEnd)
 
-	require.Contains(t, prompt, "Mixed data-plus-advice questions",
+	// Section retitled by specs/011-inline-grounded-advice (it now also
+	// carries the advice_requested signal rules) — the mixed-question
+	// protection it asserts is unchanged.
+	require.Contains(t, prompt, "mixed data-plus-advice questions",
 		"the gate must have an explicit section telling it not to refuse a whole question just because part of it asks for advice this product can't give")
 	require.Contains(t, prompt, `Do NOT classify the whole question "unanswerable"`,
 		"the rule must explicitly forbid refusing the entire interaction when a data-answerable core exists underneath an advice-shaped wrapper")

@@ -1,6 +1,7 @@
 package platformconnector
 
 import (
+	"fmt"
 	"hash/fnv"
 	"io"
 	"math/rand"
@@ -163,6 +164,251 @@ func placeOrderTime(day time.Time, rng *rand.Rand) time.Time {
 		return day.Add(time.Duration(11*60+rng.Intn(150)) * time.Minute) // 11:00-13:29
 	}
 	return day.Add(time.Duration(18*60+rng.Intn(210)) * time.Minute) // 18:00-21:29
+}
+
+// --- The simulated POS day model --------------------------------------------
+//
+// The POS's day is NOT an independent draw. Two thirds of it are in-house
+// tickets this model invents; the rest are ECHOES of the very orders the
+// iFood mock will return for the same date, produced by calling the same
+// simulateDay this file already exposes. That is the whole point of the
+// mechanism: a duplicate dedup.go finds has to be the same simulated order
+// recorded twice, not two generators that happened to agree. If the POS
+// invented its own delivery-looking tickets, the matcher would be scored
+// against a fiction arranged to be solvable.
+//
+// Every constant below is a MODELLING CHOICE, not a measurement, and each
+// says so. A reviewer should be able to disagree with any of them.
+
+const (
+	// posIntegratedPlatform is the one aggregator this restaurant's POS is
+	// integrated with. iFood orders are pushed into the POS and become
+	// tickets; Just Eat Takeaway orders are not.
+	//
+	// A choice, and the most consequential one in this file. Restaurants
+	// commonly integrate the aggregator they do most volume with and leave
+	// the other on its own tablet, so this is a realistic configuration —
+	// but it is also the most USEFUL one to build against, because it puts
+	// a control group inside every single fetch: JET orders that must never
+	// be matched, sitting beside iFood orders that must be. A mock where
+	// both platforms were integrated would let a matcher that over-matches
+	// pass every test.
+	posIntegratedPlatform = PlatformIFood
+
+	// posInHouseSharePct is how much of a day's POS ticket COUNT is
+	// genuine in-house business (dine-in and counter) with no delivery
+	// counterpart at all.
+	//
+	// Derived rather than picked: cmd/gendata models posShare 0.66 against
+	// ifoodShare 0.17, so in-house revenue is roughly four times one
+	// platform's. At a comparable ticket size that is about 80% of POS
+	// tickets being in-house once the echoed iFood orders are added in.
+	// Rounded to 78 so the number does not read as a suspiciously tidy 80.
+	//
+	// It matters that this is a large majority. spec 012 SC-002 requires
+	// ZERO in-house tickets to be removed by the dedup pass over the whole
+	// dataset — a rule that over-matches has hundreds of chances per week
+	// to prove it.
+	posInHouseSharePct = 78
+
+	// posRefPresentPct is how often an echoed ticket carries the
+	// platform's own order reference.
+	//
+	// A choice, and an admitted one. Real POS/aggregator integrations do
+	// record the partner order id — that is the mechanism by which the
+	// order reached the POS at all. But assuming it is ALWAYS there would
+	// make dedup.go's second tier (channel + exact amount + time window)
+	// decoration that never runs. The missing quarter stands for the
+	// ordinary ways a reference goes missing: a ticket re-fired after a
+	// printer failure, a manual re-entry by staff, an older integration
+	// build. Set this to 100 and the harder half of the matcher stops
+	// being exercised, which is exactly why it is not 100.
+	posRefPresentPct = 75
+
+	// posCampaignDiscountBps is the platform-funded promotion the POS never
+	// sees.
+	//
+	// When an order carried a campaign code, the platform charged the
+	// customer a discounted subtotal while the POS rang the full menu
+	// price. Modelled as a flat 10% so the two sides of a confirmed match
+	// disagree on amount for a REAL reason — which is what gives spec 012
+	// FR-015's amount-mismatch flag a genuine cause instead of a
+	// manufactured one, and what gives the amount-and-time tier an honest
+	// "no counterpart found" case it must disclose rather than force.
+	posCampaignDiscountBps = 1000
+
+	// posVoidChancePerTicket is how often an in-house ticket is voided
+	// (a mis-ring, a walked table). It exercises internal/reconcile's
+	// existing pos_non_completed_row_excluded flag on the connector path
+	// exactly as the CSV path already does. Echoed tickets are never
+	// voided: a void on one side of a cross-source pair is a genuinely
+	// harder reconciliation question than this feature claims to solve,
+	// and inventing it would be simulating a problem the matcher does not
+	// address.
+	posVoidChancePerTicket = 0.015
+
+	// posTicketLagMaxMinutes is how far a POS ticket time can trail the
+	// platform's order-placed time on an echoed order: the aggregator's
+	// injection into the POS, plus the moment before someone accepts it.
+	//
+	// Deliberately well inside dedup.go's own matchWindowMinutes. The mock
+	// is not trying to stress the window's edge — a mock that generated
+	// lags straddling the threshold would make the matcher's results
+	// depend on the threshold's exact value, which is a modelling
+	// constant, not a fact. The window's behaviour at its boundary is
+	// proven by unit test with hand-built records instead.
+	posTicketLagMaxMinutes = 9
+)
+
+// posInHouseChannels are the service types a genuine in-house ticket
+// carries. Neither value names a delivery platform, which is what keeps
+// them permanently ineligible for matching (spec 012 FR-011).
+var posInHouseChannels = []string{"dine_in", "counter"}
+
+// simulatedTicket is one POS ticket as the simulated terminal recorded it,
+// BEFORE the mock has expressed it in its own wire format.
+type simulatedTicket struct {
+	Seq        int
+	PlacedAt   time.Time // in merchantZone
+	GrossCents int64     // positive, always
+	Channel    string    // "dine_in", "counter", or a delivery Platform key
+	Payment    string
+	Voided     bool
+
+	// EchoOf, when non-empty, is the delivery platform whose order this
+	// ticket is a second recording of.
+	EchoOf Platform
+	// PartnerOrderRef is the platform's own order id, or "" when the
+	// integration did not record it on this ticket.
+	PartnerOrderRef string
+}
+
+// simulatePOSDay produces the terminal's tickets for one calendar date.
+// Deterministic for a given date — see dayRNG.
+//
+// Order of construction matters and is fixed: in-house tickets first, then
+// the echoed delivery orders in the delivery feed's own sequence, then a
+// single deterministic interleave by ticket time. Without the final sort
+// the echoes would all sit at the end of the day's feed, which no real
+// terminal would produce and which would let a matcher accidentally
+// depend on position.
+func simulatePOSDay(date time.Time) []simulatedTicket {
+	rng := dayRNG(PlatformPOS, date)
+	day := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, merchantZone)
+
+	echoed := simulateDay(posIntegratedPlatform, date, platformCommissionBps(posIntegratedPlatform))
+
+	// In-house count is chosen so that echoed tickets are the remaining
+	// (100 - posInHouseSharePct)% of the day, keeping the mix honest to
+	// cmd/gendata's revenue shares regardless of how busy the platform was.
+	inHouseCount := len(echoed) * posInHouseSharePct / (100 - posInHouseSharePct)
+
+	tickets := make([]simulatedTicket, 0, inHouseCount+len(echoed))
+
+	for i := 0; i < inHouseCount; i++ {
+		t := simulatedTicket{
+			PlacedAt:   placeOrderTime(day, rng),
+			GrossCents: int64(float64(meanTicketCents) * (0.55 + rng.Float64()*1.35)),
+			Channel:    posInHouseChannels[rng.Intn(len(posInHouseChannels))],
+			Payment:    simulatedPayment(rng),
+		}
+		if rng.Float64() < posVoidChancePerTicket {
+			t.Voided = true
+		}
+		tickets = append(tickets, t)
+	}
+
+	for _, o := range echoed {
+		// The POS records the MENU price. When the platform ran a
+		// campaign, the customer paid less on the platform than the menu
+		// says, so the two sides legitimately disagree — see
+		// posCampaignDiscountBps.
+		gross := o.SubtotalCents
+		if o.CampaignCode != "" {
+			gross = divRoundHalfUp(o.SubtotalCents*10000, 10000-posCampaignDiscountBps)
+		}
+
+		t := simulatedTicket{
+			PlacedAt:   o.PlacedAt.Add(time.Duration(1+rng.Intn(posTicketLagMaxMinutes)) * time.Minute),
+			GrossCents: gross,
+			Channel:    string(posIntegratedPlatform),
+			Payment:    "delivery_partner",
+			EchoOf:     posIntegratedPlatform,
+		}
+		if rng.Intn(100) < posRefPresentPct {
+			t.PartnerOrderRef = deliveryOrderID(posIntegratedPlatform, date, o.Seq)
+		}
+		tickets = append(tickets, t)
+	}
+
+	// A stable interleave. sortByPlacedAt is a plain insertion by minute
+	// with the construction order as the tie-break, so the result is
+	// identical on every run and on every machine.
+	sortTicketsByPlacedAt(tickets)
+	for i := range tickets {
+		tickets[i].Seq = i + 1
+	}
+	return tickets
+}
+
+// sortTicketsByPlacedAt orders tickets by their placed time, keeping the
+// original relative order of ties (a stable sort). Written out rather than
+// reaching for sort.SliceStable so the tie-break rule — construction
+// order, which is in-house-then-echo — is visible at the call site's own
+// level of detail, because it is part of what makes the feed byte-stable.
+func sortTicketsByPlacedAt(tickets []simulatedTicket) {
+	for i := 1; i < len(tickets); i++ {
+		cur := tickets[i]
+		j := i - 1
+		for j >= 0 && tickets[j].PlacedAt.After(cur.PlacedAt) {
+			tickets[j+1] = tickets[j]
+			j--
+		}
+		tickets[j+1] = cur
+	}
+}
+
+// simulatedPayment picks a tender type. Cosmetic — nothing reconciles on
+// it — but a POS export with one payment method for every ticket reads as
+// generated the moment anyone opens it.
+func simulatedPayment(rng *rand.Rand) string {
+	switch rng.Intn(10) {
+	case 0, 1:
+		return "cash"
+	case 2:
+		return "pix"
+	default:
+		return "card"
+	}
+}
+
+// platformCommissionBps is the rate each delivery platform charges. It
+// exists so simulatePOSDay can call simulateDay for the platform it
+// echoes without the two mocks' rate constants having to be threaded
+// through the POS model.
+func platformCommissionBps(p Platform) int64 {
+	if p == PlatformJustEatTakeaway {
+		return jetCommissionBps
+	}
+	return ifoodCommissionBps
+}
+
+// deliveryOrderID reconstructs the order id a delivery mock will emit for
+// a given (platform, date, sequence).
+//
+// This is the single most load-bearing coupling in the simulation, and it
+// is a coupling on purpose. The POS's cross-reference has to name the
+// order the delivery adapter will independently return in the same fetch,
+// or the "duplicate" would not be one. Both mocks now derive their ids
+// from here rather than each formatting their own string, so the two can
+// never drift apart silently — if this format changes, every echoed
+// reference changes with it, and dedup.go keeps matching.
+func deliveryOrderID(p Platform, date time.Time, seq int) string {
+	prefix := "IFOOD-SIM"
+	if p == PlatformJustEatTakeaway {
+		prefix = "JET-SIM"
+	}
+	return fmt.Sprintf("%s-%s-%04d", prefix, date.Format("20060102"), seq)
 }
 
 // simulatedCampaignCode deliberately produces a code that matches NO real

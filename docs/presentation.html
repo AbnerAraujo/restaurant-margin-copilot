@@ -888,13 +888,13 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a tag">PRD v1.0 &mdash; and what shipped since</div>
   <h2 class="a lg">Every target measured &mdash; then the scope grew</h2>
   <table class="a data-table">
-    <tr><th>Metric</th><th>Target</th><th style="text-align:right">Result</th></tr>
-    <tr><td>Accuracy (KR1)</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">14/15, twice &mdash; one real tool-contract gap</td></tr>
-    <tr><td>Consistency (KR1)</td><td>Measured &amp; reported</td><td class="num-cell">13/15 &middot; 15/15 &mdash; one real divergence, one grader</td></tr>
-    <tr><td>Refusal correctness (KR1)</td><td>100% on unanswerable set</td><td class="num-cell">5/5 &middot; 4/5 &mdash; the miss is the grader</td></tr>
-    <tr><td>Reconciliation (KR2)</td><td>Zero silent data loss</td><td class="num-cell">0 defects &mdash; now pinned by a persisted-state test</td></tr>
-    <tr><td>Promo-ROI flag (KR3)</td><td>&ge;1 negative-ROI promo flagged</td><td class="num-cell">&minus;$450.75 flagged &mdash; pinned by a test</td></tr>
-    <tr><td>Cost / interaction (KR4)</td><td>Under $0.05</td><td class="num-cell">$0.0313 &mdash; 70 questions, cache off</td></tr>
+    <tr><th>KR</th><th>Metric</th><th>Target</th><th style="text-align:right">Result</th></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Accuracy</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">14/15, twice &mdash; one real tool-contract gap</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Consistency</td><td>Measured &amp; reported</td><td class="num-cell">13/15 &middot; 15/15 &mdash; one real divergence, one grader</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Refusal correctness</td><td>100% on unanswerable set</td><td class="num-cell">5/5 &middot; 4/5 &mdash; the miss is the grader</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR2</td><td>Reconciliation</td><td>Zero silent data loss</td><td class="num-cell">0 defects &mdash; now pinned by a persisted-state test</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR3</td><td>Promo-ROI flag</td><td>&ge;1 negative-ROI promo flagged</td><td class="num-cell">&minus;$450.75 flagged &mdash; pinned by a test</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR4</td><td>Cost / interaction</td><td>Under $0.05</td><td class="num-cell">$0.0313 &mdash; 70 questions, cache off</td></tr>
   </table>
   <div class="a chips" style="margin-top:22px">
     <span class="chip" style="border-color:var(--positive);color:var(--positive)">spec 002 &middot; badges &mdash; shipped</span>
@@ -916,11 +916,11 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
         <tr><td>Ambiguity gate</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Clarify/refuse wording <span style="color:var(--text-tertiary)">(conditional)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Explanation</td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
-        <tr><td>Business-insight advice <span style="color:var(--text-tertiary)">(opt-in, per tap)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
+        <tr><td>Business-insight advice <span style="color:var(--text-tertiary)">(opt-in: per tap, or per question that asks for advice)</span></td><td>Sonnet 5</td><td class="num-cell">$2 / $10</td></tr>
         <tr><td>Paraphrase-match cache check <span style="color:var(--text-tertiary)">(on a miss)</span></td><td>Haiku 4.5</td><td class="num-cell">$1 / $5</td></tr>
         <tr><td><b>Arithmetic, capability questions, out-of-range dates, insight triggers, chart choice</b></td><td><b>&mdash; none &mdash;</b></td><td class="num-cell">$0</td></tr>
       </table>
-      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 8 typed tools, <b>no agent framework</b>. Whether a business insight is worth offering is decided in Go for free; only the advice <i>text</i> costs anything, only if the owner taps, and it bills into its own ledger. "What do you do?" is pattern-matched &mdash; and an explicit date outside the data window is refused by a deterministic Go pre-check &mdash; before either model runs. Zero tokens, either way.</p>
+      <p style="margin-top:10px;font-size:13px">Narration needs no frontier reasoning &mdash; no Opus, no Fable. Direct API calls, 8 typed tools, <b>no agent framework</b>. Whether a business insight is worth offering is decided in Go for free; only the advice <i>text</i> costs anything &mdash; when the owner taps a teaser or outright asks for a suggestion &mdash; and it bills into its own ledger. "What do you do?" is pattern-matched &mdash; and an explicit date outside the data window is refused by a deterministic Go pre-check &mdash; before either model runs. Zero tokens, either way.</p>
       <p style="margin-top:6px;font-size:13px;color:var(--text-secondary)">The gate moved off Haiku 4.5 on 2026-08-29 after a cross-year date-comparison bug at scale &mdash; and the honest postscript is that the swap treated a symptom: comparing an explicit date against a known window is <b>arithmetic</b>, so it was hoisted into Go entirely. Sonnet 5 stays for what is genuinely a language job &mdash; vague/relative dates and the classification itself. The paraphrase-match cache classifier stays on Haiku 4.5 &mdash; it never showed the bug.</p>
     </div>
     <div class="refundcard">

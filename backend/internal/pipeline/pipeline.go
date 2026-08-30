@@ -18,6 +18,7 @@ import (
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/money"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
@@ -42,7 +43,7 @@ import (
 // (tasks.md T029-T030), not User Story 1's — this function does not touch
 // it.
 func RunIngestionPipeline(dataDir string, store *storage.Queries) error {
-	return RunIngestionPipelineWithDeliveryOverlay(dataDir, store, nil)
+	return RunIngestionPipelineWithConnectorOverlay(dataDir, store, nil)
 }
 
 // DeliveryOverlay replaces the CSV-sourced delivery rows for one inclusive
@@ -96,6 +97,80 @@ type DeliveryOverlay struct {
 // exactly the inputs they were reconciled from before, and re-persisted to
 // the same values.
 func RunIngestionPipelineWithDeliveryOverlay(dataDir string, store *storage.Queries, overlay *DeliveryOverlay) error {
+	if overlay == nil {
+		return RunIngestionPipelineWithConnectorOverlay(dataDir, store, nil)
+	}
+	return RunIngestionPipelineWithConnectorOverlay(dataDir, store, &ConnectorOverlay{
+		From:           overlay.From,
+		To:             overlay.To,
+		DeliveryActive: true,
+		Delivery:       overlay.Records,
+		// POSActive stays false: a delivery-only overlay must leave the
+		// day's CSV-sourced POS rows exactly where they are. See
+		// ConnectorOverlay.POSActive for why this is a boolean and not
+		// just an empty slice.
+	})
+}
+
+// ConnectorOverlay replaces the CSV-sourced rows for one inclusive
+// calendar-date range with records obtained from
+// internal/platformconnector's simulated upstreams — for delivery
+// revenue, for POS revenue, or for both
+// (specs/012-pos-connector-dedup).
+//
+// # Why the two Active booleans are not redundant with a nil slice
+//
+// "I synced the POS and it reported nothing" and "I did not sync the POS"
+// must produce different days, and a nil slice cannot tell them apart.
+// The first is an assertion about the business — the terminal was on and
+// took no orders — and clearing the range's POS revenue is the correct
+// response. The second is an assertion about the REQUEST, and clearing
+// anything would be destroying data the owner never asked to touch: a
+// delivery-only sync would silently wipe two thirds of every synced day's
+// gross sales and drop margin, with only the pre-existing flags to hint at
+// why (spec 012 US1.4).
+//
+// So the boolean, and so a structural guarantee rather than a caller's
+// discipline.
+type ConnectorOverlay struct {
+	// From and To are inclusive calendar dates. Comparison is done on the
+	// formatted YYYY-MM-DD key rather than on time.Time ordering — see
+	// DeliveryOverlay.From.
+	From time.Time
+	To   time.Time
+
+	DeliveryActive bool
+	Delivery       []ingest.DeliveryRecord
+
+	POSActive bool
+	POS       []ingest.POSRecord
+
+	// Decisions are the connector's cross-source deduplication outcomes.
+	// They become discrepancy flags on the days they belong to, so a
+	// removed POS ticket — and, just as importantly, an overlap the
+	// matcher refused to resolve — is visible on the day it affected
+	// rather than only in a sync response the owner closed an hour ago.
+	Decisions []platformconnector.DedupDecision
+}
+
+// RunIngestionPipelineWithConnectorOverlay is RunIngestionPipeline with an
+// optional range-scoped connector overlay covering delivery revenue, POS
+// revenue, or both. A nil overlay makes it identical to
+// RunIngestionPipeline.
+//
+// Semantics, stated plainly because "what happens to the days I did not
+// sync" is the question this shape exists to answer: for each source the
+// overlay marks active, CSV-parsed rows whose date falls inside the range
+// are DROPPED and replaced by the overlay's records; rows outside the
+// range, and rows of any source the overlay did NOT mark active, are kept
+// verbatim. Supplier-cost parsing is never overlaid.
+//
+// Every affected day is then recomputed from all three sources — see
+// RunIngestionPipelineWithDeliveryOverlay's own reasoning, which has not
+// changed: margin is gross minus commissions minus refunds minus input
+// costs, so a day whose delivery or POS revenue moved cannot have its
+// margin updated without the rest of the day in hand.
+func RunIngestionPipelineWithConnectorOverlay(dataDir string, store *storage.Queries, overlay *ConnectorOverlay) error {
 	deliveryPath, posPath, costPath, err := findSourceFiles(dataDir)
 	if err != nil {
 		return err
@@ -105,7 +180,6 @@ func RunIngestionPipelineWithDeliveryOverlay(dataDir string, store *storage.Quer
 	if err != nil {
 		return err
 	}
-	delivery = applyDeliveryOverlay(delivery, overlay)
 	pos, err := parseIfPresent(posPath, ingest.ParsePOSExport)
 	if err != nil {
 		return err
@@ -114,15 +188,33 @@ func RunIngestionPipelineWithDeliveryOverlay(dataDir string, store *storage.Quer
 	if err != nil {
 		return err
 	}
-	if deliveryPath == "" && overlay == nil {
-		fmt.Printf("pipeline: no delivery-platform export found in %s — every day will carry a %s flag\n", dataDir, reconcile.FlagMissingDeliverySource)
-	}
+
 	if overlay != nil {
-		fmt.Printf("pipeline: delivery overlay active for %s..%s — %d record(s) replace the CSV export's rows for those dates\n",
-			overlay.From.Format(dateKeyLayout), overlay.To.Format(dateKeyLayout), len(overlay.Records))
+		from, to := overlay.From.Format(dateKeyLayout), overlay.To.Format(dateKeyLayout)
+		if overlay.DeliveryActive {
+			delivery = replaceInRange(delivery, from, to, overlay.Delivery, func(r ingest.DeliveryRecord) string {
+				return r.OrderDate.Format(dateKeyLayout)
+			})
+			fmt.Printf("pipeline: delivery overlay active for %s..%s — %d record(s) replace the CSV export's rows for those dates\n", from, to, len(overlay.Delivery))
+		}
+		if overlay.POSActive {
+			pos = replaceInRange(pos, from, to, overlay.POS, func(r ingest.POSRecord) string {
+				return r.OrderDate.Format(dateKeyLayout)
+			})
+			fmt.Printf("pipeline: POS overlay active for %s..%s — %d ticket(s) replace the CSV export's rows for those dates\n", from, to, len(overlay.POS))
+		}
 	}
 
-	days := reconcile.ComputeDailyReconciliations(delivery, pos, costs)
+	if deliveryPath == "" && (overlay == nil || !overlay.DeliveryActive) {
+		fmt.Printf("pipeline: no delivery-platform export found in %s — every day will carry a %s flag\n", dataDir, reconcile.FlagMissingDeliverySource)
+	}
+
+	externalFlags := dedupFlagsByDate(overlay)
+	if n := len(externalFlags); n > 0 {
+		fmt.Printf("pipeline: cross-source deduplication produced %d flagged day(s)\n", n)
+	}
+
+	days := reconcile.ComputeDailyReconciliationsWithFlags(delivery, pos, costs, externalFlags)
 	if len(days) == 0 {
 		return fmt.Errorf("pipeline: no daily reconciliations produced from %s (no dated rows found in any source)", dataDir)
 	}
@@ -146,32 +238,85 @@ func RunIngestionPipelineWithDeliveryOverlay(dataDir string, store *storage.Quer
 // ordering — see DeliveryOverlay.From's doc comment for why.
 const dateKeyLayout = "2006-01-02"
 
-// applyDeliveryOverlay drops CSV-sourced delivery rows inside the
-// overlay's date range and appends the overlay's records in their place.
-// A nil overlay returns the input untouched, which is what keeps
-// RunIngestionPipeline's behavior bit-for-bit unchanged for the -ingest
-// CLI flag and the cost-sheet upload.
+// applyDeliveryOverlay is spec 010's delivery-only overlay, expressed on
+// top of the generic replaceInRange. Kept as a named function because
+// overlay_test.go's range-boundary cases are written against it, and
+// rewriting a passing test to fit a refactor is how a refactor stops
+// proving anything.
 func applyDeliveryOverlay(csvRecords []ingest.DeliveryRecord, overlay *DeliveryOverlay) []ingest.DeliveryRecord {
 	if overlay == nil {
 		return csvRecords
 	}
+	return replaceInRange(csvRecords, overlay.From.Format(dateKeyLayout), overlay.To.Format(dateKeyLayout), overlay.Records,
+		func(r ingest.DeliveryRecord) string { return r.OrderDate.Format(dateKeyLayout) })
+}
 
-	from := overlay.From.Format(dateKeyLayout)
-	to := overlay.To.Format(dateKeyLayout)
-
-	merged := make([]ingest.DeliveryRecord, 0, len(csvRecords)+len(overlay.Records))
+// replaceInRange drops CSV-sourced rows whose date falls inside
+// [from, to] and appends the overlay's records in their place. Generic
+// over the record type because delivery rows and POS rows need exactly
+// the same treatment and differ only in where their date lives — writing
+// it twice would be two places for the boundary condition to drift apart.
+//
+// Dates in YYYY-MM-DD sort lexicographically the same as chronologically,
+// which is what makes a plain string comparison correct here (the same
+// property reconcile.ComputeDailyReconciliations already relies on to
+// sort its date keys), and what keeps a CSV row parsed at UTC midnight
+// comparable with a connector row parsed at merchant-zone midnight.
+func replaceInRange[T any](csvRecords []T, from, to string, overlayRecords []T, dateKey func(T) string) []T {
+	merged := make([]T, 0, len(csvRecords)+len(overlayRecords))
 	for _, rec := range csvRecords {
-		key := rec.OrderDate.Format(dateKeyLayout)
-		// Dates in YYYY-MM-DD sort lexicographically the same as
-		// chronologically, which is what makes a plain string comparison
-		// correct here (the same property reconcile.ComputeDailyReconciliations
-		// already relies on to sort its date keys).
-		if key >= from && key <= to {
+		if key := dateKey(rec); key >= from && key <= to {
 			continue
 		}
 		merged = append(merged, rec)
 	}
-	return append(merged, overlay.Records...)
+	return append(merged, overlayRecords...)
+}
+
+// dedupFlagsByDate translates the connector's cross-source decisions into
+// this product's discrepancy-flag vocabulary, keyed by the day each one
+// belongs to.
+//
+// The translation lives here, not in internal/platformconnector, because
+// this is the layer that already imports both packages. Putting it in the
+// connector would make the integration layer depend on the reconciliation
+// engine it feeds, which is backwards; putting it in internal/reconcile
+// would make the engine know what a connector is.
+//
+// Every decision produces a flag, including the ones where the matcher
+// deliberately did nothing. That is the point: an overlap it refused to
+// resolve is a possible double-count, and the whole reason to refuse
+// rather than guess is that the owner gets told (spec 012 FR-014).
+func dedupFlagsByDate(overlay *ConnectorOverlay) map[string][]reconcile.DiscrepancyFlag {
+	if overlay == nil || len(overlay.Decisions) == 0 {
+		return nil
+	}
+
+	out := make(map[string][]reconcile.DiscrepancyFlag)
+	for _, decision := range overlay.Decisions {
+		var flagType string
+		switch decision.Kind {
+		case platformconnector.DedupMatchedByReference, platformconnector.DedupMatchedByChannelAmountTime:
+			flagType = reconcile.FlagCrossSourceDuplicateRemoved
+		case platformconnector.DedupAmountMismatch:
+			flagType = reconcile.FlagCrossSourceAmountMismatch
+		case platformconnector.DedupUnresolvedAmbiguous, platformconnector.DedupUnresolvedNoCounterpart:
+			flagType = reconcile.FlagCrossSourceDuplicateUnresolved
+		default:
+			// A decision kind this layer does not recognize is a wiring
+			// gap, and dropping it would hide exactly the thing the
+			// decision exists to disclose. Carry it under the most
+			// cautious flag in the family rather than losing it.
+			flagType = reconcile.FlagCrossSourceDuplicateUnresolved
+		}
+
+		key := decision.Date.Format(dateKeyLayout)
+		out[key] = append(out[key], reconcile.DiscrepancyFlag{
+			Type:   flagType,
+			Detail: decision.Detail,
+		})
+	}
+	return out
 }
 
 // findSourceFiles scans dataDir for files recognizable as a delivery-

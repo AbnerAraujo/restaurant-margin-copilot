@@ -127,7 +127,10 @@ func (u ifoodUpstream) getOrders(date time.Time, page int) ([]byte, error) {
 	dtos := make([]ifoodOrderDTO, 0, end-start)
 	for _, o := range orders[start:end] {
 		dto := ifoodOrderDTO{
-			ID:        fmt.Sprintf("IFOOD-SIM-%s-%04d", date.Format("20060102"), o.Seq),
+			// Built by the shared deliveryOrderID rather than formatted
+			// here, so the POS mock's cross-reference can name exactly
+			// this id and the two can never drift apart (seed.go).
+			ID:        deliveryOrderID(PlatformIFood, date, o.Seq),
 			CreatedAt: o.PlacedAt.Format(time.RFC3339),
 			Total:     ifoodAmount{Currency: "USD", Amount: money.FormatCents(o.SubtotalCents)},
 			Commission: ifoodCommission{

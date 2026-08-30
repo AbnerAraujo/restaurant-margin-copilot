@@ -2,6 +2,7 @@ package platformconnector
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,6 +123,75 @@ func TestMockUpstreams_EmitGenuinelyDifferentWireShapes(t *testing.T) {
 			t.Fatalf("both platforms reported status %q — the vocabularies have converged", ifoodStatus)
 		}
 	})
+
+	// The POS is the third format, and it has to differ from BOTH of the
+	// above, not just from one of them. Same brittleness in the same
+	// direction: this fails the moment any two of the three converge.
+	t.Run("the POS is a third format, not a variant of either", func(t *testing.T) {
+		posRaw, err := posUpstream{}.dayClose(date)
+		if err != nil {
+			t.Fatalf("POS upstream: %v", err)
+		}
+
+		// No envelope at all: a single Unmarshal must fail, because the
+		// payload is many documents. Neither delivery mock behaves that
+		// way, and this is the structural difference, not a cosmetic one.
+		var envelope map[string]any
+		if err := json.Unmarshal(posRaw, &envelope); err == nil {
+			t.Fatalf("the POS payload decoded as one JSON object — the NDJSON shape has gone")
+		}
+
+		lines := strings.Split(strings.TrimSpace(string(posRaw)), "\n")
+		var ticket map[string]any
+		if err := json.Unmarshal([]byte(lines[0]), &ticket); err != nil {
+			t.Fatalf("first POS line is not JSON: %v", err)
+		}
+
+		// No pagination key of either kind.
+		for _, key := range []string{"page", "cursor", "orders", "data"} {
+			if _, ok := ticket[key]; ok {
+				t.Fatalf("POS ticket carries %q — it has picked up a delivery mock's envelope vocabulary", key)
+			}
+		}
+
+		// Money is a pt-BR decimal STRING, not iFood's "1234.56" and not
+		// JET's integer minor units.
+		total, ok := ticket["total_brl"].(string)
+		if !ok {
+			t.Fatalf("POS total_brl is %T, not a string — it has converged on JET's integer minor units", ticket["total_brl"])
+		}
+		if !strings.Contains(total, ",") {
+			t.Fatalf("POS total_brl %q carries no decimal comma — it has converged on iFood's notation", total)
+		}
+
+		// Timestamp is zone-less local, not RFC 3339 and not epoch millis.
+		openedAt, ok := ticket["opened_at"].(string)
+		if !ok {
+			t.Fatalf("POS opened_at is %T, not a string — it has converged on JET's epoch milliseconds", ticket["opened_at"])
+		}
+		if strings.Contains(openedAt, "T") || strings.Contains(openedAt, "+") || strings.HasSuffix(openedAt, "Z") {
+			t.Fatalf("POS opened_at %q carries a zone marker — it has converged on iFood's RFC 3339", openedAt)
+		}
+
+		// Status vocabulary overlaps neither.
+		state, _ := ticket["state"].(string)
+		if state != "PAID" && state != "VOID" {
+			t.Fatalf("POS state %q is outside its documented vocabulary", state)
+		}
+		if state == ifoodStatusOf(ifoodOrder) || state == jetStatusOf(jetOrder) {
+			t.Fatalf("the POS reported state %q, which one of the delivery mocks also uses", state)
+		}
+	})
+}
+
+func ifoodStatusOf(order map[string]any) string {
+	s, _ := order["status"].(string)
+	return s
+}
+
+func jetStatusOf(order map[string]any) string {
+	s, _ := order["fulfilmentState"].(string)
+	return s
 }
 
 // A day's orders must span more than one page in both mocks, or the

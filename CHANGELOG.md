@@ -141,6 +141,262 @@ Promotions' "Search campaigns" (30 campaigns still shown, unapplied) then
 pressed Enter (0 of 30 shown, the real "No campaigns match these filters"
 empty state).
 
+## 2026-08-30 — POS connector, and the cross-source duplicate it creates (spec 012)
+
+`specs/012-pos-connector-dedup/`. Two changes that had to ship together,
+because the first one is a bug without the second.
+
+**What was missing.** Spec 010 built the connector for delivery revenue and
+deliberately stopped there — its own Assumptions say "There is no simulated
+POS API." That left the in-house POS, **two thirds** of this restaurant's
+gross sales (`cmd/gendata`: `posShare` 0.66 against 0.17 + 0.17), reachable
+only by somebody exporting `pos_export.csv` by hand. The connector story was
+two thirds unfinished on the revenue side, and it was the larger two thirds.
+
+**The bug adding it would have introduced.** Today's reconciliation treats POS
+and delivery revenue as two disjoint, additive buckets, and has never had to
+ask whether a row in one describes the same real-world order as a row in the
+other. That assumption is wrong in a specific, well-known way: a POS that
+integrates with a delivery aggregator — which is why front-of-house sees one
+screen and one kitchen printer — has the aggregator's orders *pushed into it*,
+where they become POS tickets with their own POS order numbers. The same order
+then arrives twice in one sync, and summing both inflates gross sales,
+understates the cost ratio, and reports a margin percentage better than
+reality every single day.
+
+Measured on this build, 2026-08-18..20: naively summing the three sources
+gives **$14,285.89** of gross sales against a true **$12,442.88** — $1,843.01
+counted twice, and a three-day margin overstated by **20.3%** ($10,941.64
+instead of $9,098.63). Shipping a POS connector without deduplication would
+have made this product's headline number *worse* than before the feature
+existed.
+
+**The failure in the other direction, which drove the design.** A matcher that
+is too eager merges two genuinely different orders that happen to share a
+price and a rough time. On a 20-to-30-order evening at a $32 mean ticket that
+is not exotic, it is expected — and the result is real revenue *deleted* from
+the day, unrecoverable from the reconciliation output, and invisible, because
+the day is simply lower and nothing says why. Dropping a real order and
+double-counting a duplicate one are the same financial-integrity failure
+wearing different signs. `CLAUDE.md`'s "a confidently wrong margin figure is
+worse than a refusal" cuts both ways here, and the design spends its effort on
+the second direction.
+
+**The rule** (`internal/platformconnector/dedup.go`), stated so it can be
+argued with rather than only read:
+
+> A POS ticket is a duplicate of a delivery order **only if the POS itself
+> said** the ticket arrived through a delivery channel. Within that set: if the
+> ticket carries the platform's order reference and that reference resolves,
+> they are the same order. Otherwise they are the same order only if they share
+> a platform, a calendar date and an **exact amount in cents**, their times are
+> within **15 minutes**, and no other reading of the day's tickets is equally
+> consistent.
+
+Three decisions inside that, each deliberate:
+
+- **No matching on amount and time alone.** Without an assertion from one of
+  the two systems that a delivery channel was involved, the evidence is "these
+  numbers are similar", and acting on it deletes revenue. An untagged dine-in
+  ticket is ineligible at any amount, at any time, forever — an accepted false
+  negative, taken so the false-positive rate can be bounded.
+- **Ambiguity is disclosed, never resolved by preference.** One ticket with two
+  candidate orders, or two tickets contesting one: nothing merges, every record
+  survives, and the day carries a flag naming the candidates. The pairing must
+  be the unique solution *from both directions*, which is also what makes the
+  result independent of iteration order — a rule that merged as it walked would
+  hand the order to whichever ticket came first and leave the other looking
+  cleanly unmatched, which is a coin flip presented as an answer
+  (`TestDedup_IsIndependentOfInputOrder`).
+- **The delivery record wins a resolved duplicate.** It knows the commission,
+  the rate, the payout and the refund state; the POS ticket knows only a gross
+  amount. Dropping the delivery side would zero that order's commission and
+  move margin *up* — a wrong number in the flattering direction, which is the
+  worst shape an error in this product can take.
+
+Zero model involvement, and this is the part worth pointing at: "are these two
+records the same order" is exactly the shape of problem a language model gets
+reached for, and exactly the shape this product refuses to hand one. The
+matcher is integer-cent equality, case-folded string equality, and a minute
+difference. Every decision can be recomputed by hand from the two records
+(Constitution Principle I).
+
+**The mock is built to make the rule work for its living.**
+`internal/platformconnector/pos_mock.go` is a third wire format that disagrees
+with both delivery mocks on every decision either of them makes: NDJSON with no
+envelope and no pagination at all, money in pt-BR notation (`"1.234,56"`),
+zone-less local timestamps, `PAID`/`VOID`, a `service_type`, and a nested
+`delivery_partner` block. Two of those are traps with teeth, in the same spirit
+as spec 010's derived JET rate and iFood refund sign:
+
+- `money.ParseCents` reads `"1.234,56"` as **$1.23** — a plausible-looking
+  string understated by three orders of magnitude, with no error anywhere.
+  `normalizePtBRAmount` converts explicitly and *refuses* anything outside the
+  one accepted shape rather than best-effort parsing it.
+- `time.Parse` on a zone-less timestamp yields UTC. The calendar *date* still
+  comes out right for every ticket this mock emits — which is what makes it
+  dangerous, because nothing downstream would look wrong. What it destroys is
+  the merchant's three-hour offset in every ticket *time*, which is the input to
+  the matching window: every amount-and-time match in the product would stop
+  firing, duplicates would flow through, and gross sales would quietly inflate.
+  `time.ParseInLocation` is the fix, and `checkPOSContract` enforces it on every
+  fetch by requiring the parsed instant to agree with the ticket's own recorded
+  wall clock.
+
+The overlap itself is causally real, not arranged: for a given date the POS mock
+calls the *same* `simulateDay(PlatformIFood, …)` the iFood mock calls and echoes
+those actual orders, so a duplicate the matcher finds is one simulated order
+recorded twice. Around it, the deliberate difficulties: only iFood is integrated
+into the POS and Just Eat Takeaway is not (a common real configuration, and the
+one that puts a control group inside every fetch); a quarter of echoed tickets
+carry no partner reference, so the harder tier is not decoration; and
+campaign-discounted orders disagree on amount because the POS rang the menu price
+and never saw the promotion. Ambiguity is **not** manufactured — the mock does not
+arrange a collision so a flag has something to do; that path is proven by unit
+test, and its real incidence is reported as measured.
+
+**Measured, not claimed.** Over August 2026, all 31 days, three sources: **689
+duplicates resolved, 40 overlaps left unresolved and flagged, and 2,569 in-house
+tickets — every one of them intact.** Zero false positives is
+`TestFetchRange_NoInHouseTicketIsEverRemoved`, running on every build against the
+real generated mix, not an assertion in a document.
+
+**Nothing is silently corrected.** Three new flag types in `internal/reconcile`'s
+existing vocabulary — `cross_source_duplicate_removed`,
+`cross_source_duplicate_unresolved`, `cross_source_amount_mismatch` — each naming
+both sides: which ticket was removed, which order it merged into, at which row of
+which source. An unresolved overlap states the consequence out loud ("this day may
+count that order twice"). The connected-sources panel shows the removals and the
+unresolved overlaps side by side, because reporting only the removals would let the
+product claim a clean close it did not achieve.
+
+**Shape changes, each with a compatibility path so nothing existing moved.**
+`ComputeDailyReconciliations` became a nil-map delegate to a new
+`ComputeDailyReconciliationsWithFlags`, proven byte-identical against the real
+dataset (`TestComputeDailyReconciliations_MatchesTheNilFlagDelegate`);
+`RunIngestionPipelineWithDeliveryOverlay` became a delegate to a new
+`RunIngestionPipelineWithConnectorOverlay`. That overlay carries `DeliveryActive`
+and `POSActive` booleans rather than relying on a nil slice, because "I synced the
+POS and it reported nothing" and "I did not sync the POS" must produce different
+days — without the boolean, a delivery-only sync would have silently wiped two
+thirds of every synced day's gross sales.
+
+**Rejected, and recorded because the next reader will have the same idea:** making
+the POS mock implement the existing `Client` interface and return
+`ingest.DeliveryRecord` values with a zero commission. `reconcile.computeOneDay`
+sums `commissionsBySource[src]` over every delivery record, so the day would grow a
+`commissionsBySource["pos"] = 0` entry — breaking the invariant
+`internal/reconcile/types.go` documents on both `CommissionsBySource` and
+`RefundsBySource` ("pos" never appears there), and making the POS show up in
+specs/003's `compare_platform_economics` as a delivery platform charging 0%
+commission: a new, wrong answer in a corner of the product that never mentions
+connectors. A peer `POSClient` interface instead, sharing a `Connector` half with
+`Client`. The reasoning is in `client.go`'s own doc comment, not only here.
+
+**Disclosure held to spec 010's bar exactly** — five independent statements for the
+POS as for the two platforms: the package doc, the enforced `simulated://`
+provenance scheme, `"simulated": true` in every response body, the per-source UI row,
+and the persistent non-dismissible panel notice. The POS's commission chip reads "No
+commission" rather than "0.00%", because a zero rate renders as a platform that
+happens to be free, which is a different and wrong claim.
+
+Live end-to-end on an isolated instance (own Postgres, own ports): three-source sync
+of 2026-08-18..20 committed 121 delivery orders and 198 POS tickets, removed 50
+duplicates, disclosed 5 unresolved overlaps, and moved total margin from
+$1,078,340.64 to $1,079,774.22 across 759 days. Re-running the identical sync
+produced the identical margin, the identical 50 removals and the identical 5
+unresolved overlaps — the determinism the flags depend on, since a re-synced day has
+to carry byte-identical discrepancy flags to reconcile to the same numbers.
+
+## 2026-08-30 — Promotions chart: newest campaigns no longer scroll out of view unnoticed
+
+Reported by the product owner: "not all campaigns are in the chart, add all
+of them and show from the right to the left side." Investigated live against
+the real dataset (30 campaigns on file, backend on `:8080`) with Playwright
+screenshots at several viewport widths before changing anything, per this
+project's own discipline of tracing root cause instead of assuming one.
+
+**This was a discoverability gap, not a data-loss bug.** Every campaign was
+already reaching `PromoRoiChart` as a real, focusable bar —
+`PromotionsPage.tsx`'s `displayedPromotions` never slices or caps the list
+(confirmed by the existing `PromotionsPage.test.tsx` regression test
+guarding exactly this at 30-campaign scale, which was already passing), and
+`PromoRoiChart.tsx`'s own `chartableData = data` has carried every record
+unfiltered since an earlier QA fix. Screenshots proved it: at a wide
+viewport (1440px) all 30 bars, including the two "Unattributable" refusals,
+rendered and fit with no scrolling. At a common laptop width (1024px) all
+30 bars were STILL in the DOM (`aria-label="...across 30 promotion
+campaigns"` matched the header's "30 campaigns" chip exactly) — but the
+chart's `overflow-x-auto` wrapper defaulted to its scrolled-to-the-LEFT
+position, showing only the OLDEST campaigns, with no visual cue that more
+existed off-screen to the right. The owner's reading ("not all campaigns are
+in the chart") was a fair one: the newest, most-actionable campaigns — the
+ones a "needs a decision" reader most wants — were also the ones most likely
+scrolled out of view on first load.
+
+**Fix, two parts, both scoped to `PromoRoiChart.tsx`:**
+
+1. **Default scroll position.** The chart's own data order is chronological,
+   oldest-first (the API's natural order — see `toChartDatum`'s neighboring
+   comment in `PromotionsPage.tsx`), the same left-to-right time convention
+   `MarginTrendChart` already uses. That chart already mounts scrolled to
+   its own right edge for the identical reason ("today first, history a
+   deliberate scroll away") — this applies the same fix here via a new
+   `initialScrollToEnd` prop (default `true`), rather than reversing the
+   chronological axis itself, which would read backwards against every
+   other time-ordered chart in this app and the dataviz skill's own
+   convention. The one case that opts out: `PromotionsPage`'s ROI sort
+   toggle ("Highest first"/"Lowest first") already puts the campaign the
+   owner asked to see first at the left — auto-scrolling right there would
+   hide it, so `PromotionsPage` passes `initialScrollToEnd={roiSortDirection
+   === null}`.
+2. **Scroll-fade affordance.** Reused this codebase's one existing answer to
+   "an `overflow-x-auto` row gives no visual reason to suspect there's
+   more" — `Shell/Sidebar.tsx`'s `MobileNavBar` edge fade, fixed earlier
+   this week for the identical problem on the mobile nav bar. Added the same
+   pattern to `PromoRoiChart`, bidirectionally: a left fade shown only while
+   scrolled away from the start (real history sits further left) and a
+   right fade shown only while not scrolled all the way to the end — never
+   a permanent decoration in either direction.
+
+Interpreted "show from the right to the left side" as: start the reader at
+the right (the newest campaigns), with older history a deliberate scroll to
+the left — not a request to reverse the chronological axis itself (which
+would contradict "recent reads as rightmost," this app's own
+`MarginTrendChart` precedent, and standard time-series chart convention).
+
+Verified live: at 1024px the chart now mounts showing campaigns through the
+newest (`IFOOD_CAMP_02`, period ending 2026-09-30) with a left fade
+indicating older history; scrolling to the start flips to a right fade with
+no left fade. Header chip, chart `aria-label`, and table row count agree on
+"30" in every case — the chart and the table never disagree about how many
+campaigns exist. Added 9 tests to `PromoRoiChart.test.tsx`: an explicit
+30-campaign bar-count assertion pinned to the real dataset's own scale, four
+covering the default-scroll-to-end behavior (including that it does NOT
+fire when `initialScrollToEnd` is false, and that it doesn't fight a
+reader's manual scroll on an unrelated re-render), and four covering the
+fade's visibility in each direction. `npx tsc -b --noEmit` and the full
+frontend suite (579 tests) pass.
+
+## 2026-08-30 — Close's Period totals no longer truncate to a plausible-looking wrong number
+
+Reported live: filtering Today's Close to a period showed a total margin cut
+off with an ellipsis (e.g. "$1,078,9…"). Root cause: `components/ui/stat.tsx`'s
+`Stat` value span used `truncate` (single-line, ellipsis-on-overflow) — fine
+for a single day's smaller figures, but a period total (summed across many
+days, sometimes into the millions) is a longer string than the stat grid's
+column width assumes. A truncated dollar amount reads as a plausible but
+DIFFERENT, wrong number — the same class of error this product refuses to
+show anywhere else (a confidently wrong figure is worse than an ugly one).
+Fixed the same way the label above it was already fixed for the identical
+reason (a prior live report about labels like "Days with a fl…"): wrap
+instead of hiding. Verified live with a 760-day period producing a
+$2,347,140.30 total and a $1,690,002.61 per-source figure — both now render
+in full. Audited every other `truncate` usage in the frontend: all remaining
+instances are on text labels (a restaurant name, a source name, a chart's
+row label) with the complete text available via a tooltip/title attribute —
+a legitimate, different use of truncation, left unchanged.
+
 ## 2026-08-30 — Owner-facing refusal wording, and the follow-up that triggered it
 
 Reported live: a follow-up like "how can I replicate it on other days?"
@@ -182,6 +438,75 @@ internal component names. New test
 (`TestExplain_ZeroToolCallCurrencyAnswerIsRefused` in
 `explain_internal_test.go`) asserts the message never contains "MCP",
 "tool call", "provenance", "deterministic layer", or "currency-shaped".
+
+## 2026-08-30 — Inline Grounded Advice: the advisor now answers the questions that ask for it (spec 011)
+
+The product owner's direction, verbatim: "the advisor should advise
+whatever the customer asks and use the data in context for it — not
+bringing wrong data or hallucination, but using an advisor that gets all
+the rich data we have and brings suggestions is something of value to the
+product strategy and vision." Until now the Business Insight Advisor
+(spec 009) could only be reached one way: Go detected one of five fixed
+patterns in an answer's data and offered a teaser chip. A question that
+*explicitly asked* for a suggestion — "how can I improve my margin
+overall?", "should I focus more on delivery or dine-in?" — got its data
+core answered and its advice part plainly declined (the 2026-08-30
+mixed-question fix below), even though an advisor with exactly the right
+grounding discipline was sitting one package away.
+
+`specs/011-inline-grounded-advice/` adds a second avenue into the same
+advisor, additive by construction — the five-kind teaser path is untouched
+and live-verified unchanged:
+
+- **Trigger** (`internal/ambiguity`): the gate now reports a separate
+  boolean, `advice_requested`, alongside its three-way classification —
+  never a fourth classification, and structurally unsettable by the
+  second-pass prose writer (`writerResponse` has no such field), the same
+  guarantee the classification itself already had. Groundable advice
+  questions classify answerable + flagged; ungroundable ones ("what should
+  I pay my staff?") stay refused exactly as before, verified live.
+- **Grounding**: no new tool-calling loop. The normal narration answers
+  the data core first through the existing budgeted MCP loop, and the one
+  bounded advisor call is grounded exclusively in `ToolInvocations` from
+  that same answer. No grounding → no advice call at all.
+- **Dynamic prompt** (`internal/advisor/question_advice.go`): the system
+  prompt is assembled per-question in plain Go — spec 009's
+  non-fabrication rules verbatim, plus researched-practice sections
+  selected by the NAMES of the tools that actually ran (new sourced
+  content: Restaurant365's prime-cost bands, Kasavana & Smith's 1982 menu
+  engineering matrix, Toast/ChowNow direct-channel steering; unverifiable
+  vendor figures deliberately excluded, same as 009's absent "~52%"
+  claim). The five 009 kind templates are never consulted on this path.
+- **Cost honesty**: every inline call writes a `business_insight_interaction`
+  row (new kind `question_advice`, migration 000013 — the "migration plus
+  a reviewed prompt" cost migration 000010's comment prescribed) and
+  appears as its own `interactions` entry; a failed advice call degrades
+  to the unchanged data answer, never a failed request.
+- **UI**: the suggestion renders in the teaser chip's dashed-warning
+  "AI suggestion" language with the same wire-carried disclaimer, after
+  and never blended into the provenance-backed answer.
+
+One real defect found and fixed during live verification, worth naming:
+the gate's raw model reply carried `"advice_requested": true` correctly,
+and every parser-level unit test passed — but `Classify`'s field-by-field
+copy from the parsed decision onto the usage-carrying `Decision` omitted
+the new field, silently dropping the signal on every live request. The
+symptom (grounded advice questions answered with the old decline, zero
+advisor calls) only surfaced against the live instance. Fixed with the
+one-line copy plus a new Classify-level scripted-fake test
+(`TestClassify_CarriesAdviceRequestedThroughToTheReturnedDecision`) that
+fails without it — the parser tests alone provably could not catch this
+class of drop.
+
+Live verification against an isolated instance (own Postgres, own port,
+real `ANTHROPIC_API_KEY`): "How can I improve my margin overall?" gathered
+`get_period_totals`/`get_margin_delta`/`list_negative_roi_promotions` and
+returned a suggestion anchored to the real computed figures (July→August
+margin move, IFOOD-CAMP-025's own spend/revenue) while stating plainly
+that labor/menu-item data doesn't exist in this product; "What should I
+pay my staff?" still refused with zero tool calls and zero advisor calls;
+the negative-promo teaser + tap flow behaved exactly as before, and
+`POST /api/business-insight` rejects kind `question_advice` (400).
 
 ## 2026-08-30 — Fixed a chat refusal that promised data it never delivered
 

@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 )
 
@@ -366,4 +368,151 @@ func recordsFor(records []ingest.DeliveryRecord, platform Platform) []ingest.Del
 		}
 	}
 	return out
+}
+
+// --- POS and cross-source deduplication through the whole proxy ---------
+//
+// The unit tests in dedup_test.go prove the matching rule on hand-built
+// adversarial cases. This one proves the rule is actually WIRED: that a
+// three-source fetch really does remove duplicates, really does leave the
+// delivery side alone, and really does report what it did.
+
+func TestFetchRange_ThreeSourceSyncRemovesDuplicatesAndSaysSo(t *testing.T) {
+	proxy := NewSimulatedProxy()
+	date := time.Date(2026, 8, 20, 0, 0, 0, 0, merchantZone)
+
+	// What each source reports on its own, before anything is compared.
+	posOnly, err := proxy.FetchRange(context.Background(), date, date, []Platform{PlatformPOS})
+	require.NoError(t, err)
+	require.Empty(t, posOnly.Decisions,
+		"a POS-only sync has nothing to compare against, so it must decide nothing rather than guess")
+
+	all, err := proxy.FetchRange(context.Background(), date, date, AllPlatforms)
+	require.NoError(t, err)
+
+	removed := all.DuplicatesRemoved()
+	require.Greater(t, removed, 0, "the simulated POS records iFood orders, so a three-source sync must find duplicates")
+	require.Equal(t, len(posOnly.POSRecords)-removed, len(all.POSRecords),
+		"the drop in POS tickets must equal the number of removals exactly — anything else is a ticket that vanished unexplained")
+
+	// The delivery side is never touched.
+	ifoodOnly, err := proxy.FetchRange(context.Background(), date, date, []Platform{PlatformIFood, PlatformJustEatTakeaway})
+	require.NoError(t, err)
+	require.Equal(t, ifoodOnly.Records, all.Records,
+		"deduplication must never remove or alter a delivery-platform record")
+
+	// Every decision is explained, and the unresolved ones are in the list
+	// too — a response reporting only successes would be claiming a clean
+	// result it did not achieve.
+	for _, d := range all.Decisions {
+		require.NotEmpty(t, d.Detail, "decision %s carries no explanation", d.Kind)
+		require.NotEmpty(t, d.POSOrderID)
+		if d.Kind.Merged() {
+			require.NotEmpty(t, d.PlatformOrderID)
+		}
+	}
+
+	// The POS row's totals must agree with the records that survived.
+	var posTotals *PlatformDayTotals
+	for i := range all.Totals {
+		if all.Totals[i].Platform == PlatformPOS {
+			posTotals = &all.Totals[i]
+		}
+	}
+	require.NotNil(t, posTotals)
+	require.Equal(t, len(all.POSRecords), posTotals.OrderCount,
+		"the preview's POS count must be what will actually land, not what the terminal reported")
+	require.Equal(t, removed, posTotals.DuplicatesRemoved)
+}
+
+// A delivery-only sync must not produce POS records or dedup decisions,
+// and a POS-only sync must not silently match against a delivery feed it
+// never fetched.
+func TestFetchRange_DedupIsScopedToWhatWasFetched(t *testing.T) {
+	proxy := NewSimulatedProxy()
+	date := time.Date(2026, 8, 20, 0, 0, 0, 0, merchantZone)
+
+	deliveryOnly, err := proxy.FetchRange(context.Background(), date, date, []Platform{PlatformIFood})
+	require.NoError(t, err)
+	require.Empty(t, deliveryOnly.POSRecords)
+	require.Empty(t, deliveryOnly.Decisions)
+
+	// The POS records iFood orders. Syncing the POS with JET only must
+	// leave every one of those tickets alone and unflagged: the connector
+	// is authoritative for what it fetched, and warning about an overlap
+	// with a feed nobody asked for is noise the owner cannot act on.
+	posAndJET, err := proxy.FetchRange(context.Background(), date, date, []Platform{PlatformJustEatTakeaway, PlatformPOS})
+	require.NoError(t, err)
+	require.Empty(t, posAndJET.Decisions)
+
+	posOnly, err := proxy.FetchRange(context.Background(), date, date, []Platform{PlatformPOS})
+	require.NoError(t, err)
+	require.Equal(t, len(posOnly.POSRecords), len(posAndJET.POSRecords))
+}
+
+// Determinism has to cover the DECISIONS too, not only the records —
+// otherwise a re-synced day would carry different discrepancy flags in a
+// different order and the persisted reconciliation would not be
+// byte-identical (spec 012 SC-004).
+func TestFetchRange_DedupDecisionsAreDeterministic(t *testing.T) {
+	proxy := NewSimulatedProxy()
+	from := time.Date(2026, 8, 18, 0, 0, 0, 0, merchantZone)
+	to := time.Date(2026, 8, 20, 0, 0, 0, 0, merchantZone)
+
+	first, err := proxy.FetchRange(context.Background(), from, to, AllPlatforms)
+	require.NoError(t, err)
+	second, err := proxy.FetchRange(context.Background(), from, to, AllPlatforms)
+	require.NoError(t, err)
+
+	require.Equal(t, first.POSRecords, second.POSRecords)
+	require.Equal(t, first.Decisions, second.Decisions)
+}
+
+// SC-002, measured rather than assumed: across a month of simulated days,
+// the matcher must not have removed a single genuine in-house ticket.
+//
+// This is the test that would catch an over-eager rule in the wild, where
+// the hand-built cases in dedup_test.go cannot: it runs against the real
+// generated mix, with hundreds of dine-in and counter tickets sitting
+// beside delivery orders at every price point the model produces.
+func TestFetchRange_NoInHouseTicketIsEverRemoved(t *testing.T) {
+	proxy := NewSimulatedProxy()
+	from := time.Date(2026, 8, 1, 0, 0, 0, 0, merchantZone)
+	to := time.Date(2026, 8, 31, 0, 0, 0, 0, merchantZone)
+
+	all, err := proxy.FetchRange(context.Background(), from, to, AllPlatforms)
+	require.NoError(t, err)
+
+	// Every ticket the POS reported as in-house, gathered independently of
+	// the fetch above.
+	inHouse := map[string]bool{}
+	for day := from; !day.After(to); day = day.AddDate(0, 0, 1) {
+		tickets, err := NewPOSClient().FetchPOSOrders(context.Background(), day)
+		require.NoError(t, err)
+		for _, tk := range tickets {
+			if tk.DeliveryPlatform == "" {
+				inHouse[day.Format(dateLayout)+"|"+tk.Record.OrderID] = true
+			}
+		}
+	}
+	require.NotEmpty(t, inHouse)
+
+	survived := map[string]bool{}
+	for _, rec := range all.POSRecords {
+		survived[rec.OrderDate.Format(dateLayout)+"|"+rec.OrderID] = true
+	}
+
+	for key := range inHouse {
+		require.True(t, survived[key], "in-house ticket %s was removed by deduplication — that is real revenue deleted from the day", key)
+	}
+
+	// And no decision may even NAME an in-house ticket: a flag on a
+	// dine-in order would be noise on a day that had none of the problem.
+	for _, d := range all.Decisions {
+		require.False(t, inHouse[d.Date.Format(dateLayout)+"|"+d.POSOrderID],
+			"in-house ticket %s was flagged as a possible duplicate", d.POSOrderID)
+	}
+
+	t.Logf("measured over %s..%s: %d POS tickets survived, %d duplicates removed, %d overlaps left unresolved, %d in-house tickets all intact",
+		from.Format(dateLayout), to.Format(dateLayout), len(all.POSRecords), all.DuplicatesRemoved(), all.UnresolvedOverlaps(), len(inHouse))
 }

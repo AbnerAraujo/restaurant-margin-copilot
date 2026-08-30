@@ -213,6 +213,7 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Spec drafted (2026-08-29) — not yet planned or built |
 | [`specs/009-business-insight-advisor`](specs/009-business-insight-advisor/spec.md) | Business Insight Advisor — a deterministic Go-derived teaser plus an opt-in, separately-ledgered Claude Sonnet 5 advice call | Shipped |
 | [`specs/010-platform-connector-proxy`](specs/010-platform-connector-proxy/spec.md) | Platform Connector Proxy — one internal interface over two **simulated** iFood and Just Eat Takeaway partner APIs, normalizing both into the CSV path's own record type | Shipped (connectors emulated — no real partner-API access) |
+| [`specs/012-pos-connector-dedup`](specs/012-pos-connector-dedup/spec.md) | POS connector plus deterministic cross-source deduplication — an integrated POS records a delivery platform's orders as its own tickets, so the same order arrives twice; a two-tier matcher resolves what it can and **refuses to guess** at the rest, because a wrong merge deletes real revenue as surely as a missed one double-counts it | Shipped (POS emulated — no real terminal access) |
 
 ## Real evaluation results
 
