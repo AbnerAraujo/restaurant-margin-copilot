@@ -8,6 +8,8 @@
 // (native <title>, kept intentionally lightweight for this first version
 // rather than a custom crosshair layer).
 
+import { buildLinearTickScale, formatAxisPercent } from '@/lib/chartScale'
+
 export interface EffectiveRateTrendPlatformPoint {
   source: string
   display_name: string
@@ -79,16 +81,24 @@ export default function EffectiveRateTrendChart({
     .flatMap((p) => p.platforms.map((pl) => parsePercent(pl.effective_rate)))
     .filter((v): v is number => v !== null)
   const maxRate = allRates.length > 0 ? Math.max(...allRates) : 0
-  // Domain always includes zero (dataviz skill: a true baseline), padded
-  // a little above the real max so the topmost point isn't clipped at the
-  // very edge of the plot.
-  const yMax = Math.max(maxRate * 1.15, 5)
+  // Domain always includes zero (dataviz skill: a true baseline) and is
+  // rounded UP to a whole tick step, which both keeps the topmost point off
+  // the very edge of the plot and makes every gridline a round number.
+  //
+  // This used to be `[0, maxRate/2, maxRate*1.15]` printed with `toFixed(0)`,
+  // which meant the middle gridline of a 22% series was drawn at 12.65% and
+  // labelled "13%" — an axis label that names a value the line it belongs to
+  // is not at. Three ticks is also too few to read a rate off. Four is the
+  // target here rather than the default five: the plot is only 176px tall.
+  const { max: yMax, step: yStep, ticks: yTicks } = buildLinearTickScale(
+    0,
+    Math.max(maxRate, 5),
+    4,
+  )
 
   const xStep = periods.length > 1 ? PLOT_WIDTH / (periods.length - 1) : 0
   const xFor = (i: number) => MARGIN.left + i * xStep
   const yFor = (rate: number) => MARGIN.top + PLOT_HEIGHT - (rate / yMax) * PLOT_HEIGHT
-
-  const yTicks = [0, yMax / 2, yMax]
 
   return (
     <div className={className}>
@@ -117,7 +127,7 @@ export default function EffectiveRateTrendChart({
               dominantBaseline="middle"
               className="fill-muted-foreground text-[10px]"
             >
-              {tick.toFixed(0)}%
+              {formatAxisPercent(tick, yStep)}
             </text>
           </g>
         ))}
@@ -174,8 +184,19 @@ export default function EffectiveRateTrendChart({
                   strokeLinejoin="round"
                 />
               ))}
+              {/* >=8px markers with a 2px ring in the surface colour, per the
+                  dataviz mark spec — the ring is what keeps a dot legible
+                  where two platforms' lines cross. */}
               {points.map((p) => (
-                <circle key={p.month} cx={p.x} cy={p.y} r={3.5} fill={color}>
+                <circle
+                  key={p.month}
+                  cx={p.x}
+                  cy={p.y}
+                  r={4}
+                  fill={color}
+                  stroke="var(--card)"
+                  strokeWidth={2}
+                >
                   <title>
                     {displayNames.get(source)} — {monthLabel(p.month)}: {p.rate.toFixed(2)}%
                   </title>

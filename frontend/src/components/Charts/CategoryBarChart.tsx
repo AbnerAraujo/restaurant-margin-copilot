@@ -323,8 +323,14 @@ export default function CategoryBarChart({
         ) : null}
       </div>
 
-      {/* Legend — three meanings, each a swatch plus text, so identity never
-          rests on colour alone. */}
+      {/* Legend — each meaning a swatch plus text, so identity never rests on
+          colour alone. Rendered only once there are at least TWO meanings to
+          tell apart: on a chart where every bar is above zero (the platform
+          cost comparison, caught in the live rendering pass) a lone "Above
+          zero" entry restates what the bars already show and costs a row of
+          space, which is exactly the single-series legend the dataviz mark
+          spec says to leave out. */}
+      {[hasPositive, hasNegative, hasUnavailable].filter(Boolean).length < 2 ? null : (
       <ul
         aria-label="Chart legend"
         className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1"
@@ -354,6 +360,7 @@ export default function CategoryBarChart({
           </li>
         ) : null}
       </ul>
+      )}
 
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-2">
         {sourceTool ? (
