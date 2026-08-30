@@ -40,8 +40,10 @@ import {
   addSavedPrompt,
   clearRequestInFlight,
   commitThreadMessages,
+  isDocumentUnloading,
   isRequestInFlight,
   loadSavedPrompts,
+  materialiseThreadStore,
   markRequestInFlight,
   mergeThreadStores,
   openThread,
@@ -1101,7 +1103,7 @@ function ErrorBubble({
             means saying so rather than letting it read as a free retry. */}
         <p className="text-xs text-muted-foreground">
           {interrupted
-            ? 'Your question ran, so it may already have been charged to the session total below — asking again will cost again.'
+            ? 'Your question ran, so it may already be counted in the running model-spend total — asking again will cost again.'
             : 'This is a connection problem, not a refusal — your question was never answered either way.'}
         </p>
         <button
@@ -1252,6 +1254,16 @@ export default function ChatPanel({
   // fires once.
   const [composerHeight, setComposerHeight] = React.useState(112)
 
+  // The panel's own view of the store, readable from a settled promise long
+  // after the render that produced it. Passed to every commit as the base to
+  // fold storage into, so a thread this panel created but has not yet
+  // written (the very first question of a fresh browser) is still known to
+  // the commit rather than being treated as a stranger.
+  const threadStoreRef = React.useRef<ThreadStore | null>(threadStore)
+  React.useEffect(() => {
+    threadStoreRef.current = threadStore
+  }, [threadStore])
+
   // Absorbs a store written by anything else — another tab through the
   // browser's `storage` event, or this panel's own commit from a settled
   // request — by MERGING it into what this panel already has rather than
@@ -1272,6 +1284,16 @@ export default function ChatPanel({
         previous ? mergeThreadStores(incoming, previous, previous.activeId) : incoming,
       )
     })
+  }, [persistConversation])
+
+  // Materialises a freshly minted thread into storage on mount, so a second
+  // tab opening the same empty app joins THIS thread instead of silently
+  // starting its own. Declared after the subscription above on purpose: the
+  // write notifies subscribers, and this panel needs to already be one.
+  React.useEffect(() => {
+    if (!persistConversation) return
+    const store = threadStoreRef.current
+    if (store) materialiseThreadStore(store)
   }, [persistConversation])
 
   // The other half of the same story: a pending question this document is
@@ -1303,16 +1325,6 @@ export default function ChatPanel({
    * catching up, and is a no-op after unmount rather than the thing that
    * makes the write happen.
    */
-  // The panel's own view of the store, readable from a settled promise long
-  // after the render that produced it. Passed to every commit as the base to
-  // fold storage into, so a thread this panel created but has not yet
-  // written (the very first question of a fresh browser) is still known to
-  // the commit rather than being treated as a stranger.
-  const threadStoreRef = React.useRef<ThreadStore | null>(threadStore)
-  React.useEffect(() => {
-    threadStoreRef.current = threadStore
-  }, [threadStore])
-
   const commitMessages = React.useCallback(
     (threadId: string | null, mutate: (messages: ChatMessage[]) => ChatMessage[]) => {
       if (threadId === null) {
@@ -1562,6 +1574,15 @@ export default function ChatPanel({
         )
         settle(answer)
       } catch (error) {
+        // Found live: reloading mid-request makes the browser abort the
+        // fetch, and that rejection lands HERE, before the page tears down.
+        // Treating it as a transport failure was doubly wrong — it claimed
+        // the data was unreachable when the request had already been sent
+        // (and will be completed and billed), and it overwrote the pending
+        // record the next page load needs in order to recognise the
+        // interruption at all. Leaving the record alone is what makes the
+        // reload case recoverable.
+        if (isDocumentUnloading()) return
         // Nielsen #9, help users recognize and recover from errors. Before
         // this pass a failed `/api/ask` (backend down, non-2xx) rejected into
         // a bare `finally`: the spinner vanished and NOTHING appeared, so a

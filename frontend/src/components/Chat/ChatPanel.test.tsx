@@ -1588,7 +1588,9 @@ describe('ChatPanel durable conversation state', () => {
     expect(screen.getByText(/this answer never made it back to you/i)).toBeInTheDocument()
     // Honest about the money, per this project's instrumentation principle:
     // the request very likely ran, so it very likely cost something.
-    expect(screen.getByText(/may already have been charged/i)).toBeInTheDocument()
+    expect(
+      screen.getByText(/may already be counted in the running model-spend total/i),
+    ).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /try again/i }))
 
@@ -1664,5 +1666,60 @@ describe('ChatPanel durable conversation state', () => {
     expect(texts).toContain('Tab one question')
     expect(texts).toContain('Tab two question')
     expect(texts).toContain('Tab one follow-up')
+  })
+
+  /**
+   * Found by driving a real browser, not by reading the code: reloading
+   * mid-request makes the browser abort the fetch, and that rejection is
+   * delivered to the catch block BEFORE the page tears down. Reported as a
+   * transport failure it said something false ("I couldn't reach your data"
+   * — the request had already been sent, and the backend goes on to complete
+   * and bill it) and, worse, it overwrote the pending record that the next
+   * page load needs in order to recognise the interruption at all.
+   */
+  it('does not report a fetch aborted by page teardown as a transport failure', async () => {
+    const user = userEvent.setup()
+    let rejectRequest!: (reason: Error) => void
+    const request = new Promise<AssistantChatMessage>((_, reject) => {
+      rejectRequest = reject
+    })
+
+    const resolveAnswer = vi
+      .fn<(question: string, history: ChatMessage[]) => Promise<AssistantChatMessage>>()
+      .mockReturnValue(request)
+
+    const view = render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+
+    const input = screen.getByRole('textbox', {
+      name: /ask a question about your margin/i,
+    })
+    await user.type(input, 'How did we do last week?{Enter}')
+    expect(screen.getByText(/checking the reconciled numbers/i)).toBeInTheDocument()
+
+    // The browser announces the teardown, then cancels the request.
+    window.dispatchEvent(new Event('beforeunload'))
+    await act(async () => {
+      rejectRequest(new TypeError('Failed to fetch'))
+      await request.catch(() => undefined)
+    })
+
+    // The pending record must survive: it is the only evidence the next load
+    // has that a question was asked and never answered.
+    const stored = persistedMessages()
+    expect(stored[1]).toMatchObject({ kind: 'pending' })
+
+    view.unmount()
+    // The document is alive again (cancelled navigation / bfcache restore),
+    // so later failures are once more real transport failures.
+    window.dispatchEvent(new Event('pageshow'))
+
+    // What the reader sees after the reload actually completes.
+    render(<ChatPanel persistConversation resolveAnswer={resolveAnswer} />)
+    expect(
+      screen.getByText(/this answer never made it back to you/i),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByText(/couldn't reach your data just now/i),
+    ).not.toBeInTheDocument()
   })
 })

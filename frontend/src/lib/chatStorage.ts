@@ -216,7 +216,59 @@ function notifySpend(entries: SpendEntry[]): void {
  */
 const inFlightMessageIds = new Set<string>()
 
+/**
+ * True once this document has started going away.
+ *
+ * Found live rather than by reading the code: reloading with a request in
+ * flight makes the browser abort that request, and the abort rejects the
+ * fetch BEFORE the page tears down — so the caller's catch block ran and
+ * wrote a "couldn't reach your data" transport error over the pending
+ * record. Two things were wrong with that. The copy was false (nothing was
+ * unreachable; the request had already been sent and the backend goes on to
+ * complete and bill it), and it destroyed the pending record that the next
+ * load needs in order to recognise the interruption at all.
+ *
+ * Both `beforeunload` and `pagehide` are needed, and the reason is the whole
+ * point of the flag. Measured in a real browser: on a reload, Chromium
+ * aborts the in-flight fetch and delivers that rejection BEFORE `pagehide`
+ * fires, so a `pagehide`-only flag was still false when the catch block ran
+ * and the wrong error was written anyway. `beforeunload` fires at the START
+ * of the unload sequence and wins that race; `pagehide` stays as the backstop
+ * for the teardowns `beforeunload` does not cover (bfcache eviction, and
+ * browsers that skip it). Neither listener calls `preventDefault`, so this
+ * never produces a "leave site?" prompt.
+ */
+let documentUnloading = false
+let unloadListenerAttached = false
+
+function ensureUnloadListener(): void {
+  if (unloadListenerAttached || typeof window === 'undefined') return
+  unloadListenerAttached = true
+  const markUnloading = () => {
+    documentUnloading = true
+  }
+  window.addEventListener('beforeunload', markUnloading)
+  window.addEventListener('pagehide', markUnloading)
+  // A teardown that was announced and then didn't happen: the reader
+  // cancelled the navigation, or the page came back out of the bfcache. The
+  // document is alive again, so a request that fails from here really is a
+  // transport failure and must be reported as one.
+  window.addEventListener('pageshow', () => {
+    documentUnloading = false
+  })
+}
+
+/**
+ * Whether a rejected request is this document being torn down rather than a
+ * real transport failure. The two owe the reader completely different
+ * things, and only one of them is free to retry.
+ */
+export function isDocumentUnloading(): boolean {
+  return documentUnloading
+}
+
 export function markRequestInFlight(messageId: string): void {
+  ensureUnloadListener()
   inFlightMessageIds.add(messageId)
 }
 
@@ -355,6 +407,28 @@ function readStoredThreadStore(): ThreadStore | null {
     ? stored.activeId
     : threads[0].id
   return { activeId, threads }
+}
+
+/**
+ * Writes a brand-new store so other tabs can find the thread this one just
+ * minted; a no-op once anything is stored.
+ *
+ * Without this, two tabs opening the app with an empty key each mint their
+ * own random thread id and the reader who reloads the first tab lands on the
+ * second tab's thread — nothing destroyed, but a confusing echo of the very
+ * bug this pass fixes. Materialising the first tab's thread means the second
+ * one simply joins it.
+ *
+ * Two tabs opening in the same instant can still both see an empty key and
+ * both write. That race is deliberately left alone: the outcome is two real
+ * threads that merge and are both reachable from "Recent", which is a
+ * cosmetic surprise rather than data loss, and closing it properly would
+ * mean a cross-tab lock this prototype has no business carrying.
+ */
+export function materialiseThreadStore(store: ThreadStore): void {
+  if (readStoredThreadStore()) return
+  writeJSON(THREADS_KEY, store)
+  notifyThreads(store)
 }
 
 function loadThreadStoreFresh(): ThreadStore {
