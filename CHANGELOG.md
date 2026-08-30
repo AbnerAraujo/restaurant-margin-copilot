@@ -12,6 +12,32 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — Evaluation harness re-verified with real credentials, closing the round-4 gap
+
+QA round 4 (below) correctly declined to fabricate a "still holds" verdict on
+the evaluation numbers because its sandboxed environment had no
+`ANTHROPIC_API_KEY`. Re-run here with real credentials, against a freshly
+seeded ephemeral backend (`-eval-no-answer-cache`, isolated Postgres, isolated
+`data/live` — the shared `:8080`/`:5432` dev instances were never touched) and
+`promptfoo eval --no-cache` for all three suites:
+
+- **Accuracy: 15/15** (100%).
+- **Consistency: 13/15** (86.7%) — both misses are the same previously-
+  documented phrasing-sensitivity cases (the duplicate-order dedup question
+  and the LUNCHFIX campaign-profitability question), not a new failure mode.
+- **Refusal: 4/5** (80%) — the one miss is the same previously-documented
+  case (`2024-08-10`, the dataset's deliberately missing day): the model
+  answers with an honest "this isn't a real zero, the day is missing"
+  caveat rather than refusing outright, which a human would call correct
+  behavior even though the grader's stricter "must refuse" rule marks it a
+  fail.
+
+No drift, no regression — these numbers sit inside the same range already
+documented in README.md/docs/prd.md/docs/presentation.html from the prior
+2026-08-30 measurement (accuracy 14-15/15, consistency 13-15/15, refusal
+4-5/5 across repeated runs), so those documents are left as they are rather
+than churned over ordinary run-to-run model variance.
+
 ## 2026-08-30 — QA round 4: error-envelope consistency, a docs-drift repeat, and a genuine memory-hygiene bug
 
 A fourth overnight QA pass, deliberately scoped away from every scenario
