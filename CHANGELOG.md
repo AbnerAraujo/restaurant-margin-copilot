@@ -12,6 +12,50 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-30 — A drifted local dataset now fails loudly, not as a confusing test mismatch
+
+Root cause, stated plainly: `backend/data/live/` is gitignored — every developer
+regenerates it locally via `cmd/gendata` — and it can be silently overwritten by
+the app's own cost-sheet-upload feature, which writes its example template
+(`INV-TEMPLATE-001, Example Produce Co.`) over the real
+`supplier_cost_sheet.csv` on disk. That happened in a real checkout. Against a
+real seeded Postgres built from that drifted checkout, two live-Postgres
+integration tests failed with wrong `input_costs`-derived figures:
+`TestHandlePlatformComparison_DefaultsToRealDataRange` (`internal/httpapi`) and
+`TestGetPeriodTotals_TotalsARealMultiDayPeriodFromOpeningData`
+(`internal/mcptools`). Regenerating fresh via `cmd/gendata` and re-ingesting
+made both pass — the tests were correct all along. The actual defect: nothing
+detected that the local dataset had drifted from the canonical, hand-authored
+one before a DB-backed test ran and produced a failure that looked like a code
+bug.
+
+**The fix is a tripwire, not a framework.** The three shared live-Postgres
+connect helpers each DB-backed test package already had —
+`httpapiConnectOrSkip` (`internal/httpapi`), `connectAndQueries`
+(`internal/mcptools`), `connectOrSkip` (`internal/storage`) — now run one extra
+query the first time a real connection is established: read the margin of the
+hand-authored sentinel day 2024-08-01 and compare it to the canonical value,
+701.90, independently verified in `backend/cmd/gendata/opening/README.md` and
+cross-checked against `internal/reconcile`'s own
+`TestComputeDailyReconciliations_CleanDayMatchesHandComputation`. A mismatch
+fails immediately with an actionable message naming the likely cause (the
+upload feature's example template) and the exact fix (`go run ./cmd/gendata`,
+then `cmd/server -ingest data/live -ingest-promo data/live`) — not a bare
+numeric diff several layers downstream.
+
+**Verified, in an isolated environment (no shared dev Postgres touched):**
+- `go build ./... && go vet ./... && go test ./...` with no `DATABASE_URL` set:
+  unchanged — full suite passes, every DB-backed test skips exactly as before.
+- Fresh ephemeral Postgres, schema migrated, `data/live` regenerated from
+  scratch via `cmd/gendata` and ingested via `cmd/server -ingest data/live
+  -ingest-promo data/live`: full suite passes 100%, including both previously
+  failing tests, with the new tripwire silent (no false positive against
+  correctly-generated data).
+- Deliberately corrupted the sentinel day's margin in that isolated Postgres:
+  all three tripwires fired immediately with the intended message, in
+  `internal/httpapi`, `internal/mcptools`, and `internal/storage`. Restored the
+  correct value; the full suite returned to 100% pass.
+
 ## 2026-08-30 — A named BFF boundary: the API surface becomes data, and the CORS bug class ends
 
 `specs/013-bff-layer/`. Requested as "unify the main backend with the
