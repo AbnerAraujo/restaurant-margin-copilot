@@ -89,14 +89,22 @@ function matchesColumnState(cell: string, state: ColumnState): boolean {
   return value >= min && value <= max
 }
 
-export interface UseColumnFiltersOptions {
+export interface UseColumnFiltersOptions<T = string[]> {
   columns: string[]
-  rows: string[][]
+  rows: T[]
   specs: ColumnFilterSpecs
+  /** How to read column `columnIndex`'s displayed string out of one row.
+   *  Defaults to `row[columnIndex]`, which is exactly right when `rows` is
+   *  the same `string[][]` shape `DataGrid` renders. A caller whose rows are
+   *  richer objects (so it can keep its own cell rendering — a Chip, a
+   *  Tooltip, a colored figure — instead of flattening through `DataGrid`)
+   *  passes its own accessor here; `filteredRows` then comes back as that
+   *  same rich `T[]`, never degraded to strings. */
+  getCell?: (row: T, columnIndex: number) => string
 }
 
-export interface UseColumnFiltersResult {
-  filteredRows: string[][]
+export interface UseColumnFiltersResult<T = string[]> {
+  filteredRows: T[]
   /** True once any column carries an active filter. */
   isFiltered: boolean
   /** Every distinct value on file for a `categorical` column, in first-seen
@@ -118,7 +126,12 @@ export interface UseColumnFiltersResult {
 // about a named column, and it keeps this call symmetric with DataGrid's own
 // `columns`/`rows` props at the call site) but isn't read here — every
 // lookup below is by index into `rows`, never by column name.
-export function useColumnFilters({ rows, specs }: UseColumnFiltersOptions): UseColumnFiltersResult {
+export function useColumnFilters<T = string[]>({
+  rows,
+  specs,
+  getCell,
+}: UseColumnFiltersOptions<T>): UseColumnFiltersResult<T> {
+  const cell = getCell ?? ((row: T, columnIndex: number) => (row as unknown as string[])[columnIndex] ?? '')
   const [state, setState] = useState<Record<number, ColumnState>>({})
 
   function stateFor(columnIndex: number): ColumnState {
@@ -140,11 +153,12 @@ export function useColumnFilters({ rows, specs }: UseColumnFiltersOptions): UseC
     return (columnIndex: number): string[] => {
       const seen: string[] = []
       for (const row of rows) {
-        const value = row[columnIndex] ?? ''
+        const value = cell(row, columnIndex) ?? ''
         if (!seen.includes(value)) seen.push(value)
       }
       return seen
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows])
 
   const activeColumns = Object.keys(specs).map(Number)
@@ -152,7 +166,7 @@ export function useColumnFilters({ rows, specs }: UseColumnFiltersOptions): UseC
   const filteredRows = useMemo(() => {
     if (activeColumns.length === 0) return rows
     return rows.filter((row) =>
-      activeColumns.every((columnIndex) => matchesColumnState(row[columnIndex] ?? '', stateFor(columnIndex))),
+      activeColumns.every((columnIndex) => matchesColumnState(cell(row, columnIndex) ?? '', stateFor(columnIndex))),
     )
     // `specs` is expected to be a fresh object per render (callers build it
     // inline); `state` and `rows` are what actually need to trigger a
