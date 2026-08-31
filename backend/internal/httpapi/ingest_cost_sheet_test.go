@@ -28,6 +28,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -353,9 +354,12 @@ func withReadyLiveDataDir(t *testing.T) {
 // still holding commitMu. While A is paused, request B is started
 // concurrently and must be unable to make ANY progress — specifically, it
 // must not have overwritten the live file yet. Only once A is allowed to
-// finish (and release the lock) does B get to run at all, so the file on
-// disk ends the test as B's content, uncontested, and A's own pipeline run
-// is proven to have seen only its own file.
+// finish (and release the lock) does B get to run at all, so A's own
+// pipeline run is proven to have seen only its own file, uncontested — and
+// the file on disk ends the test holding BOTH commits' rows, merged rather
+// than one wholesale-replacing the other (mergeCostSheetUpload, added
+// 2026-08-31 to fix a real bug: a single realistic invoice upload used to
+// zero out every OTHER previously-committed day's costs).
 func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
 	conn, q := httpapiConnectOrSkip(t)
 	withReadyLiveDataDir(t)
@@ -471,9 +475,102 @@ func TestHandleCommitCostSheet_SerializesConcurrentCommits(t *testing.T) {
 	require.Equal(t, 1, respA.RowsCommitted)
 	require.Equal(t, 2, respB.RowsCommitted)
 
+	// A and B cover different calendar dates (1999-01-05 vs 1999-01-06/07),
+	// so a correct merge keeps both — this is no longer "whichever commit
+	// ran last wins" (see mergeCostSheetUpload's own doc comment for why a
+	// wholesale replace was the actual live bug this project shipped and
+	// fixed on 2026-08-31). The concurrency property this test exists to
+	// prove is unchanged: B could not observe or overwrite A's row while A
+	// was still mid-commit (checked above) — the two rows coexisting here is
+	// the CORRECT outcome of that serialization, not evidence it failed.
 	finalOnDisk, err := os.ReadFile(destPath)
 	require.NoError(t, err)
-	require.Equal(t, fileB, string(finalOnDisk), "B ran strictly after A released commitMu, so B's file must be what's left on disk")
+	wantMerged := "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-RACE-A,1999-01-05,Race Supplier A,produce,10.00,file A\n" +
+		"INV-RACE-B1,1999-01-06,Race Supplier B,produce,20.00,file B row 1\n" +
+		"INV-RACE-B2,1999-01-07,Race Supplier B,produce,30.00,file B row 2\n"
+	require.Equal(t, wantMerged, string(finalOnDisk), "A's row and B's rows are on different dates, so a correct merge keeps all three, sorted by date")
+}
+
+// TestHandleCommitCostSheet_MergesByDateRatherThanReplacingEverything is the
+// direct regression test for the bug itself, reproduced live on 2026-08-31:
+// a single realistic cost-sheet upload — one invoice, one day — used to
+// REPLACE the entire committed cost history rather than update just the
+// day(s) it covers, taking a 759-day, $1,078,340.64 canonical dataset to
+// $2,361,921.90 by zeroing every other day's input_costs. Proves three
+// things a fix here must get right: (1) uploading day 1 alone persists it,
+// (2) uploading day 2 afterward does not erase day 1, (3) re-uploading day 1
+// with DIFFERENT content replaces only day 1's own rows, never touching day
+// 2's.
+func TestHandleCommitCostSheet_MergesByDateRatherThanReplacingEverything(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+	withReadyLiveDataDir(t)
+	t.Cleanup(func() {
+		_, err := conn.Exec(context.Background(),
+			"DELETE FROM daily_reconciliation WHERE date IN ($1, $2)",
+			"1999-02-10", "1999-02-11")
+		if err != nil {
+			t.Logf("cleanup: failed to delete merge-test reconciliation rows: %v", err)
+		}
+	})
+
+	handler := HandleCommitCostSheet(nil, q, nil)
+	destPath := filepath.Join(livedata.Dir, liveCostSheetFilename)
+	commit := func(csv string) CommitCostSheetResponse {
+		t.Helper()
+		req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "upload.csv", csv)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, "commit: %s", rec.Body.String())
+		var resp CommitCostSheetResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		return resp
+	}
+
+	const day1Original = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-MERGE-1,1999-02-10,Supplier One,produce,50.00,day 1 original\n"
+	resp1 := commit(day1Original)
+	require.Equal(t, 1, resp1.RowsCommitted)
+	onDiskAfterDay1, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	require.Equal(t, day1Original, string(onDiskAfterDay1), "the very first commit has nothing to merge against")
+
+	const day2 = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-MERGE-2,1999-02-11,Supplier Two,protein,75.00,day 2\n"
+	resp2 := commit(day2)
+	// If day 2's commit had wholesale-replaced the file instead of merging,
+	// re-reconciling the WHOLE dataset from a file now missing day 1's real
+	// cost would move total margin by far more than day 2's own $75 — this
+	// is the same class of check that caught the live bug (a $1.28M swing
+	// from one missing invoice), just at test scale.
+	beforeMargin, err := strconv.ParseFloat(*resp2.Before.Margin, 64)
+	require.NoError(t, err)
+	afterMargin, err := strconv.ParseFloat(*resp2.After.Margin, 64)
+	require.NoError(t, err)
+	require.InDelta(t, -75.0, afterMargin-beforeMargin, 0.001,
+		"day 2's commit must change total margin by exactly day 2's own $75 cost, proving day 1's cost was not silently dropped")
+	onDiskAfterDay2, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	require.Contains(t, string(onDiskAfterDay2), "INV-MERGE-1", "day 2's commit must not erase day 1's row")
+	require.Contains(t, string(onDiskAfterDay2), "INV-MERGE-2")
+
+	const day1Revised = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-MERGE-1-REVISED,1999-02-10,Supplier One,produce,999.99,day 1 revised\n"
+	resp3 := commit(day1Revised)
+	beforeMargin3, err := strconv.ParseFloat(*resp3.Before.Margin, 64)
+	require.NoError(t, err)
+	afterMargin3, err := strconv.ParseFloat(*resp3.After.Margin, 64)
+	require.NoError(t, err)
+	// Day 1's cost moved from $50.00 to $999.99 (a $949.99 increase), and
+	// day 2 must be untouched — so the ONLY change in total margin is that
+	// one delta, not day 2's cost vanishing on top of it.
+	require.InDelta(t, -949.99, afterMargin3-beforeMargin3, 0.001,
+		"re-uploading day 1 must change total margin by exactly day 1's own cost delta, proving day 2's cost survived untouched")
+	finalOnDisk2, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	require.NotContains(t, string(finalOnDisk2), "INV-MERGE-1,", "re-uploading day 1 must replace day 1's OWN prior row, not add to it")
+	require.Contains(t, string(finalOnDisk2), "INV-MERGE-1-REVISED", "day 1's new content must be present")
+	require.Contains(t, string(finalOnDisk2), "INV-MERGE-2", "day 2, untouched by this commit, must still be present")
 }
 
 // --- The upload-triggers-sync composition (2026-08-30) ----------------------
