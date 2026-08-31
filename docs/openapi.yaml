@@ -812,8 +812,11 @@ paths:
             totals (`query_failed`), seeding the live-data directory
             (`live_data_seed_failed`), writing the uploaded file
             (`write_failed`), clearing the answer cache
-            (`cache_clear_failed`), or the ingestion pipeline itself failing
-            after the file already passed validation (`pipeline_failed`).
+            (`cache_clear_failed`), the ingestion pipeline itself failing
+            after the file already passed validation (`pipeline_failed`), or
+            `sync_connectors` requested on a server started without the
+            platform connectors wired up (`connectors_unavailable` — re-send
+            without `sync_connectors` to commit the cost sheet on its own).
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
