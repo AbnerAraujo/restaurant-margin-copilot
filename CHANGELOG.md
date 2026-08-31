@@ -12,6 +12,63 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-31 — A real cost-sheet upload took the live margin from $1,078,340.64 to $2,357,601.20
+
+Reported live: "I did an upload recently, maybe that's the bug." It was.
+Reproduced immediately and exactly: one realistic single-invoice cost-sheet
+upload against the live instance moved total margin from a correct
+$1,078,340.64 (759 days) to $2,361,921.90 in the reproduction, matching the
+live incident's $2,357,601.20 almost exactly. Root cause confirmed via
+`log_statement = mod` on the live Postgres and a direct read of
+`internal/httpapi/ingest_cost_sheet.go`: `HandleCommitCostSheet` wrote the
+uploaded bytes to `supplier_cost_sheet.csv` **verbatim** — a wholesale
+replace, not a merge — and the full ingestion pipeline re-reads that one
+file for every persisted day on every commit. One new invoice, uploaded
+exactly as the UI's own "Replace cost sheet" button and copy describe,
+silently zeroed `input_costs` on the other 758 days.
+
+This was not a hidden defect: `specs/007-cost-sheet-upload/spec.md`'s
+FR-008 explicitly specified a wholesale replace, and the commit button is
+labeled accordingly. It was, however, a real design flaw once the same file
+plays two roles at once — "the owner's current cost sheet" (replace makes
+sense) and "the persisted multi-year historical dataset every other number
+is built on" (replace destroys it) — and a real financial-integrity risk
+for any real restaurant with more than one day of cost history.
+
+**Fix:** `mergeCostSheetUpload` (new) reads whatever cost sheet is already
+committed, removes only the rows whose `invoice_date` is ALSO present in
+the new upload (an exact-date match, not a range — a file covering the 5th
+and the 20th must not blank out the 6th through 19th), appends the new
+upload's rows, and re-serializes via `encoding/csv` so a notes field
+containing a comma or quote round-trips correctly. `HandleCommitCostSheet`
+now writes this merged content instead of the raw upload. FR-008 amended
+to require date-scoped merge, with the full incident recorded inline for
+anyone who finds the old wording in history.
+
+**Regression coverage:** a new
+`TestHandleCommitCostSheet_MergesByDateRatherThanReplacingEverything`
+proves, against a live Postgres, that (1) a first commit persists cleanly,
+(2) a second commit for a different date does not erase the first, with
+total margin moving by exactly the second commit's own cost delta — the
+same live-margin-swing check that caught the real bug, at test scale — and
+(3) re-uploading the FIRST date with revised content replaces only that
+date's own rows while the second date's cost survives untouched.
+`TestHandleCommitCostSheet_SerializesConcurrentCommits` (the existing
+concurrency proof) needed its own final assertion updated: two commits for
+different dates now correctly coexist in the merged file, which used to
+read as "which commit won," not "did both survive."
+
+Verified independently in an isolated worktree + ephemeral Postgres (not
+the shared instance): full suite green (18/18 packages), `-race` clean on
+`internal/httpapi`, and the exact live-margin math re-confirmed
+($1,078,340.64 → $1,080,069.77 on a 2-day, $333.33-covering upload — a
+$1,729.13 swing exactly matching the removed old costs minus the new
+ones). The live instance itself was restored to the canonical figure by
+re-running `cmd/gendata` + `-ingest` immediately after the incident was
+found, independent of this code fix.
+
+---
+
 ## 2026-08-30 — Release-gate pass: a data-corrupting test, and five stale doc claims
 
 Ahead of a release/interview-ready checkpoint, dispatched a fresh

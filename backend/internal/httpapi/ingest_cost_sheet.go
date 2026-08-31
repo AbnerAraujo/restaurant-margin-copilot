@@ -38,12 +38,15 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/csv"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -187,6 +190,98 @@ func costSheetDateRange(records []ingest.CostInvoiceRecord) (from, to time.Time)
 		}
 	}
 	return from, to
+}
+
+// mergeCostSheetUpload combines a newly-uploaded cost sheet with whatever is
+// already committed on disk, so that uploading one day's (or one month's)
+// invoices updates ONLY the calendar dates the new file actually covers and
+// leaves every other date's previously-committed costs untouched.
+//
+// Why this exists: before it did, HandleCommitCostSheet wrote the uploaded
+// bytes to destPath VERBATIM, which is a wholesale replace — the file the
+// pipeline re-reads for every persisted day, not just the ones the owner
+// just invoiced. A single real invoice, uploaded exactly as intended,
+// silently zeroed input_costs for every other day ever committed: reproduced
+// live on 2026-08-31, one $150 test invoice for one date took a 759-day,
+// $1,078,340.64 canonical dataset to $2,361,921.90. The commit button's own
+// copy ("Replace cost sheet") is honest about what the OLD code did — it was
+// never meant to mean "replace the entire multi-year history."
+//
+// The merge key is the exact calendar date, not the upload's overall
+// from/to range: a file covering non-contiguous dates (e.g. one invoice on
+// the 5th and another on the 20th) must not also blank out the untouched
+// days in between, which a range-based replace would.
+//
+// existingPath may not exist yet (a server's very first commit) — that is
+// not an error, it just means there is nothing to merge against.
+func mergeCostSheetUpload(existingPath string, newRecords []ingest.CostInvoiceRecord, newContent []byte) ([]byte, error) {
+	existingBytes, err := os.ReadFile(existingPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return newContent, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("reading existing cost sheet to merge against: %w", err)
+	}
+
+	existingRecords, err := ingest.ParseCostSheet(bytes.NewReader(existingBytes), liveCostSheetFilename)
+	if err != nil {
+		// The file on disk is supposed to be exactly what a prior commit
+		// wrote — if it no longer parses, merging against it would risk
+		// silently dropping rows a human can't see. Refuse rather than guess.
+		return nil, fmt.Errorf("existing cost sheet on file no longer parses, cannot safely merge: %w", err)
+	}
+
+	replacedDates := make(map[string]struct{}, len(newRecords))
+	for _, rec := range newRecords {
+		replacedDates[rec.InvoiceDate.Format("2006-01-02")] = struct{}{}
+	}
+
+	merged := make([]ingest.CostInvoiceRecord, 0, len(existingRecords)+len(newRecords))
+	for _, rec := range existingRecords {
+		if _, replaced := replacedDates[rec.InvoiceDate.Format("2006-01-02")]; replaced {
+			continue
+		}
+		merged = append(merged, rec)
+	}
+	merged = append(merged, newRecords...)
+	sort.Slice(merged, func(i, j int) bool {
+		if !merged[i].InvoiceDate.Equal(merged[j].InvoiceDate) {
+			return merged[i].InvoiceDate.Before(merged[j].InvoiceDate)
+		}
+		return merged[i].InvoiceID < merged[j].InvoiceID
+	})
+
+	return encodeCostSheetCSV(merged)
+}
+
+// encodeCostSheetCSV renders records back into the same column shape
+// ingest.ParseCostSheet reads (invoice_id,invoice_date,supplier,category,
+// amount,notes), using encoding/csv so a notes field containing a comma or
+// quote is escaped correctly rather than hand-formatted.
+func encodeCostSheetCSV(records []ingest.CostInvoiceRecord) ([]byte, error) {
+	var buf bytes.Buffer
+	cw := csv.NewWriter(&buf)
+	if err := cw.Write([]string{"invoice_id", "invoice_date", "supplier", "category", "amount", "notes"}); err != nil {
+		return nil, err
+	}
+	for _, rec := range records {
+		row := []string{
+			rec.InvoiceID,
+			rec.InvoiceDate.Format("2006-01-02"),
+			rec.Supplier,
+			rec.Category,
+			money.FormatCents(rec.AmountCents),
+			rec.Notes,
+		}
+		if err := cw.Write(row); err != nil {
+			return nil, err
+		}
+	}
+	cw.Flush()
+	if err := cw.Error(); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
 
 // wantsConnectorSync reads the commit request's opt-in flag.
@@ -404,7 +499,12 @@ func HandleCommitCostSheet(proxy *platformconnector.Proxy, store *storage.Querie
 		}
 
 		destPath := filepath.Join(livedata.Dir, liveCostSheetFilename)
-		if err := os.WriteFile(destPath, content, 0o644); err != nil {
+		merged, err := mergeCostSheetUpload(destPath, records, content)
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "merge_failed", fmt.Sprintf("merging %s with the existing cost sheet: %v", liveCostSheetFilename, err))
+			return
+		}
+		if err := os.WriteFile(destPath, merged, 0o644); err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "write_failed", fmt.Sprintf("writing %s: %v", liveCostSheetFilename, err))
 			return
 		}
