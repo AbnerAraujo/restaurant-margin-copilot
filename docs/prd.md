@@ -55,12 +55,13 @@ grading regex rejecting a correct answer (C3, R1), both deliberately left
 unfixed: tuning a grader after watching it fail is how a number stops
 meaning anything.
 
-Cumulative real API spend across the whole build, both ledgers, on the same
-date: **$12.6855** across **1,006** logged model calls ($12.6387 over 999
-`question_interaction` rows, $0.0468 over 7 `business_insight_interaction`
-rows). Note the unit — a row is one *model call*, and an answered question
-writes two (gate, then explain), so the KR4 figure above is measured over a
-known question count rather than by averaging the ledger.
+Cumulative real API spend across the whole build, all three ledgers, on the
+same date: **$14.87** across **1,166** logged model calls ($14.7741 over
+1,129 `question_interaction` rows, $0.0401 over 29 `paraphrase_match` rows,
+$0.0558 over 8 `business_insight_interaction` rows). Note the unit — a row
+is one *model call*, and an answered question writes two (gate, then
+explain), so the KR4 figure above is measured over a known question count
+rather than by averaging the ledger.
 
 ## 2. Users & Use Cases
 
