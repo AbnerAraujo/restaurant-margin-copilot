@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Popover as PopoverPrimitive } from 'radix-ui'
 import { Filter } from 'lucide-react'
 
@@ -161,8 +161,19 @@ function CategoricalPanel({
   onToggle,
   onClear,
 }: Extract<ColumnFilterButtonProps, { type: 'categorical' }>) {
+  // "Clear filter" disables itself the instant selected.size hits 0 (see its
+  // `disabled` prop below) -- found live: a button that goes disabled while
+  // it still holds focus can't hold focus any longer, and the browser drops
+  // it all the way to <body>, silently losing the keyboard user's place in
+  // the panel. Moving focus onto this panel's own root (a stable element
+  // that never disables) keeps it inside the popover instead.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       {options.length === 0 ? (
         <p className="text-xs text-muted-foreground">No values to filter by yet.</p>
@@ -187,7 +198,7 @@ function CategoricalPanel({
           })}
         </ul>
       )}
-      <ClearLink onClear={onClear} disabled={selected.size === 0} />
+      <ClearLink onClear={handleClear} disabled={selected.size === 0} />
     </div>
   )
 }
@@ -211,8 +222,17 @@ function TextPanel({
     onApply(draft)
   }
 
+  // See CategoricalPanel's identical comment: "Clear filter" disables itself
+  // the moment the query empties, and a focused element that goes disabled
+  // drops focus to <body> rather than staying inside the popover.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
+
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       <div className="flex items-center gap-1.5">
         <Input
@@ -233,7 +253,7 @@ function TextPanel({
           Apply
         </Button>
       </div>
-      <ClearLink onClear={onClear} disabled={query.trim() === ''} />
+      <ClearLink onClear={handleClear} disabled={query.trim() === ''} />
     </div>
   )
 }
@@ -271,8 +291,17 @@ function NumericPanel({
     }
   }
 
+  // See CategoricalPanel's identical comment: "Clear filter" disables itself
+  // the moment both bounds empty, and a focused element that goes disabled
+  // drops focus to <body> rather than staying inside the popover.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
+
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       <div className="flex items-center gap-1.5">
         <Input
@@ -303,7 +332,7 @@ function NumericPanel({
       <Button type="button" size="sm" className="mt-2 w-full" onClick={apply}>
         Apply
       </Button>
-      <ClearLink onClear={onClear} disabled={min.trim() === '' && max.trim() === ''} />
+      <ClearLink onClear={handleClear} disabled={min.trim() === '' && max.trim() === ''} />
     </div>
   )
 }
