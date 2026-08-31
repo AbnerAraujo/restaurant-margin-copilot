@@ -46,9 +46,9 @@ Checked honestly against what's actually true right now, not what's aspirational
 
 All four original blockers are resolved. Ready to proceed through US2/US3/US4/Integration/Polish now, with one live operational practice carried forward: bound real Anthropic API calls tightly (smoke-test first, full harness as one monitored run) and log every call's real, measured cost.
 
-## DOR: Roadmap expansion (specs 002–005)
+## DOR: Roadmap expansion (specs 002–005, 007, 009)
 
-Four roadmap items named in `docs/product-strategy.md` moved from "named, not built" to real specs, each checked against readiness before implementation:
+Six roadmap items named in `docs/product-strategy.md` moved from "named, not built" to real specs, each checked against readiness before implementation:
 
 - **002 — Badge expansion (Growth/Engagement/Campaign-Creation)**: ✅ Ready. Spec, plan, and data model additions written (`specs/002-badge-expansion/`); no external dependency; Campaign-Creation deliberately reframed (see spec's Background) to what's actually buildable without a real Prosus/ToqanClaw API, confirmed with the person requesting this build before writing the spec — not assumed unilaterally.
 - **003 — Cross-platform economics comparator**: ✅ Ready. Uses only already-ingested data (`specs/003-platform-comparator/plan.md` confirms both platforms' real, distinct commission rates already exist in the ingested data); no new data engineering needed, unlike the original 5-products comparison's assessment of this idea.

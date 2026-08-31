@@ -178,11 +178,16 @@ etc.). Verified with a real grep for SQL keywords across the package:
 ```
 $ grep -rniE "SELECT|INSERT INTO|UPDATE |DELETE FROM" backend/internal/mcptools/*.go
 reconciliation_tools_test.go:50:  _, err := conn.Exec(context.Background(), "DELETE FROM daily_reconciliation WHERE date = $1", date)
+reconciliation_tools_test.go:98:  err := conn.QueryRow(context.Background(), "SELECT margin::text FROM daily_reconciliation WHERE date = $1", sentinelDate).Scan(&gotMargin)
 ```
 
-One hit, in `reconciliation_tools_test.go` — a `DATABASE_URL`-gated
-integration test's own cleanup step (deleting a sentinel row it wrote),
-not the tool logic itself. Zero raw SQL anywhere in the eight tools, their
+Two hits, both in `reconciliation_tools_test.go` and both `DATABASE_URL`-gated
+integration-test scaffolding, not the tool logic itself: the original
+cleanup step (deleting a sentinel row it wrote), plus `assertCanonicalDatasetFingerprint`
+— the dataset-drift sentinel added 2026-08-30, which reads the hand-authored
+sentinel day's margin once per live-Postgres connection and fails loudly if
+it doesn't match the canonical value, catching a locally-drifted `data/live`
+before it produces a confusing downstream test failure. Zero raw SQL anywhere in the eight tools, their
 handlers, `campaign_match.go`, or `limits.go` — `period_tools.go` and
 `day_of_month_pattern_tools.go` included,
 confirmed by the same grep (it reaches Postgres only through
@@ -346,7 +351,7 @@ one pre-existing ESLint error in `CompositionPieChart.tsx` was left
 untouched rather than folded in and hidden. Screenshots at 1512×982 for
 all 5 routes are checked into `docs/screenshots/{before,after}/`.
 
-### `make-slide` — the presentation (22 slides at conversion, 26 today)
+### `make-slide` — the presentation (22 slides at conversion, 25 today)
 
 `docs/plan.md`'s original presentation spec (line 88) called for an "HTML,
 landing-page style" format, explicitly "not slides/PPT," and named
