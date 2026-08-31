@@ -5,12 +5,178 @@ spirit of [Keep a Changelog](https://keepachangelog.com/), adapted for how this
 project actually shipped: a single continuous take-home build across two real
 dates, not versioned releases. Entries are grouped by date and then by
 milestone, reverse-chronological. Every entry below is derived from this
-repo's own `git log` (2026-08-27 through 2026-08-30) — nothing
+repo's own `git log` (2026-08-27 through 2026-08-31) — nothing
 here is invented, and honest bugs/regressions are named, not smoothed over,
 matching this project's own stated documentation discipline (Constitution
 Principle V: report what happened, including failures).
 
 ---
+
+## 2026-08-31 — A full-day adversarial pass: four independent reviewers, thirteen fixes, one CRITICAL
+
+With the interview a day out, the brief for this pass was unqualified: find
+every real bug, front to back — backend correctness, data integrity, model
+refusal discipline, frontend UI/UX/CSS/accessibility — and fix each one as
+found rather than batching a report for later. Four independent reviewers
+ran in parallel, each against its own isolated Postgres/backend/frontend
+stack (never the shared dev database or the live app), each briefed only
+on its own attack surface so findings wouldn't cross-contaminate: a
+data-integrity/cost-sheet-merge review, a model-refusal-discipline review
+(~55 adversarial questions against `/api/ask`), a frontend UI/UX/CSS review
+(Playwright, 80 page loads across 10 routes × 4 viewports × light/dark),
+and a backend Go-correctness review. Every finding below was independently
+re-verified — reproduced, root-caused, and re-tested after the fix — before
+being accepted; several findings from the same reviewers were investigated
+and deliberately left unchanged, and are named as such rather than silently
+dropped, matching Constitution Principle V.
+
+**Backend — money and data integrity:**
+
+- **Paraphrase-cache wrong-period matches** (`internal/httpapi/ask.go`,
+  `internal/ambiguity/daterange.go`): the answer-cache's paraphrase-match
+  classifier could serve a cached answer for a different date range than
+  the one asked, and a clarification/follow-up reply could loop back
+  through the same cache instead of reaching the model. Fixed with a new
+  deterministic `ExplicitDatesConflict` guardrail (interval overlap, not
+  equality — so "August 2026" and "August 1, 2026" are correctly seen as
+  compatible) and by skipping the paraphrase check entirely on a
+  clarification reply or an answer follow-up.
+- **Connector refund double-subtraction (most financially severe finding,
+  $1,138.24 understated over a 31-day sample)** (`internal/platformconnector/
+  {ifood,jet}_mock.go`): the simulated iFood/JET connectors mutated a
+  refunded order's single record in place instead of emitting the two-row
+  convention (`backend/cmd/gendata/opening/README.md`) the rest of the
+  pipeline assumes — one "completed" row and one separate "refunded"
+  reversal row. `internal/reconcile` then read the mutated single row as
+  BOTH the original sale and the refund, subtracting the refund twice.
+  Both adapters now emit the correct two-row shape.
+- **Cost-sheet upload could delete an unrelated invoice for the same day**
+  (`internal/httpapi/ingest_cost_sheet.go`): the upload merge (already
+  fixed earlier this week to merge by calendar date instead of wholesale
+  replacing) still let one new invoice silently delete every OTHER
+  invoice dated the same day. Re-keyed to `invoice_id`, with new
+  validation refusing a blank or duplicate invoice ID within one upload
+  — which also fixes "a corrected invoice under the same ID"
+  double-counting as a side effect.
+- **A refund with no matching completed order was silently accepted**
+  (`internal/reconcile/reconcile.go`): added `orphan_refund` as a new
+  discrepancy flag, defense-in-depth alongside the connector fix above —
+  any future source that emits a lone refund row now gets caught and
+  disclosed rather than netting silently into the day's margin.
+- **A correct follow-up restating the prior answer's own figure could be
+  refused** (`internal/answerverify/answerverify.go`,
+  `internal/explain/explain.go`): `Explain` now threads the previous
+  turn's served answer text into the verification pass, and
+  `answerverify`'s `collectFromJSON` gained a `collectFromText` fallback
+  for non-JSON sources — it previously assumed every "source" was
+  tool-result JSON and silently contributed nothing for a plain sentence.
+- **Cost-sheet writes were not atomic, and a real DB error was
+  indistinguishable from "no data yet"** (`internal/httpapi/
+  ingest_cost_sheet.go`, `internal/storage/reconciliation_period.go`): the
+  commit handler now writes via temp-file-then-rename, and
+  `loadMarginSnapshot` now propagates a genuine query failure as an error
+  instead of collapsing it into `HasData: false` — a false "you have no
+  prior history" statement on the one endpoint that changes financial
+  numbers.
+- **Money formatting inconsistency** (`internal/httpapi/visualization.go`):
+  `signedMoney` now adds thousands separators on both its positive and
+  negative branches.
+- **A documented, not code-fixed, residual risk**
+  (`internal/platformconnector/dedup.go`): one false-positive path in the
+  cross-source dedup rule (a lone absent true counterpart merging a wrong
+  candidate) is understood, has no available-data fix, and is now
+  disclosed in the file's own doc comment rather than left implicit.
+- **CRITICAL — a full `-ingest` re-run never deleted stale
+  `daily_reconciliation` rows** (`internal/storage/reconciliation.go`,
+  new `DeleteDailyReconciliationsExcept` query, `internal/pipeline/
+  pipeline.go`): `UpsertDailyReconciliation` has always been a pure
+  upsert. A date that dropped out of the source set — a corrected
+  typo'd date, a row moved to the day it actually belongs to — stayed
+  behind forever as an orphaned row, still counted by
+  `GetDataDateRange`'s bare `MIN(date)`/`MAX(date)`, which is resolved
+  once at process start and handed to the ambiguity gate and the
+  explain prompt as the real bounds of "the data." One stale row could
+  permanently and silently widen or shift what "today"/"this week"
+  resolves against, with no error and no visible symptom. Every full
+  ingest run now prunes to exactly the day-set it just recomputed,
+  before persisting. Verified by hand against a disposable, throwaway
+  Postgres container (never the shared dev database, since this is the
+  one query in the codebase that can delete arbitrary rows across the
+  whole table): ingested the opening dataset, injected a stale
+  2099-01-01 row to reproduce the corrupted `MAX(date)`, re-ran ingest,
+  confirmed the row was pruned and the range corrected.
+- **`answerverify` missed money spelled out in words, and "percentage
+  points"** (`internal/answerverify/answerverify.go`): a narration
+  stating "375 dollars" or "26 cents" (no currency symbol, and for "26"
+  no decimal point either) was previously extracted as NOTHING — not a
+  false refusal, a silent gap in the safety net that exists specifically
+  to catch a wrong figure. Fixed with dedicated word-denominated
+  patterns, including correct cents-to-hundredths unit conversion
+  ("26 cents" is $0.26, not $26.00). `percentInAnswer` now also
+  recognizes "percentage point(s)", which "percent\b" alone can never
+  match. A related finding — a bare non-money two-decimal number like a
+  raw ratio being wrongly checked as currency — was investigated and
+  left unchanged: the realistic case in this product (a promotion ROI
+  ratio narrated without its usual "$") is already covered by the
+  existing JSON-number and one-step-quotient admission logic, and the
+  named counter-example ("12.00 covers/hour") is not a metric this
+  product computes.
+
+**Frontend — accessibility and layout, found live via Playwright:**
+
+- **Column-filter buttons sat off-screen on narrow viewports with no
+  scroll hint** (`frontend/src/lib/useHorizontalScrollFade.ts`, new
+  shared hook, applied to 7 table locations): extracted from
+  `MobileNavBar`'s existing scroll-fade affordance and reused across
+  `HomePage`, `DataGrid` (propagating to every `DataGrid` consumer),
+  and every chart's "view as table" fallback.
+- **Four buttons under WCAG 2.2's 24×24px minimum target size**
+  (`column-filter.tsx`, `stat.tsx`, `ChatPanel.tsx`, `HomePage.tsx`):
+  grown from `size-5`/unsized to `size-6`.
+- **The fullscreen toggle sat on top of the mobile nav bar**
+  (`FullscreenToggle.tsx`): fixed at `top-4` on every viewport, it
+  intercepted clicks on `MobileNavBar`'s horizontally-scrolling pills
+  below `lg`. Dropped to `top-14` below `lg`.
+- **The "Model spend" cost pill covered mid-scroll content on mobile**
+  (`CostPanel.tsx`): at 375px the collapsed pill's full label + figure
+  spanned ~46% of the screen width, sitting over other controls at most
+  sampled scroll positions on 8 of 9 routes. The visible "Model spend"
+  label now hides below `sm`, leaving just the figure; the accessible
+  name stays complete at every width via `aria-label`. Verified: the
+  mobile footprint drops to 25% of screen width.
+- **Filtering a table to zero rows unmounted its own header, including
+  every OTHER column's filter trigger** (`DataGrid.tsx`): the empty
+  state now renders as a single row inside the existing `<table>`
+  instead of replacing the whole table, so the header — and the filter
+  the owner actually needs to loosen — survives.
+- **"Clear filter" dropped keyboard focus to `<body>`**
+  (`column-filter.tsx`): the link disables itself the instant the
+  filter it clears becomes empty, and a focused element that goes
+  disabled can't hold focus. Each filter panel now has its own
+  focusable root, and focus moves there synchronously in the same click
+  handler, before the disabled state ever renders.
+
+**Not fixed, and named rather than dropped** (lower severity, higher risk
+relative to remaining time, or genuinely out of this product's scope):
+cost-sheet upload's slash-format date ambiguity on a genuinely ambiguous
+DD/MM-vs-MM/DD input; `encodeCostSheetCSV`'s round-trip dropping
+non-canonical columns from historical rows on a merge; the remaining race
+in a true concurrent double-submit of the *same* invoice ID (the
+InvoiceID re-key above already closes the more common overlapping-date
+case); two narrower model-refusal sub-cases (whole-dollar rounding
+calibration, an anchoring confirmation-check) and one under-specified
+clarifying-question case, all of which touch live prompt-following
+behavior rather than deterministic code, too close to the interview to
+risk an unmeasured regression; and one non-reproducible cache-serving
+oddity seen once during live testing, most likely a stale entry from
+another process sharing the same backend.
+
+Every fix above shipped with its own test coverage and was independently
+re-verified — against a live disposable Postgres for the storage fix,
+against an isolated frontend build via Playwright DOM measurement for
+every accessibility/layout fix, and via `go test ./...` / `npx vitest run`
+(all packages, 51 files / 638 tests) for everything else — before being
+folded into this pass.
 
 ## 2026-08-31 — Column-header filters extended to Home, Close, Promotions, Platforms
 
