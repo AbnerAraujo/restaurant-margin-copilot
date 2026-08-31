@@ -349,7 +349,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 /* cost visuals */
 .costwrap{width:100%;max-width:900px;margin-top:8px;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 24px;text-align:left}
 .minibars{display:flex;flex-direction:column;gap:8px;margin-top:0}
-.mbrow{display:grid;grid-template-columns:100px 1fr 150px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--text-secondary)}
+.mbrow{display:grid;grid-template-columns:120px 1fr 230px;gap:10px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--text-secondary)}
 .mbtrack{height:14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;overflow:hidden}
 .mbfill{height:100%;background:var(--accent);border-radius:3px 0 0 3px}
 .mbv{color:var(--text-primary);white-space:nowrap}
@@ -453,8 +453,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <h2 class="a lg">Six chapters, all with receipts</h2>
   <div class="toc">
     <div class="a toc-item"><div class="toc-n">01</div><div><div class="toc-t">Strategy</div><div class="toc-s">Problem &middot; vision &middot; five products scored &middot; KRs &middot; hypotheses</div></div></div>
-    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo &middot; connector variance &middot; inline advice</div></div></div>
-    <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters &middot; the BFF layer</div></div></div>
+    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo &middot; inline advice</div></div></div>
+    <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters</div></div></div>
     <div class="a toc-item"><div class="toc-n">04</div><div><div class="toc-t">Evidence</div><div class="toc-s">Evaluation harness &middot; token discipline</div></div></div>
     <div class="a toc-item"><div class="toc-n">05</div><div><div class="toc-t">Rigor</div><div class="toc-s">DoR &middot; PRD &middot; RFC &middot; user stories &middot; what's left</div></div></div>
     <div class="a toc-item"><div class="toc-n">06</div><div><div class="toc-t">The build</div><div class="toc-s">SDD pipeline &middot; the real mistakes log</div></div></div>
@@ -669,28 +669,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote"><b>Nothing is a recording.</b> Live database, live Anthropic API, a cost panel ticking up in real dollars.</p>
 </div>
 
-<!-- 12 · Connector trading-condition variance -->
-<div class="slide wide" data-notes="Shipped since the freeze, spec 014. The honest problem: the simulated connector's revenue was flat-positive by construction — every day drew from one narrow band plus a flat weekend lift, so the only losing days the product ever demoed were days the cost sheet itself spiked on. A product whose entire job is noticing when something went wrong was demoing on a revenue source where nothing on the revenue side ever did. Fixed with a seven-condition weighted trading model, deterministic per calendar date, with independent delivery-vs-dine-in multipliers because a real disruption never hits both sides of the business equally. Measured over 363 simulated days against the live dataset's own real cost sheet. The canonical historical dataset — 759 days, $1,078,340.64 total margin — is provably untouched: cmd/gendata's four CSVs stay byte-identical, because the historical generator and the connector's live simulation are independent by design (FR-015).">
-  <div class="a tag">Data realism &middot; shipped (spec 014)</div>
-  <h2 class="a lg">Simulated trading days can finally have a bad day</h2>
-  <div class="a cols2eq">
-    <div class="refundcard">
-      <h3>Seven trading conditions, drawn per calendar date</h3>
-      <p>Before: every simulated day drew its order count from one narrow band plus a flat Friday/Saturday lift &mdash; daily gross ran 0.66x&ndash;1.51x of its own mean, too tight for any real cost sheet to push through zero. The only losing days the connector ever produced were days the <i>cost sheet</i> spiked on.</p>
-      <p style="margin-top:8px">Now: <b>ordinary, quiet midweek lull, neighbourhood event, aggregator outage, short-staffed shift, kitchen equipment failure, severe weather</b> &mdash; one condition per date, agreed on by every simulated source (iFood, JET, POS alike), each with its own delivery-vs-dine-in demand multipliers. Costs are never touched by any condition &mdash; the connector supplies revenue only.</p>
-    </div>
-    <div>
-      <div class="a platgrid">
-        <div class="platcard pb"><div class="pname">Losing days &middot; before</div><div class="prate">9.6%</div><div class="psub">35 of 363 simulated days</div></div>
-        <div class="platcard pa"><div class="pname">Losing days &middot; after</div><div class="prate">15.2%</div><div class="psub">55 of 363 &mdash; still short of the real dataset's own 20.1%, honestly left open rather than forced</div></div>
-      </div>
-      <p class="a body" style="font-size:12.5px;margin-top:14px;color:var(--text-secondary)">Same 363-day measurement: mean daily gross $6,037.93&rarr;$5,354.83, mean daily margin $3,495.11&rarr;$2,856.34, quietest day 0.66x&rarr;0.28x mean, busiest day 1.51x&rarr;2.36x mean &mdash; real variance, not just a shifted average.</p>
-    </div>
-  </div>
-  <p class="a livenote">One click, one number: a cost-sheet upload can now pull the matching simulated revenue for its own invoice dates through one atomic pipeline run, instead of reconciling against whatever revenue happened to already be on file. Live smoke test: a 29-day upload moved negative days from 3/29 (cost sheet alone) to 5/29 (cost sheet plus connector), each new loss carrying a named cause. The canonical dataset is unaffected by any of this &mdash; still 759 days, still $1,078,340.64 total margin, byte-identical CSVs before and after.</p>
-</div>
-
-<!-- 13 · Inline grounded advice -->
+<!-- 12 · Inline grounded advice -->
 <div class="slide wide" data-notes="Shipped since the freeze, spec 011, widening spec 009's Business Insight Advisor. Product owner's direction, verbatim: 'the advisor should advise whatever the customer asks and use the data in context for it — not bringing wrong data or hallucination.' Until now the advisor had exactly one avenue in: Go detects one of five fixed patterns in an already-computed result and offers a teaser chip. A question that explicitly asked for a suggestion got its data core answered and its advice part plainly declined, even though the right advisor was one package away. This spec adds a second avenue: an explicit ask with a data-groundable core now runs the normal tool-calling narration first, then one bounded advisor call, grounded exclusively in that same turn's tool results — no new tool-calling loop, no data the deterministic layer didn't already produce. The line that does not move: advice must always trace to real, tool-computed data. An ungroundable ask is still refused plainly, zero tool calls, zero advisor calls.">
   <div class="a tag">Advisor &middot; shipped (spec 011)</div>
   <h2 class="a lg">Ask for advice, get it &mdash; still grounded, never invented</h2>
@@ -714,7 +693,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote">The line that doesn't move: advice must always trace to tool-computed data from that same turn. This widens what the advisor can reach &mdash; never what it may invent.</p>
 </div>
 
-<!-- 14 · Architecture flow -->
+<!-- 13 · Architecture flow -->
 <div class="slide wide" data-notes="The one boundary that matters: every number is computed left of the gate, in Go against Postgres. The model only ever narrates a typed tool result — the dashed line is the line Claude never crosses. New since the 08-29 incident: even the date-range check is deterministic now — an explicit out-of-range date is refused by Go before the gate's model ever runs, zero tokens. Range comparison is arithmetic; it was briefly the model's job, and that was wrong.">
   <div class="a tag">Architecture &middot; request flow</div>
   <h2 class="a md">No number the owner sees is ever produced by a model<a class="arch-link" href="https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441" target="_blank" rel="noopener noreferrer" onclick="openArchPopup(event, this.href)">Full detailed diagram &#8599;</a></h2>
@@ -792,7 +771,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 15 · Ports & adapters -->
+<!-- 14 · Ports & adapters -->
 <div class="slide wide" data-notes="Same boundary, enforced structurally: the package dependency graph makes the rule physical. internal/reconcile has zero outgoing calls; internal/ambiguity and internal/advisor have no path to real data at all; internal/explain crosses only through the typed port. The two dashed boxes on the right are the calls that never see a row — the gate classifies question text, and the advisor is handed an already-computed tool result and asked only to connect it to general practice. Whether an insight exists at all is decided in Go, for free, before the advisor is ever called.">
   <div class="a tag">Architecture &middot; ports &amp; adapters</div>
   <h2 class="a md">The boundary is a dependency graph, not a rule to remember</h2>
@@ -857,35 +836,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote" style="margin-top:4px"><span style="font-family:var(--mono)">cmd/server</span>'s entrypoint box is now composed through the named <span style="font-family:var(--mono)">internal/bff</span> boundary rather than 17 hand-wired routes &mdash; next slide.</p>
 </div>
 
-<!-- 16 · BFF layer -->
-<div class="slide wide" data-notes="Shipped since the freeze, spec 013. Requested as 'unify the main backend with the platform-connector proxy behind one coherent API surface' — the first finding contradicted the request, and is the most useful thing in it: there were never two backends. internal/platformconnector is an ordinary in-process Go package, same binary, same mux, same origin, same /api/* prefix the frontend has called since spec 001. internal/httpapi was already this product's BFF; it just had no composition root and enforced nothing. The real defect had a real prior incident: 17 routes registered by hand in cmd/server/main.go, and the CORS allow-list was one hand-maintained string that had to stay in sync with them from memory — and once did not. PUT /api/profile shipped broken from the browser: a blocked CORS preflight produces no visible 405, curl -X PUT against the same handler worked every time, and nothing could enumerate the surface to catch the mismatch because a package named main cannot be imported by a test. Deliberately not a separate service — Azure's own BFF guidance names 'only one interface interacts with the backend' as an explicit non-fit for a standalone BFF service, and this is exactly that case.">
-  <div class="a tag">Architecture &middot; shipped (spec 013)</div>
-  <h2 class="a lg">Naming the boundary made a bug class structurally impossible</h2>
-  <p class="a body" style="max-width:1100px">The request assumed two backends to unify. There were never two: <span style="font-family:var(--mono)">internal/platformconnector</span> is an ordinary in-process Go package &mdash; same binary, same mux, same origin, the one <span style="font-family:var(--mono)">/api/*</span> prefix the frontend has called since spec 001. What was actually missing was naming the boundary that already existed: <span style="font-family:var(--mono)">internal/httpapi</span> was already this product's BFF, one experience, one consumer &mdash; it just held no composition root and enforced nothing.</p>
-  <div class="a cmp" style="margin-top:16px">
-    <div class="cmp-col cmp-bad alert">
-      <div class="cmp-label">Before &mdash; 17 hand-wired routes, one shipped bug</div>
-      <ul>
-        <li>CORS's allow-list was one hand-maintained string covering the whole mux &mdash; had to stay in sync with 17 registrations from memory</li>
-        <li>It didn't: <b>PUT /api/profile shipped broken from the browser</b> &mdash; a blocked preflight produces no visible 405, and <code>curl -X PUT</code> against the same handler worked every time</li>
-        <li><code>methodSplit</code> routed everything but POST to the listing handler &mdash; a DELETE was answered by whichever handler happened to be the fallback</li>
-        <li>A handler panic reached the browser as a dropped connection, never the standard error envelope</li>
-      </ul>
-    </div>
-    <div class="cmp-col cmp-good">
-      <div class="cmp-label">After &mdash; one route table, declared as data</div>
-      <ul>
-        <li>CORS preflight, 405 policy, and the startup log are all <i>derived</i> from one map keyed by method &mdash; advertised and dispatchable methods are the same fact, so they cannot drift apart again</li>
-        <li>Verified live: <code>/api/reconciliation</code> &rarr; GET, OPTIONS &middot; <code>/api/usage</code> &rarr; OPTIONS, POST &middot; <code>/api/profile</code> &rarr; GET, OPTIONS, PUT</li>
-        <li>Panics now return a real 500 in the standard <code>{error, detail}</code> envelope; the panic value is logged, never written to the body</li>
-        <li>New <code>GET /api/sources</code>: one vocabulary for every ingestion path, upload or (simulated) connector</li>
-      </ul>
-    </div>
-  </div>
-  <p class="a livenote">Deliberately <b>not</b> a separate service: one experience, one consumer, one team &mdash; a deployable here would buy a boundary that already holds and charge a network hop for it. No retries, breakers, or bulkheads either: the connector "upstream" is an in-process function call, and simulating flakiness so resilience code has something to catch would be fiction stacked on fiction.</p>
-</div>
-
-<!-- 17 · Evaluation -->
+<!-- 15 · Evaluation -->
 <div class="slide wide" data-notes="Real harness numbers, failures included, re-measured on 2026-08-30, three full runs rather than two because the model layer is not deterministic and two data points aren't enough to call a pattern. Say the method before the result, because the method is the finding: earlier runs of this harness were partly served by the product's own answer cache — 25 of 35 questions, two suites finishing in zero seconds — so the suite was grading the cache rather than the model, and the numbers it produced were flattering for a reason that had nothing to do with the model being right. cmd/server now takes -eval-no-answer-cache, and all three runs on this slide were measured with it on: accuracy 14/15 &middot; 15/15 &middot; 14/15, consistency 14/15 &middot; 15/15 &middot; 15/15, refusal 4/5 &middot; 4/5 &middot; 4/5 — 99/105 aggregate (94.3%), $3.6266 across 207 model interactions (201 real calls plus 6 zero-cost deterministic pre-check resolutions). Squares show run 1 of three; hover any one for its story. Three named, already-understood causes account for every failure across all three runs, recurring at different rates, and not one of them is a wrong number: A15 is the one that matters, where the model returns gross and refund with provenance and then refuses to net them itself because no tool returns that figure — Principle I working exactly as designed, and a real gap in the tool contract that is open, not fixed; it recurs in two of the three runs. C1a is a genuine consistency divergence, the thing this suite is for — it recurred once across the three runs. C3, the other consistency gap seen in the earlier two-run measurement, did not reproduce this time. Refusal's R1 is the grader's wording rule rejecting a correct clarifying question, and now recurs in every run — deliberately left alone: tuning a regex after watching it fail is how a number stops meaning anything. A fifth failure was found and fixed earlier — 'How was the weekend?' returned a 502 twice in four attempts because the ambiguity gate hit its token cap mid-clarification; the cap is now 2560 and it has not recurred.">
   <div class="num-bg">04</div>
   <div class="a tag">Evaluation harness</div>
@@ -902,7 +853,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body" style="max-width:1100px">Squares show run 1 of three. Earlier runs scored <span class="data-num">15/15 &middot; 15/15 &middot; 5/5</span> while the harness was partly served from the product&rsquo;s own answer cache &mdash; grading the cache, not the model. Cache off, three full runs score <span class="data-num">14/15 &middot; 15/15 &middot; 14/15</span> accuracy, <span class="data-num">14/15 &middot; 15/15 &middot; 15/15</span> consistency, <span class="data-num">4/5 &middot; 4/5 &middot; 4/5</span> refusal &mdash; <span class="data-num">99/105</span> aggregate (94.3%). Of the three distinct failure causes, <span class="hi">none is a wrong number</span>: one is a real gap in the tool contract (two of three runs), one a real consistency divergence (one of three runs), one is the refusal grader&rsquo;s wording rule (every run) &mdash; <span class="hi">left unfixed on purpose</span>.</p>
 </div>
 
-<!-- 18 · Token discipline -->
+<!-- 16 · Token discipline -->
 <div class="slide" data-notes="Token discipline as a value: the whole build — 1,006 instrumented model calls — has spent $12.69 of real Anthropic money, tracked per call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Two honesty notes worth volunteering here. First, the unit: a row in question_interaction is one MODEL CALL, and an answered question makes two of them (gate, then explain), so averaging the ledger understates the cost of a question by about half. The $0.0313 figure is measured over a known question count — 70 questions, 142 calls, $2.19 — not by dividing the ledger. Second, the previously shown $0.025 was measured while the harness was partly served from the answer cache, which is to say it was partly the price of not calling the model at all. Cache off, the true number is higher. It is still comfortably inside the bar, and the bar is the one that was committed to before the build.">
   <div class="a tag">Token discipline</div>
   <h2 class="a lg">1.6&times; under the per-interaction cost target</h2>
@@ -919,7 +870,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 19 · DOR -->
+<!-- 17 · DOR -->
 <div class="slide" data-notes="Definition of Ready, checked against what was actually true: four blockers resolved before build, zero clarification markers, 100 percent coverage — and the two things that were NOT ready written down instead of hidden.">
   <div class="num-bg">05</div>
   <div class="a tag">Definition of Ready</div>
@@ -945,7 +896,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 20 · PRD -->
+<!-- 18 · PRD -->
 <div class="slide" data-notes="The PRD in one view: every v1 target was measured, and every one still holds — but the accuracy, consistency and refusal columns each show three figures now, one per run, because the model layer is not deterministic and reporting a single run as if it were is a measurement error dressed as a result. Where runs disagree, all three are printed. The failures behind those numbers are all named on the Evaluation slide; the short version is that not one of them is a wrong number — the refusal grader's wording rule (every run), a consistency divergence (one of three runs), and a genuine gap in the tool contract (two of three runs), where the model correctly refuses to do arithmetic no tool will do for it. Scope has since extended well past the original five specs: nine further specs — eight shipped, one (008, dashboard/chat intelligence v2) drafted but not yet built — plus 005's multi-tenant RFC, still deliberately gated.">
   <div class="a tag">PRD v1.0 &mdash; and what shipped since</div>
   <h2 class="a lg">Every target measured &mdash; then the scope grew</h2>
@@ -966,7 +917,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 21 · RFC -->
+<!-- 19 · RFC -->
 <div class="slide" data-notes="The engineering decisions: the cheapest model that holds the bar at each step — and no model at all where a number is computed. The honest story on the gate: on 2026-08-29 a cross-year date-comparison bug at scale was first answered with a model swap, Haiku 4.5 to Sonnet 5 — and a reviewer then correctly called that a papered-over Principle I violation, because comparing an explicit date against the known data window is arithmetic, not ambiguity judgment. The real fix is a deterministic Go pre-check that refuses out-of-range explicit dates before any model runs — zero tokens — and hands in-range verdicts to the gate as precomputed fact. The Sonnet swap stands only for the genuinely linguistic residual: vague and relative dates, and the classification judgment itself. The paraphrase-match cache stays on Haiku 4.5; it never showed the bug. Plus one worked design decision: refunds net to the day the sale happened, because a closed day must never be silently restated.">
   <div class="a tag">Technical RFC</div>
   <h2 class="a lg">The cheapest model that holds the bar &mdash; and none where it matters</h2>
@@ -1002,18 +953,18 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 22 · User stories -->
+<!-- 20 · User stories -->
 <div class="slide" data-notes="Four stories in strict priority order — each only trusted once the one before it is proven. Thirteen functional requirements, six success criteria, 100 percent task coverage before any code.">
   <div class="a tag">User stories</div>
   <h2 class="a lg">Trust is earned in order</h2>
-  <div class="a flow">
-    <div class="step"><div class="step-num">P1</div><div class="step-label">See the day</div><div class="step-sub">provenanced margin, the reason the product exists</div></div>
+  <div class="a flow" style="flex-wrap:nowrap;gap:8px">
+    <div class="step" style="min-width:0;flex:1;padding:16px 14px"><div class="step-num">P1</div><div class="step-label">See the day</div><div class="step-sub">provenanced margin, the reason the product exists</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">P2</div><div class="step-label">Ask anything</div><div class="step-sub">3 phrasings agree; the engine computes, never the model</div></div>
+    <div class="step" style="min-width:0;flex:1;padding:16px 14px"><div class="step-num">P2</div><div class="step-label">Ask anything</div><div class="step-sub">3 phrasings agree; the engine computes, never the model</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">P3</div><div class="step-label">Never guess</div><div class="step-sub">refuse, clarify, or state the assumption taken</div></div>
+    <div class="step" style="min-width:0;flex:1;padding:16px 14px"><div class="step-num">P3</div><div class="step-label">Never guess</div><div class="step-sub">refuse, clarify, or state the assumption taken</div></div>
     <div class="arrow">&rarr;</div>
-    <div class="step"><div class="step-num">P4</div><div class="step-label">Grow wisely</div><div class="step-sub">promo ROI flagged &mdash; or refused when unattributable</div></div>
+    <div class="step" style="min-width:0;flex:1;padding:16px 14px"><div class="step-num">P4</div><div class="step-label">Grow wisely</div><div class="step-sub">promo ROI flagged &mdash; or refused when unattributable</div></div>
   </div>
   <div class="a chips" style="margin-top:26px">
     <span class="chip">13 functional requirements</span>
@@ -1023,7 +974,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 23 · What's left -->
+<!-- 21 · What's left -->
 <div class="slide" data-notes="Honest status: the paraphrase-aware cache shipped — Haiku classification against a bounded candidate set, no second vendor, uncertain match treated as new, verified live. Multi-tenant is the one thing deliberately NOT built: the RFC exists, and it's gated on human review because a tenant-isolation bug is a data breach, not a bug. The design makes forgetting the tenant filter a compile error.">
   <div class="num-bg">06</div>
   <div class="a tag">What's left</div>
@@ -1050,7 +1001,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 24 · The build -->
+<!-- 22 · The build -->
 <div class="slide" data-notes="This wasn't just an application — it was a full spec-driven reasoning line: constitution through implement, 39 of 39 tasks, thirty specialist skills, and no agent framework. The same discipline then shipped eight more specs after the interview build froze, with one further spec (008) drafted but not yet built.">
   <div class="a tag">How this was actually built</div>
   <h2 class="a lg">Not just an application &mdash; a reasoning line</h2>
@@ -1070,7 +1021,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body"><span class="data-num">39/39</span> tasks &mdash; then specs 002&ndash;005 through the same pipeline. GitHub Spec Kit &middot; <span class="hi">30 Claude Code skills</span> &middot; promptfoo &middot; sqlc &middot; golang-migrate &mdash; and <span class="hi">no agent framework</span>, per the brief. The right model per step, re-verified as the data grew: Sonnet for classification and narration, Haiku only for the bounded paraphrase-match cache, frontier models only where judgment demanded it.</p>
 </div>
 
-<!-- 25 · MCP tools and skills, named -->
+<!-- 23 · MCP tools and skills, named -->
 <div class="slide wide" data-notes="Every tool and skill named directly, so this isn't a vague 'AI helped build this' claim — each is a real, checkable line item: a typed MCP tool with a file path, or a Claude Code skill named in a real commit message. Full detail in docs/mcp-and-skills.md and README.md.">
   <div class="a tag">Built with &mdash; named, not vague</div>
   <h2 class="a lg">The 8 tools and the skills, by name</h2>
@@ -1103,7 +1054,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote">Full contracts and a fact-checked, commit-cited inventory: <code>specs/001-margin-reconciliation-qa/contracts/mcp-tools.md</code> and <code>docs/mcp-and-skills.md</code>.</p>
 </div>
 
-<!-- 26 · Mistakes -->
+<!-- 24 · Mistakes -->
 <div class="slide wide" data-notes="Three real entries from the build's running mistakes log — kept as they happened, not reconstructed. The pattern: never trust a self-report, verify independently. That's the same principle the product itself is built on.">
   <div class="a tag">Where it went wrong &mdash; and how it was caught</div>
   <h2 class="a md">From the real mistakes log, kept as it happened</h2>
@@ -1114,7 +1065,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 27 · Roadmap: replacing the sheet -->
+<!-- 25 · Roadmap: replacing the sheet -->
 <div class="slide wide" data-notes="Roadmap, not built: two manual-file gaps, one strategic move. The supplier cost sheet and the delivery-platform sales export are both files the owner or someone constructs by hand today — closing both is the same architectural direction, staged for feasibility. The closing line is the actual strategic reason Prosus, not a generic SaaS vendor, is positioned to pull this off.">
   <div class="a tag">Roadmap &middot; not yet built</div>
   <h2 class="a lg">Closing every manual-file gap left in the pipeline</h2>
@@ -1142,7 +1093,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote"><b>One move, two sides:</b> every number the reconciliation engine consumes stops arriving as a manually produced file &mdash; costs via invoice capture and supplier feeds, sales via platform APIs &mdash; until the owner's only job is reading the answer. <b>Why Prosus, not a generic SaaS vendor:</b> it sits on both sides of the invoice AND owns iFood &mdash; standardizing at the rail level, not integration-by-integration.</p>
 </div>
 
-<!-- 28 · Closing -->
+<!-- 26 · Closing -->
 <div class="slide" data-notes="Out of the red, in the green — daily. The numbers are real and the failures are disclosed — accuracy was explained in full two slides ago, so this slide states the committed KR (refusal correctness) as its headline rather than re-explaining a number the audience has already seen. Thank you — questions welcome.">
   <svg class="a coverMark" viewBox="0 0 100 100" style="width:130px;margin-bottom:22px" role="img" aria-label="My Business Steward mark">
     <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>

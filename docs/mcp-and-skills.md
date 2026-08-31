@@ -351,7 +351,7 @@ one pre-existing ESLint error in `CompositionPieChart.tsx` was left
 untouched rather than folded in and hidden. Screenshots at 1512×982 for
 all 5 routes are checked into `docs/screenshots/{before,after}/`.
 
-### `make-slide` — the presentation (22 slides at conversion, 25 today)
+### `make-slide` — the presentation (22 slides at conversion, 26 today)
 
 `docs/plan.md`'s original presentation spec (line 88) called for an "HTML,
 landing-page style" format, explicitly "not slides/PPT," and named

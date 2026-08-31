@@ -12,6 +12,34 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-31 — Presentation: two of the three new slides cut, two layout bugs fixed
+
+Two of the three slides added in the same-day audit below were removed per
+direct request: the connector trading-condition-variance slide ("Simulated
+trading days can finally have a bad day," spec 014) and the BFF-layer slide
+("Naming the boundary made a bug class structurally impossible," spec 013).
+Both topics stay covered elsewhere in the deck (Architecture chapter,
+demo, agenda); only the dedicated slides are gone. Final count: 26 slides
+(was 28, -2). The Agenda slide's chapter-02 and chapter-03 subtitles, which
+named both removed slides by topic, were updated to match; the HTML slide-
+number comments were renumbered sequentially 1–26 (they had gaps from the
+earlier removal of "Product D is live").
+
+Two layout bugs found and fixed while re-verifying every slide after the
+cuts: the User Stories slide's four P1–P4 step boxes (`.flow`) wrapped the
+last box to a new line on this narrower, non-`wide` slide — fixed with
+`flex-wrap:nowrap` on the container and `flex:1;min-width:0` on each step
+so all four stay on one row. The Token Discipline slide's `.mbrow` minibar
+grid had a fixed no-wrap label column too narrow for its longest label
+("~$0.025 — partly cache-served"); widened `100px 1fr 150px` to
+`120px 1fr 230px`.
+
+README's slide count and `docs/mcp-and-skills.md`'s `make-slide` line were
+updated to 26; the published artifact mirror is republished immediately
+after this merges.
+
+---
+
 ## 2026-08-31 — Presentation: exhaustive number re-audit, three new slides, Product D removed
 
 A prior audit pass on `docs/presentation.html` missed a real stale claim
