@@ -847,12 +847,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 16 · Token discipline -->
-<div class="slide" data-notes="Token discipline as a value: the whole build — 1,006 instrumented model calls — has spent $12.69 of real Anthropic money, tracked per call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Two honesty notes worth volunteering here. First, the unit: a row in question_interaction is one MODEL CALL, and an answered question makes two of them (gate, then explain), so averaging the ledger understates the cost of a question by about half. The $0.0313 figure is measured over a known question count — 70 questions, 142 calls, $2.19 — not by dividing the ledger. Second, the previously shown $0.025 was measured while the harness was partly served from the answer cache, which is to say it was partly the price of not calling the model at all. Cache off, the true number is higher. It is still comfortably inside the bar, and the bar is the one that was committed to before the build.">
+<div class="slide" data-notes="Token discipline as a value: the whole build — 1,166 instrumented model calls — has spent $14.87 of real Anthropic money, tracked per call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Two honesty notes worth volunteering here. First, the unit: a row in question_interaction is one MODEL CALL, and an answered question makes two of them (gate, then explain), so averaging the ledger understates the cost of a question by about half. The $0.0313 figure is measured over a known question count — 70 questions, 142 calls, $2.19 — not by dividing the ledger. Second, the previously shown $0.025 was measured while the harness was partly served from the answer cache, which is to say it was partly the price of not calling the model at all. Cache off, the true number is higher. It is still comfortably inside the bar, and the bar is the one that was committed to before the build.">
   <div class="a tag">Token discipline</div>
   <h2 class="a lg">1.6&times; under the per-interaction cost target</h2>
   <div class="a stat-cards n3">
-    <div class="stat-card"><div class="stat-label">Model calls</div><div class="stat-value">1,006</div><div class="stat-trend">Every live call instrumented in Postgres</div></div>
-    <div class="stat-card"><div class="stat-label">Tracked spend</div><div class="stat-value acc">$12.69</div><div class="stat-trend">Real API spend, both ledgers, 2026-08-30</div></div>
+    <div class="stat-card"><div class="stat-label">Model calls</div><div class="stat-value">1,166</div><div class="stat-trend">Every live call instrumented in Postgres</div></div>
+    <div class="stat-card"><div class="stat-label">Tracked spend</div><div class="stat-value acc">$14.87</div><div class="stat-trend">Real API spend, all three ledgers, 2026-08-30</div></div>
     <div class="stat-card"><div class="stat-label">Per question</div><div class="stat-value acc">$0.0313</div><div class="stat-trend">vs. KR4's $0.05 target &mdash; 70 questions, cache off</div></div>
   </div>
   <div class="a costwrap">
@@ -1062,8 +1062,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a stat-cards" style="max-width:900px">
     <div class="stat-card"><div class="stat-label">Refusals &middot; KR1</div><div class="stat-value acc">12/15</div></div>
     <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">12,370</div></div>
-    <div class="stat-card"><div class="stat-label">Model calls</div><div class="stat-value acc">1,006</div></div>
-    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$12.69</div></div>
+    <div class="stat-card"><div class="stat-label">Model calls</div><div class="stat-value acc">1,166</div></div>
+    <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$14.87</div></div>
   </div>
   <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">Accuracy 14/15 &middot; 15/15 &middot; 14/15; consistency 14/15 &middot; 15/15 &middot; 15/15 &mdash; three full runs with the answer cache disabled (99/105 aggregate, 94.3%), every failure named earlier and none of them a wrong number. $0.0313 per question against a $0.05 bar.</p>
   <div class="a sub" style="font-size:14px;margin-top:14px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
