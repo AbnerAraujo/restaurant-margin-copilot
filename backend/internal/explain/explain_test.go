@@ -52,7 +52,7 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("answerable question about real data", func(t *testing.T) {
-		result, err := explainer.Explain(ctx, "What was our reconciled margin on 2026-08-03, and were there any discrepancies that day?", "")
+		result, err := explainer.Explain(ctx, "What was our reconciled margin on 2026-08-03, and were there any discrepancies that day?", "", "")
 		require.NoError(t, err)
 		require.Empty(t, result.IncompleteReason, "should produce a final answer, not stop mid-loop")
 		require.NotEmpty(t, result.AnswerText)
@@ -65,7 +65,7 @@ func TestExplain_LiveSmokeTest(t *testing.T) {
 	})
 
 	t.Run("question about data outside the dataset period states the range is out of bounds rather than guessing", func(t *testing.T) {
-		result, err := explainer.Explain(ctx, "What was our margin on 2026-09-01?", "")
+		result, err := explainer.Explain(ctx, "What was our margin on 2026-09-01?", "", "")
 		require.NoError(t, err)
 		t.Logf("answer: %s", result.AnswerText)
 		t.Logf("tool calls=%d, tokens=%d in / %d out, cost=$%.6f", result.ToolCallsMade, result.InputTokens, result.OutputTokens, result.EstimatedCostUSD)

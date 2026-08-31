@@ -376,6 +376,29 @@ func TestNegativeMoneyRendersWithATypographicMinusOutsideTheCurrencySymbol(t *te
 	t.Fatal("JET-CAMP-LUNCHFIX missing from the chart")
 }
 
+// TestSignedMoney_AddsThousandsSeparators pins a live finding: a chart
+// point rendered "$3440.58" (no separator) while the exact same figure
+// elsewhere on the same page, formatted by the frontend, showed
+// "$3,440.58" -- the same number, two different renderings on one screen.
+func TestSignedMoney_AddsThousandsSeparators(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"3440.58", "$3,440.58"},
+		{"-3440.58", "−$3,440.58"},
+		{"5212.98", "$5,212.98"},
+		{"42.00", "$42.00"},             // under 1,000: no comma needed
+		{"999.99", "$999.99"},           // exactly 3 digits: no comma
+		{"1000.00", "$1,000.00"},        // exactly 4 digits: one comma
+		{"1234567.89", "$1,234,567.89"}, // multiple groups
+		{"0.00", "$0.00"},
+		{"-0.01", "−$0.01"},
+	}
+	for _, tt := range tests {
+		if got := signedMoney(tt.in); got != tt.want {
+			t.Errorf("signedMoney(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestHumanizeFlagType(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"duplicate_order_removed", "Duplicate order removed"},

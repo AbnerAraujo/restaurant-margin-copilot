@@ -26,7 +26,7 @@ func TestBothAdaptersConvergeOnOneRecordShape(t *testing.T) {
 	)
 	placedAt := time.Date(2026, 8, 20, 19, 35, 0, 0, merchantZone)
 
-	ifoodRec, err := ifoodAdapter{}.normalize(ifoodOrderDTO{
+	ifoodRecs, err := ifoodAdapter{}.normalize(ifoodOrderDTO{
 		ID:        "IFOOD-SIM-20260820-0007",
 		CreatedAt: placedAt.Format(time.RFC3339),
 		Total:     ifoodAmount{Currency: "USD", Amount: money.FormatCents(subtotalCents)},
@@ -40,11 +40,15 @@ func TestBothAdaptersConvergeOnOneRecordShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("iFood normalize: %v", err)
 	}
+	if len(ifoodRecs) != 1 {
+		t.Fatalf("a CONCLUDED order must normalize to exactly one record, got %d", len(ifoodRecs))
+	}
+	ifoodRec := ifoodRecs[0]
 
 	// The same order as Just Eat Takeaway would report it: camelCase,
 	// integer minor units, epoch milliseconds, and NO rate at all — the
 	// adapter has to recover 2300 bps from 966/4200.
-	jetRec, err := jetAdapter{}.normalize(jetOrderDTO{
+	jetRecs, err := jetAdapter{}.normalize(jetOrderDTO{
 		OrderReference:   "JET-SIM-20260820-0007",
 		PlacedAtEpochMs:  placedAt.UnixMilli(),
 		Currency:         "USD",
@@ -56,6 +60,10 @@ func TestBothAdaptersConvergeOnOneRecordShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("JET normalize: %v", err)
 	}
+	if len(jetRecs) != 1 {
+		t.Fatalf("a DELIVERED order must normalize to exactly one record, got %d", len(jetRecs))
+	}
+	jetRec := jetRecs[0]
 
 	type economics struct {
 		orderDate         string
@@ -108,8 +116,19 @@ func TestBothAdaptersConvergeOnOneRecordShape(t *testing.T) {
 
 // Both platforms report the same business event — a refunded order — with
 // OPPOSITE signs on the wire. Both must land on this repository's
-// convention: negative money, a refund date, status "refunded". An adapter
-// that got this wrong would have reconcile count a refund as revenue.
+// convention: negative money, a refund date, status "refunded" for the
+// reversal row — AND, critically, a SEPARATE "completed" row carrying the
+// order's original positive amounts, matching the two-row convention
+// internal/reconcile.computeOneDay already implements for the CSV path
+// (backend/cmd/gendata/opening/README.md: "reversed by a second row with
+// the same order_id, negative amounts"). Before this fix, both adapters
+// mutated a single record in place instead of emitting the completed
+// counterpart — so `reconcile` never added the order's gross in the first
+// place, and subtracting the refund from it double-penalized margin by the
+// full order amount on every single cancellation. Found live: $1,138.24
+// understated over a 31-day sample, 23 of 31 days affected, zero
+// discrepancy flags raised — the exact "confidently wrong margin figure"
+// class CLAUDE.md says must never happen.
 func TestRefundNormalization_BothPlatformsLandNegative(t *testing.T) {
 	const (
 		subtotalCents      = 6225
@@ -122,7 +141,7 @@ func TestRefundNormalization_BothPlatformsLandNegative(t *testing.T) {
 	refundedAt := placedAt.AddDate(0, 0, 7)
 
 	t.Run("iFood reports it positive and the adapter negates", func(t *testing.T) {
-		rec, err := ifoodAdapter{}.normalize(ifoodOrderDTO{
+		recs, err := ifoodAdapter{}.normalize(ifoodOrderDTO{
 			ID:        "IFOOD-SIM-20260820-0011",
 			CreatedAt: placedAt.Format(time.RFC3339),
 			Total:     ifoodAmount{Amount: money.FormatCents(subtotalCents)},
@@ -140,12 +159,12 @@ func TestRefundNormalization_BothPlatformsLandNegative(t *testing.T) {
 		if err != nil {
 			t.Fatalf("normalize: %v", err)
 		}
-		assertRefundShape(t, rec, -subtotalCents, -ifoodCommissionAmt, refundedAt)
+		assertCompletedThenRefundedShape(t, recs, "IFOOD-SIM-20260820-0011", subtotalCents, ifoodCommissionAmt, refundedAt)
 	})
 
 	t.Run("JET reports it negative and the adapter passes it through", func(t *testing.T) {
 		refundMs := refundedAt.UnixMilli()
-		rec, err := jetAdapter{}.normalize(jetOrderDTO{
+		recs, err := jetAdapter{}.normalize(jetOrderDTO{
 			OrderReference:    "JET-SIM-20260820-0011",
 			PlacedAtEpochMs:   placedAt.UnixMilli(),
 			GrossAmountMinor:  -subtotalCents,
@@ -157,33 +176,83 @@ func TestRefundNormalization_BothPlatformsLandNegative(t *testing.T) {
 		if err != nil {
 			t.Fatalf("normalize: %v", err)
 		}
-		assertRefundShape(t, rec, -subtotalCents, -jetCommissionAmt, refundedAt)
-		// The derived rate must survive the negative operands.
-		if rec.CommissionRateBps != jetRateBps {
-			t.Errorf("derived rate on a refund is %d bps, want %d — sign handling in the derivation is wrong", rec.CommissionRateBps, jetRateBps)
+		assertCompletedThenRefundedShape(t, recs, "JET-SIM-20260820-0011", subtotalCents, jetCommissionAmt, refundedAt)
+		// The derived rate must survive the negative operands, on BOTH rows.
+		for i, rec := range recs {
+			if rec.CommissionRateBps != jetRateBps {
+				t.Errorf("record %d: derived rate on a refund is %d bps, want %d — sign handling in the derivation is wrong", i, rec.CommissionRateBps, jetRateBps)
+			}
 		}
 	})
 }
 
-func assertRefundShape(t *testing.T, rec ingest.DeliveryRecord, wantSubtotal, wantCommission int64, wantRefundDate time.Time) {
+// assertCompletedThenRefundedShape checks the two-record shape a
+// refunded/cancelled order must normalize to: recs[0] is the original
+// "completed" charge at its full positive amounts, recs[1] is the
+// "refunded" reversal at the same amounts negated — the exact CSV
+// convention internal/reconcile.computeOneDay already implements, so
+// summing both rows' SubtotalCents/CommissionCents/NetPayoutCents nets to
+// exactly zero, matching a cancelled order's real economic effect.
+func assertCompletedThenRefundedShape(t *testing.T, recs []ingest.DeliveryRecord, wantOrderID string, wantSubtotal, wantCommission int64, wantRefundDate time.Time) {
 	t.Helper()
-	if rec.Status != "refunded" {
-		t.Errorf("status is %q, want \"refunded\"", rec.Status)
+	if len(recs) != 2 {
+		t.Fatalf("a refunded/cancelled order must normalize to exactly 2 records (completed + refunded), got %d", len(recs))
 	}
-	if rec.SubtotalCents != wantSubtotal {
-		t.Errorf("subtotal is %s, want %s", money.FormatCents(rec.SubtotalCents), money.FormatCents(wantSubtotal))
+	completed, refunded := recs[0], recs[1]
+
+	if completed.Status != "completed" {
+		t.Errorf("recs[0].Status = %q, want \"completed\"", completed.Status)
 	}
-	if rec.CommissionCents != wantCommission {
-		t.Errorf("commission is %s, want %s", money.FormatCents(rec.CommissionCents), money.FormatCents(wantCommission))
+	if completed.RefundDate != nil {
+		t.Error("recs[0] (the completed row) must not carry a refund date")
 	}
-	if rec.NetPayoutCents != wantSubtotal-wantCommission {
-		t.Errorf("payout is %s, want %s", money.FormatCents(rec.NetPayoutCents), money.FormatCents(wantSubtotal-wantCommission))
+	if completed.SubtotalCents != wantSubtotal {
+		t.Errorf("recs[0].SubtotalCents = %s, want %s (the ORIGINAL positive charge)", money.FormatCents(completed.SubtotalCents), money.FormatCents(wantSubtotal))
 	}
-	if rec.RefundDate == nil {
-		t.Fatal("refund date is nil on a refunded record")
+	if completed.CommissionCents != wantCommission {
+		t.Errorf("recs[0].CommissionCents = %s, want %s", money.FormatCents(completed.CommissionCents), money.FormatCents(wantCommission))
 	}
-	if got, want := rec.RefundDate.Format(dateLayout), wantRefundDate.Format(dateLayout); got != want {
-		t.Errorf("refund date is %s, want %s", got, want)
+	if completed.NetPayoutCents != wantSubtotal-wantCommission {
+		t.Errorf("recs[0].NetPayoutCents = %s, want %s", money.FormatCents(completed.NetPayoutCents), money.FormatCents(wantSubtotal-wantCommission))
+	}
+	if completed.OrderID != wantOrderID {
+		t.Errorf("recs[0].OrderID = %q, want %q — both rows must share the same order id, matching the CSV convention", completed.OrderID, wantOrderID)
+	}
+
+	if refunded.Status != "refunded" {
+		t.Errorf("recs[1].Status = %q, want \"refunded\"", refunded.Status)
+	}
+	if refunded.SubtotalCents != -wantSubtotal {
+		t.Errorf("recs[1].SubtotalCents = %s, want %s", money.FormatCents(refunded.SubtotalCents), money.FormatCents(-wantSubtotal))
+	}
+	if refunded.CommissionCents != -wantCommission {
+		t.Errorf("recs[1].CommissionCents = %s, want %s", money.FormatCents(refunded.CommissionCents), money.FormatCents(-wantCommission))
+	}
+	if refunded.NetPayoutCents != -(wantSubtotal - wantCommission) {
+		t.Errorf("recs[1].NetPayoutCents = %s, want %s", money.FormatCents(refunded.NetPayoutCents), money.FormatCents(-(wantSubtotal - wantCommission)))
+	}
+	if refunded.OrderID != wantOrderID {
+		t.Errorf("recs[1].OrderID = %q, want %q", refunded.OrderID, wantOrderID)
+	}
+	if refunded.RefundDate == nil {
+		t.Fatal("recs[1] (the refunded row) has no refund date")
+	}
+	if got, want := refunded.RefundDate.Format(dateLayout), wantRefundDate.Format(dateLayout); got != want {
+		t.Errorf("recs[1].RefundDate = %s, want %s", got, want)
+	}
+
+	// The load-bearing property: the two rows net to exactly zero, the same
+	// way reconcile.computeOneDay's CSV-path convention does — this is what
+	// makes a cancelled order economically invisible to margin, instead of
+	// silently subtracting its full amount.
+	if sum := completed.SubtotalCents + refunded.SubtotalCents; sum != 0 {
+		t.Errorf("SubtotalCents across both rows sums to %d, want 0", sum)
+	}
+	if sum := completed.CommissionCents + refunded.CommissionCents; sum != 0 {
+		t.Errorf("CommissionCents across both rows sums to %d, want 0", sum)
+	}
+	if sum := completed.NetPayoutCents + refunded.NetPayoutCents; sum != 0 {
+		t.Errorf("NetPayoutCents across both rows sums to %d, want 0", sum)
 	}
 }
 
@@ -198,7 +267,7 @@ func TestJETAdapter_LateEveningOrderKeepsItsLocalDay(t *testing.T) {
 		t.Fatalf("test premise broken: 21:30 local should be the next day in UTC, got %s", got)
 	}
 
-	rec, err := jetAdapter{}.normalize(jetOrderDTO{
+	recs, err := jetAdapter{}.normalize(jetOrderDTO{
 		OrderReference:   "JET-SIM-20260820-0030",
 		PlacedAtEpochMs:  placedAt.UnixMilli(),
 		GrossAmountMinor: 4000,
@@ -209,6 +278,10 @@ func TestJETAdapter_LateEveningOrderKeepsItsLocalDay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalize: %v", err)
 	}
+	if len(recs) != 1 {
+		t.Fatalf("a DELIVERED order must normalize to exactly one record, got %d", len(recs))
+	}
+	rec := recs[0]
 
 	if got := rec.OrderDate.Format(dateLayout); got != "2026-08-20" {
 		t.Errorf("order date is %s, want 2026-08-20 — the epoch timestamp was read in UTC instead of the merchant's zone", got)

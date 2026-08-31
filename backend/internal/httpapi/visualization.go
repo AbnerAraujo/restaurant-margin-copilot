@@ -682,9 +682,46 @@ func moneyPoint(label, decimal string) (VizPoint, bool) {
 // chart components format a loss.
 func signedMoney(decimal string) string {
 	if strings.HasPrefix(decimal, "-") {
-		return "−$" + strings.TrimPrefix(decimal, "-")
+		return "−$" + withThousandsSeparators(strings.TrimPrefix(decimal, "-"))
 	}
-	return "$" + decimal
+	return "$" + withThousandsSeparators(decimal)
+}
+
+// withThousandsSeparators inserts commas into a plain "1234.56"-style
+// decimal string's integer part, matching the comma-grouped formatting
+// every other money display in this app already uses (the frontend's own
+// formatUsd, and every value passed straight through the wire that it
+// formats itself). signedMoney is one of the few places the BACKEND
+// pre-builds the final "$"-prefixed display string rather than sending a
+// raw number for the frontend to format — found live: a visualization
+// point rendered "$3440.58" (no separator) while the exact same figure
+// elsewhere on the same page, formatted by the frontend, showed
+// "$3,440.58" — the same number, two different renderings on one screen.
+func withThousandsSeparators(decimal string) string {
+	intPart, fracPart, hasFrac := strings.Cut(decimal, ".")
+	if len(intPart) <= 3 {
+		if hasFrac {
+			return intPart + "." + fracPart
+		}
+		return intPart
+	}
+	var b strings.Builder
+	// firstGroup is 1-3 digits so every group after it is exactly 3 —
+	// e.g. "1234567" -> "1" then "234" "567", never a leading "1234".
+	firstGroup := len(intPart) % 3
+	if firstGroup == 0 {
+		firstGroup = 3
+	}
+	b.WriteString(intPart[:firstGroup])
+	for i := firstGroup; i < len(intPart); i += 3 {
+		b.WriteByte(',')
+		b.WriteString(intPart[i : i+3])
+	}
+	if hasFrac {
+		b.WriteByte('.')
+		b.WriteString(fracPart)
+	}
+	return b.String()
 }
 
 func defaultString(value, fallback string) string {

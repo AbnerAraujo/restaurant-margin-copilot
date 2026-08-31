@@ -195,6 +195,35 @@ func TestDedup_ChannelTaggedDuplicateMatchesOnExactAmountAndWindow(t *testing.T)
 	require.Equal(t, "IFOOD-SIM-20260820-0007", decisions[0].PlatformOrderID)
 }
 
+// TestDedup_AbsentTrueCounterpartCanMergeAWrongCandidate pins the disclosed
+// residual risk documented in this file's "A residual risk this rule
+// cannot see" doc comment, found in adversarial testing: the uniqueness
+// check only sees the CANDIDATE SET this sync actually fetched. If a
+// delivery-tagged ticket's true counterpart is missing from that feed (not
+// yet settled, or filed on the adjacent calendar day) and exactly one
+// UNRELATED order happens to share its amount and land inside
+// matchWindowMinutes, that pairing is trivially unique from the available
+// evidence and merges -- confidently, and wrongly. This test is not
+// asserting a bug should be fixed; it pins the CURRENT, understood
+// behavior as a documented trade-off, so a future change to the matching
+// rule that silently alters this specific case is a deliberate decision,
+// not an accident.
+func TestDedup_AbsentTrueCounterpartCanMergeAWrongCandidate(t *testing.T) {
+	// The ticket's TRUE counterpart order is simply not in this feed at
+	// all (unsettled at fetch time, in the real scenario) -- only an
+	// unrelated same-amount order from later in the evening exists.
+	delivery := []ingest.DeliveryRecord{
+		deliveryFixture(PlatformIFood, "IFOOD-UNRELATED", "19:05", 3200),
+	}
+	pos := []POSOrder{posFixture("POS-ORPHAN", "19:00", 3200, PlatformIFood, "")}
+
+	kept, decisions := dedupeAcrossSources(delivery, pos, allDeliveryFetched())
+
+	require.Empty(t, kept, "documented trade-off: the lone unrelated candidate is merged, deleting this ticket's real revenue")
+	require.Equal(t, []DedupKind{DedupMatchedByChannelAmountTime}, kindsOf(decisions))
+	require.Equal(t, "IFOOD-UNRELATED", decisions[0].PlatformOrderID)
+}
+
 // THE FALSE-POSITIVE BAR (spec 012 FR-011).
 //
 // Two in-house tickets sitting on exact-cent, one-minute-away matches for

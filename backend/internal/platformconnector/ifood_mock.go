@@ -212,11 +212,11 @@ func (a ifoodAdapter) FetchDeliveryRevenue(ctx context.Context, date time.Time) 
 
 		src := fmt.Sprintf("%s?date=%s&page=%d", ifoodEndpoint(), date.Format(dateLayout), page)
 		for i, dto := range resp.Orders {
-			rec, err := a.normalize(dto, ingest.SourceRowRef{File: src, Row: i + 1})
+			recs, err := a.normalize(dto, ingest.SourceRowRef{File: src, Row: i + 1})
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, rec)
+			out = append(out, recs...)
 		}
 
 		if page >= resp.Page.TotalPages {
@@ -240,9 +240,11 @@ func (a ifoodAdapter) FetchDeliveryRevenue(ctx context.Context, date time.Time) 
 //     the date read in the offset the timestamp carries
 //   - CANCELLED + positive amounts -> "refunded" + NEGATIVE amounts, this
 //     repository's convention (see this file's header comment)
-func (a ifoodAdapter) normalize(dto ifoodOrderDTO, ref ingest.SourceRowRef) (ingest.DeliveryRecord, error) {
-	fail := func(field string, err error) (ingest.DeliveryRecord, error) {
-		return ingest.DeliveryRecord{}, fmt.Errorf("platformconnector: iFood order %s: %s: %w", dto.ID, field, err)
+// normalize returns one record for a concluded order, or TWO for a
+// cancelled one — see the CANCELLED case below for why.
+func (a ifoodAdapter) normalize(dto ifoodOrderDTO, ref ingest.SourceRowRef) ([]ingest.DeliveryRecord, error) {
+	fail := func(field string, err error) ([]ingest.DeliveryRecord, error) {
+		return nil, fmt.Errorf("platformconnector: iFood order %s: %s: %w", dto.ID, field, err)
 	}
 
 	placedAt, err := time.Parse(time.RFC3339, dto.CreatedAt)
@@ -291,7 +293,7 @@ func (a ifoodAdapter) normalize(dto ifoodOrderDTO, ref ingest.SourceRowRef) (ing
 
 	switch dto.Status {
 	case "CONCLUDED":
-		// nothing further
+		return []ingest.DeliveryRecord{rec}, nil
 	case "CANCELLED":
 		if dto.Cancel == nil {
 			return fail("cancellation", fmt.Errorf("status is CANCELLED but no cancellation block was returned"))
@@ -303,17 +305,28 @@ func (a ifoodAdapter) normalize(dto ifoodOrderDTO, ref ingest.SourceRowRef) (ing
 		cy, cm, cd := cancelledAt.Date()
 		refundDate := time.Date(cy, cm, cd, 0, 0, 0, 0, merchantZone)
 
-		rec.Status = "refunded"
-		rec.RefundDate = &refundDate
-		// The sign flip. Everything the platform reported as a charge
-		// becomes a reversal.
-		rec.SubtotalCents = -subtotal
-		rec.CommissionCents = -commission
-		rec.NetPayoutCents = -payout
-		rec.Notes = "Simulated iFood partner-API refund (" + dto.Cancel.Reason + ") — not a real settlement."
+		// TWO records, matching the exact convention the CSV path already
+		// uses (backend/cmd/gendata/opening/README.md: "reversed by a
+		// second row with the same order_id, negative amounts") and
+		// internal/reconcile.computeOneDay already implements: the
+		// original "completed" charge, PLUS a separate "refunded" reversal
+		// with negated amounts. reconcile only ever adds a "completed"
+		// row's subtotal to gross — mutating the single record in place
+		// (the previous behavior here) meant the order's gross was never
+		// added in the first place, so subtracting the refund from it
+		// double-penalized margin by the full order amount on every
+		// cancellation. Found live: $1,138.24 understated over a 31-day
+		// sample, 23 of 31 days affected, zero discrepancy flags raised.
+		refunded := rec
+		refunded.Status = "refunded"
+		refunded.RefundDate = &refundDate
+		refunded.SubtotalCents = -subtotal
+		refunded.CommissionCents = -commission
+		refunded.NetPayoutCents = -payout
+		refunded.Notes = "Simulated iFood partner-API refund (" + dto.Cancel.Reason + ") — not a real settlement."
+
+		return []ingest.DeliveryRecord{rec, refunded}, nil
 	default:
 		return fail("status", fmt.Errorf("unrecognized status %q — refusing rather than guessing whether this order counts as revenue", dto.Status))
 	}
-
-	return rec, nil
 }

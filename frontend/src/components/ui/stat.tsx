@@ -118,7 +118,10 @@ export function Stat({
             <TooltipTrigger asChild>
               <button
                 type="button"
-                className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                // size-6 (24px): WCAG 2.2's 2.5.8 minimum target size --
+                // same fix as HomePage's identical Status-header info
+                // button, found undersized in adversarial testing.
+                className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 aria-label={`What does "${label}" mean?`}
               >
                 <Info className="size-3" aria-hidden="true" />

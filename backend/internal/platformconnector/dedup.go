@@ -61,6 +61,25 @@ import (
 // "best" match would be estimating money, which this product does not do
 // (Constitution Principle II).
 //
+// # A residual risk this rule cannot see, disclosed rather than papered over
+//
+// "No other reading is equally consistent" is a check over the CANDIDATE
+// SET this sync actually fetched — it cannot detect a candidate that
+// SHOULD exist but doesn't. If a delivery-tagged POS ticket's true
+// platform counterpart is missing from the fetched feed (not yet settled
+// at fetch time, or filed on the adjacent calendar day near midnight) and
+// exactly one UNRELATED order happens to share its amount and land inside
+// matchWindowMinutes, that pairing is trivially unique from the available
+// evidence and this rule merges it — confidently, and wrongly. Found in
+// adversarial testing, quantified at one lone-candidate collision per
+// constructed scenario; not observed at the dataset's real day-to-day
+// scale, but not structurally impossible either. No field in either
+// record carries a second, independent signal (an item count, a table
+// number) that could catch this — the confidence bar is already using
+// every piece of evidence eligible() and findByAmountAndTime() have
+// access to. Estimating one to fabricate a false sense of certainty would
+// be worse than naming the gap: this paragraph is that disclosure.
+//
 // # No model, anywhere
 //
 // Every decision below is integer-cent equality, case-folded string

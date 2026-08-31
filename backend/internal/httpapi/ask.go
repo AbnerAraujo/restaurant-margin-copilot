@@ -348,7 +348,7 @@ type Classifier interface {
 // Narrator is the explanation step as this handler needs it.
 // *explain.Explainer satisfies it directly.
 type Narrator interface {
-	Explain(ctx context.Context, question, assumptionStated string) (*explain.Result, error)
+	Explain(ctx context.Context, question, assumptionStated, priorAnswerText string) (*explain.Result, error)
 }
 
 // ParaphraseClassifier is specs/004-semantic-cache's paraphrase layer as
@@ -486,7 +486,17 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			// one is a real (small, bounded) billed Haiku call — see
 			// serveFromParaphraseMatch for why it still runs before the
 			// ambiguity gate rather than after it.
-			if deps.ParaphraseMatcher != nil {
+			//
+			// Skipped entirely when this is a follow-up or clarification
+			// reply (pending or previousAnswer non-nil): `resolved` is then
+			// a composed string that TEXTUALLY CONTAINS the original prior
+			// question, which reliably paraphrase-matches back onto that
+			// same cached entry — found live serving the same clarifying
+			// question back to a reply that had already answered it, in a
+			// loop. A fresh reply always deserves a fresh classification;
+			// the cost saved by paraphrase-matching a follow-up is not
+			// worth re-serving a stale question as if it were new.
+			if deps.ParaphraseMatcher != nil && pending == nil && previousAnswer == nil {
 				if served := deps.serveFromParaphraseMatch(ctx, w, resolved, req.Question); served {
 					return
 				}
@@ -601,7 +611,17 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			// did/didn't advice appear?" question answerable from the log.
 			log.Printf("httpapi: inline advice armed (gate flagged advice_requested; question=%q)", req.Question)
 		}
-		result, err := deps.Explainer.Explain(ctx, explainInput, decision.AssumptionStated)
+		// The immediately preceding turn's own answer text, or "" for a
+		// fresh question — widens answerverify's allowed-figure set (see
+		// Explain's doc comment) so a natural follow-up restating a figure
+		// this exact product already verified and served last turn isn't
+		// refused for repeating it. previousAnswer is nil on a fresh
+		// question or a clarification reply, never on a bare follow-up.
+		var priorAnswerText string
+		if previousAnswer != nil {
+			priorAnswerText = previousAnswer.AnswerText
+		}
+		result, err := deps.Explainer.Explain(ctx, explainInput, decision.AssumptionStated, priorAnswerText)
 		if err != nil {
 			// Explain still returns a non-nil *Result on a mid-loop failure,
 			// carrying whatever tokens/cost this interaction's earlier turns
@@ -856,6 +876,18 @@ func (deps Deps) serveFromParaphraseMatch(ctx context.Context, w http.ResponseWr
 		return false
 	}
 
+	// Deterministic guardrail (see ExplicitDatesConflict's doc comment) —
+	// never serve a paraphrase match when both questions name an explicit,
+	// calendar-comparable period and those periods disagree. A model
+	// classifier CAN confidently mismatch two well-formed, real cached
+	// questions about different months; the defensive checks below this
+	// one only catch a claim that doesn't resolve to a real candidate at
+	// all, which does nothing for a wrong-but-real match. This check does.
+	if ambiguity.ExplicitDatesConflict(askedText, decision.MatchedCandidate.OriginalQuestion) {
+		log.Printf("httpapi: paraphrase classifier matched %q to %q but their explicit dates disagree — treating as a miss (question=%q)", askedText, decision.MatchedCandidate.OriginalQuestion, askedText)
+		return false
+	}
+
 	// Live re-verification (see doc comment above) — never serve an entry
 	// because a classifier CLAIMED a match without checking the real cache.
 	entry, err := deps.Cache.Lookup(ctx, decision.MatchedCandidate.OriginalQuestion)
@@ -879,8 +911,18 @@ func (deps Deps) serveFromParaphraseMatch(ctx context.Context, w http.ResponseWr
 	// (the one call that actually ran this request), and the cost it avoided
 	// is reported separately in Cache.CostAvoidedUSD — two numbers, never
 	// netted into one (spec FR-005).
+	// ModelParaphraseMatch, not ModelAmbiguityGate: this interaction reports
+	// the classification call serveFromParaphraseMatch itself just made
+	// (internal/paraphrase, deliberately kept on Haiku 4.5 — see that
+	// package's doc comment), never the gate, which didn't run on this
+	// request at all. This was previously mislabeled as the gate's model
+	// (Sonnet 5) — a display/instrumentation bug only, since the real call
+	// and its real cost were always correct; only the reported model name
+	// was wrong. Found live: a paraphrase-hit interaction row showing
+	// "model_used": "claude-sonnet-5" despite CLAUDE.md and this package's
+	// own doc comment both stating Haiku 4.5.
 	classificationInteraction := CostInteraction{
-		ModelUsed:        llmclient.ModelAmbiguityGate,
+		ModelUsed:        llmclient.ModelParaphraseMatch,
 		InputTokens:      decision.InputTokens,
 		OutputTokens:     decision.OutputTokens,
 		EstimatedCostUSD: decision.EstimatedCostUSD,

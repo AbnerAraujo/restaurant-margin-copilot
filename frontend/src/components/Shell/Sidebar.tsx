@@ -12,11 +12,11 @@ import {
   UserCircle,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 
 import Logo from '@/components/Logo/Logo'
 import { useProfile } from '@/components/Profile/useProfile'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { cn } from '@/lib/utils'
 
 /**
@@ -158,15 +158,6 @@ export default function Sidebar() {
   )
 }
 
-// SCROLL_EDGE_SLACK_PX tolerates the sub-pixel rounding a browser's own
-// scroll math can leave behind (scrollWidth/clientWidth are already rounded
-// integers, but scrollLeft can land at e.g. 639.6 on a display with a
-// fractional device pixel ratio) — without it, "has this been scrolled all
-// the way to the end" could stay permanently false-negative on some
-// displays, leaving the end-of-scroll fade stuck on even once nothing more
-// is scrollable.
-const SCROLL_EDGE_SLACK_PX = 1
-
 /**
  * Small-viewport (`< lg`) replacement for the sidebar: the same nav items
  * as horizontal icon pills, so the IA stays fully reachable without a
@@ -183,39 +174,15 @@ const SCROLL_EDGE_SLACK_PX = 1
  * `Points`, `Profile`, `Settings`, and `Help` invisible and undiscoverable
  * unless a visitor happens to swipe a bar that gives no visual reason to.
  * A right-edge fade (shown only while there is real unscrolled content
- * past the edge, per canScrollRight below — never a permanent decoration
- * that would misleadingly persist after the row is fully scrolled) is the
- * same affordance pattern browsers themselves use for overflowing tab
- * strips, applied here since this codebase has no shared scroll-fade
- * primitive yet to reuse.
+ * past the edge, via useHorizontalScrollFade — never a permanent
+ * decoration that would misleadingly persist after the row is fully
+ * scrolled) is the same affordance pattern browsers themselves use for
+ * overflowing tab strips. This was the first place the pattern was needed;
+ * it's since been extracted to useHorizontalScrollFade and reused for
+ * every column-filterable table, which had exactly the same defect.
  */
 export function MobileNavBar() {
-  const scrollerRef = useRef<HTMLElement>(null)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-
-  useEffect(() => {
-    const el = scrollerRef.current
-    if (!el) return
-
-    const updateFadeVisibility = () => {
-      setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - SCROLL_EDGE_SLACK_PX)
-    }
-
-    updateFadeVisibility()
-    el.addEventListener('scroll', updateFadeVisibility, { passive: true })
-    // ResizeObserver, not just a mount-time check: rotating the device,
-    // resizing a desktop window down into this breakpoint, or the profile
-    // name (RestaurantIdentity) loading in after this first paints can all
-    // change whether the row overflows at all, without ever firing a
-    // 'scroll' event.
-    const observer = new ResizeObserver(updateFadeVisibility)
-    observer.observe(el)
-
-    return () => {
-      el.removeEventListener('scroll', updateFadeVisibility)
-      observer.disconnect()
-    }
-  }, [])
+  const { ref: scrollerRef, canScrollRight } = useHorizontalScrollFade<HTMLElement>()
 
   return (
     <div className="relative lg:hidden">

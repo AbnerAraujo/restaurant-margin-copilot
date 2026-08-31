@@ -171,3 +171,50 @@ func TestPrecheckFactNote_CarriesEveryVerdict(t *testing.T) {
 	require.Contains(t, note, `"July 2023": OUT OF RANGE`)
 	require.Contains(t, note, "[Deterministic date-range check")
 }
+
+// TestExplicitDatesConflict_DifferentMonthsConflict pins the exact live
+// failure this guardrail exists for: a paraphrase classifier once matched
+// "Give me the exact margin total for August 2026" to a cached "What was my
+// average daily input cost in July 2026?" and served the wrong month's
+// figures as an answered response. Neither number involved was wrong on its
+// own terms — the match itself was wrong — so the fix has to be a
+// deterministic check on the two questions' own named periods, not another
+// model call.
+func TestExplicitDatesConflict_DifferentMonthsConflict(t *testing.T) {
+	require.True(t, ExplicitDatesConflict(
+		"Give me the exact margin total for August 2026.",
+		"What was my average daily input cost in July 2026?",
+	))
+}
+
+func TestExplicitDatesConflict_SamePeriodNoConflict(t *testing.T) {
+	require.False(t, ExplicitDatesConflict(
+		"What was my margin in August 2026?",
+		"Give me the exact margin total for August 2026.",
+	))
+}
+
+func TestExplicitDatesConflict_DifferentPhrasingSamePeriodNoConflict(t *testing.T) {
+	// "1 August 2026" and "August 2026" both resolve to a reading that
+	// includes 2026-08-01 (a day-level mention has a within-month reading
+	// too), so a question naming a specific day inside the same month a
+	// cached question named at the month level must not conflict.
+	require.False(t, ExplicitDatesConflict(
+		"How did August 1, 2026 look?",
+		"What was my margin in August 2026?",
+	))
+}
+
+func TestExplicitDatesConflict_NoExplicitDateEitherSideNeverConflicts(t *testing.T) {
+	require.False(t, ExplicitDatesConflict(
+		"How did last week compare to the week before?",
+		"How was the weekend?",
+	))
+}
+
+func TestExplicitDatesConflict_OnlyOneSideHasADate(t *testing.T) {
+	require.False(t, ExplicitDatesConflict(
+		"How did last week look?",
+		"What was my margin in August 2026?",
+	))
+}
