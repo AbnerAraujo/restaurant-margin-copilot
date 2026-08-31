@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 
@@ -110,5 +110,46 @@ describe('EffectiveRateTrendChart', () => {
     expect(titles.some((t) => t?.startsWith('iFood') && t.includes('Aug'))).toBe(false)
     expect(titles.filter((t) => t?.startsWith('iFood'))).toHaveLength(1)
     expect(titles.filter((t) => t?.startsWith('Just Eat Takeaway'))).toHaveLength(2)
+  })
+
+  it('narrows the table fallback to months meeting a numeric filter on one platform column', async () => {
+    const user = userEvent.setup()
+    render(
+      <EffectiveRateTrendChart
+        periods={[period('2026-07', '21.00%', '19.00%'), period('2026-08', '22.00%', '20.00%')]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'View as table' }))
+    await user.click(screen.getByRole('button', { name: /filter by ifood/i }))
+    const min = await screen.findByLabelText(/minimum, ifood/i)
+    await user.type(min, '22{Enter}')
+
+    const table = screen.getByRole('table')
+    expect(within(table).queryByText('Jul 26')).not.toBeInTheDocument()
+    expect(within(table).getByText('Aug 26')).toBeInTheDocument()
+  })
+
+  it('excludes a "No sales" month from a numeric filter rather than guessing its rate', async () => {
+    const user = userEvent.setup()
+    render(
+      <EffectiveRateTrendChart
+        periods={[
+          period('2026-07', null, '19.00%'), // iFood had zero sales this month
+          period('2026-08', '22.00%', '20.00%'),
+        ]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'View as table' }))
+    await user.click(screen.getByRole('button', { name: /filter by ifood/i }))
+    const min = await screen.findByLabelText(/minimum, ifood/i)
+    await user.type(min, '0{Enter}')
+
+    const table = screen.getByRole('table')
+    // July's "No sales" cell fails numeric parsing and is refused, even
+    // though "0 or more" might otherwise seem to include it.
+    expect(within(table).queryByText('Jul 26')).not.toBeInTheDocument()
+    expect(within(table).getByText('Aug 26')).toBeInTheDocument()
   })
 })

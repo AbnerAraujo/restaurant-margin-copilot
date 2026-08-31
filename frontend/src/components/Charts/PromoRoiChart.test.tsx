@@ -461,6 +461,101 @@ describe('PromoRoiChart', () => {
     expect(screen.getByText('Net (USD)')).toBeInTheDocument()
   })
 
+  // Spec 015 extension — column filters on the "view as table" fallback.
+  // Scoped to Platform (categorical), Spend (numeric), and Net (numeric)
+  // only; Campaign, Incremental revenue, and Sources stay unfiltered (see
+  // PROMO_TABLE_COLUMN_FILTERS's doc comment in PromoRoiChart.tsx).
+  describe('column filters on the embedded table', () => {
+    it('renders a filter button only for Platform, Spend, and Net', async () => {
+      const user = userEvent.setup()
+      render(<PromoRoiChart />)
+      await user.click(screen.getByRole('button', { name: /view as table/i }))
+
+      expect(screen.getByRole('button', { name: /filter by platform/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /filter by spend/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /filter by net/i })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /filter by campaign/i })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('button', { name: /filter by incremental revenue/i }),
+      ).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: /filter by sources/i })).not.toBeInTheDocument()
+    })
+
+    it('narrows the table to the checked platform, and "Clear filters" restores every row', async () => {
+      const user = userEvent.setup()
+      render(<PromoRoiChart />)
+      await user.click(screen.getByRole('button', { name: /view as table/i }))
+
+      await user.click(screen.getByRole('button', { name: /filter by platform/i }))
+      await user.click(await screen.findByRole('checkbox', { name: 'iFood' }))
+
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+      expect(within(table).getByText('IFOOD-CAMP-WEEKEND')).toBeInTheDocument()
+      expect(within(table).queryByText('JET-CAMP-LUNCHFIX')).not.toBeInTheDocument()
+      expect(within(table).queryByText('JET-CAMP-NEWMENU')).not.toBeInTheDocument()
+      expect(screen.getByText('2 of 4 shown')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: /clear filters/i }))
+      expect(within(screen.getByRole('table')).getByText('JET-CAMP-LUNCHFIX')).toBeInTheDocument()
+    })
+
+    it('narrows the table to a Spend dollar range', async () => {
+      const user = userEvent.setup()
+      render(<PromoRoiChart />)
+      await user.click(screen.getByRole('button', { name: /view as table/i }))
+
+      await user.click(screen.getByRole('button', { name: /filter by spend/i }))
+      await user.type(await screen.findByLabelText(/minimum, spend/i), '100')
+      await user.type(screen.getByLabelText(/maximum, spend/i), '200')
+      await user.click(screen.getByRole('button', { name: /^apply$/i }))
+
+      const table = screen.getByRole('table')
+      // Only IFOOD-CAMP-BOOST01 ($180.00) falls inside [100, 200]; JET-CAMP-
+      // LUNCHFIX ($220.00) is above it, the other two ($95.00, $60.00) below.
+      expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+      expect(within(table).queryByText('JET-CAMP-LUNCHFIX')).not.toBeInTheDocument()
+      expect(within(table).queryByText('IFOOD-CAMP-WEEKEND')).not.toBeInTheDocument()
+      expect(within(table).queryByText('JET-CAMP-NEWMENU')).not.toBeInTheDocument()
+    })
+
+    it('excludes the FR-013 refused (null net) row from a Net range filter rather than guessing at it', async () => {
+      const user = userEvent.setup()
+      render(<PromoRoiChart />)
+      await user.click(screen.getByRole('button', { name: /view as table/i }))
+
+      await user.click(screen.getByRole('button', { name: /filter by net/i }))
+      // A range wide enough to cover every real net in the sample
+      // (-165..34), so a row only drops out here because its net is null,
+      // not because it's out of range.
+      await user.type(await screen.findByLabelText(/minimum, net/i), '-1000')
+      await user.type(screen.getByLabelText(/maximum, net/i), '1000')
+      await user.click(screen.getByRole('button', { name: /^apply$/i }))
+
+      const table = screen.getByRole('table')
+      expect(within(table).getByText('IFOOD-CAMP-BOOST01')).toBeInTheDocument()
+      expect(within(table).getByText('JET-CAMP-LUNCHFIX')).toBeInTheDocument()
+      expect(within(table).getByText('JET-CAMP-NEWMENU')).toBeInTheDocument()
+      // IFOOD-CAMP-WEEKEND's net is null (refused, FR-013) — excluded, not
+      // guessed at as $0 or coerced into either bound.
+      expect(within(table).queryByText('IFOOD-CAMP-WEEKEND')).not.toBeInTheDocument()
+      expect(screen.getByText('3 of 4 shown')).toBeInTheDocument()
+    })
+
+    it('shows the empty state, not a blank table, when a column filter matches nothing', async () => {
+      const user = userEvent.setup()
+      render(<PromoRoiChart />)
+      await user.click(screen.getByRole('button', { name: /view as table/i }))
+
+      await user.click(screen.getByRole('button', { name: /filter by spend/i }))
+      await user.type(await screen.findByLabelText(/minimum, spend/i), '10000')
+      await user.click(screen.getByRole('button', { name: /^apply$/i }))
+
+      expect(screen.getByText('No campaigns match these filters.')).toBeInTheDocument()
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    })
+  })
+
   it('exposes a table view with the refusal spelled out, not a null or zero', async () => {
     const user = userEvent.setup()
     render(<PromoRoiChart />)

@@ -12,6 +12,56 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-31 — Column-header filters extended to Home, Close, Promotions, Platforms
+
+Spec 015's User Story 2 had deliberately excluded `HomePage`'s Recent
+Closes table, `PlatformsPage`'s comparison grid, and every chart's "View
+as table" fallback from the Excel-style column-filter feature, each for
+a stated reason (bounded row counts, an existing chip surface, risk of
+a filtered table disagreeing with its own chart). Per direct request,
+that exclusion is reversed for six specific tables across four pages;
+spec 015 was amended with an inline, struck-through disclosure of
+exactly which scenarios reversed and why, rather than silently rewritten
+to look forward-planned.
+
+**`useColumnFilters` generalized first** (`frontend/src/lib/useColumnFilters.ts`):
+an optional `getCell(row, columnIndex)` accessor lets a caller with rich
+per-row objects (a `Chip`, a `Tooltip`, a conditionally colored figure)
+keep its own rendering and get `filteredRows` back as that same rich
+type, instead of being forced through `DataGrid`'s plain `string[][]`
+contract. Defaults to `row[columnIndex]`, so `DataGrid`'s own two
+existing callers are unaffected.
+
+**Six tables wired in**, four of them directly against the generalized
+hook (bypassing `DataGrid` to preserve rich rendering): `HomePage`'s
+Recent Closes (categorical Status, numeric Margin, composing with the
+page's existing search/chip filter); `MarginTrendChart`'s and
+`PromoRoiChart`'s "View as table" fallbacks (Close and Promotions
+pages); `CategoryBarChart`'s and `EffectiveRateTrendChart`'s "View as
+table" fallbacks (Platforms page — the two straightforward `DataGrid`
+cases (`PlatformsPage`'s own comparison grid) just pass the existing
+`columnFilters` prop). `CategoryBarChart` is also used by chat's
+`AnswerVisualizationView`; its new filter is gated behind an opt-in
+prop that caller doesn't pass, so chat's rendering is byte-identical to
+before — the same discipline `DataGrid`'s own `columnFilters` prop
+already established.
+
+**A real bug avoided, not just fixed**: every numeric `getCell` reads
+the raw number via `String(value)`, never a formatted display string.
+`formatSignedUsd` renders a negative figure with U+2212 (minus sign),
+not an ASCII hyphen — `parseNumericCell`'s `[0-9.-]` strip is ASCII-only
+and would have silently dropped the sign off every negative value fed
+to it as a display string, e.g. `PromoRoiChart`'s negative campaign net.
+Caught during implementation, verified with a dedicated test asserting
+a negative net stays inside a wide filter range.
+
+19 new test cases across 5 files. Full suite: 51 files, 638 tests,
+green; `tsc -b` clean; `eslint` output unchanged from before this
+change (29 pre-existing findings, confirmed via `git stash` diff — none
+new).
+
+---
+
 ## 2026-08-31 — Presentation: "What's left" and "Mistakes" slides cut, dead CSS removed
 
 Two more slides removed per direct request: "One shipped since the freeze —

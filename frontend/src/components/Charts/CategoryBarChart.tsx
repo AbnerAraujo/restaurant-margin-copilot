@@ -1,6 +1,10 @@
 import { useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, X } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
+import { ColumnFilterButton } from '@/components/ui/column-filter'
+import { FilterEmptyState } from '@/components/ui/filter-bar'
+import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
 import { cn } from '@/lib/utils'
 import type { VisualizationPoint } from './answerVisualization'
 
@@ -11,6 +15,21 @@ export interface CategoryBarChartProps {
   points: VisualizationPoint[]
   sourceTool?: string
   className?: string
+  /**
+   * Opt-in Excel/Sheets-style header filter(s) for the "View as table"
+   * fallback below the SVG bars — keyed the same way `DataGrid`'s own
+   * `columnFilters` prop is (column 0 is Category, column 1 is the value
+   * column). Omitted by every caller that doesn't pass it (chat's
+   * `AnswerVisualizationView`, which renders a handful of rows scoped to one
+   * answer — exactly the case `DataGrid`'s own doc comment says a filter
+   * would be a control the reader has to understand before trusting the
+   * number), so this stays exactly as plain as before for them. Wired
+   * directly against `useColumnFilters` rather than through `DataGrid`,
+   * since this table's cells (a red/green figure, an "unavailable" refusal
+   * box) are this component's own rendering, not `DataGrid`'s plain strings.
+   * The SVG bars above are never affected — only the fallback table narrows.
+   */
+  columnFilters?: ColumnFilterSpecs
 }
 
 // ---------------------------------------------------------------------------
@@ -110,9 +129,25 @@ export default function CategoryBarChart({
   points,
   sourceTool,
   className,
+  columnFilters,
 }: CategoryBarChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
+
+  // Table-only filtering (see `columnFilters` doc comment above) — a cell
+  // marked `unavailable` reads as '' here, which `parseNumericCell` refuses
+  // to parse, so an "unavailable" row is correctly excluded from a numeric
+  // filter's results rather than guessed at (never coerced to 0).
+  const columnFilterSpecs = columnFilters ?? {}
+  const hasColumnFilters = Object.keys(columnFilterSpecs).length > 0
+  const columnFilterState = useColumnFilters<VisualizationPoint>({
+    columns: ['Category', valueLabel ?? 'Value'],
+    rows: points,
+    specs: columnFilterSpecs,
+    getCell: (point, columnIndex) =>
+      columnIndex === 0 ? point.label : point.unavailable ? '' : String(point.value),
+  })
+  const visibleTableRows = hasColumnFilters ? columnFilterState.filteredRows : points
 
   const plotHeight = points.length * ROW_HEIGHT
   const chartHeight = plotHeight + MARGIN.top + MARGIN.bottom
@@ -382,41 +417,73 @@ export default function CategoryBarChart({
       </div>
 
       {tableOpen ? (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <caption className="sr-only">{title}, as a table</caption>
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th scope="col" className="py-1.5 pr-4 font-medium">
-                  Category
-                </th>
-                <th scope="col" className="py-1.5 font-medium">
-                  {valueLabel ?? 'Value'}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {points.map((point) => (
-                <tr key={point.label} className="border-b border-border/60">
-                  <td className="py-1.5 pr-4 text-foreground">{point.label}</td>
-                  <td
-                    className={cn(
-                      'py-1.5 font-medium tabular-nums',
-                      point.unavailable
-                        ? 'text-destructive-text'
-                        : point.value >= 0
-                          ? 'text-success-text'
-                          : 'text-destructive-text',
-                    )}
-                  >
-                    {point.unavailable
-                      ? `${point.display} — ${point.reason ?? 'no figure'}`
-                      : point.display}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          {hasColumnFilters && columnFilterState.isFiltered ? (
+            <div className="mb-1.5 flex items-center justify-end gap-2">
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                {visibleTableRows.length} of {points.length} shown
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={columnFilterState.clearAll}>
+                <X aria-hidden="true" />
+                Clear filters
+              </Button>
+            </div>
+          ) : null}
+
+          {hasColumnFilters && points.length > 0 && visibleTableRows.length === 0 ? (
+            <FilterEmptyState
+              label="No rows match this filter."
+              onClear={columnFilterState.clearAll}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <caption className="sr-only">{title}, as a table</caption>
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th scope="col" className="py-1.5 pr-4 font-medium">
+                      Category
+                    </th>
+                    <th scope="col" className="py-1.5 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        {valueLabel ?? 'Value'}
+                        {columnFilterSpecs[1] === 'numeric' ? (
+                          <ColumnFilterButton
+                            type="numeric"
+                            columnLabel={valueLabel ?? 'Value'}
+                            {...columnFilterState.getNumericRange(1)}
+                            onApply={(min, max) => columnFilterState.setNumericRange(1, min, max)}
+                            onClear={() => columnFilterState.clearColumn(1)}
+                          />
+                        ) : null}
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleTableRows.map((point) => (
+                    <tr key={point.label} className="border-b border-border/60">
+                      <td className="py-1.5 pr-4 text-foreground">{point.label}</td>
+                      <td
+                        className={cn(
+                          'py-1.5 font-medium tabular-nums',
+                          point.unavailable
+                            ? 'text-destructive-text'
+                            : point.value >= 0
+                              ? 'text-success-text'
+                              : 'text-destructive-text',
+                        )}
+                      >
+                        {point.unavailable
+                          ? `${point.display} — ${point.reason ?? 'no figure'}`
+                          : point.display}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : null}
     </figure>

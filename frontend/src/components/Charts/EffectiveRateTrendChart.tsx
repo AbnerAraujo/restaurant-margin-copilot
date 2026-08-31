@@ -9,8 +9,13 @@
 // rather than a custom crosshair layer).
 
 import { useState } from 'react'
+import { X } from 'lucide-react'
 
+import { Button } from '@/components/ui/button'
+import { ColumnFilterButton } from '@/components/ui/column-filter'
+import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { buildLinearTickScale, formatAxisPercent } from '@/lib/chartScale'
+import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
 
 export interface EffectiveRateTrendPlatformPoint {
   source: string
@@ -66,10 +71,11 @@ export default function EffectiveRateTrendChart({
 }: EffectiveRateTrendChartProps) {
   const [tableOpen, setTableOpen] = useState(false)
 
-  if (periods.length < 2) return null
-
-  // Stable series order: every platform source seen across any period,
-  // in first-appearance order.
+  // Stable series order: every platform source seen across any period, in
+  // first-appearance order. Computed (and the column-filter hook below
+  // called) before the "fewer than 2 periods" early return so hook order
+  // never varies across renders — React's Rules of Hooks — even though
+  // both are only meaningful once the chart itself actually renders.
   const seriesOrder: string[] = []
   const displayNames = new Map<string, string>()
   for (const period of periods) {
@@ -80,6 +86,34 @@ export default function EffectiveRateTrendChart({
       }
     }
   }
+
+  // The "View as table" fallback's own column filters, always on for this
+  // single-consumer chart (unlike CategoryBarChart, which is also rendered
+  // in chat's answer view and so gates this behind an opt-in prop) — a
+  // numeric filter per platform column, built dynamically to match however
+  // many platform series this period range actually has. Month (column 0)
+  // is never filterable: it's the row's own identity, same reasoning
+  // Category gets no filter in CategoryBarChart's table.
+  const columnFilterSpecs: ColumnFilterSpecs = Object.fromEntries(
+    seriesOrder.map((_, seriesIndex) => [seriesIndex + 1, 'numeric']),
+  )
+  const columnFilterState = useColumnFilters<EffectiveRateTrendPeriod>({
+    columns: ['Month', ...seriesOrder],
+    rows: periods,
+    specs: columnFilterSpecs,
+    getCell: (period, columnIndex) => {
+      if (columnIndex === 0) return period.month
+      const source = seriesOrder[columnIndex - 1]
+      const platform = period.platforms.find((p) => p.source === source)
+      const rate = platform ? parsePercent(platform.effective_rate) : null
+      // A "No sales" month reads as '' here, which `parseNumericCell`
+      // refuses to parse — excluded from a numeric filter's results rather
+      // than guessed at, never coerced to 0.
+      return rate === null ? '' : String(rate)
+    },
+  })
+
+  if (periods.length < 2) return null
 
   const allRates = periods
     .flatMap((p) => p.platforms.map((pl) => parsePercent(pl.effective_rate)))
@@ -253,41 +287,76 @@ export default function EffectiveRateTrendChart({
       </div>
 
       {tableOpen ? (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[320px] text-left text-xs">
-            <caption className="sr-only">
-              Effective commission rate trend across {periods.length} months, for{' '}
-              {seriesOrder.map((s) => displayNames.get(s)).join(' and ')}
-            </caption>
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Month
-                </th>
-                {seriesOrder.map((source) => (
-                  <th key={source} scope="col" className="py-1.5 pr-3 font-medium">
-                    {displayNames.get(source)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {periods.map((period) => (
-                <tr key={period.month} className="border-b border-border/60">
-                  <td className="py-1.5 pr-3 text-foreground">{monthLabel(period.month)}</td>
-                  {seriesOrder.map((source) => {
-                    const platform = period.platforms.find((p) => p.source === source)
-                    const rate = platform ? parsePercent(platform.effective_rate) : null
-                    return (
-                      <td key={source} className="py-1.5 pr-3 tabular-nums text-foreground">
-                        {rate === null ? 'No sales' : `${rate.toFixed(2)}%`}
-                      </td>
-                    )
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          {columnFilterState.isFiltered ? (
+            <div className="mb-1.5 flex items-center justify-end gap-2">
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                {columnFilterState.filteredRows.length} of {periods.length} shown
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={columnFilterState.clearAll}>
+                <X aria-hidden="true" />
+                Clear filters
+              </Button>
+            </div>
+          ) : null}
+
+          {columnFilterState.filteredRows.length === 0 ? (
+            <FilterEmptyState
+              label="No months match these filters."
+              onClear={columnFilterState.clearAll}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[320px] text-left text-xs">
+                <caption className="sr-only">
+                  Effective commission rate trend across {periods.length} months, for{' '}
+                  {seriesOrder.map((s) => displayNames.get(s)).join(' and ')}
+                </caption>
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Month
+                    </th>
+                    {seriesOrder.map((source, seriesIndex) => {
+                      const columnIndex = seriesIndex + 1
+                      return (
+                        <th key={source} scope="col" className="py-1.5 pr-3 font-medium">
+                          <span className="inline-flex items-center gap-1">
+                            {displayNames.get(source)}
+                            <ColumnFilterButton
+                              type="numeric"
+                              columnLabel={displayNames.get(source) ?? source}
+                              {...columnFilterState.getNumericRange(columnIndex)}
+                              onApply={(min, max) =>
+                                columnFilterState.setNumericRange(columnIndex, min, max)
+                              }
+                              onClear={() => columnFilterState.clearColumn(columnIndex)}
+                            />
+                          </span>
+                        </th>
+                      )
+                    })}
+                  </tr>
+                </thead>
+                <tbody>
+                  {columnFilterState.filteredRows.map((period) => (
+                    <tr key={period.month} className="border-b border-border/60">
+                      <td className="py-1.5 pr-3 text-foreground">{monthLabel(period.month)}</td>
+                      {seriesOrder.map((source) => {
+                        const platform = period.platforms.find((p) => p.source === source)
+                        const rate = platform ? parsePercent(platform.effective_rate) : null
+                        return (
+                          <td key={source} className="py-1.5 pr-3 tabular-nums text-foreground">
+                            {rate === null ? 'No sales' : `${rate.toFixed(2)}%`}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : null}
     </div>

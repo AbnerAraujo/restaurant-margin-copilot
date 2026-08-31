@@ -25,6 +25,7 @@ import { deriveYearOverYear } from '@/components/Home/yearOverYear'
 import CompositionBar from '@/components/Points/CompositionBar'
 import { POINTS_PER_BADGE } from '@/components/Points/pointValues'
 import { usePoints, type BadgeCode, type PointsLine } from '@/components/Points/usePoints'
+import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterBar, FilterChip, FilterEmptyState, FilterSearchInput } from '@/components/ui/filter-bar'
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { Stat, StatGroup, StatSkeleton } from '@/components/ui/stat'
@@ -32,6 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { getJson } from '@/lib/api'
 import { summarizeFlags } from '@/lib/discrepancyFlags'
 import { explainRequestFailure } from '@/lib/requestFailure'
+import { useColumnFilters } from '@/lib/useColumnFilters'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
@@ -285,6 +287,44 @@ export default function HomePage() {
     ),
   })
 
+  // Excel/Sheets-style column header filters — a SECOND, additive filtering
+  // surface layered on top of `recentCloseFilter`'s own search box and status
+  // chips, never a replacement for it (the same discipline CostSheetTab and
+  // ConnectedPlatformsTab follow with DataGrid's `columnFilters`). Fed
+  // `recentCloseFilter.filteredRows` rather than the raw `recentCloseDays` so
+  // both surfaces narrow the SAME final row set instead of two independent
+  // views of it. This table isn't a `DataGrid` — it renders a `Chip`+`Tooltip`
+  // for Status and a conditionally colored figure for Margin, both of which
+  // would be flattened to plain text by routing through that component — so
+  // `useColumnFilters` is called directly here with `getCell` doing the
+  // string-projection `DataGrid` would otherwise do for free.
+  //
+  // Column 0 (Date) is left unfiltered: it's already implicitly scoped by
+  // this page's own date-range controls, matching the precedent that not
+  // every column needs one. Column 1 (Status) is categorical rather than
+  // exposing the raw `discrepancy_flags[].type` values (a POS-heavy day can
+  // carry a dozen different technical flag types) — "Clean"/"Flagged" is the
+  // same two-way split the page's own status chips already use, just named
+  // for a checklist instead of a chip pair. Column 2 (Margin) is numeric,
+  // filtered on the raw decimal string (`day.margin`, e.g. "-50.00"), which
+  // `parseNumericCell` strips to a number without needing pre-formatting.
+  const recentCloseColumnFilters = useColumnFilters<DaySummaryApi>({
+    columns: ['Date', 'Status', 'Margin'],
+    rows: recentCloseFilter.filteredRows,
+    specs: { 1: 'categorical', 2: 'numeric' },
+    getCell: (day, columnIndex) => {
+      if (columnIndex === 1) return day.discrepancy_flags.length > 0 ? 'Flagged' : 'Clean'
+      if (columnIndex === 2) return day.margin
+      return day.date
+    },
+  })
+  const recentCloseVisibleRows = recentCloseColumnFilters.filteredRows
+  const recentCloseIsFiltered = recentCloseFilter.isFiltered || recentCloseColumnFilters.isFiltered
+  function clearRecentCloseFilters() {
+    recentCloseFilter.clearFilters()
+    recentCloseColumnFilters.clearAll()
+  }
+
   return (
     <PageContainer className="flex flex-col gap-5">
       <PageHeader
@@ -512,11 +552,11 @@ export default function HomePage() {
               above the content it scopes). */}
           <div className="border-b border-border p-5 sm:px-6">
             <FilterBar
-              isFiltered={recentCloseFilter.isFiltered}
-              onClear={recentCloseFilter.clearFilters}
+              isFiltered={recentCloseIsFiltered}
+              onClear={clearRecentCloseFilters}
               resultSummary={
-                recentCloseFilter.isFiltered
-                  ? `${recentCloseFilter.visibleCount} of ${recentCloseFilter.totalCount} shown`
+                recentCloseIsFiltered
+                  ? `${recentCloseVisibleRows.length} of ${recentCloseFilter.totalCount} shown`
                   : undefined
               }
             >
@@ -558,10 +598,10 @@ export default function HomePage() {
             </FilterBar>
           </div>
 
-          {recentCloseFilter.filteredRows.length === 0 ? (
+          {recentCloseVisibleRows.length === 0 ? (
             <FilterEmptyState
               label="No recent closes match these filters."
-              onClear={recentCloseFilter.clearFilters}
+              onClear={clearRecentCloseFilters}
             />
           ) : (
           <div className="overflow-x-auto">
@@ -599,18 +639,35 @@ export default function HomePage() {
                           Clean means no flags fired.
                         </TooltipContent>
                       </Tooltip>
+                      <ColumnFilterButton
+                        type="categorical"
+                        columnLabel="Status"
+                        options={recentCloseColumnFilters.getOptions(1)}
+                        selected={recentCloseColumnFilters.getCategoricalSelection(1)}
+                        onToggle={(value) => recentCloseColumnFilters.toggleCategoricalValue(1, value)}
+                        onClear={() => recentCloseColumnFilters.clearColumn(1)}
+                      />
                     </span>
                   </th>
                   <th
                     scope="col"
                     className="px-5 py-2.5 text-right text-micro font-medium uppercase tracking-wider text-muted-foreground sm:px-6"
                   >
-                    Margin
+                    <span className="inline-flex items-center justify-end gap-1.5">
+                      Margin
+                      <ColumnFilterButton
+                        type="numeric"
+                        columnLabel="Margin"
+                        {...recentCloseColumnFilters.getNumericRange(2)}
+                        onApply={(min, max) => recentCloseColumnFilters.setNumericRange(2, min, max)}
+                        onClear={() => recentCloseColumnFilters.clearColumn(2)}
+                      />
+                    </span>
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {recentCloseFilter.filteredRows
+                {recentCloseVisibleRows
                   .map((day) => {
                     const dayMargin = Number(day.margin)
                     const flagged = day.discrepancy_flags.length > 0
