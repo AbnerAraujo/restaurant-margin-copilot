@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
@@ -393,6 +394,8 @@ function MarginTrendChart({
   })
   const marginFilterActive = marginTableFilters.isColumnActive(1)
   const filteredTableRows = marginTableFilters.filteredRows
+  const { ref: marginTableScrollRef, canScrollRight: marginTableCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
 
   // Every caption below is derived from the data actually plotted. Hard-coded
   // "14-Day" / "August 1–14" strings survived the switch to live
@@ -851,7 +854,8 @@ function MarginTrendChart({
               onClear={() => marginTableFilters.clearColumn(1)}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative">
+            <div ref={marginTableScrollRef} className="overflow-x-auto">
               <table className="w-full min-w-[320px] text-left text-xs">
                 <caption className="sr-only">
                   Daily reconciled margin, {rangeLabel}
@@ -901,6 +905,13 @@ function MarginTrendChart({
                   ))}
                 </tbody>
               </table>
+            </div>
+            {marginTableCanScrollRight && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+              />
+            )}
             </div>
           )}
         </div>

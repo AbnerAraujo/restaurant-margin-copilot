@@ -86,7 +86,13 @@ export function ColumnFilterButton(props: ColumnFilterButtonProps) {
               : `Filter by ${props.columnLabel}`
           }
           className={cn(
-            'inline-flex size-5 shrink-0 items-center justify-center rounded-sm transition-colors',
+            // size-6 (24px) is WCAG 2.2's 2.5.8 minimum target size — found
+            // live at size-5 (20px), under the minimum and only 22px
+            // centre-to-centre from the adjacent info button (also under
+            // 24px), which the spacing exception doesn't rescue since it
+            // requires >=24px between centres. The icon itself stays
+            // size-3 (see below); only the hit target grows.
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
             'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             active
               ? 'text-primary'

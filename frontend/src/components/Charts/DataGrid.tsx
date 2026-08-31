@@ -4,6 +4,7 @@ import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { Button } from '@/components/ui/button'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { cn } from '@/lib/utils'
 
 export interface DataGridProps {
@@ -55,6 +56,7 @@ export default function DataGrid({
 }: DataGridProps) {
   const specs = columnFilters ?? {}
   const columnFilterState = useColumnFilters({ columns, rows, specs })
+  const { ref: scrollRef, canScrollRight } = useHorizontalScrollFade<HTMLDivElement>()
   const hasColumnFilters = Object.keys(specs).length > 0
   const visibleRows = hasColumnFilters ? columnFilterState.filteredRows : rows
 
@@ -92,8 +94,13 @@ export default function DataGrid({
         />
       ) : (
         // Wide content scrolls inside its own container so a long detail
-        // cell never forces the whole chat bubble to scroll sideways.
-        <div className="overflow-x-auto">
+        // cell never forces the whole chat bubble to scroll sideways. The
+        // relative wrapper + fade (canScrollRight) is the same affordance
+        // MobileNavBar established (useHorizontalScrollFade) -- found live
+        // at 375px: a column-filterable grid's later columns (and their
+        // filter buttons) sat far off-screen with no scrollbar hint.
+        <div className="relative">
+        <div ref={scrollRef} className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <caption className="sr-only">{title}</caption>
             <thead>
@@ -168,6 +175,13 @@ export default function DataGrid({
               ))}
             </tbody>
           </table>
+        </div>
+        {canScrollRight && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+          />
+        )}
         </div>
       )}
 

@@ -18,6 +18,7 @@ import {
 import { Chip, PageContainer, PageHeader, Panel } from '@/components/ui/page'
 import { getJson } from '@/lib/api'
 import { explainRequestFailure } from '@/lib/requestFailure'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { useTableFilter } from '@/lib/useTableFilter'
 import PointsCard from './PointsCard'
 import { POINTS_PER_BADGE } from './pointValues'
@@ -99,6 +100,8 @@ export default function PointsPage() {
   const { data } = usePoints()
   const { redemptions, error: redemptionsError } = useRedemptionHistory()
   const breakdown = data?.points.breakdown ?? []
+  const { ref: rulesTableScrollRef, canScrollRight: rulesTableCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
 
   // The redemption-history grid filter (ux-writing + dataviz skills): a
   // text search over the same fields the list already shows, plus a
@@ -213,7 +216,8 @@ export default function PointsPage() {
           </p>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="relative">
+        <div ref={rulesTableScrollRef} className="overflow-x-auto">
           <table className="w-full min-w-[34rem] border-collapse text-left">
             <thead>
               <tr className="border-b border-border">
@@ -292,6 +296,13 @@ export default function PointsPage() {
               })}
             </tbody>
           </table>
+        </div>
+        {rulesTableCanScrollRight && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+          />
+        )}
         </div>
       </Panel>
 

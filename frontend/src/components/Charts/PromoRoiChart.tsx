@@ -10,6 +10,7 @@ import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import PinnedValueAxis from './PinnedValueAxis'
 
 // ---------------------------------------------------------------------------
@@ -590,6 +591,8 @@ function PromoRoiChart({
     specs: PROMO_TABLE_COLUMN_FILTERS,
     getCell: getPromoTableCell,
   })
+  const { ref: promoTableScrollRef, canScrollRight: promoTableCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
 
   // Reported live: with few enough campaigns that the data-driven width
   // stays under the panel's real available width, the chart rendered at
@@ -1140,7 +1143,8 @@ function PromoRoiChart({
               onClear={columnFilterState.clearAll}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative">
+            <div ref={promoTableScrollRef} className="overflow-x-auto">
               <table className="w-full min-w-[480px] text-left text-xs">
                 <caption className="sr-only">Promotion ROI by campaign</caption>
                 <thead>
@@ -1231,6 +1235,13 @@ function PromoRoiChart({
                   ))}
                 </tbody>
               </table>
+            </div>
+            {promoTableCanScrollRight && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+              />
+            )}
             </div>
           )}
         </div>

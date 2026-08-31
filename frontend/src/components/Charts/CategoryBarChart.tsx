@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { cn } from '@/lib/utils'
 import type { VisualizationPoint } from './answerVisualization'
 
@@ -148,6 +149,8 @@ export default function CategoryBarChart({
       columnIndex === 0 ? point.label : point.unavailable ? '' : String(point.value),
   })
   const visibleTableRows = hasColumnFilters ? columnFilterState.filteredRows : points
+  const { ref: categoryTableScrollRef, canScrollRight: categoryTableCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
 
   const plotHeight = points.length * ROW_HEIGHT
   const chartHeight = plotHeight + MARGIN.top + MARGIN.bottom
@@ -436,7 +439,8 @@ export default function CategoryBarChart({
               onClear={columnFilterState.clearAll}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative">
+            <div ref={categoryTableScrollRef} className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <caption className="sr-only">{title}, as a table</caption>
                 <thead>
@@ -482,6 +486,13 @@ export default function CategoryBarChart({
                   ))}
                 </tbody>
               </table>
+            </div>
+            {categoryTableCanScrollRight && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+              />
+            )}
             </div>
           )}
         </div>
