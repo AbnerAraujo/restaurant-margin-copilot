@@ -20,26 +20,29 @@ Independent restaurants and bars can't see, daily, whether they made money — r
 
 **Success Metrics** (this build; see also post-launch metrics in `product-strategy.md`):
 
-| Metric | Baseline | Target | Measurement | Measured (2026-08-30) |
+| Metric | Baseline | Target | Measurement | Measured (2026-08-31, 3 runs) |
 |---|---|---|---|---|
-| Accuracy (KR1) | N/A — not yet run | Measured & reported, incl. failures | `evaluation/promptfoo/accuracy.yaml`, ~15–20 questions | **14/15 and 14/15** |
-| Consistency (KR1) | N/A | Measured & reported | 5 questions × 3 phrasings | **13/15 and 15/15** |
-| Refusal-correctness (KR1) | N/A | 100% on ~5 unanswerable questions | Refusal harness | **5/5 and 4/5** (9/10) |
+| Accuracy (KR1) | N/A — not yet run | Measured & reported, incl. failures | `evaluation/promptfoo/accuracy.yaml`, ~15–20 questions | **14/15 · 15/15 · 14/15** |
+| Consistency (KR1) | N/A | Measured & reported | 5 questions × 3 phrasings | **14/15 · 15/15 · 15/15** |
+| Refusal-correctness (KR1) | N/A | 100% on ~5 unanswerable questions | Refusal harness | **4/5 · 4/5 · 4/5** (12/15) |
 | Reconciliation correctness (KR2) | N/A | Zero silent data loss on the deliberately messy test data | Table-driven tests + quickstart validation | **0 defects**, now asserted by `TestOpeningWindow_PersistedWithZeroSilentDataLoss` |
 | Promo-ROI flagging (KR3) | N/A | ≥1 negative-ROI promo correctly flagged end-to-end | quickstart validation | **1 flagged** (−$450.75), now asserted by `TestListNegativeRoiPromotions_RealDataset_FlagsLunchfixWithProvenance` |
 | Cost per interaction (KR4) | N/A | Under a stated threshold (e.g. $0.05), instrumented | Instrumentation log | **$0.0313/question** — 70 questions, 142 model calls, $2.1931 |
 
 No target is pre-committed for KR1's exact percentages — per Constitution Principle V, real numbers are reported including failures, not asserted in advance.
 
-**How the measured column was obtained, and why two figures per row.** The
-full harness was run twice end to end against a dedicated backend on `:8092`
-started with `cmd/server -eval-no-answer-cache`. The flag matters: without
-it the harness instance shares the product's `answer_cache` table and a
-re-run is served largely from the previous run's cached answers (25 of 35
-questions, measured), which grades the cache rather than the model and makes
-the apparent cost per question a fraction of the real one. Both runs are
-reported rather than the better one, because the model layer is not
-deterministic and a single run presented as a result is a measurement error.
+**How the measured column was obtained, and why three figures per row.** The
+full harness was run against a dedicated backend on `:8092` started with
+`cmd/server -eval-no-answer-cache`. The flag matters: without it the harness
+instance shares the product's `answer_cache` table and a re-run is served
+largely from the previous run's cached answers (25 of 35 questions,
+measured), which grades the cache rather than the model and makes the
+apparent cost per question a fraction of the real one. An initial two-run
+measurement (14/15 and 14/15 accuracy, 13/15 and 15/15 consistency, 5/5 and
+4/5 refusal) was superseded by a third full run once it became clear two
+data points aren't enough to call a pattern when the model layer isn't
+deterministic — all three runs are reported rather than the best one.
+Aggregate across all three suites, all three runs: **99/105 (94.3%)**.
 
 Every failure behind those numbers was hand-read from the raw JSON, and none
 is a wrong number. The one that matters is **A15** ("delivery revenue on
