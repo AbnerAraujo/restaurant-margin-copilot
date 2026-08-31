@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -39,7 +40,35 @@ import (
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/livedata"
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/platformconnector"
+	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/storage"
 )
+
+// queryFailingOnDataRange is a minimal storage.Querier fake: it answers
+// GetDataDateRange with a real, non-sentinel failure (a dropped connection,
+// a malformed query) and panics if anything else is called, since
+// loadMarginSnapshot must short-circuit on this error before reaching any
+// other query.
+type queryFailingOnDataRange struct {
+	storage.Querier
+}
+
+func (queryFailingOnDataRange) GetDataDateRange(context.Context) (storage.GetDataDateRangeRow, error) {
+	return storage.GetDataDateRangeRow{}, errors.New("connection reset by peer")
+}
+
+// TestLoadMarginSnapshot_RealQueryFailureIsNotMistakenForNoData pins the
+// fix for a live finding: a real storage.LoadDataDateRange failure (a
+// transient DB hiccup, not "no rows yet") was previously collapsed into
+// marginSnapshot{HasData: false}, nil — a confidently wrong "you have no
+// prior history" statement about the owner's data, served with a 200, on
+// the one endpoint that changes financial numbers. The genuinely-no-data
+// case (ErrNoReconciliationDataYet, a server's very first commit) must
+// still degrade quietly; only a REAL failure must now propagate as one.
+func TestLoadMarginSnapshot_RealQueryFailureIsNotMistakenForNoData(t *testing.T) {
+	_, err := loadMarginSnapshot(context.Background(), queryFailingOnDataRange{})
+	require.Error(t, err, "a real query failure must propagate as an error, never silently become HasData:false")
+	require.NotErrorIs(t, err, storage.ErrNoReconciliationDataYet)
+}
 
 // multipartCostSheetRequest builds a multipart/form-data POST request with
 // the given CSV content in a "file" field, matching how a real browser
@@ -645,6 +674,39 @@ func TestHandleCommitCostSheet_NewInvoiceForAnAlreadyInvoicedDayKeepsTheOthers(t
 // first row and not from anything the client sent. A cost sheet is one
 // invoice per row on a supplier's own irregular cadence, so a real upload
 // can be one day or a month of them.
+// TestWriteCostSheetAtomically_ReplacesExistingContentCleanly proves the
+// happy path: an existing file's content is fully replaced, and no stray
+// temp file is left behind in the directory afterward.
+func TestWriteCostSheetAtomically_ReplacesExistingContentCleanly(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "supplier_cost_sheet.csv")
+	require.NoError(t, os.WriteFile(dest, []byte("old content"), 0o644))
+
+	require.NoError(t, writeCostSheetAtomically(dest, []byte("new content")))
+
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.Equal(t, "new content", string(got))
+
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1, "no temp file should survive a successful write: %v", entries)
+}
+
+// TestWriteCostSheetAtomically_CreatesANewFile proves the first-commit
+// case: destPath doesn't exist yet, and the atomic write must still
+// succeed (create-temp + rename works into a path with nothing there yet).
+func TestWriteCostSheetAtomically_CreatesANewFile(t *testing.T) {
+	dir := t.TempDir()
+	dest := filepath.Join(dir, "supplier_cost_sheet.csv")
+
+	require.NoError(t, writeCostSheetAtomically(dest, []byte("first commit")))
+
+	got, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.Equal(t, "first commit", string(got))
+}
+
 func TestCostSheetDateRange_SpansEveryRow(t *testing.T) {
 	// Deliberately out of chronological order, and with the widest dates in
 	// the middle: a min/max scan is correct, "first and last row" is not.

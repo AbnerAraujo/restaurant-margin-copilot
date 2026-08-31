@@ -16,6 +16,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -23,6 +24,17 @@ import (
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/reconcile"
 )
+
+// ErrNoReconciliationDataYet is LoadDataDateRange's sentinel for its one
+// EXPECTED failure mode — the table is genuinely empty, not yet ingested —
+// as distinct from a real query failure (a connection drop, a malformed
+// query). Found live: a caller (httpapi.loadMarginSnapshot) collapsed both
+// into the same "no prior data" response, so a transient DB hiccup on a
+// cost-sheet commit's pre-write read was served as a confidently wrong
+// statement about the owner's history (HasData:false) on the one endpoint
+// that changes financial numbers, instead of the 500 a real failure
+// deserves. errors.Is against this value is how a caller tells them apart.
+var ErrNoReconciliationDataYet = errors.New("storage: no daily_reconciliation rows exist yet — cannot resolve a data date range")
 
 // LoadDataDateRange returns the actual inclusive [start, end] this product
 // has ANY reconciled data for — the real min/max of daily_reconciliation's
@@ -41,7 +53,7 @@ func LoadDataDateRange(ctx context.Context, q Querier) (start, end time.Time, er
 		return time.Time{}, time.Time{}, fmt.Errorf("storage: get data date range: %w", err)
 	}
 	if !row.MinDate.Valid || !row.MaxDate.Valid {
-		return time.Time{}, time.Time{}, fmt.Errorf("storage: no daily_reconciliation rows exist yet — cannot resolve a data date range")
+		return time.Time{}, time.Time{}, ErrNoReconciliationDataYet
 	}
 	return row.MinDate.Time, row.MaxDate.Time, nil
 }
