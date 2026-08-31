@@ -12,6 +12,24 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-31 — Presentation: "What's left" and "Mistakes" slides cut, dead CSS removed
+
+Two more slides removed per direct request: "One shipped since the freeze —
+one deliberately gated" (the What's left comparison, spec 004 shipped vs.
+spec 005 gated) and "From the real mistakes log, kept as it happened" (the
+three logged build incidents). Both were explained to the user in full
+before removal — the content isn't lost, just no longer a dedicated slide.
+Final count: 24 slides (was 26, -2).
+
+The Agenda slide's chapter-05 and chapter-06 subtitles, which named
+"what's left" and "the real mistakes log" respectively, were updated to
+match; its speaker-note text ("...including what went wrong") was trimmed
+for the same reason. The now-unused `.mistakes`/`.mistake` CSS rules were
+deleted rather than left dead. Slide-number comments renumbered
+sequentially 1–24; README and `docs/mcp-and-skills.md` slide counts synced.
+
+---
+
 ## 2026-08-31 — Presentation: two of the three new slides cut, two layout bugs fixed
 
 Two of the three slides added in the same-day audit below were removed per
