@@ -354,13 +354,6 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 .mbfill{height:100%;background:var(--accent);border-radius:3px 0 0 3px}
 .mbv{color:var(--text-primary);white-space:nowrap}
 
-/* mistakes */
-.mistakes{display:flex;flex-direction:column;gap:20px;margin-top:20px;max-width:1000px;text-align:left}
-.mistake{border-left:3px solid var(--negative);padding-left:16px}
-.mistake h4{font-family:var(--sans);font-size:16px;font-weight:600;margin-bottom:6px;color:var(--text-primary)}
-.mistake p{font-size:13.5px;color:var(--text-secondary);line-height:1.55}
-.mistake p b{color:var(--text-primary)}
-
 /* refund svg card */
 .refundcard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px 22px;text-align:left}
 .refundcard h3{font-family:var(--serif);font-size:18px;font-weight:600;margin-bottom:6px}
@@ -448,7 +441,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 </div>
 
 <!-- 2 · Agenda -->
-<div class="slide" data-notes="Six chapters: the strategy and why Prosus should fund it, the product with its shipped gamification and where it sits in the real competitive landscape, a live demo, the architecture that keeps models away from arithmetic, the measured evidence, and how it was actually built — including what went wrong.">
+<div class="slide" data-notes="Six chapters: the strategy and why Prosus should fund it, the product with its shipped gamification and where it sits in the real competitive landscape, a live demo, the architecture that keeps models away from arithmetic, the measured evidence, and how it was actually built.">
   <div class="a tag">Agenda</div>
   <h2 class="a lg">Six chapters, all with receipts</h2>
   <div class="toc">
@@ -456,8 +449,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo &middot; inline advice</div></div></div>
     <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters</div></div></div>
     <div class="a toc-item"><div class="toc-n">04</div><div><div class="toc-t">Evidence</div><div class="toc-s">Evaluation harness &middot; token discipline</div></div></div>
-    <div class="a toc-item"><div class="toc-n">05</div><div><div class="toc-t">Rigor</div><div class="toc-s">DoR &middot; PRD &middot; RFC &middot; user stories &middot; what's left</div></div></div>
-    <div class="a toc-item"><div class="toc-n">06</div><div><div class="toc-t">The build</div><div class="toc-s">SDD pipeline &middot; the real mistakes log</div></div></div>
+    <div class="a toc-item"><div class="toc-n">05</div><div><div class="toc-t">Rigor</div><div class="toc-s">DoR &middot; PRD &middot; RFC &middot; user stories</div></div></div>
+    <div class="a toc-item"><div class="toc-n">06</div><div><div class="toc-t">The build</div><div class="toc-s">SDD pipeline &middot; tools and skills, named</div></div></div>
   </div>
 </div>
 
@@ -974,34 +967,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 21 · What's left -->
-<div class="slide" data-notes="Honest status: the paraphrase-aware cache shipped — Haiku classification against a bounded candidate set, no second vendor, uncertain match treated as new, verified live. Multi-tenant is the one thing deliberately NOT built: the RFC exists, and it's gated on human review because a tenant-isolation bug is a data breach, not a bug. The design makes forgetting the tenant filter a compile error.">
-  <div class="num-bg">06</div>
-  <div class="a tag">What's left</div>
-  <h2 class="a lg">One shipped since the freeze &mdash; one deliberately gated</h2>
-  <div class="a cmp">
-    <div class="cmp-col cmp-good">
-      <div class="cmp-label">Shipped &mdash; paraphrase-aware cache (spec 004)</div>
-      <ul>
-        <li>On a miss: one Haiku 4.5 classification against a bounded list of cached questions &mdash; <b style="color:var(--accent)">no embeddings, no second vendor</b></li>
-        <li>Uncertain match &rarr; treated as new. Refuse-to-reuse, Principle II applied to caching</li>
-        <li>The classification call is itself instrumented with real cost</li>
-        <li>Live-verified: a genuine paraphrase served from cache at real, disclosed classification cost; a meaningfully different question correctly missed</li>
-      </ul>
-    </div>
-    <div class="cmp-col cmp-bad alert">
-      <div class="cmp-label">Gated on human review &mdash; multi-tenant (spec 005 + RFC)</div>
-      <ul>
-        <li>A tenant-isolation bug is a <b>data-breach class of defect</b> &mdash; Restaurant A seeing Restaurant B's margins</li>
-        <li>Fails closed: <b>tenant_id is a required parameter in every sqlc query signature</b> &mdash; forgetting the filter is a compile error, not a leak</li>
-        <li>Identity flows from authenticated context, never client input; cache keys become per-tenant</li>
-        <li>An adversarial isolation test suite is the release gate</li>
-      </ul>
-    </div>
-  </div>
-</div>
-
-<!-- 22 · The build -->
+<!-- 21 · The build -->
 <div class="slide" data-notes="This wasn't just an application — it was a full spec-driven reasoning line: constitution through implement, 39 of 39 tasks, thirty specialist skills, and no agent framework. The same discipline then shipped eight more specs after the interview build froze, with one further spec (008) drafted but not yet built.">
   <div class="a tag">How this was actually built</div>
   <h2 class="a lg">Not just an application &mdash; a reasoning line</h2>
@@ -1021,7 +987,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body"><span class="data-num">39/39</span> tasks &mdash; then specs 002&ndash;005 through the same pipeline. GitHub Spec Kit &middot; <span class="hi">30 Claude Code skills</span> &middot; promptfoo &middot; sqlc &middot; golang-migrate &mdash; and <span class="hi">no agent framework</span>, per the brief. The right model per step, re-verified as the data grew: Sonnet for classification and narration, Haiku only for the bounded paraphrase-match cache, frontier models only where judgment demanded it.</p>
 </div>
 
-<!-- 23 · MCP tools and skills, named -->
+<!-- 22 · MCP tools and skills, named -->
 <div class="slide wide" data-notes="Every tool and skill named directly, so this isn't a vague 'AI helped build this' claim — each is a real, checkable line item: a typed MCP tool with a file path, or a Claude Code skill named in a real commit message. Full detail in docs/mcp-and-skills.md and README.md.">
   <div class="a tag">Built with &mdash; named, not vague</div>
   <h2 class="a lg">The 8 tools and the skills, by name</h2>
@@ -1054,18 +1020,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote">Full contracts and a fact-checked, commit-cited inventory: <code>specs/001-margin-reconciliation-qa/contracts/mcp-tools.md</code> and <code>docs/mcp-and-skills.md</code>.</p>
 </div>
 
-<!-- 24 · Mistakes -->
-<div class="slide wide" data-notes="Three real entries from the build's running mistakes log — kept as they happened, not reconstructed. The pattern: never trust a self-report, verify independently. That's the same principle the product itself is built on.">
-  <div class="a tag">Where it went wrong &mdash; and how it was caught</div>
-  <h2 class="a md">From the real mistakes log, kept as it happened</h2>
-  <div class="a mistakes">
-    <div class="mistake"><h4>The sentinel-date collision that silently deleted $152.50</h4><p>A test used a real in-range date as its own test key; its cleanup <code>DELETE</code> destroyed the pipeline's real row. The agent reported 14 days persisted. <b>Caught by an independent <code>psql</code> query</b> &mdash; 13 rows, short by exactly 152.50.</p></div>
-    <div class="mistake"><h4>The model was quietly doing arithmetic &mdash; and passing tests for it</h4><p>No tool returned a combined delivery total; the model was summing the map itself &mdash; a Principle I violation that passing scores rewarded by accident. <b>The honest fix was a deterministic Go field</b>, not more prompt engineering.</p></div>
-    <div class="mistake"><h4>My own <code>git add -A</code>, during an overnight session</h4><p>A "cleanup" commit swept a background agent's half-finished edits onto <code>main</code>; briefly, the tree didn't build. <b>Caught by running <code>go build</code> on principle.</b> The misleading commit message stays in history &mdash; disclosed, not rewritten.</p></div>
-  </div>
-</div>
-
-<!-- 25 · Roadmap: replacing the sheet -->
+<!-- 23 · Roadmap: replacing the sheet -->
 <div class="slide wide" data-notes="Roadmap, not built: two manual-file gaps, one strategic move. The supplier cost sheet and the delivery-platform sales export are both files the owner or someone constructs by hand today — closing both is the same architectural direction, staged for feasibility. The closing line is the actual strategic reason Prosus, not a generic SaaS vendor, is positioned to pull this off.">
   <div class="a tag">Roadmap &middot; not yet built</div>
   <h2 class="a lg">Closing every manual-file gap left in the pipeline</h2>
@@ -1093,7 +1048,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote"><b>One move, two sides:</b> every number the reconciliation engine consumes stops arriving as a manually produced file &mdash; costs via invoice capture and supplier feeds, sales via platform APIs &mdash; until the owner's only job is reading the answer. <b>Why Prosus, not a generic SaaS vendor:</b> it sits on both sides of the invoice AND owns iFood &mdash; standardizing at the rail level, not integration-by-integration.</p>
 </div>
 
-<!-- 26 · Closing -->
+<!-- 24 · Closing -->
 <div class="slide" data-notes="Out of the red, in the green — daily. The numbers are real and the failures are disclosed — accuracy was explained in full two slides ago, so this slide states the committed KR (refusal correctness) as its headline rather than re-explaining a number the audience has already seen. Thank you — questions welcome.">
   <svg class="a coverMark" viewBox="0 0 100 100" style="width:130px;margin-bottom:22px" role="img" aria-label="My Business Steward mark">
     <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
