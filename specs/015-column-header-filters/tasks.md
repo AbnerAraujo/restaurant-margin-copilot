@@ -14,6 +14,14 @@ the real CHANGELOG entry — not a forward plan being executed.
 **Input**: `specs/015-column-header-filters/` (spec.md, plan.md), the
 merged commit `03be232`, and `CHANGELOG.md`'s 2026-08-30 entry.
 
+**Amendment, 2026-08-31**: a second, forward-planned batch of tasks
+extended the feature to `HomePage`, `MarginTrendChart` (Close),
+`PromoRoiChart` (Promotions), and `PlatformsPage`'s three tables — see
+spec.md's FR-012 through FR-016 and the amended User Story 2 for what
+changed and why. That batch is NOT retroactive: it was speced (this
+amendment), implemented, and tested in the normal order. See
+`CHANGELOG.md`'s 2026-08-31 entry for the commit.
+
 **Organization**: Part A is the reusable column-filter pair and its two
 consumers. Part B is the independent search-box behavior change, bundled
 into the same commit because both are the same underlying "narrow on an

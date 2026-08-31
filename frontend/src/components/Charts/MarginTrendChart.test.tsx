@@ -256,6 +256,91 @@ describe('MarginTrendChart', () => {
     expect(screen.getByRole('table')).toHaveTextContent(MISSING_MARGIN_REASON)
   })
 
+  // Spec 015 — Excel-style column header filter, extended to this hand-rolled
+  // "view as table" fallback (never routed through DataGrid, since the
+  // Margin cell's red/green/muted rendering and "No data — {reason}" string
+  // must survive filtering rather than being flattened to plain text).
+
+  it('filters the table by margin via the numeric column filter, applying on Enter rather than per keystroke', async () => {
+    const user = userEvent.setup()
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-01', margin: 100 },
+          { date: '2024-08-02', margin: 500 },
+          { date: '2024-08-03', margin: 900 },
+        ]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    const table = screen.getByRole('table')
+    expect(within(table).getAllByRole('row')).toHaveLength(4) // header + 3 days
+
+    await user.click(within(table).getByRole('button', { name: /filter by margin/i }))
+    const min = await screen.findByLabelText(/minimum, margin/i)
+    await user.type(min, '400')
+    // Typing alone must not narrow the real table yet.
+    expect(within(table).getAllByRole('row')).toHaveLength(4)
+
+    await user.type(min, '{Enter}')
+    expect(within(table).getAllByRole('row')).toHaveLength(3) // header + 2 days >= 400
+    expect(table).not.toHaveTextContent('+$100.00')
+    expect(table).toHaveTextContent('+$500.00')
+    expect(table).toHaveTextContent('+$900.00')
+  })
+
+  it('excludes a day with no reconciled margin from a numeric column filter rather than guessing its value', async () => {
+    const user = userEvent.setup()
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-07', margin: 659 },
+          { date: '2024-08-08', margin: null },
+        ]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    const table = screen.getByRole('table')
+
+    await user.click(within(table).getByRole('button', { name: /filter by margin/i }))
+    const min = await screen.findByLabelText(/minimum, margin/i)
+    await user.type(min, '0{Enter}')
+
+    // Header + Aug 7 only — the null-margin day fails to parse and is
+    // excluded, never coerced into (or out of) a >= 0 range by a guess.
+    expect(within(table).getAllByRole('row')).toHaveLength(2)
+    expect(table).not.toHaveTextContent(MISSING_MARGIN_REASON)
+  })
+
+  it('clearing the margin filter restores every day to the table', async () => {
+    const user = userEvent.setup()
+    render(
+      <MarginTrendChart
+        data={[
+          { date: '2024-08-01', margin: 100 },
+          { date: '2024-08-02', margin: 900 },
+        ]}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: /view as table/i }))
+    const table = screen.getByRole('table')
+
+    await user.click(within(table).getByRole('button', { name: /filter by margin/i }))
+    const min = await screen.findByLabelText(/minimum, margin/i)
+    await user.type(min, '500{Enter}')
+    expect(within(table).getAllByRole('row')).toHaveLength(2) // header + 1 day
+
+    // Close the filter popover first — its own "Clear filter" link would
+    // otherwise be a second match for the same accessible name as the
+    // standalone clear button rendered above the table.
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: /clear filter/i }))
+    expect(within(table).getAllByRole('row')).toHaveLength(3) // header + both days
+  })
+
   // Spec 008 FR-001 — chart click-to-ask.
 
   it('calls onDataPointClick with the real, unbucketed date when a bar is clicked', async () => {

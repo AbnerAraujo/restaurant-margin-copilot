@@ -251,6 +251,13 @@ export default function PlatformsPage() {
                 valueLabel="Cost (USD)"
                 points={toChartPoints(platformFilter.filteredRows)}
                 sourceTool="compare_platform_economics"
+                // Each platform contributes two adjacent bars (commission
+                // only / commission + promo), so a numeric filter on the
+                // cost column is a genuine narrowing tool once there are
+                // more than a couple of platforms on file — additive on top
+                // of platformFilter's own search above, same as DataGrid's
+                // columnFilters below.
+                columnFilters={{ 1: 'numeric' }}
               />
 
               <DataGrid
@@ -267,6 +274,14 @@ export default function PlatformsPage() {
                 ]}
                 rows={toTableRows(platformFilter.filteredRows)}
                 sourceTool="compare_platform_economics"
+                // Additive on top of platformFilter's own search box above
+                // (FilterBar), the same "second, additive filtering surface"
+                // CostSheetTab/ConnectedPlatformsTab already establish — a
+                // checklist on Platform lets an owner spot-check just one
+                // platform's row without losing the rest of the page's
+                // filter state.
+                columnFilters={{ 0: 'categorical' }}
+                filterEmptyLabel="No platforms match these filters."
               />
             </>
           )}

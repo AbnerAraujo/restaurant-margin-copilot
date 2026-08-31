@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-30 (retroactively — see plan.md's "How this spec came to exist")
 
-**Status**: Shipped (spec written after the fact)
+**Status**: Shipped (spec written after the fact; extended 2026-08-31 — see the amendment note under User Story 2)
 
 **Input**: Two related, conversational requests bundled into one branch and
 one commit: (1) the product owner asked for a second, additive filtering
@@ -122,28 +122,47 @@ tables have properties that make it actively unhelpful.
    both are standalone `DataGrid` tables with no chart to stay in sync
    with, both can grow to dozens of rows, and both have genuine
    categorical or numeric dimensions worth narrowing by.
-2. **Given** `HomePage`'s "Recent closes" table, **When** it is reviewed
-   for inclusion, **Then** it is excluded — capped at a small fixed row
-   count with its one categorical dimension already exposed as visible
-   toggle chips one line above it.
-3. **Given** `PlatformsPage`'s side-by-side comparison `DataGrid`, **When**
-   it is reviewed, **Then** it is excluded — row count is bounded by how
-   many delivery platforms exist, the platform name is each row's own
-   identity and already searchable, and the component's own doc comment
-   states it is deliberately plain so every number on it can be trusted
-   without first understanding a control.
-4. **Given** every "View as table" fallback rendered beside a chart
+2. ~~**Given** `HomePage`'s "Recent closes" table, **When** it is reviewed
+   for inclusion, **Then** it is excluded~~ — *(Amended 2026-08-31: reversed
+   per direct product-owner request. `HomePage`'s Recent Closes now carries
+   a categorical filter on Status and a numeric filter on Margin, composing
+   with the existing page-level search/chip filter rather than replacing
+   it. The original reasoning — small fixed row count, one dimension
+   already exposed as chips — was a real judgment call, not an error; it
+   was simply overridden once the product owner decided the extra
+   narrowing was wanted here too. See CHANGELOG for the date.)*
+3. ~~**Given** `PlatformsPage`'s side-by-side comparison `DataGrid`, **When**
+   it is reviewed, **Then** it is excluded~~ — *(Amended 2026-08-31:
+   reversed per the same request. The comparison `DataGrid` now carries a
+   categorical filter on Platform, additive on top of the page's own
+   search box. Also reversed on the same page: `CategoryBarChart`'s and
+   `EffectiveRateTrendChart`'s own "View as table" fallbacks — see the
+   revision to Scenario 4 below.)*
+4. ~~**Given** every "View as table" fallback rendered beside a chart
    (`MarginTrendChart`, `CategoryBarChart`, `CompositionPieChart`,
    `EffectiveRateTrendChart`, `PromoRoiChart`'s embedded table) and the
    chat answer's own `DataGrid`, **When** they are reviewed, **Then** all
-   are excluded as one class — each is an accessibility-parity twin of a
-   chart or a compact answer citation, and letting a fallback table filter
-   independently of the chart or answer it mirrors would let the two
-   disagree about what is on screen.
+   are excluded as one class**~~ — *(Amended 2026-08-31: partially
+   reversed. `MarginTrendChart` (Close page), `PromoRoiChart` (Promotions
+   page), `CategoryBarChart`, and `EffectiveRateTrendChart` (both
+   Platforms page) all now carry column filters on their "View as table"
+   fallbacks — a numeric filter on each chart's own value dimension
+   (Margin, Spend/Net, the category value, effective rate per platform).
+   The original "disagree about what is on screen" risk is real and was
+   not dismissed lightly: the fix is that filtering the FALLBACK TABLE
+   never touches the SVG chart above it — the chart keeps rendering every
+   point, and only the table view (already a secondary, opt-in view a
+   reader toggles into) narrows. `CategoryBarChart` is shared with chat's
+   `AnswerVisualizationView`, so its filter is a new opt-in prop
+   (`columnFilters?: ColumnFilterSpecs`) rather than an always-on change —
+   chat's caller doesn't pass it, so chat's rendering is untouched.
+   `CompositionPieChart`'s and chat's own answer `DataGrid`'s exclusions
+   stand, unreversed — neither was named in the request.)*
 5. **Given** `PointsPage`'s fixed 5-row rules table and its redemption
    history list, **When** they are reviewed, **Then** both are excluded —
    too small to need narrowing, and the redemption history is not even a
-   `<table>` with headers to hang the affordance off.
+   `<table>` with headers to hang the affordance off. *(Unreversed —
+   not named in the 2026-08-31 request.)*
 
 ---
 
@@ -237,11 +256,42 @@ by the same underlying discipline.
   with filter types matching their real data (`CostSheetTab`: text on
   Invoice ID, categorical on Supplier and Category; `ConnectedPlatformsTab`:
   categorical on Source, numeric range on Orders).
-- **FR-011**: `HomePage`'s Recent Closes table, `PlatformsPage`'s
-  side-by-side comparison `DataGrid`, `PointsPage`'s rules table and
-  redemption history, every chart's "View as table" fallback, and chat's
-  answer `DataGrid` MUST NOT gain column filters, per the stated reasoning
-  in User Story 2.
+- **FR-011**: `PointsPage`'s rules table and redemption history,
+  `CompositionPieChart`'s "View as table" fallback, and chat's answer
+  `DataGrid` MUST NOT gain column filters, per the stated reasoning in
+  User Story 2. *(Amended 2026-08-31: this requirement originally also
+  named `HomePage`'s Recent Closes table, `PlatformsPage`'s comparison
+  `DataGrid`, and every chart's "View as table" fallback — see FR-016
+  below and the amended Scenarios 2-4 in User Story 2 for what changed
+  and why.)*
+- **FR-012**: `HomePage`'s Recent Closes table MUST carry a categorical
+  filter on Status and a numeric filter on Margin, composing with its
+  existing page-level search/chip filter rather than replacing it.
+- **FR-013**: `PlatformsPage`'s comparison `DataGrid` MUST carry a
+  categorical filter on Platform.
+- **FR-014**: `MarginTrendChart`'s (Close page) and `PromoRoiChart`'s
+  (Promotions page) "View as table" fallbacks MUST each carry filter
+  types matching their real data (`MarginTrendChart`: numeric on Margin;
+  `PromoRoiChart`: categorical on Platform, numeric on Spend and Net) —
+  wired directly against `useColumnFilters` rather than through
+  `DataGrid`, since both tables render rich per-row content (colored
+  figures, an FR-013-refusal string, a `ProvenanceTag`) that `DataGrid`'s
+  plain `string[][]` contract would flatten.
+- **FR-015**: `CategoryBarChart`'s and `EffectiveRateTrendChart`'s
+  (both Platforms page) "View as table" fallbacks MUST each carry a
+  numeric filter on their value column(s). `CategoryBarChart` is also
+  used by chat's `AnswerVisualizationView` — its filter MUST be gated
+  behind an opt-in `columnFilters` prop, omitted by that caller, so
+  chat's rendering is unaffected (the same omit-to-preserve discipline
+  FR-001 already establishes for `DataGrid`).
+- **FR-016** *(added 2026-08-31)*: Filtering any chart's "View as table"
+  fallback (FR-014, FR-015) MUST NOT affect the chart's own SVG
+  rendering above it — the chart continues to plot every data point
+  regardless of the table's filter state. This is the load-bearing
+  constraint that makes reversing the original Scenario 4 exclusion
+  safe: the "two views disagreeing" risk that motivated the exclusion
+  applies to the chart and table disagreeing, not to the table itself
+  offering a second, narrower look a reader explicitly opts into.
 
 ### Functional Requirements — explicit-action search
 
@@ -293,8 +343,22 @@ by the same underlying discipline.
   was pressed, at which point the real "No campaigns match these filters"
   empty state rendered.
 - **SC-005**: Every `DataGrid` caller that does not pass `columnFilters`
-  (chat's answer grid, `PlatformsPage`'s comparison grid) renders
-  byte-for-byte as it did before this feature.
+  (chat's answer grid) renders byte-for-byte as it did before this
+  feature. *(Amended 2026-08-31: `PlatformsPage`'s comparison grid is no
+  longer in this list — see FR-013 — but the discipline itself, that
+  omitting the prop must never change rendering, is unchanged and still
+  covered by `DataGrid.test.tsx`.)*
+- **SC-006** *(added 2026-08-31)*: `HomePage.test.tsx`,
+  `MarginTrendChart.test.tsx`, `PromoRoiChart.test.tsx`,
+  `PlatformsPage.test.tsx`, and `EffectiveRateTrendChart.test.tsx` each
+  gained integration cases proving a column filter narrows their real
+  table, that a filtered-to-zero state renders the empty-state fallback,
+  and — for the three numeric-filter cases with a possible null/refused
+  cell (`MarginTrendChart`'s no-data day, `PromoRoiChart`'s FR-013
+  refused net, `CategoryBarChart`'s "unavailable" row) — that the null
+  cell is excluded from a numeric range rather than guessed at. 19 new
+  test cases total; full suite 51 files / 638 tests passing, `tsc -b`
+  clean, no new lint findings.
 
 ## Assumptions
 
