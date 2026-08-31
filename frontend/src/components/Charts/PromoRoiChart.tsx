@@ -1,11 +1,15 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ShieldAlert } from 'lucide-react'
+import { ShieldAlert, X } from 'lucide-react'
 
 import { buildLinearTickScale, formatAxisCurrency } from '@/lib/chartScale'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { ColumnFilterButton } from '@/components/ui/column-filter'
+import { FilterEmptyState } from '@/components/ui/filter-bar'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
+import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
 import PinnedValueAxis from './PinnedValueAxis'
 
 // ---------------------------------------------------------------------------
@@ -139,6 +143,62 @@ export const DEFAULT_PROMOTION_ROI: PromotionRoiDatum[] = [
     ],
   },
 ]
+
+// ---------------------------------------------------------------------------
+// "View as table, with sources" — column filters (spec 015 extension)
+// ---------------------------------------------------------------------------
+
+/** Header labels for the table below, in column order — passed through to
+ *  `useColumnFilters` only to keep that call symmetric with `DataGrid`'s own
+ *  `columns`/`rows` props; the hook itself looks rows up by index, never by
+ *  this array. */
+const PROMO_TABLE_COLUMNS = [
+  'Campaign',
+  'Platform',
+  'Spend',
+  'Incremental revenue',
+  'Net',
+  'Sources',
+]
+
+/**
+ * Platform (a small closed set) gets a checklist; Spend and Net (real
+ * dollar ranges) get min/max. Campaign is an id better suited to text
+ * search if that's ever added, not this pass; Incremental revenue is left
+ * unfiltered because its frequent nulls (any campaign not yet attributed)
+ * would read as a second, confusing numeric filter right next to Net's; and
+ * Sources renders a `ProvenanceTag`, not filterable data.
+ */
+const PROMO_TABLE_COLUMN_FILTERS: ColumnFilterSpecs = {
+  1: 'categorical', // Platform
+  2: 'numeric', // Spend
+  4: 'numeric', // Net
+}
+
+/**
+ * `useColumnFilters`'s `getCell` for this table — reads the RAW number as a
+ * string rather than this table's already-formatted display string
+ * (`formatUsd`/`formatSignedUsd`), so `parseNumericCell`'s digit/sign/decimal
+ * strip never has to contend with a currency symbol, thousands separator, or
+ * — for a negative net — the U+2212 minus sign `formatSignedUsd` renders,
+ * which is not in `parseNumericCell`'s `[^0-9.-]` allowlist and would
+ * otherwise silently strip the sign off a negative net (turning "−$165.00"
+ * into a parsed +165). A null net (the FR-013 refusal) returns '' here,
+ * which deliberately fails `parseNumericCell` and is excluded from a
+ * numeric-filtered result rather than guessed at.
+ */
+function getPromoTableCell(datum: PromotionRoiDatum, columnIndex: number): string {
+  switch (columnIndex) {
+    case 1:
+      return datum.platform
+    case 2:
+      return String(datum.spend)
+    case 4:
+      return datum.net === null ? '' : String(datum.net)
+    default:
+      return ''
+  }
+}
 
 export interface PromoRoiChartProps {
   data?: PromotionRoiDatum[]
@@ -513,6 +573,23 @@ function PromoRoiChart({
 }: PromoRoiChartProps) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(defaultTableOpen)
+
+  // Column filters for the "view as table, with sources" fallback below —
+  // scoped to this chart's own embedded table only. Deliberately independent
+  // of PromotionsPage's page-level campaign-card filter bar (`useTableFilter`)
+  // that narrows `data` before it ever reaches this component: that surface
+  // narrows the campaign list rendered as cards above the chart, this one
+  // narrows only the rows of this chart's own table, per spec 015's
+  // per-chart scoping. Kept as the chart's own rich `PromotionRoiDatum[]`
+  // (via `getCell`) rather than routed through `DataGrid`, so Net's
+  // conditional coloring/refusal text and the `ProvenanceTag` in Sources
+  // never get flattened to plain strings.
+  const columnFilterState = useColumnFilters<PromotionRoiDatum>({
+    columns: PROMO_TABLE_COLUMNS,
+    rows: data,
+    specs: PROMO_TABLE_COLUMN_FILTERS,
+    getCell: getPromoTableCell,
+  })
 
   // Reported live: with few enough campaigns that the data-driven width
   // stays under the panel's real available width, the chart rendered at
@@ -1044,69 +1121,118 @@ function PromoRoiChart({
       </div>
 
       {tableOpen ? (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[480px] text-left text-xs">
-            <caption className="sr-only">Promotion ROI by campaign</caption>
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Campaign
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Platform
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Spend
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Incremental revenue
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Net
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Sources
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((datum) => (
-                <tr key={datum.campaignId} className="border-b border-border/60">
-                  <td className="py-1.5 pr-3 text-foreground">
-                    {datum.campaignId}
-                  </td>
-                  <td className="py-1.5 pr-3 text-foreground">
-                    {datum.platform}
-                  </td>
-                  <td className="py-1.5 pr-3 tabular-nums text-foreground">
-                    {formatUsd(datum.spend)}
-                  </td>
-                  <td className="py-1.5 pr-3 tabular-nums text-foreground">
-                    {datum.attributedIncrementalRevenue === null
-                      ? 'Unattributable'
-                      : formatUsd(datum.attributedIncrementalRevenue)}
-                  </td>
-                  <td
-                    className={cn(
-                      'py-1.5 pr-3 font-medium tabular-nums',
-                      datum.net === null
-                        ? 'text-destructive-text'
-                        : datum.net >= 0
-                          ? 'text-success-text'
-                          : 'text-destructive-text',
-                    )}
-                  >
-                    {datum.net === null
-                      ? 'Refused — cannot attribute (FR-013)'
-                      : formatSignedUsd(datum.net)}
-                  </td>
-                  <td className="py-1.5 pr-3">
-                    <ProvenanceTag refs={datum.sourceRefs} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          {columnFilterState.isFiltered ? (
+            <div className="mb-1.5 flex items-center justify-end gap-2">
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                {columnFilterState.filteredRows.length} of {data.length} shown
+              </span>
+              <Button type="button" variant="ghost" size="sm" onClick={columnFilterState.clearAll}>
+                <X aria-hidden="true" />
+                Clear filters
+              </Button>
+            </div>
+          ) : null}
+
+          {data.length > 0 && columnFilterState.filteredRows.length === 0 ? (
+            <FilterEmptyState
+              label="No campaigns match these filters."
+              onClear={columnFilterState.clearAll}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[480px] text-left text-xs">
+                <caption className="sr-only">Promotion ROI by campaign</caption>
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Campaign
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Platform
+                        <ColumnFilterButton
+                          type="categorical"
+                          columnLabel="Platform"
+                          options={columnFilterState.getOptions(1)}
+                          selected={columnFilterState.getCategoricalSelection(1)}
+                          onToggle={(value) => columnFilterState.toggleCategoricalValue(1, value)}
+                          onClear={() => columnFilterState.clearColumn(1)}
+                        />
+                      </span>
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Spend
+                        <ColumnFilterButton
+                          type="numeric"
+                          columnLabel="Spend"
+                          {...columnFilterState.getNumericRange(2)}
+                          onApply={(min, max) => columnFilterState.setNumericRange(2, min, max)}
+                          onClear={() => columnFilterState.clearColumn(2)}
+                        />
+                      </span>
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Incremental revenue
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Net
+                        <ColumnFilterButton
+                          type="numeric"
+                          columnLabel="Net"
+                          {...columnFilterState.getNumericRange(4)}
+                          onApply={(min, max) => columnFilterState.setNumericRange(4, min, max)}
+                          onClear={() => columnFilterState.clearColumn(4)}
+                        />
+                      </span>
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Sources
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {columnFilterState.filteredRows.map((datum) => (
+                    <tr key={datum.campaignId} className="border-b border-border/60">
+                      <td className="py-1.5 pr-3 text-foreground">
+                        {datum.campaignId}
+                      </td>
+                      <td className="py-1.5 pr-3 text-foreground">
+                        {datum.platform}
+                      </td>
+                      <td className="py-1.5 pr-3 tabular-nums text-foreground">
+                        {formatUsd(datum.spend)}
+                      </td>
+                      <td className="py-1.5 pr-3 tabular-nums text-foreground">
+                        {datum.attributedIncrementalRevenue === null
+                          ? 'Unattributable'
+                          : formatUsd(datum.attributedIncrementalRevenue)}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-1.5 pr-3 font-medium tabular-nums',
+                          datum.net === null
+                            ? 'text-destructive-text'
+                            : datum.net >= 0
+                              ? 'text-success-text'
+                              : 'text-destructive-text',
+                        )}
+                      >
+                        {datum.net === null
+                          ? 'Refused — cannot attribute (FR-013)'
+                          : formatSignedUsd(datum.net)}
+                      </td>
+                      <td className="py-1.5 pr-3">
+                        <ProvenanceTag refs={datum.sourceRefs} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : null}
     </figure>

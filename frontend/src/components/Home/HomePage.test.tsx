@@ -409,6 +409,72 @@ describe('HomePage', () => {
     expect(within(panel).getByText('2026-08-10')).toBeInTheDocument()
   })
 
+  it('narrows the Recent closes table by a Status column filter, composing with the page-level status chip rather than replacing it', async () => {
+    stubFetchByUrl([
+      day('2026-08-10', '10.00'),
+      flaggedDay('2026-08-11', '10.00'),
+      day('2026-08-12', '10.00'),
+    ])
+    renderHomePageWithRoutes()
+
+    const heading = await screen.findByText('Recent closes')
+    const panel = heading.closest('section') as HTMLElement
+    expect(within(panel).getByText('2026-08-10')).toBeInTheDocument()
+    expect(within(panel).getByText('2026-08-11')).toBeInTheDocument()
+
+    // The filter popover renders in a portal outside `panel`'s DOM subtree
+    // (same as `ColumnFilterButton`'s Radix `Popover.Portal`), so its
+    // trigger is scoped to the panel but its content is queried at the
+    // document level, matching CostSheetTab.test.tsx's own pattern.
+    await userEvent.click(within(panel).getByRole('button', { name: /filter by status/i }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Clean' }))
+
+    // Only the two clean days remain — the flagged one is narrowed out by
+    // the column filter, a SECOND surface on top of the (currently unset)
+    // page-level status chips, not a replacement for them.
+    expect(within(panel).getByText('2026-08-10')).toBeInTheDocument()
+    expect(within(panel).getByText('2026-08-12')).toBeInTheDocument()
+    expect(within(panel).queryByText('2026-08-11')).not.toBeInTheDocument()
+    expect(within(panel).getByText('2 of 3 shown')).toBeInTheDocument()
+
+    // Clearing via the shared "Clear filters" affordance resets the column
+    // filter too, not just the page-level one.
+    await userEvent.click(within(panel).getByRole('button', { name: /clear filters/i }))
+    expect(within(panel).getByText('2026-08-11')).toBeInTheDocument()
+  })
+
+  it('narrows the Recent closes table by a Margin numeric column filter, composing with the page-level status chip', async () => {
+    stubFetchByUrl([
+      day('2026-08-10', '-25.00'),
+      flaggedDay('2026-08-11', '50.00'),
+      day('2026-08-12', '120.00'),
+    ])
+    renderHomePageWithRoutes()
+
+    const heading = await screen.findByText('Recent closes')
+    const panel = heading.closest('section') as HTMLElement
+
+    // First narrow with the existing page-level status chip (Flagged), then
+    // layer the column filter on top of THAT already-narrowed set.
+    await userEvent.click(within(panel).getByRole('button', { name: 'Flagged' }))
+    expect(within(panel).getByText('2026-08-11')).toBeInTheDocument()
+    expect(within(panel).queryByText('2026-08-10')).not.toBeInTheDocument()
+    expect(within(panel).queryByText('2026-08-12')).not.toBeInTheDocument()
+
+    // Same portal caveat as the Status filter test above: the popover's
+    // trigger is inside `panel`, its content is not.
+    await userEvent.click(within(panel).getByRole('button', { name: /filter by margin/i }))
+    const min = await screen.findByLabelText(/minimum, margin/i)
+    await userEvent.type(min, '100')
+    await userEvent.click(screen.getByRole('button', { name: 'Apply' }))
+
+    // The one flagged day has a margin of 50, below the 100 minimum, so
+    // composing both filters together narrows to nothing.
+    expect(
+      within(panel).getByText('No recent closes match these filters.'),
+    ).toBeInTheDocument()
+  })
+
   it('narrows the Recent closes table by date search, and shows a reassuring empty state for no match', async () => {
     stubFetchByUrl([day('2026-08-10', '10.00'), day('2026-08-11', '10.00')])
     renderHomePageWithRoutes()

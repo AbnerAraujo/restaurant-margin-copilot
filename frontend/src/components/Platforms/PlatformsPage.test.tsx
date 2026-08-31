@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -346,5 +346,46 @@ describe('PlatformsPage', () => {
       screen.getByText('No platforms match this search.'),
     ).toBeInTheDocument()
     expect(screen.queryByRole('table')).not.toBeInTheDocument()
+  })
+
+  it('narrows the platform economics table to the platform picked in its own column filter (Table 1)', async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    renderPage()
+    await screen.findAllByText('iFood')
+
+    await userEvent.click(screen.getByRole('button', { name: /filter by platform/i }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'iFood' }))
+
+    const table = screen.getByRole('table', { name: 'Platform economics, side by side' })
+    expect(within(table).getByText('iFood')).toBeInTheDocument()
+    expect(within(table).queryByText('Just Eat Takeaway')).not.toBeInTheDocument()
+    // This column filter is additive on top of platformFilter's search
+    // above, not a replacement for it: the bar chart (which platformFilter
+    // already scopes) stays showing both platforms since this filter only
+    // narrows the table.
+    expect(
+      screen.getByRole('button', { name: /Just Eat Takeaway — commission only/i }),
+    ).toBeInTheDocument()
+  })
+
+  it("narrows the commission chart's own \"view as table\" fallback via its numeric column filter (Table 2)", async () => {
+    stubFetch(PLATFORM_COMPARISON_RESPONSE)
+    renderPage()
+    await screen.findAllByText('iFood')
+
+    await userEvent.click(screen.getByRole('button', { name: 'View as table' }))
+    await userEvent.click(screen.getByRole('button', { name: /filter by cost \(usd\)/i }))
+    const min = await screen.findByLabelText(/minimum, cost \(usd\)/i)
+    await userEvent.type(min, '400{Enter}')
+
+    const table = screen.getByRole('table', {
+      name: /commission vs\. commission \+ promo spend, as a table/i,
+    })
+    // $459.85 and $461.60 (the "+ promo" rows) clear the $400 minimum;
+    // $184.85 and $181.60 (the "commission only" rows) don't.
+    expect(within(table).getByText('iFood — commission + promo')).toBeInTheDocument()
+    expect(within(table).getByText('Just Eat Takeaway — commission + promo')).toBeInTheDocument()
+    expect(within(table).queryByText('iFood — commission only')).not.toBeInTheDocument()
+    expect(within(table).queryByText('Just Eat Takeaway — commission only')).not.toBeInTheDocument()
   })
 })

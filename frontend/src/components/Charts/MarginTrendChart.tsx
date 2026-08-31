@@ -1,8 +1,12 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
-import { TriangleAlert } from 'lucide-react'
+import { TriangleAlert, X } from 'lucide-react'
 
 import { buildLinearTickScale, formatAxisCurrency } from '@/lib/chartScale'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
+import { ColumnFilterButton } from '@/components/ui/column-filter'
+import { FilterEmptyState } from '@/components/ui/filter-bar'
+import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
 import ProvenanceTag, {
   type SourceRowRef,
 } from '@/components/Provenance/ProvenanceTag'
@@ -59,6 +63,35 @@ const DEFAULT_SOURCE_REFS: SourceRowRef[] = [
     period_end: '2024-08-14',
   },
 ]
+
+// ---------------------------------------------------------------------------
+// "View as table" column filter — the hand-rolled 2-column fallback table
+// below (Date, Margin) is the one table in this app spec 015's column-header
+// filter never reached, because it isn't `DataGrid`: it keeps its own row
+// type (`DailyMarginDatum`) so the Margin cell can carry conditional
+// red/green/muted text and the "No data — {reason}" string rather than being
+// flattened to a plain string. `useColumnFilters`'s generic `getCell` exists
+// for exactly this — the hook narrows `DailyMarginDatum[]` directly, and the
+// rich per-row rendering below is untouched.
+//
+// Only the Margin column gets a filter; Date has no categorical or numeric
+// dimension worth narrowing by in a 2-column table.
+// ---------------------------------------------------------------------------
+
+const MARGIN_TABLE_COLUMNS = ['Date', 'Margin']
+const MARGIN_TABLE_FILTER_SPECS: ColumnFilterSpecs = { 1: 'numeric' }
+
+/** Column 1 (Margin) must return a numeric-parseable string, or one that
+ *  `parseNumericCell` (see `useColumnFilters.ts`) fails to parse for a `null`
+ *  margin — an empty string does that, so a "no data" day is excluded from a
+ *  numeric-filtered result rather than guessed at, matching FR-004's
+ *  refuse-over-estimate discipline. Column 0 (Date) has no filter spec, so
+ *  its returned string is never read by the hook, but it's supplied anyway
+ *  for a total, honest `getCell`. */
+function getMarginTableCell(datum: DailyMarginDatum, columnIndex: number): string {
+  if (columnIndex === 1) return datum.margin === null ? '' : String(datum.margin)
+  return datum.date
+}
 
 export interface MarginTrendChartProps {
   data?: DailyMarginDatum[]
@@ -348,6 +381,18 @@ function MarginTrendChart({
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null)
   const [tableOpen, setTableOpen] = useState(false)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  // "View as table" column filter — see the module-level comment above
+  // MARGIN_TABLE_COLUMNS. Kept unconditional (not gated on `tableOpen`) since
+  // hooks can't be called conditionally; it's cheap when the table is hidden.
+  const marginTableFilters = useColumnFilters<DailyMarginDatum>({
+    columns: MARGIN_TABLE_COLUMNS,
+    rows: data,
+    specs: MARGIN_TABLE_FILTER_SPECS,
+    getCell: getMarginTableCell,
+  })
+  const marginFilterActive = marginTableFilters.isColumnActive(1)
+  const filteredTableRows = marginTableFilters.filteredRows
 
   // Every caption below is derived from the data actually plotted. Hard-coded
   // "14-Day" / "August 1–14" strings survived the switch to live
@@ -783,45 +828,81 @@ function MarginTrendChart({
       </div>
 
       {tableOpen ? (
-        <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[320px] text-left text-xs">
-            <caption className="sr-only">
-              Daily reconciled margin, {rangeLabel}
-            </caption>
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Date
-                </th>
-                <th scope="col" className="py-1.5 pr-3 font-medium">
-                  Margin
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.map((datum) => (
-                <tr key={datum.date} className="border-b border-border/60">
-                  <td className="py-1.5 pr-3 text-foreground">
-                    {formatMonthDay(datum.date)}
-                  </td>
-                  <td
-                    className={cn(
-                      'py-1.5 pr-3 font-medium tabular-nums',
-                      datum.margin === null
-                        ? 'text-muted-foreground'
-                        : datum.margin >= 0
-                          ? 'text-success-text'
-                          : 'text-destructive-text',
-                    )}
-                  >
-                    {datum.margin === null
-                      ? `No data — ${MISSING_MARGIN_REASON}`
-                      : formatSignedUsd(datum.margin)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-2">
+          {marginFilterActive ? (
+            <div className="mb-1.5 flex items-center justify-end gap-2">
+              <span className="text-xs text-muted-foreground" aria-live="polite">
+                {filteredTableRows.length} of {data.length} shown
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => marginTableFilters.clearColumn(1)}
+              >
+                <X aria-hidden="true" />
+                Clear filter
+              </Button>
+            </div>
+          ) : null}
+          {data.length > 0 && marginFilterActive && filteredTableRows.length === 0 ? (
+            <FilterEmptyState
+              label="No days match this margin filter."
+              onClear={() => marginTableFilters.clearColumn(1)}
+            />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[320px] text-left text-xs">
+                <caption className="sr-only">
+                  Daily reconciled margin, {rangeLabel}
+                </caption>
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      Date
+                    </th>
+                    <th scope="col" className="py-1.5 pr-3 font-medium">
+                      <span className="inline-flex items-center gap-1">
+                        Margin
+                        <ColumnFilterButton
+                          type="numeric"
+                          columnLabel="Margin"
+                          {...marginTableFilters.getNumericRange(1)}
+                          onApply={(min, max) =>
+                            marginTableFilters.setNumericRange(1, min, max)
+                          }
+                          onClear={() => marginTableFilters.clearColumn(1)}
+                        />
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredTableRows.map((datum) => (
+                    <tr key={datum.date} className="border-b border-border/60">
+                      <td className="py-1.5 pr-3 text-foreground">
+                        {formatMonthDay(datum.date)}
+                      </td>
+                      <td
+                        className={cn(
+                          'py-1.5 pr-3 font-medium tabular-nums',
+                          datum.margin === null
+                            ? 'text-muted-foreground'
+                            : datum.margin >= 0
+                              ? 'text-success-text'
+                              : 'text-destructive-text',
+                        )}
+                      >
+                        {datum.margin === null
+                          ? `No data — ${MISSING_MARGIN_REASON}`
+                          : formatSignedUsd(datum.margin)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       ) : null}
     </figure>
