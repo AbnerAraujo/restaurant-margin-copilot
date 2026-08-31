@@ -242,20 +242,28 @@ the *previous* run's cached answers — 25 of 35 questions, two suites
 finishing in 0s. It was grading the cache, not the model. `cmd/server` now
 takes `-eval-no-answer-cache`, and everything below is measured with it on,
 so every graded answer is a real gate + explain round trip. Because the
-model layer is not deterministic, the suite was run twice end to end and
-both runs are reported rather than the better one.
+model layer is not deterministic, an initial two-run measurement (14/15 and
+14/15 accuracy, 13/15 and 15/15 consistency, 5/5 and 4/5 refusal) was
+superseded on 2026-08-31 by a third full run — two data points aren't
+enough to call a pattern — and all three runs are reported rather than the
+best one.
 
-| Metric | Run A | Run B |
-|---|---|---|
-| Accuracy (15 known-answer questions) | 14/15 | 14/15 |
-| Consistency (5 questions × 3 phrasings) | 13/15 | 15/15 |
-| Refusal correctness (5 unanswerable questions) | 5/5 | 4/5 |
-| Cost | 70 questions across both runs · 142 model calls · **$2.1931** · **$0.0313/question** |||
+| Metric | Run A | Run B | Run C |
+|---|---|---|---|
+| Accuracy (15 known-answer questions) | 14/15 | 15/15 | 14/15 |
+| Consistency (5 questions × 3 phrasings) | 14/15 | 15/15 | 15/15 |
+| Refusal correctness (5 unanswerable questions) | 4/5 | 4/5 | 4/5 |
+
+Aggregate across all three suites, all three runs: **99/105 (94.3%)**. Cost:
+70 questions across the first two runs · 142 model calls · **$2.1931** ·
+**$0.0313/question** (a separate ledger measurement, not re-taken in the
+third run).
 
 Every failure was hand-read from the raw JSON. None was a wrong number:
 
-- **A15 — "Delivery revenue on 2024-08-02, net of the refund?" (failed in
-  every uncached run).** The model returns gross $446.25 and the $62.25
+- **A15 — "Delivery revenue on 2024-08-02, net of the refund?" (the
+  recurring accuracy miss — failed in 2 of the 3 uncached runs).** The
+  model returns gross $446.25 and the $62.25
   refund, both with provenance, and then explicitly declines to net them to
   $384.00 because no tool returns a net-of-refund delivery figure and it
   will not present its own arithmetic as a computed result. That is
