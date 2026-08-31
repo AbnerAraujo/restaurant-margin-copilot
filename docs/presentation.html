@@ -453,15 +453,15 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <h2 class="a lg">Six chapters, all with receipts</h2>
   <div class="toc">
     <div class="a toc-item"><div class="toc-n">01</div><div><div class="toc-t">Strategy</div><div class="toc-s">Problem &middot; vision &middot; five products scored &middot; KRs &middot; hypotheses</div></div></div>
-    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo</div></div></div>
-    <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters &middot; the platform comparator</div></div></div>
+    <div class="a toc-item"><div class="toc-n">02</div><div><div class="toc-t">Product</div><div class="toc-s">Gamification shipped &middot; competitive landscape &middot; live demo &middot; connector variance &middot; inline advice</div></div></div>
+    <div class="a toc-item"><div class="toc-n">03</div><div><div class="toc-t">Architecture</div><div class="toc-s">Request flow &middot; ports &amp; adapters &middot; the BFF layer</div></div></div>
     <div class="a toc-item"><div class="toc-n">04</div><div><div class="toc-t">Evidence</div><div class="toc-s">Evaluation harness &middot; token discipline</div></div></div>
     <div class="a toc-item"><div class="toc-n">05</div><div><div class="toc-t">Rigor</div><div class="toc-s">DoR &middot; PRD &middot; RFC &middot; user stories &middot; what's left</div></div></div>
     <div class="a toc-item"><div class="toc-n">06</div><div><div class="toc-t">The build</div><div class="toc-s">SDD pipeline &middot; the real mistakes log</div></div></div>
   </div>
 </div>
 
-<!-- 2b · The customer, before the problem -->
+<!-- 3 · The customer, before the problem -->
 <div class="slide wide" data-notes="Before the problem is argued in the abstract, the two people it happens to — one per delivery platform this deck already names, both on Prosus rails. Camila and Bram are labeled composites of the strategy's target customer — invented names, stock photographs — because this deck doesn't dress fiction up as data. What is real sits on the cards: iFood holds about 80 percent of Brazilian delivery and averages 16 to 25 percent in fees, past 30 on some plans, per Abrasel's July 2025 survey of 1,600 establishments — the same Abrasel the next slide cites; Just Eat Takeaway takes 14 percent plus 21 euro-cents per order when the restaurant delivers itself, 25 to 35 percent with platform couriers. Those two sourced fee structures are what the next slide's 15–30 percent commission estimate rests on. And deliberately: neither owner is incompetent — she costs every dish, he knows his coffee margin to the cent. The problem is that nobody can line-item-audit a netted payout at midnight.">
   <div class="a tag">The customer</div>
   <h2 class="a md">Two owners, two Prosus platforms, the same blind spot</h2>
@@ -494,7 +494,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a personanote"><span class="tagchip">Composite</span>&ensp;Camila and Bram are illustrative composites of the strategy's target customer &mdash; invented names, stock photographs (Unsplash: Taylor Friehl; Cemrecan Yurtman). The platform-fee figures on the cards are real and cited.</p>
 </div>
 
-<!-- 3 · Problem -->
+<!-- 4 · Problem -->
 <div class="slide" data-notes="The customer problem, stated plainly: an independent owner cannot tell, day to day, whether they made money — because reconciling POS, delivery-platform, and cost data by hand is this tedious, and platform commissions are deducted with no line-item breakdown to audit against. Two of four cards are independently sourced; two are this project's own working estimate, labeled honestly rather than dressed up as external data. That gap, discovered only at month-end, is what this product closes. Profitability stat scoped to LatAm and Europe, matching the platforms already in this deck (iFood/Brazil, Just Eat Takeaway/Europe): 41% of Brazilian bars/restaurants reported a profit in Abrasel's Pesquisa Nacional de Condições Econômicas, May 2025; one third of UK hospitality businesses were operating at a loss per the UKHospitality/BII/BBPA/Hospitality Ulster survey, also May 2025. The 35% invoice-overcharge figure is from Consolidated Concepts' audit of 11,000+ restaurant invoices across 400 restaurants, reported via FSR Magazine, 2015 — dated, but the only real, attributable number found on billing-error frequency in this space.">
   <div class="num-bg">01</div>
   <div class="a tag">The customer problem</div>
@@ -509,7 +509,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body">By the time the month closes and the shortfall shows up, <span class="hi">it's structurally too late to act on it</span>.</p>
 </div>
 
-<!-- 4 · Vision -->
+<!-- 5 · Vision -->
 <div class="slide" data-notes="The vision, and the reason Prosus specifically should fund it: partner prosperity and platform prosperity move on the same curve. 724 thousand restaurants are already on Prosus rails — this launches inside ToqanClaw, not as a new product needing new distribution. The OKR this vision translates into is on the next-but-one slide, stated on its own rather than buried here.">
   <div class="a qm">&ldquo;</div>
   <div class="a qt">Give every owner a same-day, trustworthy answer to <strong>"did we make money today, and why."</strong></div>
@@ -517,8 +517,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body" style="margin-top:26px"><span class="hi">Reason to Believe:</span> partner prosperity and platform prosperity move on the same curve &mdash; a partner that grows without eroding margin churns less and compounds into more durable GMV on Prosus's own platforms. <span class="data-num">~724,000+</span> restaurants already sit on Prosus rails <span class="tagchip sourced">Sourced</span></p>
 </div>
 
-<!-- 5 · Five products -->
-<div class="slide wide" data-notes="Double Diamond: five candidate problems discovered, one OKR with four ranked KRs defined from the strongest one, five candidate PRODUCTS developed against those same four KRs as scoring criteria (plus real-world feasibility), one delivered. A won because it is the only candidate that clears every bar — including the OKR's own two-sided objective (grow revenue AND protect margin), where one sourced finding, costs deducted without a line-item breakdown, sits under both halves at once. Note D: scored too big to build in four days, it has since shipped anyway, after the freeze.">
+<!-- 6 · Five products -->
+<div class="slide wide" data-notes="Double Diamond: five candidate problems discovered, one OKR with four ranked KRs defined from the strongest one, five candidate PRODUCTS developed against those same four KRs as scoring criteria (plus real-world feasibility), one delivered. A won because it is the only candidate that clears every bar — including the OKR's own two-sided objective (grow revenue AND protect margin), where one sourced finding, costs deducted without a line-item breakdown, sits under both halves at once. Note D: scored too big to build in four days.">
   <div class="a tag">Product strategy &middot; Double Diamond</div>
   <h2 class="a md">Five candidate products, scored against the OKR &mdash; only A clears every bar</h2>
   <div class="a flow" style="margin-top:18px">
@@ -536,7 +536,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <tr class="rowA"><td><b>1 &middot; A &mdash; Margin &amp; Growth Copilot</b> <span class="tagchip tested">Built</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td></tr>
     <tr><td>2 &middot; B &mdash; Reconciliation only</td><td class="c"><span class="dot no">×</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot yes">✓</span></td></tr>
     <tr><td>3 &middot; C &mdash; Promo-ROI advisor only</td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot part">~</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot part">~</span></td><td class="c"><span class="dot yes">✓</span></td></tr>
-    <tr><td>4 &middot; D &mdash; Cross-platform comparator <span class="tagchip tested">Since shipped</span></td><td class="c"><span class="dot part">~</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td></tr>
+    <tr><td>4 &middot; D &mdash; Cross-platform comparator</td><td class="c"><span class="dot part">~</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td></tr>
     <tr><td>5 &middot; E &mdash; Visibility guardian</td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td><td class="c"><span class="dot no">×</span></td><td class="c"><span class="dot yes">✓</span></td><td class="c"><span class="dot no">×</span></td></tr>
   </table>
   <div class="a legend" style="margin-top:14px">
@@ -546,8 +546,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 6 · Key Results -->
-<div class="slide" data-notes="The full OKR, together on one slide: the objective from the Vision slide, restated, immediately above the four Key Results it decomposes into. Each KR shows the target that was set BEFORE the build, the real result, and — for KR1 only — a visually separate 'disclosed, not committed' row so a reader never confuses honest extra disclosure (accuracy, consistency) with the one thing that was actually promised (refusal correctness). Every number here was re-measured on 2026-08-30 and several of them moved, downward, for a reason worth saying out loud if asked: the harness runs against its own backend, but that backend was still sharing the product's answer cache, so re-runs were being served from the previous run's cached answers — 25 of 35 questions, two suites finishing in zero seconds. It was grading the cache, not the model. With the cache disabled the flat 5/5 and 15/15 became 9/10 and 14/15, and the honest per-question cost went from $0.025 to $0.0313. All four KRs still hold; the difference is that they now hold against measurements rather than against a cache. KR2 and KR3 also stopped being true by construction: each got a test that reads the real persisted database back, so a regression would fail CI instead of going unnoticed.">
+<!-- 7 · Key Results -->
+<div class="slide" data-notes="The full OKR, together on one slide: the objective from the Vision slide, restated, immediately above the four Key Results it decomposes into. Each KR shows the target that was set BEFORE the build, the real result, and — for KR1 only — a visually separate 'disclosed, not committed' row so a reader never confuses honest extra disclosure (accuracy, consistency) with the one thing that was actually promised (refusal correctness). Every number here was re-measured on 2026-08-30 and several of them moved, downward, for a reason worth saying out loud if asked: the harness runs against its own backend, but that backend was still sharing the product's answer cache, so early re-runs were being served from the previous run's cached answers — 25 of 35 questions, two suites finishing in zero seconds. It was grading the cache, not the model. With the cache disabled, and the whole harness run three times in full rather than twice — two data points still aren't enough to call a pattern when the model layer isn't deterministic — the flat 5/5 and 15/15 became 4/5 every run and 14/15 &middot; 15/15 &middot; 14/15, aggregate 99/105 (94.3%), and the honest per-question cost went from $0.025 to $0.0313 (a separate general-ledger figure, not the harness's own measured cost). All four KRs still hold; the difference is that they now hold against measurements rather than against a cache. KR2 and KR3 also stopped being true by construction: each got a test that reads the real persisted database back, so a regression would fail CI instead of going unnoticed.">
   <div class="num-bg">02</div>
   <div class="a tag">The OKR</div>
   <h2 class="a lg">One objective, four falsifiable results</h2>
@@ -559,9 +559,9 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <div class="stat-card">
       <div class="stat-label">KR1 &middot; Trust</div>
       <div class="stat-target">Target &mdash; <b>100% refusal correctness</b></div>
-      <div class="stat-value acc">9/10</div>
-      <div class="stat-trend up">Two uncached runs &mdash; the one miss is a grader's wording rule, not a wrong answer</div>
-      <div class="kr-disclosed"><b>Disclosed, not committed</b>Accuracy 14/15 &middot; 14/15 &middot; consistency 13/15 &middot; 15/15 &mdash; every failure named on the Evaluation slide</div>
+      <div class="stat-value acc">12/15</div>
+      <div class="stat-trend up">Three uncached runs, 4/5 every time &mdash; the same grader's wording rule, not a wrong answer</div>
+      <div class="kr-disclosed"><b>Disclosed, not committed</b>Accuracy 14/15 &middot; 15/15 &middot; 14/15 &middot; consistency 14/15 &middot; 15/15 &middot; 15/15 &mdash; every failure named on the Evaluation slide</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">KR2 &middot; Margin</div>
@@ -584,12 +584,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 7 · Hypotheses -->
+<!-- 8 · Hypotheses -->
 <div class="slide" data-notes="Every claim in the strategy is tagged by where it came from — sourced, assumption, hypothesis, or explicitly simulated — and now each one is wired to real evidence, an honest gap, or a forward pointer, rather than left as an unsupported one-liner. H1 is the bet the whole architecture rides on, so it's the one the harness actually tests. H2's urgency argument is grounded in a real, if dated, statistic: restaurants hold a median of just 16 days of cash buffer — the thinnest of any small-business sector studied — versus 27 days median across all small businesses (JPMorgan Chase Institute, 'Cash is King: Flows, Balances, and Buffer Days', September 2016, an analysis of 470M+ transactions across 597,000 small businesses).">
   <div class="a tag">Hypotheses</div>
   <h2 class="a lg">Tagged by evidence &mdash; not just by risk</h2>
   <div class="a hypgrid">
-    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip tested">Tested here</span><p><b>H1</b> &mdash; owners trust a system that refuses or clarifies over one that always answers confidently. The core architectural bet &mdash; so it's the one tested.</p><div class="hyp-evidence pass"><b>Supported</b>9/10 refusal correctness across two uncached runs (KR1) &mdash; measured, not claimed; the one miss is the grader's wording rule, left unfixed on purpose</div></div>
+    <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span> <span class="tagchip tested">Tested here</span><p><b>H1</b> &mdash; owners trust a system that refuses or clarifies over one that always answers confidently. The core architectural bet &mdash; so it's the one tested.</p><div class="hyp-evidence pass"><b>Supported</b>12/15 refusal correctness across three uncached runs (KR1) &mdash; measured, not claimed; the same grader's wording rule misses every run, left unfixed on purpose</div></div>
     <div class="hyp"><span class="tagchip hypothesis">Hypothesis</span><p><b>H2</b> &mdash; daily reconciliation surfaces anomalies early enough to act mid-week, not at month-end.</p><div class="hyp-evidence honest"><b>Why days matter, sourced</b>Restaurants hold a median of <span class="hi">16 days</span> of cash buffer &mdash; the thinnest of any small-business sector studied, vs. 27 days median overall (JPMorgan Chase Institute, 2016). A month-end discovery already exceeds it.</div></div>
     <div class="hyp"><span class="tagchip assumption">Assumption</span><p><b>H3</b> &mdash; a question box beats a dashboard (inherited from Toqan's Data Analyst experience, not re-validated).</p><div class="hyp-evidence honest"><b>Honest gap</b>Inherited, not re-tested in this build &mdash; named rather than quietly assumed</div></div>
     <div class="hyp"><span class="tagchip simulated">Simulated-as-Prosus</span><p><b>H4</b> &mdash; stand-in ToqanClaw usage data, used only to pick eval questions &mdash; never presented as real.</p><div class="hyp-evidence honest"><b>Simulated, disclosed</b>Used only to select which questions to evaluate &mdash; never shown to a user as real usage</div></div>
@@ -597,10 +597,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 8 · Badges -->
-<div class="slide wide" data-notes="Gamification is the UX answer to complexity, not decoration — and since the strategy was written, all four badge categories have shipped as real code. The balance shown is queried live from GET /api/badges against the real database on 2026-08-30: 12,345 points from 775 earned badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth — with none spent. Yes, 12,345 really is what 4,580 + 7,525 + 240 comes to; it looks like a placeholder and isn't, which is worth saying before someone assumes otherwise. It is also two orders of magnitude above the 200 shown here previously, for an unglamorous reason: that figure dates from when the database held a 14-day dataset, and it now holds 759 reconciled days. Week One and Campaign Launcher stay at zero — a streak needs 7 real app-open days and only 3 exist, and Campaign Launcher needs the owner to log a replacement for a flagged campaign. Both are earnable right now and neither is simulated, which is the whole point: these are read from real rows or they are not shown.">
+<!-- 9 · Badges -->
+<div class="slide wide" data-notes="Gamification is the UX answer to complexity, not decoration — and since the strategy was written, all four badge categories have shipped as real code. The balance shown is queried live from GET /api/badges against the real database on 2026-08-30: 12,370 points from 776 earned badges — 458 Clean Close, 302 Discrepancy Catcher, 16 Growth — 1,000 redeemed toward promotion spend, 11,370 available. Yes, 12,370 really is what 4,580 + 7,550 + 240 comes to; it looks like a placeholder and isn't, which is worth saying before someone assumes otherwise. It is also two orders of magnitude above the 200 shown here previously, for an unglamorous reason: that figure dates from when the database held a 14-day dataset, and it now holds 759 reconciled days. Week One and Campaign Launcher stay at zero — a streak needs 7 real app-open days and only 3 exist, and Campaign Launcher needs the owner to log a replacement for a flagged campaign. Both are earnable right now and neither is simulated, which is the whole point: these are read from real rows or they are not shown.">
   <div class="a tag">Gamification &middot; shipped</div>
-  <h2 class="a md">Quiet badges &mdash; all four categories live, 12,345 real points</h2>
+  <h2 class="a md">Quiet badges &mdash; all four categories live, 12,370 real points</h2>
   <div class="a" style="display:grid;grid-template-columns:8fr 4fr;gap:20px;align-items:start;margin-top:24px">
     <div class="badgegrid">
       <div class="badgecard"><div class="cat">Reconciliation</div><span class="badgename">Clean Close <span class="pts">10 pts</span></span><span class="badgename">Discrepancy Catcher <span class="pts">25 pts</span></span><p class="why">Fire off the daily close's own discrepancy flags.</p></div>
@@ -610,14 +610,14 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     </div>
     <div class="stat-card" style="height:100%">
       <div class="stat-label">Live points &middot; real API</div>
-      <div class="stat-value acc" style="font-size:52px">12,345</div>
-      <div class="stat-trend">458 &times; Clean Close = 4,580<br>301 &times; Discrepancy Catcher = 7,525<br>16 &times; Growth = 240</div>
-      <div class="stat-trend" style="margin-top:12px">A pure function of earned badges &mdash; no mutable balance to drift. Go decides; the model only narrates. Queried live from <span style="font-family:var(--mono)">GET /api/badges</span>, 2026-08-30.</div>
+      <div class="stat-value acc" style="font-size:52px">12,370</div>
+      <div class="stat-trend">458 &times; Clean Close = 4,580<br>302 &times; Discrepancy Catcher = 7,550<br>16 &times; Growth = 240</div>
+      <div class="stat-trend" style="margin-top:12px">A pure function of earned badges &mdash; no mutable balance to drift. Go decides; the model only narrates. 1,000 redeemed toward promotion spend, 11,370 available. Queried live from <span style="font-family:var(--mono)">GET /api/badges</span>, 2026-08-30.</div>
     </div>
   </div>
 </div>
 
-<!-- 8b · Competitive landscape -->
+<!-- 10 · Competitive landscape -->
 <div class="slide wide" data-notes="Positioning check before the demo, researched 2026-08-29 from public materials — every claim dated and cited in product-strategy.md. The finding that kills the lazy pitch comes first: incumbents are not dashboard-only anymore. MarginEdge shipped an expanded AI suite (Business Wire, Aug 7 2025), a conversational assistant named Tom the Tomato, and an $80M Series D for the AI back-office (GlobeNewswire, Aug 11 2026). Restaurant365 launched R365 AI with Auto Answers on May 12 2026 — and its launch release, checked directly, says nothing about accuracy safeguards or declining to answer. Toast IQ, Sous Chef to its early users, answers questions across roughly 148,000 Toast locations (Business Wire, June 10 2026) — on the Toast side of the business. Apicbase even shipped an MCP server, the exact integration pattern used here. So the chat box is table stakes. What stays open: each delivery portal documents itself as own-channel data, so none can reconcile across platforms or against POS and costs — that gap is definitional, not a missing feature. The closest overlap, Loop AI and Voosh, really does reconcile delivery payouts — for US multi-unit brands on DoorDash, Uber Eats and Grubhub rails, not the independent on Prosus rails (iFood or JET), and as dashboards and automation rather than refusal-disciplined Q&A; that scoping is judgment from their own positioning, labeled an assumption. Correction made 2026-08-29, same day as the original research: iFood and JET were briefly mis-listed in the platform-portals row as external rivals on a par with Uber Eats and DoorDash — wrong, since iFood is Prosus-owned (fully, since Nov 2022) and JET is now Prosus-owned too (acquired 2025, delisted from Euronext Amsterdam Nov 17 2025); both are this product's own distribution, not competitors, and the row now says so. What none of the reviewed launches advertise is a refuse-rather-than-guess bar. That is the bet — not breadth parity, and no claim that their assistants hallucinate: their accuracy was not tested here. The real baseline for this customer is still the spreadsheet. Segue: the refusal none of them advertise is the one you are about to watch, live, in Act 3.">
   <div class="a tag">Competitive landscape &middot; researched 2026-08-29</div>
   <h2 class="a md">The chat layer is now table stakes &mdash; the refusal bar is still unclaimed</h2>
@@ -651,12 +651,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </table>
   <div class="a okr-banner" style="margin-top:16px">
     <div class="okr-label">The different bet &mdash; not feature parity</div>
-    <div class="okr-obj">They bet on breadth. This bets that at 3&ndash;5% net margin, trust is the product: no model ever produces a number, every figure carries provenance, and the refusal bar is measured &mdash; 9/10 across two uncached runs, live in Act 3, next.</div>
+    <div class="okr-obj">They bet on breadth. This bets that at 3&ndash;5% net margin, trust is the product: no model ever produces a number, every figure carries provenance, and the refusal bar is measured &mdash; 12/15 across three uncached runs, live in Act 3, next.</div>
   </div>
   <p class="a body" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">Honest reading: the category's convergence on chat validates H3's inherited question-box bet &mdash; and retires "we have a chat layer" as a differentiator. Their accuracy was not tested here; the checkable claim is only that no reviewed launch advertises refuse-rather-than-guess. Correction, same date: an earlier draft of this table listed iFood alongside Uber Eats, DoorDash and JET as symmetric external rivals &mdash; wrong, since iFood is majority/wholly Prosus-owned and JET is now Prosus-owned too, contradicting this deck's own Vision and persona slides. Fixed above; full record and citations in docs/product-strategy.md, 2026-08-29 entry. The real baseline for this customer is still the spreadsheet.</p>
 </div>
 
-<!-- 9 · Demo -->
+<!-- 11 · Demo -->
 <div class="slide" data-notes="Three acts, all live: the daily close with the deliberate mess handled; a real question through gate, tools, and narration; and a refusal on purpose — because a confidently wrong number is worse than one.">
   <div class="num-bg">03</div>
   <div class="a tag">Live demo &middot; three acts</div>
@@ -669,7 +669,52 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote"><b>Nothing is a recording.</b> Live database, live Anthropic API, a cost panel ticking up in real dollars.</p>
 </div>
 
-<!-- 10 · Architecture flow -->
+<!-- 12 · Connector trading-condition variance -->
+<div class="slide wide" data-notes="Shipped since the freeze, spec 014. The honest problem: the simulated connector's revenue was flat-positive by construction — every day drew from one narrow band plus a flat weekend lift, so the only losing days the product ever demoed were days the cost sheet itself spiked on. A product whose entire job is noticing when something went wrong was demoing on a revenue source where nothing on the revenue side ever did. Fixed with a seven-condition weighted trading model, deterministic per calendar date, with independent delivery-vs-dine-in multipliers because a real disruption never hits both sides of the business equally. Measured over 363 simulated days against the live dataset's own real cost sheet. The canonical historical dataset — 759 days, $1,078,340.64 total margin — is provably untouched: cmd/gendata's four CSVs stay byte-identical, because the historical generator and the connector's live simulation are independent by design (FR-015).">
+  <div class="a tag">Data realism &middot; shipped (spec 014)</div>
+  <h2 class="a lg">Simulated trading days can finally have a bad day</h2>
+  <div class="a cols2eq">
+    <div class="refundcard">
+      <h3>Seven trading conditions, drawn per calendar date</h3>
+      <p>Before: every simulated day drew its order count from one narrow band plus a flat Friday/Saturday lift &mdash; daily gross ran 0.66x&ndash;1.51x of its own mean, too tight for any real cost sheet to push through zero. The only losing days the connector ever produced were days the <i>cost sheet</i> spiked on.</p>
+      <p style="margin-top:8px">Now: <b>ordinary, quiet midweek lull, neighbourhood event, aggregator outage, short-staffed shift, kitchen equipment failure, severe weather</b> &mdash; one condition per date, agreed on by every simulated source (iFood, JET, POS alike), each with its own delivery-vs-dine-in demand multipliers. Costs are never touched by any condition &mdash; the connector supplies revenue only.</p>
+    </div>
+    <div>
+      <div class="a platgrid">
+        <div class="platcard pb"><div class="pname">Losing days &middot; before</div><div class="prate">9.6%</div><div class="psub">35 of 363 simulated days</div></div>
+        <div class="platcard pa"><div class="pname">Losing days &middot; after</div><div class="prate">15.2%</div><div class="psub">55 of 363 &mdash; still short of the real dataset's own 20.1%, honestly left open rather than forced</div></div>
+      </div>
+      <p class="a body" style="font-size:12.5px;margin-top:14px;color:var(--text-secondary)">Same 363-day measurement: mean daily gross $6,037.93&rarr;$5,354.83, mean daily margin $3,495.11&rarr;$2,856.34, quietest day 0.66x&rarr;0.28x mean, busiest day 1.51x&rarr;2.36x mean &mdash; real variance, not just a shifted average.</p>
+    </div>
+  </div>
+  <p class="a livenote">One click, one number: a cost-sheet upload can now pull the matching simulated revenue for its own invoice dates through one atomic pipeline run, instead of reconciling against whatever revenue happened to already be on file. Live smoke test: a 29-day upload moved negative days from 3/29 (cost sheet alone) to 5/29 (cost sheet plus connector), each new loss carrying a named cause. The canonical dataset is unaffected by any of this &mdash; still 759 days, still $1,078,340.64 total margin, byte-identical CSVs before and after.</p>
+</div>
+
+<!-- 13 · Inline grounded advice -->
+<div class="slide wide" data-notes="Shipped since the freeze, spec 011, widening spec 009's Business Insight Advisor. Product owner's direction, verbatim: 'the advisor should advise whatever the customer asks and use the data in context for it — not bringing wrong data or hallucination.' Until now the advisor had exactly one avenue in: Go detects one of five fixed patterns in an already-computed result and offers a teaser chip. A question that explicitly asked for a suggestion got its data core answered and its advice part plainly declined, even though the right advisor was one package away. This spec adds a second avenue: an explicit ask with a data-groundable core now runs the normal tool-calling narration first, then one bounded advisor call, grounded exclusively in that same turn's tool results — no new tool-calling loop, no data the deterministic layer didn't already produce. The line that does not move: advice must always trace to real, tool-computed data. An ungroundable ask is still refused plainly, zero tool calls, zero advisor calls.">
+  <div class="a tag">Advisor &middot; shipped (spec 011)</div>
+  <h2 class="a lg">Ask for advice, get it &mdash; still grounded, never invented</h2>
+  <div class="a cols2eq">
+    <div class="refundcard">
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--text-tertiary);text-transform:uppercase;margin-bottom:6px">Path 1 &middot; unchanged, spec 009</div>
+      <h3>Owner didn't ask &mdash; Go noticed</h3>
+      <p>One of five fixed patterns, detected deterministically in an already-computed result &rarr; zero-cost teaser chip &rarr; a tap runs the one bounded advice call. Byte-identical to before this spec; live-verified unchanged.</p>
+    </div>
+    <div class="refundcard">
+      <div style="font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--accent);text-transform:uppercase;margin-bottom:6px">Path 2 &middot; new, spec 011</div>
+      <h3>Owner asked directly &mdash; the question IS the opt-in</h3>
+      <p>An open-ended ask ("how can I improve my margin overall?") answers its data core exactly as always &mdash; real tools, real provenance &mdash; then one advisor call runs in the same turn, grounded exclusively in the tool results that same answer just computed.</p>
+    </div>
+  </div>
+  <div class="a stat-cards n3" style="margin-top:20px">
+    <div class="stat-card"><div class="stat-label">Live-verified ask</div><div class="stat-value" style="font-size:15px;line-height:1.4">&ldquo;How can I improve my margin overall?&rdquo;</div><div class="stat-trend up">Gathered get_period_totals, get_margin_delta, list_negative_roi_promotions &mdash; suggestion anchored to the real July&rarr;August margin move and IFOOD-CAMP-025's own spend/revenue, stating plainly that labor/menu data doesn't exist here</div></div>
+    <div class="stat-card"><div class="stat-label">Still refused</div><div class="stat-value">0 calls</div><div class="stat-trend">&ldquo;What should I pay my staff?&rdquo; &mdash; zero tool calls, zero advisor calls, plain refusal</div></div>
+    <div class="stat-card"><div class="stat-label">Cost honesty</div><div class="stat-value" style="font-size:20px">Own ledger row</div><div class="stat-trend">New <span style="font-family:var(--mono)">question_advice</span> kind; a failed advisor call degrades to the unfailed data answer &mdash; a broken suggestion must never cost the owner the answer they already paid for</div></div>
+  </div>
+  <p class="a livenote">The line that doesn't move: advice must always trace to tool-computed data from that same turn. This widens what the advisor can reach &mdash; never what it may invent.</p>
+</div>
+
+<!-- 14 · Architecture flow -->
 <div class="slide wide" data-notes="The one boundary that matters: every number is computed left of the gate, in Go against Postgres. The model only ever narrates a typed tool result — the dashed line is the line Claude never crosses. New since the 08-29 incident: even the date-range check is deterministic now — an explicit out-of-range date is refused by Go before the gate's model ever runs, zero tokens. Range comparison is arithmetic; it was briefly the model's job, and that was wrong.">
   <div class="a tag">Architecture &middot; request flow</div>
   <h2 class="a md">No number the owner sees is ever produced by a model<a class="arch-link" href="https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441" target="_blank" rel="noopener noreferrer" onclick="openArchPopup(event, this.href)">Full detailed diagram &#8599;</a></h2>
@@ -747,7 +792,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 11 · Ports & adapters -->
+<!-- 15 · Ports & adapters -->
 <div class="slide wide" data-notes="Same boundary, enforced structurally: the package dependency graph makes the rule physical. internal/reconcile has zero outgoing calls; internal/ambiguity and internal/advisor have no path to real data at all; internal/explain crosses only through the typed port. The two dashed boxes on the right are the calls that never see a row — the gate classifies question text, and the advisor is handed an already-computed tool result and asked only to connect it to general practice. Whether an insight exists at all is decided in Go, for free, before the advisor is ever called.">
   <div class="a tag">Architecture &middot; ports &amp; adapters</div>
   <h2 class="a md">The boundary is a dependency graph, not a rule to remember</h2>
@@ -809,22 +854,39 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
       <text x="945" y="442" text-anchor="middle" font-size="10.5" fill="var(--text-secondary)">logs every LLM call</text>
     </svg>
   </figure>
+  <p class="a livenote" style="margin-top:4px"><span style="font-family:var(--mono)">cmd/server</span>'s entrypoint box is now composed through the named <span style="font-family:var(--mono)">internal/bff</span> boundary rather than 17 hand-wired routes &mdash; next slide.</p>
 </div>
 
-<!-- 12 · Comparator -->
-<div class="slide" data-notes="Product D — the one only Prosus could build in good faith — has since shipped: a live platforms page and a sixth MCP tool. The numbers carry an honest story: iFood's effective rate is 22.44 percent, not its nominal 23 — because a real refund's negative commission flows through the deterministic computation. A hardcoded rate table would have missed it.">
-  <div class="num-bg">D</div>
-  <div class="a tag">Shipped since the spec &middot; <code style="border:none;background:none;color:var(--accent)">compare_platform_economics</code></div>
-  <h2 class="a lg">Product D is live: what each platform really costs</h2>
-  <div class="a platgrid">
-    <div class="platcard pa"><div class="pname">iFood &mdash; nominal 23%</div><div class="prate">22.44%</div><div class="psub">effective commission &mdash; $573.71 on $2,556.25 gross &middot; 47.48% combined incl. $640.00 promo spend</div></div>
-    <div class="platcard pb"><div class="pname">Just Eat Takeaway &mdash; nominal 20%</div><div class="prate">20.00%</div><div class="psub">effective commission &mdash; $480.70 on $2,403.50 gross &middot; 50.37% combined incl. $730.00 promo spend</div></div>
+<!-- 16 · BFF layer -->
+<div class="slide wide" data-notes="Shipped since the freeze, spec 013. Requested as 'unify the main backend with the platform-connector proxy behind one coherent API surface' — the first finding contradicted the request, and is the most useful thing in it: there were never two backends. internal/platformconnector is an ordinary in-process Go package, same binary, same mux, same origin, same /api/* prefix the frontend has called since spec 001. internal/httpapi was already this product's BFF; it just had no composition root and enforced nothing. The real defect had a real prior incident: 17 routes registered by hand in cmd/server/main.go, and the CORS allow-list was one hand-maintained string that had to stay in sync with them from memory — and once did not. PUT /api/profile shipped broken from the browser: a blocked CORS preflight produces no visible 405, curl -X PUT against the same handler worked every time, and nothing could enumerate the surface to catch the mismatch because a package named main cannot be imported by a test. Deliberately not a separate service — Azure's own BFF guidance names 'only one interface interacts with the backend' as an explicit non-fit for a standalone BFF service, and this is exactly that case.">
+  <div class="a tag">Architecture &middot; shipped (spec 013)</div>
+  <h2 class="a lg">Naming the boundary made a bug class structurally impossible</h2>
+  <p class="a body" style="max-width:1100px">The request assumed two backends to unify. There were never two: <span style="font-family:var(--mono)">internal/platformconnector</span> is an ordinary in-process Go package &mdash; same binary, same mux, same origin, the one <span style="font-family:var(--mono)">/api/*</span> prefix the frontend has called since spec 001. What was actually missing was naming the boundary that already existed: <span style="font-family:var(--mono)">internal/httpapi</span> was already this product's BFF, one experience, one consumer &mdash; it just held no composition root and enforced nothing.</p>
+  <div class="a cmp" style="margin-top:16px">
+    <div class="cmp-col cmp-bad alert">
+      <div class="cmp-label">Before &mdash; 17 hand-wired routes, one shipped bug</div>
+      <ul>
+        <li>CORS's allow-list was one hand-maintained string covering the whole mux &mdash; had to stay in sync with 17 registrations from memory</li>
+        <li>It didn't: <b>PUT /api/profile shipped broken from the browser</b> &mdash; a blocked preflight produces no visible 405, and <code>curl -X PUT</code> against the same handler worked every time</li>
+        <li><code>methodSplit</code> routed everything but POST to the listing handler &mdash; a DELETE was answered by whichever handler happened to be the fallback</li>
+        <li>A handler panic reached the browser as a dropped connection, never the standard error envelope</li>
+      </ul>
+    </div>
+    <div class="cmp-col cmp-good">
+      <div class="cmp-label">After &mdash; one route table, declared as data</div>
+      <ul>
+        <li>CORS preflight, 405 policy, and the startup log are all <i>derived</i> from one map keyed by method &mdash; advertised and dispatchable methods are the same fact, so they cannot drift apart again</li>
+        <li>Verified live: <code>/api/reconciliation</code> &rarr; GET, OPTIONS &middot; <code>/api/usage</code> &rarr; OPTIONS, POST &middot; <code>/api/profile</code> &rarr; GET, OPTIONS, PUT</li>
+        <li>Panics now return a real 500 in the standard <code>{error, detail}</code> envelope; the panic value is logged, never written to the body</li>
+        <li>New <code>GET /api/sources</code>: one vocabulary for every ingestion path, upload or (simulated) connector</li>
+      </ul>
+    </div>
   </div>
-  <p class="a livenote"><b>The honest beat:</b> iFood's true rate diverges from its nominal 23% because a real refund's negative commission flows through the deterministic computation &mdash; a hardcoded rate table would have missed it.</p>
+  <p class="a livenote">Deliberately <b>not</b> a separate service: one experience, one consumer, one team &mdash; a deployable here would buy a boundary that already holds and charge a network hop for it. No retries, breakers, or bulkheads either: the connector "upstream" is an in-process function call, and simulating flakiness so resilience code has something to catch would be fiction stacked on fiction.</p>
 </div>
 
-<!-- 13 · Evaluation -->
-<div class="slide wide" data-notes="Real harness numbers, failures included, re-measured on 2026-08-30. Say the method before the result, because the method is the finding: earlier runs of this harness were partly served by the product's own answer cache — 25 of 35 questions, two suites finishing in zero seconds — so the suite was grading the cache rather than the model, and the numbers it produced were flattering for a reason that had nothing to do with the model being right. cmd/server now takes -eval-no-answer-cache, and everything on this slide was measured with it on. Because the model layer is not deterministic, the whole suite ran twice and both runs are shown rather than the better one. Squares are run A; hover any one for its story. Four failures, all hand-read from the raw JSON, and not one of them is a wrong number: A15 is the one that matters, where the model returns gross and refund with provenance and then refuses to net them itself because no tool returns that figure — Principle I working exactly as designed, and a real gap in the tool contract that is open, not fixed. C1a is a genuine consistency divergence, the thing this suite is for. C3 and refusal's R1 are both the grader's wording rules rejecting correct answers, and both were deliberately left alone: tuning a regex after watching it fail is how a number stops meaning anything. A fifth failure was found and fixed — 'How was the weekend?' returned a 502 twice in four attempts because the ambiguity gate hit its token cap mid-clarification; the cap is now 2560 and it has not recurred.">
+<!-- 17 · Evaluation -->
+<div class="slide wide" data-notes="Real harness numbers, failures included, re-measured on 2026-08-30, three full runs rather than two because the model layer is not deterministic and two data points aren't enough to call a pattern. Say the method before the result, because the method is the finding: earlier runs of this harness were partly served by the product's own answer cache — 25 of 35 questions, two suites finishing in zero seconds — so the suite was grading the cache rather than the model, and the numbers it produced were flattering for a reason that had nothing to do with the model being right. cmd/server now takes -eval-no-answer-cache, and all three runs on this slide were measured with it on: accuracy 14/15 &middot; 15/15 &middot; 14/15, consistency 14/15 &middot; 15/15 &middot; 15/15, refusal 4/5 &middot; 4/5 &middot; 4/5 — 99/105 aggregate (94.3%), $3.6266 across 207 model interactions (201 real calls plus 6 zero-cost deterministic pre-check resolutions). Squares show run 1 of three; hover any one for its story. Three named, already-understood causes account for every failure across all three runs, recurring at different rates, and not one of them is a wrong number: A15 is the one that matters, where the model returns gross and refund with provenance and then refuses to net them itself because no tool returns that figure — Principle I working exactly as designed, and a real gap in the tool contract that is open, not fixed; it recurs in two of the three runs. C1a is a genuine consistency divergence, the thing this suite is for — it recurred once across the three runs. C3, the other consistency gap seen in the earlier two-run measurement, did not reproduce this time. Refusal's R1 is the grader's wording rule rejecting a correct clarifying question, and now recurs in every run — deliberately left alone: tuning a regex after watching it fail is how a number stops meaning anything. A fifth failure was found and fixed earlier — 'How was the weekend?' returned a 502 twice in four attempts because the ambiguity gate hit its token cap mid-clarification; the cap is now 2560 and it has not recurred.">
   <div class="num-bg">04</div>
   <div class="a tag">Evaluation harness</div>
   <h2 class="a md">Measured with the cache off &mdash; failures included, on purpose</h2>
@@ -837,10 +899,10 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     <span><i class="unit pass"></i>pass (strict grading)</span>
     <span><i class="unit fail">×</i>fail &mdash; hover for the hand-read cause</span>
   </div>
-  <p class="a body" style="max-width:1100px">Squares are run A of two. Earlier runs scored <span class="data-num">15/15 &middot; 15/15 &middot; 5/5</span> while the harness was partly served from the product&rsquo;s own answer cache &mdash; grading the cache, not the model. Cache off, it is <span class="data-num">14/15 &middot; 13/15 &middot; 5/5</span> (run B: <span class="data-num">14/15 &middot; 15/15 &middot; 4/5</span>). Of the four failures, <span class="hi">none is a wrong number</span>: one is a real gap in the tool contract, one a real consistency divergence, two are the grader&rsquo;s wording rules &mdash; <span class="hi">left unfixed on purpose</span>.</p>
+  <p class="a body" style="max-width:1100px">Squares show run 1 of three. Earlier runs scored <span class="data-num">15/15 &middot; 15/15 &middot; 5/5</span> while the harness was partly served from the product&rsquo;s own answer cache &mdash; grading the cache, not the model. Cache off, three full runs score <span class="data-num">14/15 &middot; 15/15 &middot; 14/15</span> accuracy, <span class="data-num">14/15 &middot; 15/15 &middot; 15/15</span> consistency, <span class="data-num">4/5 &middot; 4/5 &middot; 4/5</span> refusal &mdash; <span class="data-num">99/105</span> aggregate (94.3%). Of the three distinct failure causes, <span class="hi">none is a wrong number</span>: one is a real gap in the tool contract (two of three runs), one a real consistency divergence (one of three runs), one is the refusal grader&rsquo;s wording rule (every run) &mdash; <span class="hi">left unfixed on purpose</span>.</p>
 </div>
 
-<!-- 14 · Token discipline -->
+<!-- 18 · Token discipline -->
 <div class="slide" data-notes="Token discipline as a value: the whole build — 1,006 instrumented model calls — has spent $12.69 of real Anthropic money, tracked per call in Postgres, measured against KR4's own $0.05/interaction bar rather than any larger self-imposed budget. Two honesty notes worth volunteering here. First, the unit: a row in question_interaction is one MODEL CALL, and an answered question makes two of them (gate, then explain), so averaging the ledger understates the cost of a question by about half. The $0.0313 figure is measured over a known question count — 70 questions, 142 calls, $2.19 — not by dividing the ledger. Second, the previously shown $0.025 was measured while the harness was partly served from the answer cache, which is to say it was partly the price of not calling the model at all. Cache off, the true number is higher. It is still comfortably inside the bar, and the bar is the one that was committed to before the build.">
   <div class="a tag">Token discipline</div>
   <h2 class="a lg">1.6&times; under the per-interaction cost target</h2>
@@ -857,7 +919,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 15 · DOR -->
+<!-- 19 · DOR -->
 <div class="slide" data-notes="Definition of Ready, checked against what was actually true: four blockers resolved before build, zero clarification markers, 100 percent coverage — and the two things that were NOT ready written down instead of hidden.">
   <div class="num-bg">05</div>
   <div class="a tag">Definition of Ready</div>
@@ -883,15 +945,15 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 16 · PRD -->
-<div class="slide" data-notes="The PRD in one view: every v1 target was measured, and every one still holds — but the accuracy, consistency and refusal columns each show two figures now, one per run, because the model layer is not deterministic and reporting a single run as if it were is a measurement error dressed as a result. Where two runs disagree, both are printed. The failures behind those numbers are all named on the Evaluation slide; the short version is that not one of them is a wrong number — three are the grader's wording rules and one is a genuine gap in the tool contract, where the model correctly refuses to do arithmetic no tool will do for it. Scope has since extended through four follow-up specs — two shipped, one in progress, one deliberately gated.">
+<!-- 20 · PRD -->
+<div class="slide" data-notes="The PRD in one view: every v1 target was measured, and every one still holds — but the accuracy, consistency and refusal columns each show three figures now, one per run, because the model layer is not deterministic and reporting a single run as if it were is a measurement error dressed as a result. Where runs disagree, all three are printed. The failures behind those numbers are all named on the Evaluation slide; the short version is that not one of them is a wrong number — the refusal grader's wording rule (every run), a consistency divergence (one of three runs), and a genuine gap in the tool contract (two of three runs), where the model correctly refuses to do arithmetic no tool will do for it. Scope has since extended well past the original five specs: nine further specs — eight shipped, one (008, dashboard/chat intelligence v2) drafted but not yet built — plus 005's multi-tenant RFC, still deliberately gated.">
   <div class="a tag">PRD v1.0 &mdash; and what shipped since</div>
   <h2 class="a lg">Every target measured &mdash; then the scope grew</h2>
   <table class="a data-table">
     <tr><th>KR</th><th>Metric</th><th>Target</th><th style="text-align:right">Result</th></tr>
-    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Accuracy</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">14/15, twice &mdash; one real tool-contract gap</td></tr>
-    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Consistency</td><td>Measured &amp; reported</td><td class="num-cell">13/15 &middot; 15/15 &mdash; one real divergence, one grader</td></tr>
-    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Refusal correctness</td><td>100% on unanswerable set</td><td class="num-cell">5/5 &middot; 4/5 &mdash; the miss is the grader</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Accuracy</td><td>Measured &amp; reported, incl. failures</td><td class="num-cell">14/15 &middot; 15/15 &middot; 14/15 &mdash; one real tool-contract gap, recurring twice</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Consistency</td><td>Measured &amp; reported</td><td class="num-cell">14/15 &middot; 15/15 &middot; 15/15 &mdash; one real divergence, once</td></tr>
+    <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR1</td><td>Refusal correctness</td><td>100% on unanswerable set</td><td class="num-cell">4/5 &middot; 4/5 &middot; 4/5 &mdash; the grader's miss, every run</td></tr>
     <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR2</td><td>Reconciliation</td><td>Zero silent data loss</td><td class="num-cell">0 defects &mdash; now pinned by a persisted-state test</td></tr>
     <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR3</td><td>Promo-ROI flag</td><td>&ge;1 negative-ROI promo flagged</td><td class="num-cell">&minus;$450.75 flagged &mdash; pinned by a test</td></tr>
     <tr><td class="num-cell" style="text-align:left;color:var(--text-tertiary)">KR4</td><td>Cost / interaction</td><td>Under $0.05</td><td class="num-cell">$0.0313 &mdash; 70 questions, cache off</td></tr>
@@ -899,12 +961,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <div class="a chips" style="margin-top:22px">
     <span class="chip" style="border-color:var(--positive);color:var(--positive)">spec 002 &middot; badges &mdash; shipped</span>
     <span class="chip" style="border-color:var(--positive);color:var(--positive)">spec 003 &middot; comparator &mdash; shipped</span>
-    <span class="chip" style="border-color:var(--chart-partial);color:var(--chart-partial)">spec 004 &middot; semantic cache &mdash; in progress</span>
+    <span class="chip" style="border-color:var(--positive);color:var(--positive)">spec 004 &middot; semantic cache &mdash; shipped</span>
     <span class="chip" style="border-color:var(--negative);color:var(--negative)">spec 005 &middot; multi-tenant &mdash; RFC, gated</span>
   </div>
 </div>
 
-<!-- 17 · RFC -->
+<!-- 21 · RFC -->
 <div class="slide" data-notes="The engineering decisions: the cheapest model that holds the bar at each step — and no model at all where a number is computed. The honest story on the gate: on 2026-08-29 a cross-year date-comparison bug at scale was first answered with a model swap, Haiku 4.5 to Sonnet 5 — and a reviewer then correctly called that a papered-over Principle I violation, because comparing an explicit date against the known data window is arithmetic, not ambiguity judgment. The real fix is a deterministic Go pre-check that refuses out-of-range explicit dates before any model runs — zero tokens — and hands in-range verdicts to the gate as precomputed fact. The Sonnet swap stands only for the genuinely linguistic residual: vague and relative dates, and the classification judgment itself. The paraphrase-match cache stays on Haiku 4.5; it never showed the bug. Plus one worked design decision: refunds net to the day the sale happened, because a closed day must never be silently restated.">
   <div class="a tag">Technical RFC</div>
   <h2 class="a lg">The cheapest model that holds the bar &mdash; and none where it matters</h2>
@@ -940,7 +1002,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 18 · User stories -->
+<!-- 22 · User stories -->
 <div class="slide" data-notes="Four stories in strict priority order — each only trusted once the one before it is proven. Thirteen functional requirements, six success criteria, 100 percent task coverage before any code.">
   <div class="a tag">User stories</div>
   <h2 class="a lg">Trust is earned in order</h2>
@@ -961,7 +1023,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 19 · What's left -->
+<!-- 23 · What's left -->
 <div class="slide" data-notes="Honest status: the paraphrase-aware cache shipped — Haiku classification against a bounded candidate set, no second vendor, uncertain match treated as new, verified live. Multi-tenant is the one thing deliberately NOT built: the RFC exists, and it's gated on human review because a tenant-isolation bug is a data breach, not a bug. The design makes forgetting the tenant filter a compile error.">
   <div class="num-bg">06</div>
   <div class="a tag">What's left</div>
@@ -988,8 +1050,8 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 20 · The build -->
-<div class="slide" data-notes="This wasn't just an application — it was a full spec-driven reasoning line: constitution through implement, 39 of 39 tasks, thirty specialist skills, and no agent framework. The same discipline then shipped four more specs after the interview build froze.">
+<!-- 24 · The build -->
+<div class="slide" data-notes="This wasn't just an application — it was a full spec-driven reasoning line: constitution through implement, 39 of 39 tasks, thirty specialist skills, and no agent framework. The same discipline then shipped eight more specs after the interview build froze, with one further spec (008) drafted but not yet built.">
   <div class="a tag">How this was actually built</div>
   <h2 class="a lg">Not just an application &mdash; a reasoning line</h2>
   <div class="a flow">
@@ -1008,7 +1070,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a body"><span class="data-num">39/39</span> tasks &mdash; then specs 002&ndash;005 through the same pipeline. GitHub Spec Kit &middot; <span class="hi">30 Claude Code skills</span> &middot; promptfoo &middot; sqlc &middot; golang-migrate &mdash; and <span class="hi">no agent framework</span>, per the brief. The right model per step, re-verified as the data grew: Sonnet for classification and narration, Haiku only for the bounded paraphrase-match cache, frontier models only where judgment demanded it.</p>
 </div>
 
-<!-- 20b · MCP tools and skills, named -->
+<!-- 25 · MCP tools and skills, named -->
 <div class="slide wide" data-notes="Every tool and skill named directly, so this isn't a vague 'AI helped build this' claim — each is a real, checkable line item: a typed MCP tool with a file path, or a Claude Code skill named in a real commit message. Full detail in docs/mcp-and-skills.md and README.md.">
   <div class="a tag">Built with &mdash; named, not vague</div>
   <h2 class="a lg">The 8 tools and the skills, by name</h2>
@@ -1029,7 +1091,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     </div>
     <div class="refundcard">
       <h3>Claude Code skills actually used</h3>
-      <p style="font-size:13.5px;line-height:1.65"><b>GitHub Spec Kit / SDD</b> &mdash; the whole constitution&rarr;specify&rarr;plan&rarr;tasks&rarr;analyze&rarr;implement flow, across 12 specs<br>
+      <p style="font-size:13.5px;line-height:1.65"><b>GitHub Spec Kit / SDD</b> &mdash; the whole constitution&rarr;specify&rarr;plan&rarr;tasks&rarr;analyze&rarr;implement flow, across 14 specs<br>
       <b>dataviz</b> &mdash; chart-type and palette rules<br>
       <b>design-review, redesign, apply-aesthetic, design-component</b> &mdash; the frontend revamp<br>
       <b>make-slide</b> &mdash; this deck<br>
@@ -1041,7 +1103,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote">Full contracts and a fact-checked, commit-cited inventory: <code>specs/001-margin-reconciliation-qa/contracts/mcp-tools.md</code> and <code>docs/mcp-and-skills.md</code>.</p>
 </div>
 
-<!-- 21 · Mistakes -->
+<!-- 26 · Mistakes -->
 <div class="slide wide" data-notes="Three real entries from the build's running mistakes log — kept as they happened, not reconstructed. The pattern: never trust a self-report, verify independently. That's the same principle the product itself is built on.">
   <div class="a tag">Where it went wrong &mdash; and how it was caught</div>
   <h2 class="a md">From the real mistakes log, kept as it happened</h2>
@@ -1052,7 +1114,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </div>
 </div>
 
-<!-- 22 · Roadmap: replacing the sheet -->
+<!-- 27 · Roadmap: replacing the sheet -->
 <div class="slide wide" data-notes="Roadmap, not built: two manual-file gaps, one strategic move. The supplier cost sheet and the delivery-platform sales export are both files the owner or someone constructs by hand today — closing both is the same architectural direction, staged for feasibility. The closing line is the actual strategic reason Prosus, not a generic SaaS vendor, is positioned to pull this off.">
   <div class="a tag">Roadmap &middot; not yet built</div>
   <h2 class="a lg">Closing every manual-file gap left in the pipeline</h2>
@@ -1080,7 +1142,7 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   <p class="a livenote"><b>One move, two sides:</b> every number the reconciliation engine consumes stops arriving as a manually produced file &mdash; costs via invoice capture and supplier feeds, sales via platform APIs &mdash; until the owner's only job is reading the answer. <b>Why Prosus, not a generic SaaS vendor:</b> it sits on both sides of the invoice AND owns iFood &mdash; standardizing at the rail level, not integration-by-integration.</p>
 </div>
 
-<!-- 23 · Closing -->
+<!-- 28 · Closing -->
 <div class="slide" data-notes="Out of the red, in the green — daily. The numbers are real and the failures are disclosed — accuracy was explained in full two slides ago, so this slide states the committed KR (refusal correctness) as its headline rather than re-explaining a number the audience has already seen. Thank you — questions welcome.">
   <svg class="a coverMark" viewBox="0 0 100 100" style="width:130px;margin-bottom:22px" role="img" aria-label="My Business Steward mark">
     <rect x="6" y="6" width="88" height="88" rx="22" fill="#100D0C"/>
@@ -1092,12 +1154,12 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
   </svg>
   <h2 class="a xl" style="font-size:52px">Out of the red, in the green &mdash; daily</h2>
   <div class="a stat-cards" style="max-width:900px">
-    <div class="stat-card"><div class="stat-label">Refusals &middot; KR1</div><div class="stat-value acc">9/10</div></div>
-    <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">12,345</div></div>
+    <div class="stat-card"><div class="stat-label">Refusals &middot; KR1</div><div class="stat-value acc">12/15</div></div>
+    <div class="stat-card"><div class="stat-label">Live points</div><div class="stat-value acc">12,370</div></div>
     <div class="stat-card"><div class="stat-label">Model calls</div><div class="stat-value acc">1,006</div></div>
     <div class="stat-card"><div class="stat-label">Build spend</div><div class="stat-value acc">$12.69</div></div>
   </div>
-  <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">Accuracy 14/15 and 14/15; consistency 13/15 and 15/15 &mdash; two full runs with the answer cache disabled, every failure named earlier and none of them a wrong number. $0.0313 per question against a $0.05 bar.</p>
+  <p class="a sub" style="font-size:12.5px;margin-top:10px;color:var(--text-tertiary)">Accuracy 14/15 &middot; 15/15 &middot; 14/15; consistency 14/15 &middot; 15/15 &middot; 15/15 &mdash; three full runs with the answer cache disabled (99/105 aggregate, 94.3%), every failure named earlier and none of them a wrong number. $0.0313 per question against a $0.05 bar.</p>
   <div class="a sub" style="font-size:14px;margin-top:14px">Jair Abner de Araujo &middot; Prosus / Toqan Technical PM challenge &middot; September 1, 2026</div>
 </div>
 
@@ -1329,17 +1391,17 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
           '<li><b>Prosus-unique</b> &mdash; does it fit the 724k-restaurant distribution thesis, or is it a generic tool anyone could ship?</li>' +
           '<li><b>Buildable in 4 days</b> &mdash; the real interview deadline, not a hypothetical one.</li>' +
         '</ul>' +
-        '<p><b>A</b> (Margin &amp; Growth Copilot) is the only candidate that clears every bar &mdash; see the full scoring table on this slide for all five. Note D (cross-platform comparator) scored too big to build in four days; it has since shipped anyway, after the take-home freeze.</p>'
+        '<p><b>A</b> (Margin &amp; Growth Copilot) is the only candidate that clears every bar &mdash; see the full scoring table on this slide for all five. Note D (cross-platform comparator) scored too big to build in four days.</p>'
     },
     deliver: {
       eyebrow: 'Deliver',
       title: 'Product A, measured against what was promised',
       html:
-        '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: 100% refusal correctness</span></span><span class="result">9/10</span></div>' +
+        '<div class="step-kr-row"><span><b>KR1 &middot; Trust</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: 100% refusal correctness</span></span><span class="result">12/15</span></div>' +
         '<div class="step-kr-row"><span><b>KR2 &middot; Margin</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: zero silent data loss</span></span><span class="result">0 defects</span></div>' +
         '<div class="step-kr-row"><span><b>KR3 &middot; Growth</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: &ge;1 negative-ROI promo flagged</span></span><span class="result">1 flagged</span></div>' +
         '<div class="step-kr-row"><span><b>KR4 &middot; Cost</b><br><span class="why" style="color:var(--text-tertiary);font-size:11.5px">target: under $0.05/interaction</span></span><span class="result">$0.0313</span></div>' +
-        '<p style="margin-top:12px">Re-measured 2026-08-30 with the answer cache disabled, twice, because the model layer is not deterministic. KR3&rsquo;s flag carries real provenance: JET-CAMP-LUNCHFIX, ROI &minus;$450.75, and both KR2 and KR3 are now pinned by tests that read the real persisted database rather than being true by construction. KR1 discloses rather than rounds: 9/10 refusals across the two runs, accuracy 14/15 twice, consistency 13/15 then 15/15 &mdash; see the Evaluation slide for every failure by name.</p>'
+        '<p style="margin-top:12px">Re-measured 2026-08-30 with the answer cache disabled, three times, because the model layer is not deterministic. KR3&rsquo;s flag carries real provenance: JET-CAMP-LUNCHFIX, ROI &minus;$450.75, and both KR2 and KR3 are now pinned by tests that read the real persisted database rather than being true by construction. KR1 discloses rather than rounds: 12/15 refusals across the three runs (4/5 each), accuracy 14/15 &middot; 15/15 &middot; 14/15, consistency 14/15 &middot; 15/15 &middot; 15/15 &mdash; 99/105 aggregate (94.3%) &mdash; see the Evaluation slide for every failure by name.</p>'
     }
   };
 
@@ -1399,18 +1461,19 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
 
   // ---- Evaluation unit chart ----
   var rows = { acc: { units: [] }, ref: { units: [] }, con: { units: [] } };
-  // Run A of two full uncached runs, 2026-08-30 (cmd/server
+  // Run 1 of three full uncached runs, 2026-08-30 (cmd/server
   // -eval-no-answer-cache, so every graded answer is a real gate+explain
-  // round trip rather than a previous run's cached answer). Run B's
-  // divergences are named in each count label below.
-  for (var i = 0; i < 14; i++) rows.acc.units.push({ s: 'pass', t: 'Correct answer, matched against a golden value computed by hand from the opening window before any Go code ran. 14 of 15 in both runs.' });
-  rows.acc.units.push({ s: 'fail', t: 'A15 — "delivery revenue on 2024-08-02, net of the refund?" Failed in every uncached run, and it is the most useful failure here. The model returns gross $446.25 and the $62.25 refund, both provenanced, then declines to net them to $384.00 — because no tool returns a net-of-refund delivery figure and it will not pass its own arithmetic off as a computed result. That is Principle I working. The defect is in the tool contract, and it is open, not fixed.' });
-  for (var j = 0; j < 5; j++) rows.ref.units.push({ s: 'pass', t: 'Refused, or asked a correct clarifying question, instead of guessing. 5/5 in run A; 4/5 in run B, where R1 tripped the grader (see the count label).' });
-  rows.con.units.push({ s: 'fail', t: 'C1a — one of the three phrasings asked "both platforms, or one?" instead of answering, while the other two answered $374.75. A genuine consistency divergence, which is exactly what this suite exists to catch. It did not recur in run B.' });
+  // round trip rather than a previous run's cached answer). All three runs'
+  // pass counts are named in each count label below; the squares below show
+  // one illustrative run, not an average.
+  for (var i = 0; i < 14; i++) rows.acc.units.push({ s: 'pass', t: 'Correct answer, matched against a golden value computed by hand from the opening window before any Go code ran. 14 of 15 in two of the three runs, 15 of 15 in the third.' });
+  rows.acc.units.push({ s: 'fail', t: 'A15 — "delivery revenue on 2024-08-02, net of the refund?" Failed in two of the three uncached runs, and it is the most useful failure here. The model returns gross $446.25 and the $62.25 refund, both provenanced, then declines to net them to $384.00 — because no tool returns a net-of-refund delivery figure and it will not pass its own arithmetic off as a computed result. That is Principle I working. The defect is in the tool contract, and it is open, not fixed.' });
+  for (var j = 0; j < 4; j++) rows.ref.units.push({ s: 'pass', t: 'Refused, or asked a correct clarifying question, instead of guessing. 4/5 in every one of the three runs.' });
+  rows.ref.units.push({ s: 'fail', t: 'R1 tripped the grader\'s wording rule in all three runs — a correct clarifying question, marked wrong by the assertion list, not a wrong answer. Left unfixed on purpose: tuning a regex after watching it fail is how a number stops meaning anything.' });
+  rows.con.units.push({ s: 'fail', t: 'C1a — one of the three phrasings asked "both platforms, or one?" instead of answering, while the other two answered $374.75. A genuine consistency divergence, which is exactly what this suite exists to catch. It recurred in one of the three runs; the other two were clean.' });
   for (var k = 0; k < 2; k++) rows.con.units.push({ s: 'pass', t: 'C1b/C1c — both agree on the combined delivery total ($374.75).' });
   for (var m = 0; m < 3; m++) rows.con.units.push({ s: 'pass', t: 'C2 — all 3 phrasings agree the duplicate was caught and counted once.' });
-  rows.con.units.push({ s: 'fail', t: 'C3 — the answer is correct and provenanced (−$450.75 on $610.00 spend against $159.25 attributed revenue) and says the campaign "lost money", which the assertion\'s negative|not profitable|loss|underperform vocabulary does not match. A gap in the grader\'s wording list, left unfixed on purpose: tuning a regex after watching it fail is how a number stops meaning anything.' });
-  for (var n = 0; n < 2; n++) rows.con.units.push({ s: 'pass', t: 'C3 — the other two phrasings agree and match the golden value (−$450.75, flagged).' });
+  for (var n = 0; n < 3; n++) rows.con.units.push({ s: 'pass', t: 'C3 — all 3 phrasings agree the campaign "lost money" (−$450.75 on $610.00 spend against $159.25 attributed revenue). This tripped the grader\'s wording list in the harness\'s earlier two-run measurement; it did not reproduce across the new three-run set.' });
   for (var p = 0; p < 3; p++) rows.con.units.push({ s: 'pass', t: 'C4 — all 3 phrasings agree on iFood\'s gross ($231.75), refund disclosed as a separate line.' });
   for (var q = 0; q < 3; q++) rows.con.units.push({ s: 'pass', t: 'C5 — all 3 phrasings state the delivery source is missing for 2024-08-10 rather than reporting a zero.' });
 
@@ -1433,9 +1496,9 @@ figure.arch svg{display:block;width:100%;height:auto;max-height:64vh}
     });
     var count = document.createElement('span');
     count.className = 'count';
-    if (key === 'acc') count.textContent = '14/15 · run B also 14/15';
-    if (key === 'ref') count.textContent = '5/5 · run B 4/5 (R1, grader)';
-    if (key === 'con') count.textContent = '13/15 · run B 15/15';
+    if (key === 'acc') count.textContent = '14/15 · 15/15 · 14/15 across 3 runs';
+    if (key === 'ref') count.textContent = '4/5 every run (R1, grader)';
+    if (key === 'con') count.textContent = '14/15 · 15/15 · 15/15 across 3 runs';
     host.appendChild(count);
   });
   function showTip(text, ev){ tooltip.textContent = text; tooltip.style.display = 'block'; moveTip(ev); }
