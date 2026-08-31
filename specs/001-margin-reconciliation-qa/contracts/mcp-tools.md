@@ -28,10 +28,18 @@ via `mark3labs/mcp-go`, each wrapping a read-only query against
 
 ## `get_promotion_roi`
 
-- **Input**: `{ "campaign_id": "..." }` or `{ "platform": "...", "period": {...} }`
-- **Output**: `PromotionRoiRecord` row(s). `roi: null` with
-  `{ "reason": "attribution_unavailable" }` when incremental revenue can't be
-  attributed — the tool itself enforces FR-013, not just the caller.
+- **Input**: `{ "campaign_id": "..." }` or `{ "platform": "...", "period": {...} }`.
+  `campaign_id` also accepts a shortened form or a full human-readable
+  campaign name/description containing the id or its shortened form —
+  matched against the real known campaign set (`campaign_match.go`), not
+  just an exact key lookup.
+- **Output**: `PromotionRoiRecord` row(s). `roi: null` with a `reason`:
+  `"attribution_unavailable"` when incremental revenue can't be attributed
+  for an ingested campaign (the tool itself enforces FR-013, not just the
+  caller), or `"not_yet_attributed"` for an owner-created record
+  (spec 002 User Story 3) that has never been through attribution at
+  all — a different fact from "tried and failed," never overloaded onto
+  one string.
 
 ## `list_negative_roi_promotions`
 

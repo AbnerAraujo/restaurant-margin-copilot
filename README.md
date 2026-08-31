@@ -40,7 +40,7 @@ Queried live against the running Postgres database on 2026-08-30:
 | Logged model calls | **1,006**, cumulative real Anthropic API spend **$12.6855** — $12.6387 across 999 rows in `question_interaction`, $0.0468 across 7 in `business_insight_interaction` |
 | Measured cost per question | **$0.0313** — 70 questions through the full uncached gate+explain path, 142 model calls, $2.1931 (KR4's bar is $0.05) |
 | Accuracy on the eval harness's known-answer questions | **14/15**, twice, with the cache disabled — the one failure is a real tool-contract gap, described in [Real evaluation results](#real-evaluation-results) |
-| Earned Steward points | **12,345** (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
+| Earned Steward points | **12,370** (1,000 spent, 11,370 available) from 776 badges — 458 Clean Close, 302 Discrepancy Catcher, 16 Growth; live from `GET /api/badges` |
 | MCP tools exposed to the model | **8** typed, read-only tools — no open SQL, no free-form computation |
 | Frontend pages | Home, Ask (chat), Close, Promotions, Platforms, Points, Upload, Profile, Settings, Help |
 | Delivery-revenue sources | **2** — an uploaded CSV export, or the simulated platform connector proxy (iFood + Just Eat Takeaway), both producing the identical record type |
@@ -68,7 +68,7 @@ and the emulation is stated in the tab label, a persistent notice, each
 platform row, every API response body, and the `simulated://` provenance on
 every record it writes. A larger v2 spec (`specs/008-dashboard-chat-intelligence-v2`,
 comparisons and proactive chat guidance built on top of that new history) is
-drafted but not yet implemented — see the [spec table](#user-stories-and-specs-spec-driven-development).
+shipped — see the [spec table](#user-stories-and-specs-spec-driven-development).
 
 ## The core idea: deterministic engine, probabilistic narrator
 
@@ -176,7 +176,10 @@ evaluation dataset, database, or scale anywhere.
 
 Everything here was produced through a real spec-driven process — Definition
 of Ready → PRD → Technical RFC → spec/plan per feature — not written after the
-fact.
+fact. (Two exceptions, disclosed rather than smoothed over: `specs/014` and
+`specs/015` were built directly from conversation and only specced
+retroactively, after the code shipped — see each one's plan.md for why, and
+why that's stated here instead of quietly backfilled.)
 
 | Doc | What it covers |
 |---|---|
@@ -198,9 +201,12 @@ fact.
 ## User stories and specs (spec-driven development)
 
 Each feature was scoped through GitHub Spec Kit's `specify → plan → tasks →
-analyze → implement` flow. `spec.md` in each directory holds the user stories,
-acceptance criteria, and functional requirements; most also have a `plan.md`
-(technical design) and a `checklists/requirements.md` (spec-quality gate).
+analyze → implement` flow — except `014` and `015`, whose code shipped first
+and were specced afterward (flagged in their own `Status` row below and
+explained in their `plan.md`). `spec.md` in each directory holds the user
+stories, acceptance criteria, and functional requirements; most also have a
+`plan.md` (technical design) and a `checklists/requirements.md` (spec-quality
+gate).
 
 | Spec | Feature | Status |
 |---|---|---|
@@ -210,12 +216,14 @@ acceptance criteria, and functional requirements; most also have a `plan.md`
 | [`specs/004-semantic-cache`](specs/004-semantic-cache/spec.md) | Paraphrase-aware answer cache — skip the LLM on a re-asked question, even reworded | Shipped |
 | [`specs/005-multi-tenant`](specs/005-multi-tenant/spec.md) | Multi-tenant support (Segment 2 expansion) | Spec + RFC only — not built, deliberately gated |
 | [`specs/007-cost-sheet-upload`](specs/007-cost-sheet-upload/spec.md) | Cost-sheet upload UI — validation, preview, template, commit-and-reconcile | Shipped |
-| [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Spec drafted (2026-08-29) — not yet planned or built |
+| [`specs/008-dashboard-chat-intelligence-v2`](specs/008-dashboard-chat-intelligence-v2/spec.md) | Chat/dashboard follow-ups, comparisons, and other deterministic-only enhancements built on the new 2-year dataset | Shipped (41/42 tasks checked in `tasks.md`; the one remaining item is a pre-work baseline check, not a feature gap) |
 | [`specs/009-business-insight-advisor`](specs/009-business-insight-advisor/spec.md) | Business Insight Advisor — a deterministic Go-derived teaser plus an opt-in, separately-ledgered Claude Sonnet 5 advice call | Shipped |
 | [`specs/010-platform-connector-proxy`](specs/010-platform-connector-proxy/spec.md) | Platform Connector Proxy — one internal interface over two **simulated** iFood and Just Eat Takeaway partner APIs, normalizing both into the CSV path's own record type | Shipped (connectors emulated — no real partner-API access) |
 | [`specs/011-inline-grounded-advice`](specs/011-inline-grounded-advice/spec.md) | Inline Grounded Advice — widens spec 009's advisor with a second avenue triggered by an explicit ask inside the question itself ("how can I improve my margin?"), still grounded exclusively in that turn's own tool results, no new MCP tool | Shipped |
 | [`specs/012-pos-connector-dedup`](specs/012-pos-connector-dedup/spec.md) | POS connector plus deterministic cross-source deduplication — an integrated POS records a delivery platform's orders as its own tickets, so the same order arrives twice; a two-tier matcher resolves what it can and **refuses to guess** at the rest, because a wrong merge deletes real revenue as surely as a missed one double-counts it | Shipped (POS emulated — no real terminal access) |
 | [`specs/013-bff-layer`](specs/013-bff-layer/spec.md) | A named BFF boundary for the owner app — `internal/bff` declares the whole API surface as one route table, so the CORS preflight, the 405 policy, and the startup log are all *derived* from it instead of hand-maintained beside it (the bug that motivated this: `PUT /api/profile`'s preflight never advertised PUT, so it failed silently from the browser but worked via `curl`); also unifies file-upload and simulated-connector ingestion into one `GET /api/sources` vocabulary | Shipped |
+| [`specs/014-connector-variance-and-upload-sync`](specs/014-connector-variance-and-upload-sync/spec.md) | Cost-sheet upload can pull in the matching simulated platform revenue for its own invoice date range and commit both through one atomic pipeline run, and simulated connector days gained a seven-condition weighted trading model (severe weather, kitchen equipment failure, a short-staffed shift, an aggregator outage, and more) so they can go genuinely negative instead of staying uniformly healthy | Shipped — **spec written retroactively**, after the code (see plan.md) |
+| [`specs/015-column-header-filters`](specs/015-column-header-filters/spec.md) | Excel/Sheets-style per-column header filters (categorical/text/numeric) on the two upload preview tables, composing additively with each page's existing filter bar and deliberately withheld from chart-fallback and capped-row tables; plus every search box switched from narrowing on each keystroke to narrowing only on Enter or a click | Shipped — **spec written retroactively**, after the code (see plan.md) |
 
 ## Real evaluation results
 
