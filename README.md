@@ -13,7 +13,7 @@ Built as a take-home prototype for a Prosus/Toqan Technical PM interview
 challenge. `CLAUDE.md` in this repo is the original brief and constitution the
 whole build follows.
 
-- **Live presentation** (26-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — checked in at [`docs/presentation.html`](docs/presentation.html)
+- **Live presentation** (24-slide deck, arrow-key navigable): https://claude.ai/code/artifact/17a46fdf-c587-45c6-b1d6-904f1a03bc70 — checked in at [`docs/presentation.html`](docs/presentation.html)
 - **Live architecture diagram** (design system, reconciliation engine, full system): https://claude.ai/code/artifact/dcda16f7-44d7-4160-8f72-d8593f432441 — checked in at [`docs/architecture.html`](docs/architecture.html)
 - **Live API docs** (interactive Swagger UI, every backend endpoint): https://claude.ai/code/artifact/6781bd96-bfa1-4fd7-821a-fe35cd3ac764 — checked in at [`docs/api.html`](docs/api.html), generated from the spec at [`docs/openapi.yaml`](docs/openapi.yaml)
 
