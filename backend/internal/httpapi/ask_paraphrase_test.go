@@ -303,3 +303,124 @@ func TestParaphraseMatch_ExactHitStillReportsMatchKindExact(t *testing.T) {
 	require.Equal(t, "exact", second.Cache.MatchKind)
 	require.Equal(t, 0, h.matcher.calls, "an exact-match hit must short-circuit before the paraphrase classifier is ever consulted")
 }
+
+// askWithBody posts a raw JSON body through a paraphraseHarness, mirroring
+// askHarness.askWithBody (ask_clarification_test.go) — needed here because
+// pending_clarification/previous_exchange aren't expressible through
+// paraphraseHarness.ask's bare-question convenience method.
+func (h *paraphraseHarness) askWithBody(t *testing.T, body string) AskResponse {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	h.handler(recorder, httptest.NewRequest(http.MethodPost, "/api/ask", strings.NewReader(body)))
+	require.Equal(t, http.StatusOK, recorder.Code, "body: %s", recorder.Body.String())
+	var response AskResponse
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &response))
+	return response
+}
+
+// TestParaphraseMatch_SkippedOnClarificationReply pins the fix for a live
+// failure: a clarification reply's `resolved` text is
+// ambiguity.ComposeFollowUp(question, pending), which TEXTUALLY CONTAINS the
+// original ambiguous question — so paraphrase-matching it reliably matched
+// straight back onto that same cached (clarification-required) entry,
+// re-serving the identical clarifying question forever. The fix is to never
+// consult the paraphrase classifier at all when a request carries
+// pending_clarification: a reply always deserves a fresh classification.
+func TestParaphraseMatch_SkippedOnClarificationReply(t *testing.T) {
+	h := newParaphraseHarness(t)
+	// Even if the classifier WOULD claim a match, it must never be asked —
+	// so an aggressive fake decision here proves the skip, not the
+	// classifier's own judgment.
+	h.matcher.decision = paraphrase.Decision{Matched: true, MatchedCandidate: answercache.Candidate{
+		NormalizedQuestion: "anything",
+		OriginalQuestion:   "anything",
+	}}
+
+	h.askWithBody(t, `{
+		"question": "The iFood promotion",
+		"pending_clarification": {
+			"original_question": "How did the promotion do?",
+			"clarifying_question": "Which promotion — iFood or Just Eat Takeaway?"
+		}
+	}`)
+
+	require.Equal(t, 0, h.matcher.calls, "a clarification reply must never be paraphrase-matched")
+	require.Equal(t, 1, h.gate.calls, "a clarification reply must always reach a fresh gate classification")
+}
+
+// TestParaphraseMatch_SkippedOnAnswerFollowUp is the bare-follow-up sibling
+// of the test above ("and the day before?" following a real answer, rather
+// than a reply to a clarifying question) — same composed-text risk, same
+// fix, same must-never-consult-the-classifier assertion.
+func TestParaphraseMatch_SkippedOnAnswerFollowUp(t *testing.T) {
+	h := newParaphraseHarness(t)
+	h.matcher.decision = paraphrase.Decision{Matched: true, MatchedCandidate: answercache.Candidate{
+		NormalizedQuestion: "anything",
+		OriginalQuestion:   "anything",
+	}}
+
+	h.askWithBody(t, `{
+		"question": "and the day before?",
+		"previous_exchange": {
+			"question": "What was our margin on 2026-08-07?",
+			"answer_text": "Margin on 2026-08-07 was $375.82."
+		}
+	}`)
+
+	require.Equal(t, 0, h.matcher.calls, "a bare answer follow-up must never be paraphrase-matched")
+	require.Equal(t, 1, h.gate.calls, "a follow-up must always reach a fresh gate classification")
+}
+
+// TestParaphraseMatch_ReportsItsOwnModelNotTheGates pins a display-only bug
+// found live: a paraphrase-hit interaction's ModelUsed was hardcoded to
+// llmclient.ModelAmbiguityGate (the gate's model, which did not run on this
+// request) instead of llmclient.ModelParaphraseMatch (Haiku 4.5, the model
+// that actually ran) — the real call and its real cost were always correct,
+// only the reported model name was wrong.
+func TestParaphraseMatch_ReportsItsOwnModelNotTheGates(t *testing.T) {
+	h := newParaphraseHarness(t)
+	original := "What was our margin on 2026-08-07?"
+	h.ask(t, original)
+
+	h.matcher.decision = paraphrase.Decision{
+		Matched: true,
+		MatchedCandidate: answercache.Candidate{
+			NormalizedQuestion: answercache.Normalize(original),
+			OriginalQuestion:   original,
+		},
+		EstimatedCostUSD: 0.00051,
+	}
+	second := h.ask(t, "How did we do on August 7th?")
+
+	require.Len(t, second.Interactions, 1)
+	require.Equal(t, "claude-haiku-4-5", second.Interactions[0].ModelUsed,
+		"a paraphrase hit's reported interaction must name the classifier's own model, never the gate's")
+}
+
+// TestParaphraseMatch_ConflictingExplicitDatesNeverServed pins the live
+// failure that motivated ambiguity.ExplicitDatesConflict: "Give me the
+// exact margin total for August 2026" was paraphrase-matched to a cached
+// "What was my average daily input cost in July 2026?" answer and served
+// as answered — a real, well-formed cached candidate, just the wrong month.
+// The classifier here claims exactly that (a verifiable, non-hallucinated
+// match) to prove the guardrail catches a WRONG match, not only an invented
+// one — the two existing defensive checks (candidate-list, live re-lookup)
+// both pass this case, which is exactly why it needed its own check.
+func TestParaphraseMatch_ConflictingExplicitDatesNeverServed(t *testing.T) {
+	h := newParaphraseHarness(t)
+	original := "What was my average daily input cost in July 2026?"
+	h.ask(t, original)
+
+	h.matcher.decision = paraphrase.Decision{
+		Matched: true,
+		MatchedCandidate: answercache.Candidate{
+			NormalizedQuestion: answercache.Normalize(original),
+			OriginalQuestion:   original,
+		},
+	}
+	resp := h.ask(t, "Give me the exact margin total for August 2026.")
+
+	require.Equal(t, 1, h.matcher.calls, "the classifier is still consulted -- the guardrail runs on its output")
+	require.Equal(t, 2, h.gate.calls, "a conflicting-period match must fall through to a fresh, real answer")
+	require.Nil(t, resp.Cache, "the mismatched-month cached answer must never be served")
+}
