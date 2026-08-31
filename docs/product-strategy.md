@@ -2372,19 +2372,20 @@ the `business_insight_interaction` ledger entirely.
 
 | Fact | Value | How |
 |---|---|---|
-| Reconciled days | 759, 2024-08-01 → 2026-08-29 | `SELECT count(*), min(date), max(date) FROM daily_reconciliation;` |
-| Logged model calls / spend | 999 / $12.6387 | `SELECT count(*), sum(estimated_cost_usd) FROM question_interaction;` |
-| Business-insight calls / spend | 7 / $0.0468 | same over `business_insight_interaction` |
-| **Total tracked spend** | **$12.6855 across 1,006 calls** | sum of the two ledgers |
+| Reconciled days | 760, 2024-08-01 → 2026-08-30 | `SELECT count(*), min(date), max(date) FROM daily_reconciliation;` |
+| Logged model calls / spend | 1,129 / $14.7741 | `SELECT count(*), sum(estimated_cost_usd) FROM question_interaction;` |
+| Paraphrase-classification calls / spend | 29 / $0.0401 | same over `paraphrase_match` (`classification_cost_usd`) |
+| Business-insight calls / spend | 8 / $0.0558 | same over `business_insight_interaction` |
+| **Total tracked spend** | **$14.87 across 1,166 calls** | sum of all three ledgers |
 | Promotion records / flagged negative | 29 / 12 | `SELECT count(*), count(*) FILTER (WHERE flagged_negative) FROM promotion_roi_record;` |
-| Earned points | 12,345 (0 spent) from 775 badges — 458 Clean Close, 301 Discrepancy Catcher, 16 Growth | `GET /api/badges` |
+| Earned points | 12,370 (1,000 spent, 11,370 available) from 776 badges — 458 Clean Close, 302 Discrepancy Catcher, 16 Growth | `GET /api/badges` |
 | Real app-open days | 3 | `SELECT count(*) FROM usage_event;` |
 
-Two of those deserve a note. **12,345 really is what 4,580 + 7,525 + 240
+Two of those deserve a note. **12,370 really is what 4,580 + 7,550 + 240
 comes to** — it looks like a placeholder and is not, which is worth stating
 before a reader assumes otherwise. And it is two orders of magnitude above
 the 200 shown previously for an unglamorous reason: that figure dates from
-when the database held 14 days and it now holds 759. Nothing about the badge
+when the database held 14 days and it now holds 760. Nothing about the badge
 logic changed. `internal/badges`'s own doc comment quoted the 200 figure too
 and has been corrected — a comment that quotes a live number ages into a
 false one, which is exactly what happened, so it now points at this document
