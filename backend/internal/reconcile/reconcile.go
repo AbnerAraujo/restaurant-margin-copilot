@@ -144,6 +144,9 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 	var refs []SourceRowRef
 	flags := append([]DiscrepancyFlag{}, extraFlags...)
 
+	hasCompletedOrder := map[string]bool{}
+	var refundedRows []ingest.DeliveryRecord
+
 	for _, r := range delivery {
 		refs = append(refs, r.Ref)
 		src := normalizeSourceName(r.Platform)
@@ -151,10 +154,12 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 		switch r.Status {
 		case "completed":
 			gross[src] += r.SubtotalCents
+			hasCompletedOrder[r.OrderID] = true
 		case "refunded":
 			refundAmount := abs64(r.SubtotalCents)
 			refundsCents += refundAmount
 			refundsBySource[src] += refundAmount
+			refundedRows = append(refundedRows, r)
 		}
 
 		// Commission is summed across every row for the order (completed
@@ -173,6 +178,24 @@ func computeOneDay(dateKey string, delivery []ingest.DeliveryRecord, pos []inges
 				Type: FlagCommissionMismatch,
 				Detail: fmt.Sprintf("order %s: file commission %s does not match recomputed %s (subtotal %s * rate) — row %d of %s",
 					r.OrderID, money.FormatCents(r.CommissionCents), money.FormatCents(recomputed), money.FormatCents(r.SubtotalCents), r.Ref.Row, r.Ref.File),
+			})
+		}
+	}
+
+	// A "refunded" row is a reversal of a "completed" charge for the SAME
+	// order id on the SAME date (the two-row convention above) — a refund
+	// with no such counterpart on this date means either the source data
+	// is missing a row, or (see FlagOrphanRefund's doc comment) an
+	// integration is emitting refunds as a single mutated record instead
+	// of the two rows reconcile expects. Either way, the refund's amount
+	// cannot be verified against an original charge it's supposed to
+	// cancel out, so it's flagged rather than silently trusted.
+	for _, r := range refundedRows {
+		if !hasCompletedOrder[r.OrderID] {
+			flags = append(flags, DiscrepancyFlag{
+				Type: FlagOrphanRefund,
+				Detail: fmt.Sprintf("order %s: a refunded row exists with no matching completed row for the same order id on %s — the refund's amount cannot be verified against an original charge (row %d of %s)",
+					r.OrderID, dateKey, r.Ref.Row, r.Ref.File),
 			})
 		}
 	}
