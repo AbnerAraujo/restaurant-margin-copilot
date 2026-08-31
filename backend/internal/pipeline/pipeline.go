@@ -220,6 +220,24 @@ func RunIngestionPipelineWithConnectorOverlay(dataDir string, store *storage.Que
 	}
 
 	ctx := context.Background()
+
+	// `days` is the complete, authoritative day-set this run just recomputed
+	// from every source file in dataDir (an overlay only substitutes rows
+	// within a range — it never shrinks the set of dates parsed). Pruning
+	// to exactly this set before persisting closes the gap where a date
+	// that dropped out of the source (a corrected typo, a row moved to the
+	// right day) stayed behind as an orphaned row forever, silently
+	// widening or shifting GetDataDateRange's MIN/MAX. See
+	// storage.PruneDailyReconciliationsExcept's doc comment for the defect
+	// this closes.
+	keepDates := make([]time.Time, len(days))
+	for i, day := range days {
+		keepDates[i] = day.Date
+	}
+	if err := storage.PruneDailyReconciliationsExcept(ctx, store, keepDates); err != nil {
+		return fmt.Errorf("pipeline: pruning stale reconciliation rows: %w", err)
+	}
+
 	var totalMarginCents int64
 	for _, day := range days {
 		if _, err := storage.SaveDailyReconciliation(ctx, store, day); err != nil {

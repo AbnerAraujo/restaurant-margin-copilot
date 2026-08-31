@@ -51,6 +51,18 @@ type Querier interface {
 	// the whole cache is dropped. Correctness after new data beats cache
 	// retention, always.
 	DeleteAllAnswerCacheEntries(ctx context.Context) error
+	// A full -ingest run recomputes every day the source files contain, in one
+	// pass, and UpsertDailyReconciliation is a pure upsert — it has never
+	// deleted anything. Before this query existed, a day that dropped out of
+	// the source set (a corrected typo'd date, a row moved to the right day)
+	// stayed in this table forever: silently orphaned, still counted by
+	// GetDataDateRange's MIN/MAX, permanently and wrongly widening or shifting
+	// the data range every date-ambiguity check and every "this week"/"today"
+	// resolution is grounded against. Run once per full ingest, right before
+	// the upsert loop, with the complete set of dates that run is about to
+	// (re)write — never with a partial or overlay-scoped set, which would
+	// delete days the pipeline was never asked to touch.
+	DeleteDailyReconciliationsExcept(ctx context.Context, keepDates []pgtype.Date) error
 	// Exact lookup on the normalized question key. Writer/reader:
 	// internal/answercache only.
 	GetAnswerCacheEntry(ctx context.Context, normalizedQuestion string) (AnswerCache, error)

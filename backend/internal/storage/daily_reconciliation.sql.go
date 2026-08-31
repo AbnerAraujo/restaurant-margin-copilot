@@ -12,6 +12,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteDailyReconciliationsExcept = `-- name: DeleteDailyReconciliationsExcept :exec
+DELETE FROM daily_reconciliation
+WHERE date != ALL($1::date[])
+`
+
+// A full -ingest run recomputes every day the source files contain, in one
+// pass, and UpsertDailyReconciliation is a pure upsert — it has never
+// deleted anything. Before this query existed, a day that dropped out of
+// the source set (a corrected typo'd date, a row moved to the right day)
+// stayed in this table forever: silently orphaned, still counted by
+// GetDataDateRange's MIN/MAX, permanently and wrongly widening or shifting
+// the data range every date-ambiguity check and every "this week"/"today"
+// resolution is grounded against. Run once per full ingest, right before
+// the upsert loop, with the complete set of dates that run is about to
+// (re)write — never with a partial or overlay-scoped set, which would
+// delete days the pipeline was never asked to touch.
+func (q *Queries) DeleteDailyReconciliationsExcept(ctx context.Context, keepDates []pgtype.Date) error {
+	_, err := q.db.Exec(ctx, deleteDailyReconciliationsExcept, keepDates)
+	return err
+}
+
 const getDailyReconciliationByDate = `-- name: GetDailyReconciliationByDate :one
 SELECT date, gross_sales_by_source, commissions, refunds, input_costs, margin, discrepancy_flags, source_row_refs, created_at, updated_at, commissions_by_source, refunds_by_source FROM daily_reconciliation
 WHERE date = $1
