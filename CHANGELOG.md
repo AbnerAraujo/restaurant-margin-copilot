@@ -12,6 +12,47 @@ Principle V: report what happened, including failures).
 
 ---
 
+## 2026-08-31 — Presentation: exhaustive number re-audit, three new slides, Product D removed
+
+A prior audit pass on `docs/presentation.html` missed a real stale claim
+("a sixth MCP tool" against a current count of 8), so this pass re-derived
+every hardcoded figure directly from the live app or real code rather than
+trusting anything already in the file — badges/points (`GET /api/badges`),
+the dataset total (`GET /api/reconciliation`), spec count (`ls specs/`),
+and a full 3-run evaluation harness result, all confirmed live before
+being written in.
+
+**Numbers corrected in all locations they appear** (Vision/Hypotheses,
+the OKR slide's stat card and disclosed-not-committed line, the
+competitive-landscape banner, the Evaluation slide's prose and interactive
+per-run popup, the PRD table, the closing stat card): accuracy
+14/15·15/15·14/15, consistency 14/15·15/15·15/15, refusal 4/5·4/5·4/5,
+aggregate 99/105 (94.3%), $3.6266 across 207 interactions — replacing an
+older 2-run measurement throughout. Badges corrected to the live
+458/302/16 (776 total, 12,370 points, 1,000 redeemed) and spec count to 14.
+The Token Discipline slide's separate $0.0313/70-question ledger figure
+was deliberately left as-is — a different measurement this pass couldn't
+safely re-take without disturbing the live app.
+
+**"Product D is live" removed** per direct request (the demo owner will
+mention it live instead) — every reference to it, including three residual
+"since shipped" mentions and a dangling agenda promise, cleaned up rather
+than leaving a slide-shaped hole.
+
+**Three new slides added** for work that shipped with zero deck coverage:
+the connector's trading-condition variance model (spec 014, "simulated
+trading days can finally have a bad day" — 9.6%→15.2% losing days, honestly
+short of the real dataset's 20.1% rather than forced to match), inline
+grounded advice (spec 011, the two-path advisor), and the BFF layer (spec
+013, the invisible `PUT /api/profile` CORS bug as the concrete incident).
+Final count: 28 slides (was 25 after Product D's removal, then +3).
+
+README's slide count and this changelog entry are the last pieces —
+`docs/presentation.html`'s published artifact mirror is republished
+immediately after this merges.
+
+---
+
 ## 2026-08-31 — A real cost-sheet upload took the live margin from $1,078,340.64 to $2,357,601.20
 
 Reported live: "I did an upload recently, maybe that's the bug." It was.
