@@ -34,7 +34,17 @@ export default function FullscreenToggle() {
           onClick={toggle}
           aria-pressed={isFullscreen}
           aria-label={label}
-          className="fixed top-4 right-4 z-20 flex items-center justify-center rounded-full border border-border bg-card/95 p-2 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          // top-14 below `lg`, top-4 at `lg` and up: this button is fixed
+          // to the viewport, so on mobile it always sits in the same
+          // screen position regardless of MobileNavBar's own horizontal
+          // scroll -- found live intercepting clicks on the "Promotions"
+          // nav pill (and visually covering "Upload costs") at multiple
+          // scroll positions, since MobileNavBar only exists below `lg`
+          // and occupies that same top-right corner. Dropping below its
+          // ~45px height, rather than reserving horizontal padding INSIDE
+          // the scroller, is the only fix that holds at every scroll
+          // position, not just the fully-scrolled-right one.
+          className="fixed top-14 right-4 z-20 flex items-center justify-center rounded-full border border-border bg-card/95 p-2 text-muted-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 lg:top-4"
         >
           {isFullscreen ? (
             <Minimize className="size-4" aria-hidden="true" />

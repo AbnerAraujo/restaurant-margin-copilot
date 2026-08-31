@@ -150,10 +150,19 @@ const CostPanel = forwardRef<HTMLDivElement, CostPanelProps>(function CostPanel(
         type="button"
         aria-expanded={open}
         aria-controls={detailId}
+        // "Model spend" stays the accessible name at every width (screen
+        // readers, and sighted users at sm and up); only the VISIBLE label
+        // shrinks below sm. Found live: at 375px this pill's full label +
+        // figure spanned 46% of the screen and sat directly over other
+        // fixed/scrolled content -- the Filter-by-Margin button, "View as
+        // table", a form input -- often enough (4 of 5 sampled scroll
+        // positions on 8 of 9 routes) that it's worth shrinking the
+        // footprint rather than just noting it's recoverable by scrolling.
+        aria-label={`Model spend: ${formatUsd(totalCostUsd)}`}
         onClick={() => setOpen((wasOpen) => !wasOpen)}
         className="flex items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-1.5 shadow-sm backdrop-blur-sm hover:bg-card focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
       >
-        <span className="text-xs text-muted-foreground">Model spend</span>
+        <span className="hidden text-xs text-muted-foreground sm:inline">Model spend</span>
         <span className="text-sm font-semibold tabular-nums text-foreground">
           {formatUsd(totalCostUsd)}
         </span>

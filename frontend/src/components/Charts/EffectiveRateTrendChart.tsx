@@ -16,6 +16,7 @@ import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { buildLinearTickScale, formatAxisPercent } from '@/lib/chartScale'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 
 export interface EffectiveRateTrendPlatformPoint {
   source: string
@@ -112,6 +113,9 @@ export default function EffectiveRateTrendChart({
       return rate === null ? '' : String(rate)
     },
   })
+  // Rules of Hooks: called unconditionally, before the early return below.
+  const { ref: rateTableScrollRef, canScrollRight: rateTableCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
 
   if (periods.length < 2) return null
 
@@ -306,7 +310,8 @@ export default function EffectiveRateTrendChart({
               onClear={columnFilterState.clearAll}
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative">
+            <div ref={rateTableScrollRef} className="overflow-x-auto">
               <table className="w-full min-w-[320px] text-left text-xs">
                 <caption className="sr-only">
                   Effective commission rate trend across {periods.length} months, for{' '}
@@ -355,6 +360,13 @@ export default function EffectiveRateTrendChart({
                   ))}
                 </tbody>
               </table>
+            </div>
+            {rateTableCanScrollRight && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+              />
+            )}
             </div>
           )}
         </div>

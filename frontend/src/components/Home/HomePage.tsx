@@ -34,6 +34,7 @@ import { getJson } from '@/lib/api'
 import { summarizeFlags } from '@/lib/discrepancyFlags'
 import { explainRequestFailure } from '@/lib/requestFailure'
 import { useColumnFilters } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { useTableFilter } from '@/lib/useTableFilter'
 import { cn } from '@/lib/utils'
 
@@ -320,6 +321,11 @@ export default function HomePage() {
   })
   const recentCloseVisibleRows = recentCloseColumnFilters.filteredRows
   const recentCloseIsFiltered = recentCloseFilter.isFiltered || recentCloseColumnFilters.isFiltered
+  // Found live at 375px: the Margin column (and its filter button) sat up
+  // to 139px off-screen with no scrollbar hint at all -- see
+  // useHorizontalScrollFade's own doc comment for the full finding.
+  const { ref: recentCloseScrollRef, canScrollRight: recentCloseCanScrollRight } =
+    useHorizontalScrollFade<HTMLDivElement>()
   function clearRecentCloseFilters() {
     recentCloseFilter.clearFilters()
     recentCloseColumnFilters.clearAll()
@@ -604,7 +610,8 @@ export default function HomePage() {
               onClear={clearRecentCloseFilters}
             />
           ) : (
-          <div className="overflow-x-auto">
+          <div className="relative">
+          <div ref={recentCloseScrollRef} className="overflow-x-auto">
             <table className="w-full min-w-[30rem] border-collapse text-left">
               <thead>
                 <tr className="border-b border-border">
@@ -624,7 +631,12 @@ export default function HomePage() {
                         <TooltipTrigger asChild>
                           <button
                             type="button"
-                            className="inline-flex shrink-0 rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                            // size-6 (24px): WCAG 2.2's 2.5.8 minimum target
+                            // size -- found live at a 12x12px hit target
+                            // (no size class at all, just the bare size-3
+                            // icon), 22px centre-to-centre from the
+                            // adjacent filter button, also under 24px.
+                            className="inline-flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                             aria-label='What does "Status" mean?'
                           >
                             <Info className="size-3" aria-hidden="true" />
@@ -722,6 +734,13 @@ export default function HomePage() {
                   })}
               </tbody>
             </table>
+          </div>
+          {recentCloseCanScrollRight && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+            />
+          )}
           </div>
           )}
         </Panel>

@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useRef, useState, type KeyboardEvent } from 'react'
 import { Popover as PopoverPrimitive } from 'radix-ui'
 import { Filter } from 'lucide-react'
 
@@ -86,7 +86,13 @@ export function ColumnFilterButton(props: ColumnFilterButtonProps) {
               : `Filter by ${props.columnLabel}`
           }
           className={cn(
-            'inline-flex size-5 shrink-0 items-center justify-center rounded-sm transition-colors',
+            // size-6 (24px) is WCAG 2.2's 2.5.8 minimum target size — found
+            // live at size-5 (20px), under the minimum and only 22px
+            // centre-to-centre from the adjacent info button (also under
+            // 24px), which the spacing exception doesn't rescue since it
+            // requires >=24px between centres. The icon itself stays
+            // size-3 (see below); only the hit target grows.
+            'inline-flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
             'focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
             active
               ? 'text-primary'
@@ -155,8 +161,19 @@ function CategoricalPanel({
   onToggle,
   onClear,
 }: Extract<ColumnFilterButtonProps, { type: 'categorical' }>) {
+  // "Clear filter" disables itself the instant selected.size hits 0 (see its
+  // `disabled` prop below) -- found live: a button that goes disabled while
+  // it still holds focus can't hold focus any longer, and the browser drops
+  // it all the way to <body>, silently losing the keyboard user's place in
+  // the panel. Moving focus onto this panel's own root (a stable element
+  // that never disables) keeps it inside the popover instead.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       {options.length === 0 ? (
         <p className="text-xs text-muted-foreground">No values to filter by yet.</p>
@@ -181,7 +198,7 @@ function CategoricalPanel({
           })}
         </ul>
       )}
-      <ClearLink onClear={onClear} disabled={selected.size === 0} />
+      <ClearLink onClear={handleClear} disabled={selected.size === 0} />
     </div>
   )
 }
@@ -205,8 +222,17 @@ function TextPanel({
     onApply(draft)
   }
 
+  // See CategoricalPanel's identical comment: "Clear filter" disables itself
+  // the moment the query empties, and a focused element that goes disabled
+  // drops focus to <body> rather than staying inside the popover.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
+
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       <div className="flex items-center gap-1.5">
         <Input
@@ -227,7 +253,7 @@ function TextPanel({
           Apply
         </Button>
       </div>
-      <ClearLink onClear={onClear} disabled={query.trim() === ''} />
+      <ClearLink onClear={handleClear} disabled={query.trim() === ''} />
     </div>
   )
 }
@@ -265,8 +291,17 @@ function NumericPanel({
     }
   }
 
+  // See CategoricalPanel's identical comment: "Clear filter" disables itself
+  // the moment both bounds empty, and a focused element that goes disabled
+  // drops focus to <body> rather than staying inside the popover.
+  const panelRef = useRef<HTMLDivElement>(null)
+  function handleClear() {
+    onClear()
+    panelRef.current?.focus()
+  }
+
   return (
-    <div>
+    <div ref={panelRef} tabIndex={-1} className="outline-none">
       <PanelHeading columnLabel={columnLabel} />
       <div className="flex items-center gap-1.5">
         <Input
@@ -297,7 +332,7 @@ function NumericPanel({
       <Button type="button" size="sm" className="mt-2 w-full" onClick={apply}>
         Apply
       </Button>
-      <ClearLink onClear={onClear} disabled={min.trim() === '' && max.trim() === ''} />
+      <ClearLink onClear={handleClear} disabled={min.trim() === '' && max.trim() === ''} />
     </div>
   )
 }

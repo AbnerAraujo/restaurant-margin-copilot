@@ -46,7 +46,7 @@ type countingExplainer struct {
 	lastQuestion string
 }
 
-func (e *countingExplainer) Explain(_ context.Context, question, _ string) (*explain.Result, error) {
+func (e *countingExplainer) Explain(_ context.Context, question, _, _ string) (*explain.Result, error) {
 	e.calls++
 	e.lastQuestion = question
 	result := e.result

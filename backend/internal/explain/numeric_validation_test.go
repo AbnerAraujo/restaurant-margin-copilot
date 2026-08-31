@@ -53,7 +53,7 @@ func TestExplain_NarratedFigureNotInToolResultIsRefused(t *testing.T) {
 	llm := twoTurnNarration(t, "Your margin that day was $999.99.")
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin?", "")
+	result, err := e.Explain(context.Background(), "What was our margin?", "", "")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, result.IncompleteReason, "a stated figure absent from every tool result must be refused")
@@ -73,7 +73,7 @@ func TestExplain_SubtlyAlteredFigureIsRefused(t *testing.T) {
 	llm := twoTurnNarration(t, "That comes to $42.05 for the day.")
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin?", "")
+	result, err := e.Explain(context.Background(), "What was our margin?", "", "")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, result.IncompleteReason, "$42.05 is not $42.00 — a cents-level alteration must not pass")
@@ -87,7 +87,7 @@ func TestExplain_GroundedFigureIsServed(t *testing.T) {
 	llm := twoTurnNarration(t, answer)
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin?", "")
+	result, err := e.Explain(context.Background(), "What was our margin?", "", "")
 
 	require.NoError(t, err)
 	require.Empty(t, result.IncompleteReason)
@@ -108,7 +108,7 @@ func TestExplain_RoundedRestatementOfAGroundedFigureIsServed(t *testing.T) {
 	llm := twoTurnNarration(t, answer)
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin?", "")
+	result, err := e.Explain(context.Background(), "What was our margin?", "", "")
 
 	require.NoError(t, err)
 	require.Empty(t, result.IncompleteReason, "a rounded restatement of a grounded figure must not be refused")
@@ -124,11 +124,47 @@ func TestExplain_AnswerWithNoFiguresIsUntouched(t *testing.T) {
 	llm := twoTurnNarration(t, answer)
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "Was there a duplicate order?", "")
+	result, err := e.Explain(context.Background(), "Was there a duplicate order?", "", "")
 
 	require.NoError(t, err)
 	require.Empty(t, result.IncompleteReason)
 	require.Equal(t, answer, result.AnswerText)
+}
+
+// TestExplain_PriorAnswerFigureIsNotRefused pins the fix for a live
+// failure: a natural follow-up ("what about the previous day?") restated
+// the immediately preceding turn's own already-verified margin figure
+// ($3,225.06) and was refused, because that figure appears in THIS turn's
+// own tool results nowhere -- only in the PRECEDING turn's. The fix widens
+// answerverify's allowed set with priorAnswerText, since a figure this
+// exact product already verified and served last turn is not a new,
+// untrusted claim.
+func TestExplain_PriorAnswerFigureIsNotRefused(t *testing.T) {
+	// The tool this turn returns 42.00 (newFakeMCPClient's fixed fixture);
+	// the narration restates $3,225.06, which is grounded ONLY in the
+	// prior turn's own answer, never in this turn's tool result.
+	llm := twoTurnNarration(t, "The day before that, margin was $3,225.06 -- $42.00 today by comparison.")
+	e := newTestExplainer(llm, newFakeMCPClient(t))
+
+	result, err := e.Explain(context.Background(), "what about the day before?", "", "Margin on 2026-08-29 was $3,225.06.")
+
+	require.NoError(t, err)
+	require.Empty(t, result.IncompleteReason, "restating a figure the immediately preceding turn already verified and served must not be refused")
+	require.Equal(t, "The day before that, margin was $3,225.06 -- $42.00 today by comparison.", result.AnswerText)
+}
+
+// TestExplain_UnrelatedFigureStillRefusedEvenWithAPriorAnswer proves the
+// widening above is not a general loosening of the check: a figure that
+// matches NEITHER this turn's tool results NOR the prior answer is still
+// refused exactly as before.
+func TestExplain_UnrelatedFigureStillRefusedEvenWithAPriorAnswer(t *testing.T) {
+	llm := twoTurnNarration(t, "Your margin that day was $999.99.")
+	e := newTestExplainer(llm, newFakeMCPClient(t))
+
+	result, err := e.Explain(context.Background(), "what about the day before?", "", "Margin on 2026-08-29 was $3,225.06.")
+
+	require.NoError(t, err)
+	require.NotEmpty(t, result.IncompleteReason, "a figure grounded in neither this turn's tools nor the prior answer must still be refused")
 }
 
 // TestExplain_NumericRefusalCopyStaysOwnerFacing applies the exact

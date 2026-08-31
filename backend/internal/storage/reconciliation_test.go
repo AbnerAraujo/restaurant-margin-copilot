@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/require"
 
 	"github.com/AbnerAraujo/restaurant-margin-copilot/backend/internal/ingest"
@@ -282,4 +283,62 @@ func TestOpeningWindow_PersistedWithZeroSilentDataLoss(t *testing.T) {
 				"every opening day has POS rows; a missing 'pos' key on %s would mean a date-format parse dropped them", date)
 		}
 	})
+}
+
+// recordingDeleteQuerier is a minimal storage.Querier fake: it records the
+// keepDates argument DeleteDailyReconciliationsExcept was called with and
+// panics if any other query is invoked. This is a plain unit test, not a
+// live-Postgres integration test, and deliberately so — this is the one
+// query in this package that can delete arbitrary, unrelated rows across
+// the whole table, and reconciliation_test.go's other tests already share a
+// live Postgres instance with real `-ingest` pipeline runs (see
+// TestSaveAndLoadDailyReconciliation_RoundTripsExactly's own doc comment on
+// that danger). Exercising the real DELETE end-to-end was instead done by
+// hand against a disposable, throwaway Postgres container — never against
+// DATABASE_URL — precisely because a bug in a live-DB-gated test here would
+// not corrupt a *test* row, it would silently wipe real reconciled history.
+type recordingDeleteQuerier struct {
+	storage.Querier
+	gotKeepDates []pgtype.Date
+	called       bool
+}
+
+func (f *recordingDeleteQuerier) DeleteDailyReconciliationsExcept(_ context.Context, keepDates []pgtype.Date) error {
+	f.called = true
+	f.gotKeepDates = keepDates
+	return nil
+}
+
+// TestPruneDailyReconciliationsExcept_RefusesAnEmptyKeepSet pins the guard
+// that stops a caller bug from becoming a silent full-table wipe: the one
+// call site (internal/pipeline) already treats zero computed days as a
+// hard error before ever reaching this function, so an empty keepDates
+// here can only mean that guard was bypassed — refuse rather than let
+// `date != ALL(empty array)` (vacuously true for every row) delete
+// everything.
+func TestPruneDailyReconciliationsExcept_RefusesAnEmptyKeepSet(t *testing.T) {
+	fake := &recordingDeleteQuerier{}
+	err := storage.PruneDailyReconciliationsExcept(context.Background(), fake, nil)
+	require.Error(t, err)
+	require.False(t, fake.called, "must refuse before ever issuing the DELETE")
+}
+
+// TestPruneDailyReconciliationsExcept_ConvertsEveryDateToPgtype pins the
+// time.Time -> pgtype.Date conversion this adapter exists to do: every date
+// handed in must reach the generated query, in order, each marked Valid.
+func TestPruneDailyReconciliationsExcept_ConvertsEveryDateToPgtype(t *testing.T) {
+	fake := &recordingDeleteQuerier{}
+	d1, err := time.Parse("2006-01-02", "2024-08-01")
+	require.NoError(t, err)
+	d2, err := time.Parse("2006-01-02", "2024-08-02")
+	require.NoError(t, err)
+
+	err = storage.PruneDailyReconciliationsExcept(context.Background(), fake, []time.Time{d1, d2})
+	require.NoError(t, err)
+	require.True(t, fake.called)
+	require.Len(t, fake.gotKeepDates, 2)
+	require.True(t, fake.gotKeepDates[0].Valid)
+	require.True(t, d1.Equal(fake.gotKeepDates[0].Time))
+	require.True(t, fake.gotKeepDates[1].Valid)
+	require.True(t, d2.Equal(fake.gotKeepDates[1].Time))
 }

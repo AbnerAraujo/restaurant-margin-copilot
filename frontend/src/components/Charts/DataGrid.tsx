@@ -4,6 +4,7 @@ import { ColumnFilterButton } from '@/components/ui/column-filter'
 import { FilterEmptyState } from '@/components/ui/filter-bar'
 import { Button } from '@/components/ui/button'
 import { useColumnFilters, type ColumnFilterSpecs } from '@/lib/useColumnFilters'
+import { useHorizontalScrollFade } from '@/lib/useHorizontalScrollFade'
 import { cn } from '@/lib/utils'
 
 export interface DataGridProps {
@@ -55,6 +56,7 @@ export default function DataGrid({
 }: DataGridProps) {
   const specs = columnFilters ?? {}
   const columnFilterState = useColumnFilters({ columns, rows, specs })
+  const { ref: scrollRef, canScrollRight } = useHorizontalScrollFade<HTMLDivElement>()
   const hasColumnFilters = Object.keys(specs).length > 0
   const visibleRows = hasColumnFilters ? columnFilterState.filteredRows : rows
 
@@ -85,15 +87,25 @@ export default function DataGrid({
         ) : null}
       </figcaption>
 
-      {hasColumnFilters && rows.length > 0 && visibleRows.length === 0 ? (
-        <FilterEmptyState
-          label={filterEmptyLabel ?? 'No rows match these filters.'}
-          onClear={columnFilterState.clearAll}
-        />
-      ) : (
+      {
         // Wide content scrolls inside its own container so a long detail
-        // cell never forces the whole chat bubble to scroll sideways.
-        <div className="overflow-x-auto">
+        // cell never forces the whole chat bubble to scroll sideways. The
+        // relative wrapper + fade (canScrollRight) is the same affordance
+        // MobileNavBar established (useHorizontalScrollFade) -- found live
+        // at 375px: a column-filterable grid's later columns (and their
+        // filter buttons) sat far off-screen with no scrollbar hint.
+        //
+        // The header (with its filter buttons) always renders, even when
+        // filters have narrowed the result to zero rows -- found live: this
+        // used to swap the ENTIRE table (header included) for the empty
+        // state, which took every OTHER column's filter trigger down with
+        // it, leaving "Clear filters" (clear everything) as the only way
+        // back rather than letting the owner loosen just the one filter
+        // that over-narrowed. The empty state now renders as a single
+        // full-width table row instead, so the header survives.
+      }
+      <div className="relative">
+        <div ref={scrollRef} className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <caption className="sr-only">{title}</caption>
             <thead>
@@ -145,31 +157,48 @@ export default function DataGrid({
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row, rowIndex) => (
-                <tr
-                  key={`${row[0] ?? ''}-${rowIndex}`}
-                  className="border-b border-border/60 last:border-b-0"
-                >
-                  {row.map((cell, cellIndex) => (
-                    <td
-                      key={`${cellIndex}-${cell}`}
-                      className={cn(
-                        'py-1.5 pr-4 align-top text-foreground last:pr-0',
-                        // First column is the row's identity (a date, a
-                        // platform); money and counts read as numbers.
-                        cellIndex === 0 ? 'whitespace-nowrap font-medium' : null,
-                        /^[−-]?\$/.test(cell) ? 'tabular-nums' : null,
-                      )}
-                    >
-                      {cell || '—'}
-                    </td>
-                  ))}
+              {hasColumnFilters && rows.length > 0 && visibleRows.length === 0 ? (
+                <tr>
+                  <td colSpan={columns.length} className="py-1.5">
+                    <FilterEmptyState
+                      label={filterEmptyLabel ?? 'No rows match these filters.'}
+                      onClear={columnFilterState.clearAll}
+                    />
+                  </td>
                 </tr>
-              ))}
+              ) : (
+                visibleRows.map((row, rowIndex) => (
+                  <tr
+                    key={`${row[0] ?? ''}-${rowIndex}`}
+                    className="border-b border-border/60 last:border-b-0"
+                  >
+                    {row.map((cell, cellIndex) => (
+                      <td
+                        key={`${cellIndex}-${cell}`}
+                        className={cn(
+                          'py-1.5 pr-4 align-top text-foreground last:pr-0',
+                          // First column is the row's identity (a date, a
+                          // platform); money and counts read as numbers.
+                          cellIndex === 0 ? 'whitespace-nowrap font-medium' : null,
+                          /^[−-]?\$/.test(cell) ? 'tabular-nums' : null,
+                        )}
+                      >
+                        {cell || '—'}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
-      )}
+        {canScrollRight && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-r from-transparent to-card"
+          />
+        )}
+      </div>
 
       {sourceTool ? (
         <p className="mt-2 border-t border-border/60 pt-2 text-micro text-muted-foreground">

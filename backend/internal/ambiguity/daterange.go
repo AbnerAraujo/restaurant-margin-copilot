@@ -349,3 +349,49 @@ func precheckFactNote(verdicts []mentionVerdict, dataStart, dataEnd string) stri
 	b.WriteString("Never classify this question as unanswerable on date-range grounds for a reference marked IN RANGE, and never treat a reference marked OUT OF RANGE as having data.")
 	return b.String()
 }
+
+// ExplicitDatesConflict reports whether a and b each name at least one
+// explicit, fully-specified date or period, and NONE of what a names agrees
+// with anything b names — e.g. "August 2026" versus "July 2026". It exists
+// as a deterministic guardrail against the paraphrase-match cache's model
+// classifier confidently matching two questions that ask about different
+// periods (found live: "margin total for August 2026" paraphrase-matched
+// to a cached "average daily input cost in July 2026" answer, served as
+// answered — see httpapi.serveFromParaphraseMatch). A real semantic-match
+// bug in a model call needs a deterministic backstop the same way
+// arithmetic does; this is that backstop, scoped to what Go can actually
+// verify without a second model call.
+//
+// Returns false whenever EITHER string has no extractable explicit date —
+// this is a narrow, targeted check for the one failure mode it exists to
+// catch (two named, calendar-comparable periods that share no time at all),
+// not a general "these two questions differ" detector. A question with no
+// explicit date at all ("how did last week compare to the week before")
+// is unaffected and falls through to trusting the classifier as before.
+//
+// Compatibility is OVERLAP, not exact equality: "August 1, 2026" (a
+// day-level reading) must NOT conflict with a cached "August 2026"
+// (month-level) question, since the day sits inside that month — only
+// genuinely disjoint periods (August vs July) count as a conflict.
+func ExplicitDatesConflict(a, b string) bool {
+	mentionsA := findExplicitDateMentions(a)
+	mentionsB := findExplicitDateMentions(b)
+	if len(mentionsA) == 0 || len(mentionsB) == 0 {
+		return false
+	}
+	for _, ma := range mentionsA {
+		for _, mb := range mentionsB {
+			for _, ra := range ma.Readings {
+				for _, rb := range mb.Readings {
+					// dateInterval bounds are inclusive on both ends (see
+					// dayInterval/monthInterval above), so overlap is
+					// "each starts no later than the other ends".
+					if !ra.Start.After(rb.End) && !rb.Start.After(ra.End) {
+						return false // at least one reading overlaps -> compatible
+					}
+				}
+			}
+		}
+	}
+	return true // both named explicit periods, and none of them overlap
+}

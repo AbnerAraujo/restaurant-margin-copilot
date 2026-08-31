@@ -156,6 +156,83 @@ func TestComputeDailyReconciliations_CleanDayMatchesHandComputation(t *testing.T
 // across all 107 delivery rows. A naive float64 or round-half-to-even
 // computation would flag several rows here purely from rounding-mode
 // artifacts (e.g. 55.25 * 23% = 12.7075), not real data problems.
+// TestComputeOneDay_OrphanRefundFlagged pins the invariant found missing in
+// adversarial testing: a "refunded" delivery row with no matching
+// "completed" row for the same order id netted to a nonsensical negative
+// margin with ZERO discrepancy flags — the refund's amount was trusted
+// with nothing to verify it against. Both simulated connector adapters
+// have since been fixed to always emit the completed counterpart (see
+// platformconnector's normalize functions), but this flag is the
+// independent, deterministic backstop for any OTHER integration —
+// including a real, hand-produced restaurant export this code has not
+// seen yet — that might make the same mistake.
+func TestComputeOneDay_OrphanRefundFlagged(t *testing.T) {
+	orphan := ingest.DeliveryRecord{
+		Ref:             ingest.SourceRowRef{File: "test.csv", Row: 1},
+		Platform:        "iFood",
+		OrderID:         "IFOOD-ORPHAN-1",
+		OrderDate:       mustParseDate(t, "2026-01-05"),
+		OrderTime:       "12:00",
+		SubtotalCents:   -5000,
+		CommissionCents: -1150,
+		NetPayoutCents:  -3850,
+		Status:          "refunded",
+		RefundDate:      ptrDate(mustParseDate(t, "2026-01-06")),
+	}
+	day := computeOneDay("2026-01-05", []ingest.DeliveryRecord{orphan}, nil, nil, nil)
+
+	found := false
+	for _, f := range day.DiscrepancyFlags {
+		if f.Type == FlagOrphanRefund {
+			found = true
+			require.Contains(t, f.Detail, "IFOOD-ORPHAN-1")
+		}
+	}
+	require.True(t, found, "an orphan refund (no matching completed row) must be flagged, not silently trusted")
+}
+
+// TestComputeOneDay_WellFormedRefundPairNeverFlaggedOrphan is the negative
+// control: a real completed+refunded pair for the same order id must never
+// trip FlagOrphanRefund, matching the opening dataset's own order 0006
+// (see TestComputeDailyReconciliations_RefundNetsCorrectly).
+func TestComputeOneDay_WellFormedRefundPairNeverFlaggedOrphan(t *testing.T) {
+	orderDate := mustParseDate(t, "2026-01-05")
+	completed := ingest.DeliveryRecord{
+		Ref:             ingest.SourceRowRef{File: "test.csv", Row: 1},
+		Platform:        "iFood",
+		OrderID:         "IFOOD-PAIR-1",
+		OrderDate:       orderDate,
+		OrderTime:       "12:00",
+		SubtotalCents:   5000,
+		CommissionCents: 1150,
+		NetPayoutCents:  3850,
+		Status:          "completed",
+	}
+	refunded := completed
+	refunded.Ref = ingest.SourceRowRef{File: "test.csv", Row: 2}
+	refunded.Status = "refunded"
+	refunded.SubtotalCents = -5000
+	refunded.CommissionCents = -1150
+	refunded.NetPayoutCents = -3850
+	refunded.RefundDate = ptrDate(mustParseDate(t, "2026-01-06"))
+
+	day := computeOneDay("2026-01-05", []ingest.DeliveryRecord{completed, refunded}, nil, nil, nil)
+
+	for _, f := range day.DiscrepancyFlags {
+		require.NotEqual(t, FlagOrphanRefund, f.Type, "a well-formed completed+refunded pair must never be flagged as an orphan refund")
+	}
+	require.Equal(t, int64(0), day.MarginCents, "a cancelled order's two rows must net to zero margin -- the whole point of the two-row convention")
+}
+
+func mustParseDate(t *testing.T, s string) time.Time {
+	t.Helper()
+	d, err := time.Parse("2006-01-02", s)
+	require.NoError(t, err)
+	return d
+}
+
+func ptrDate(d time.Time) *time.Time { return &d }
+
 func TestComputeDailyReconciliations_NoFalsePositiveCommissionMismatches(t *testing.T) {
 	delivery, pos, costs := loadOpeningWindow(t)
 	days := ComputeDailyReconciliations(delivery, pos, costs)

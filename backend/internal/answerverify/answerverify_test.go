@@ -52,6 +52,27 @@ func TestVerify_GroundedFiguresPass(t *testing.T) {
 	require.Empty(t, report.Dates)
 }
 
+// TestVerify_PlainTextSourceWidensTheAllowedSet pins the fix that lets
+// internal/explain widen the allowed set with the immediately preceding
+// turn's own served answer text — a natural sentence, not a tool-result
+// JSON payload. Before this fix, a non-JSON source was silently dropped
+// (json.Decode fails, collectFromJSON returned early), so a follow-up
+// restating a figure the product had already verified and served last turn
+// was refused as if it were a brand-new, unverifiable claim.
+func TestVerify_PlainTextSourceWidensTheAllowedSet(t *testing.T) {
+	priorAnswer := "Margin on 2026-08-29 was $3,225.06."
+	answer := "The day before that, margin was $3,225.06."
+
+	// $3,225.06 is grounded ONLY in the prior answer, not in dailySummary.
+	report := Verify(answer, []string{dailySummary, priorAnswer})
+	require.False(t, report.Blocking(), "a figure restated from a plain-text prior-answer source must be allowed: %s", report.Summary())
+
+	// Without the plain-text source, the same figure is correctly refused —
+	// proving the widening is real, not a coincidental pass.
+	reportWithoutPrior := Verify(answer, []string{dailySummary})
+	require.True(t, reportWithoutPrior.Blocking(), "the same figure must still be refused when it isn't grounded in any source")
+}
+
 func TestVerify_FabricatedFigureIsCaught(t *testing.T) {
 	report := Verify("On 2024-08-01, total delivery gross sales came to $999.99.", []string{dailySummary})
 
@@ -315,4 +336,88 @@ func TestVerify_LargeToolResultSkipsPercentChecking(t *testing.T) {
 	require.True(t, report.PercentSkipped)
 	require.Zero(t, report.CheckedPercent)
 	require.False(t, report.Blocking(), "money checking must still work, and the skipped percentage must not block")
+}
+
+// TestFindCurrencyFigures_WordDenominatedDollars pins the fix for a real
+// blind spot: a narration is free to spell money out in words instead of
+// using "$", and before this fix currencyInAnswer extracted nothing at all
+// for "375 dollars" (no symbol, no decimal point for the bare-decimal
+// branch to require) — meaning a WRONG figure phrased this way would never
+// have been checked against anything, the exact silent-hole failure mode
+// worse than a false refusal.
+func TestFindCurrencyFigures_WordDenominatedDollars(t *testing.T) {
+	found := findCurrencyFigures("the campaign spent 610 dollars and returned 159.25 dollars")
+	// "610 dollars" has no decimal point, so only the new word-denominated
+	// loop extracts it. "159.25 dollars" has one, so the pre-existing
+	// bare-decimal branch AND the new loop both extract it — a harmless
+	// duplicate (same value, same decimals), never a wrong one, since both
+	// readings agree on what the figure is.
+	require.Len(t, found, 3)
+	var sawWholeDollars, sawDecimalDollarsCount int
+	for _, f := range found {
+		switch f.Hundredths {
+		case 61000:
+			require.Equal(t, 0, f.Decimals)
+			sawWholeDollars++
+		case 15925:
+			require.Equal(t, 2, f.Decimals)
+			sawDecimalDollarsCount++
+		default:
+			t.Fatalf("unexpected figure %+v", f)
+		}
+	}
+	require.Equal(t, 1, sawWholeDollars, "610 dollars: only the word-denominated loop can extract a whole number with no decimal point")
+	require.Equal(t, 2, sawDecimalDollarsCount, "159.25 dollars: both the bare-decimal branch and the word-denominated loop extract it, harmlessly")
+}
+
+// TestFindCurrencyFigures_WordDenominatedCentsConvertUnitsCorrectly pins
+// the other half of the same blind spot, and its sharpest failure mode: a
+// figure stated as "26 cents" must resolve to $0.26, not $26.00 — the unit
+// conversion this loop gets by design, never by reusing parseHundredths's
+// dollars assumption unmodified.
+func TestFindCurrencyFigures_WordDenominatedCentsConvertUnitsCorrectly(t *testing.T) {
+	found := findCurrencyFigures("for every $1 spent it brought back 26 cents")
+	require.Len(t, found, 2, "the $1 and the 26 cents are both money figures")
+	var centsFigure *figure
+	for i := range found {
+		if found[i].Text == "26 cents" {
+			centsFigure = &found[i]
+		}
+	}
+	require.NotNil(t, centsFigure, "must extract the word-denominated cents figure")
+	require.Equal(t, int64(26), centsFigure.Hundredths, "26 cents is $0.26 (26 hundredths), not $26.00 (2600 hundredths)")
+	require.Equal(t, 2, centsFigure.Decimals, "a cents statement is always exact-cent precision")
+}
+
+// TestFindCurrencyFigures_DecimalCentsDoesNotDoubleCountAsWholeDollars
+// guards the interaction between the two loops: "26.00 cents" must resolve
+// ONLY to $0.26 via the dedicated cents-word conversion, never also to
+// $26.00 via the plain bare-decimal branch above it — that second,
+// unconverted reading would be a real dollar value nothing in this product
+// ever states, and admitting it would let a genuinely wrong $26.00 claim
+// hide behind a coincidentally-matching "26.00 cents" in the same answer.
+func TestFindCurrencyFigures_DecimalCentsDoesNotDoubleCountAsWholeDollars(t *testing.T) {
+	found := findCurrencyFigures("it returned 26.00 cents per dollar spent")
+	require.Len(t, found, 1)
+	require.Equal(t, int64(26), found[0].Hundredths)
+}
+
+// TestFindPercentFigures_PercentagePoints pins the other half of Bug 5: a
+// week-over-week or platform-comparison delta is routinely phrased in
+// points ("margin improved by 3 percentage points"), and "percent\b" alone
+// never matches "percentage" — no word boundary follows "percent" inside
+// it — so this phrasing previously extracted nothing at all.
+func TestFindPercentFigures_PercentagePoints(t *testing.T) {
+	found := findPercentFigures("margin improved by 3 percentage points, and iFood's effective rate rose 1 percentage point")
+	require.Len(t, found, 2)
+	require.Equal(t, 300, int(found[0].Hundredths))
+	require.Equal(t, 100, int(found[1].Hundredths))
+}
+
+// TestVerify_WordDenominatedFigureStillHasToBeReal proves this is a
+// genuine check, not just an extraction fix: a WRONG figure phrased in
+// words must still be caught.
+func TestVerify_WordDenominatedFigureStillHasToBeReal(t *testing.T) {
+	require.True(t, Verify("the campaign spent 999 dollars", []string{promoROI}).Blocking(),
+		"999 dollars is nowhere near the real 610.00 spend and must be caught, not silently ignored for lacking a $ sign")
 }

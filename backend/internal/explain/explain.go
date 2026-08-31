@@ -198,7 +198,17 @@ func New(ctx context.Context, llm *llmclient.Client, mcpServer *server.MCPServer
 // mirrors the same "a real API call may have run and been billed even when
 // err is non-nil" discipline internal/ambiguity.Gate.writeBetterText
 // already applies to its own second-pass call.
-func (e *Explainer) Explain(ctx context.Context, question, assumptionStated string) (*Result, error) {
+// priorAnswerText is the immediately preceding turn's own served answer, or
+// "" for a fresh question or a clarification reply. It is added to
+// verifySources (never to the model's own input beyond what ComposeAnswerFollowUp
+// already embeds) purely so a natural follow-up restating a figure THIS
+// PRODUCT already verified and served last turn — "what about the previous
+// day?", after already answering with a specific margin — is not refused
+// for repeating it. Found live: internal/answerverify refused a follow-up
+// answer for stating the exact figure ($3,225.06) the previous turn had
+// already narrated, verified, and served, because that figure appears
+// nowhere in THIS turn's own tool results — only in the preceding one's.
+func (e *Explainer) Explain(ctx context.Context, question, assumptionStated, priorAnswerText string) (*Result, error) {
 	budget := mcptools.NewCallBudget(mcptools.DefaultMaxToolCallsPerInteraction)
 	ctx = mcptools.WithCallBudget(ctx, budget)
 
@@ -222,8 +232,15 @@ func (e *Explainer) Explain(ctx context.Context, question, assumptionStated stri
 		// narration may legitimately quote a figure from, and feeding it to
 		// answerverify can only widen the allowed set, never narrow it — so
 		// including it removes a false-refusal risk rather than adding one.
+		// Seeded with priorAnswerText for the same reason: the prior turn's
+		// own served answer is itself a value this exact product already
+		// verified, so restating it in a follow-up is not a new claim to
+		// distrust.
 		verifySources []string
 	)
+	if priorAnswerText != "" {
+		verifySources = append(verifySources, priorAnswerText)
+	}
 
 	for turn := 0; turn < MaxTurns; turn++ {
 		resp, err := e.client.CreateMessage(ctx, llmclient.MessageRequest{

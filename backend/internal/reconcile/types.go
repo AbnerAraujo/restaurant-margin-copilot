@@ -36,6 +36,17 @@ const (
 	FlagCommissionMismatch       = "commission_mismatch"
 	FlagPOSNonCompletedExcluded  = "pos_non_completed_row_excluded"
 	FlagAnomalyThresholdExceeded = "anomaly_threshold_exceeded"
+	// FlagOrphanRefund fires when a "refunded" delivery row has no matching
+	// "completed" row for the same order id on the same date — the two-row
+	// convention (backend/cmd/gendata/opening/README.md) every refund is
+	// supposed to follow. Found live: both simulated connector adapters
+	// once emitted refunds as a single mutated row with no completed
+	// counterpart, silently double-subtracting the refund from margin with
+	// no flag anywhere to explain why. That specific bug is fixed at the
+	// source (platformconnector), but this flag stays as the invariant
+	// check that would catch the SAME shape of defect in a real,
+	// hand-produced or third-party export this code has not seen yet.
+	FlagOrphanRefund = "orphan_refund"
 
 	// The cross-source family (specs/012-pos-connector-dedup). These
 	// describe an overlap BETWEEN two sources, which is a different

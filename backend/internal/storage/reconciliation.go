@@ -65,6 +65,31 @@ func SaveDailyReconciliation(ctx context.Context, q Querier, day reconcile.Daily
 	return q.UpsertDailyReconciliation(ctx, params)
 }
 
+// PruneDailyReconciliationsExcept deletes every daily_reconciliation row
+// whose date is not in keepDates. A full ingest run recomputes the complete
+// set of days its source files contain in one pass and calls this with
+// exactly that set, right before persisting it, so a date that dropped out
+// of the source (a corrected typo, a row moved to the right day) doesn't
+// stay behind as an orphaned row forever — see the generated
+// DeleteDailyReconciliationsExcept query's doc comment for the full defect
+// this closes. keepDates must be the complete day-set a full recompute just
+// produced; a caller must never pass a partial or overlay-scoped set, which
+// would delete days the run was never asked to touch. An empty keepDates is
+// refused rather than silently wiping the table, since the one call site
+// (internal/pipeline) already treats zero computed days as a hard error
+// before reaching here — reaching this function with none is a caller bug,
+// not a legitimate "delete everything" request.
+func PruneDailyReconciliationsExcept(ctx context.Context, q Querier, keepDates []time.Time) error {
+	if len(keepDates) == 0 {
+		return fmt.Errorf("storage: PruneDailyReconciliationsExcept called with no dates to keep — refusing to delete every row")
+	}
+	pgDates := make([]pgtype.Date, len(keepDates))
+	for i, d := range keepDates {
+		pgDates[i] = pgtype.Date{Time: d, Valid: true}
+	}
+	return q.DeleteDailyReconciliationsExcept(ctx, pgDates)
+}
+
 // LoadDailyReconciliation reads a persisted row back and converts it into
 // internal/reconcile's domain representation — the exact inverse of
 // SaveDailyReconciliation — so a save-then-load round trip can be asserted

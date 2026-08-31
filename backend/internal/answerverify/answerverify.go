@@ -438,9 +438,35 @@ func collectFromJSON(raw string, money, percent map[int64]struct{}, dates map[st
 
 	var v any
 	if err := dec.Decode(&v); err != nil {
+		// Not every "source" this package is handed is a tool-result JSON
+		// payload — Explain also widens the allowed set with the
+		// immediately preceding turn's own served answer text (a natural
+		// sentence, e.g. "Margin on 2026-08-29 was $3,225.06."), so that a
+		// follow-up restating a figure THIS PRODUCT already verified and
+		// served last turn isn't refused for repeating it. A plain-text
+		// source gets its figures lifted the same way the NARRATION itself
+		// does — findCurrencyFigures/findPercentFigures/findDateFigures —
+		// rather than being silently dropped for not being valid JSON.
+		collectFromText(raw, money, percent, dates)
 		return
 	}
 	walk(v, money, percent, dates)
+}
+
+// collectFromText is collectFromJSON's fallback for a plain-text source
+// (see its call site's doc comment). It reuses the exact figure-extraction
+// the narration under check is itself scanned with, so a figure allowed
+// via this path is held to the same recognition rules as one asserted.
+func collectFromText(raw string, money, percent map[int64]struct{}, dates map[string]struct{}) {
+	for _, f := range findCurrencyFigures(raw) {
+		money[f.Hundredths] = struct{}{}
+	}
+	for _, f := range findPercentFigures(raw) {
+		percent[f.Hundredths] = struct{}{}
+	}
+	for _, d := range findDateFigures(raw) {
+		dates[d.ISO] = struct{}{}
+	}
 }
 
 // provenanceKey is the one subtree deliberately excluded from the allowed
@@ -589,9 +615,27 @@ func allDigits(s string) bool {
 // ("2024-08-01") and a one-decimal percentage ("28.9") can never match it.
 var currencyInAnswer = regexp.MustCompile(`\p{Sc}\s?\d[\d,]*(?:\.\d+)?|\b\d[\d,]*\.\d{2}\b`)
 
+// dollarsWordInAnswer and centsWordInAnswer catch money spelled out in
+// words rather than with a symbol — "375 dollars", "26 cents" — which
+// currencyInAnswer's two forms both miss: there is no symbol, and a whole
+// number ("375") or a bare integer cents count ("26") has no decimal point
+// for the bare-decimal branch to require. Found live: a narration is free
+// to drop the "$" this product's own tool output always carries, and
+// currencyInAnswer's silence on that phrasing was not a refusal — it was
+// this package extracting NOTHING for that figure, so a wrong number
+// stated this way would have sailed through unchecked. See
+// findCurrencyFigures for why "cents" needs its own unit conversion rather
+// than reusing parseHundredths as-is.
+var dollarsWordInAnswer = regexp.MustCompile(`(?i)\b\d[\d,]*(?:\.\d+)?\s+dollars?\b`)
+var centsWordInAnswer = regexp.MustCompile(`(?i)\b\d[\d,]*(?:\.\d+)?\s+cents?\b`)
+
 // percentInAnswer matches a percentage figure: a number immediately
-// followed by "%" or the word "percent".
-var percentInAnswer = regexp.MustCompile(`(?i)\d[\d,]*(?:\.\d+)?\s?(?:%|percent\b)`)
+// followed by "%", the word "percent", or "percentage point(s)" — a
+// week-over-week or platform-comparison delta is routinely phrased as
+// points ("margin improved by 3 percentage points"), and "percent\b"
+// alone never matches "percentage" (no word boundary follows "percent" in
+// it), so that entire phrasing was previously extracted as nothing at all.
+var percentInAnswer = regexp.MustCompile(`(?i)\d[\d,]*(?:\.\d+)?\s?(?:%|percentage\s+points?|percent\b)`)
 
 // findCurrencyFigures lifts every money figure out of a narration.
 //
@@ -618,12 +662,49 @@ func findCurrencyFigures(text string) []figure {
 				continue
 			}
 		}
+		// A bare decimal immediately followed by "cents" is about to be
+		// picked up by the dedicated cents-word loop below, which converts
+		// units correctly (26 cents is $0.26, not $26.00) — leaving it to
+		// this loop too would additionally, and wrongly, admit $26.00.
+		if !hasCurrencySymbol(match) {
+			if rest := strings.TrimLeft(text[loc[1]:], " "); strings.HasPrefix(strings.ToLower(rest), "cent") {
+				continue
+			}
+		}
 		digits := stripToNumber(match)
 		h, decimals, ok := parseHundredths(digits)
 		if !ok {
 			continue
 		}
 		out = append(out, figure{Hundredths: abs64(h), Decimals: decimals, Text: match})
+	}
+
+	// Word-denominated whole/decimal dollars ("375 dollars", "12.50 USD"):
+	// same unit as the symbol-prefixed form, so the numeral converts with
+	// the same parseHundredths this loop already uses elsewhere.
+	for _, loc := range dollarsWordInAnswer.FindAllStringIndex(text, -1) {
+		match := text[loc[0]:loc[1]]
+		h, decimals, ok := parseHundredths(stripToNumber(match))
+		if !ok {
+			continue
+		}
+		out = append(out, figure{Hundredths: abs64(h), Decimals: decimals, Text: match})
+	}
+
+	// Word-denominated cents ("26 cents"): the numeral IS the hundredths-
+	// of-a-dollar count already, not a dollar amount to multiply by 100 —
+	// parseHundredths(digits) returns digits*100 under a dollars
+	// assumption, so dividing that back down by 100 (rounding the same way
+	// roundedDiv rounds a derived ratio) recovers the true cent value.
+	// Always exact (2-decimal) precision: "26 cents" is as precise a claim
+	// as "$0.26", never a rounded-dollar approximation.
+	for _, loc := range centsWordInAnswer.FindAllStringIndex(text, -1) {
+		match := text[loc[0]:loc[1]]
+		asIfDollars, _, ok := parseHundredths(stripToNumber(match))
+		if !ok {
+			continue
+		}
+		out = append(out, figure{Hundredths: abs64(roundedDiv(asIfDollars, 100)), Decimals: 2, Text: match})
 	}
 	return out
 }

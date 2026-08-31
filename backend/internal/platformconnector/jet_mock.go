@@ -210,11 +210,11 @@ func (a jetAdapter) FetchDeliveryRevenue(ctx context.Context, date time.Time) ([
 
 		src := fmt.Sprintf("%s?day=%s&page=%d", jetEndpoint(), date.Format(dateLayout), page)
 		for i, dto := range resp.Data {
-			rec, err := a.normalize(dto, ingest.SourceRowRef{File: src, Row: i + 1})
+			recs, err := a.normalize(dto, ingest.SourceRowRef{File: src, Row: i + 1})
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, rec)
+			out = append(out, recs...)
 		}
 
 		if !resp.Cursor.HasMore {
@@ -227,11 +227,13 @@ func (a jetAdapter) FetchDeliveryRevenue(ctx context.Context, date time.Time) ([
 }
 
 // normalize converts one Just Eat Takeaway wire order into the shared
-// record type. See this file's header comment for the two conversions that
-// carry real risk (the derived rate, and the UTC-to-local calendar day).
-func (a jetAdapter) normalize(dto jetOrderDTO, ref ingest.SourceRowRef) (ingest.DeliveryRecord, error) {
-	fail := func(field, detail string) (ingest.DeliveryRecord, error) {
-		return ingest.DeliveryRecord{}, fmt.Errorf("platformconnector: Just Eat Takeaway order %s: %s: %s", dto.OrderReference, field, detail)
+// record type — one record for a DELIVERED order, or TWO for a REFUNDED
+// one — see the REFUNDED case below for why. See this file's header
+// comment for the two conversions that carry real risk (the derived rate,
+// and the UTC-to-local calendar day).
+func (a jetAdapter) normalize(dto jetOrderDTO, ref ingest.SourceRowRef) ([]ingest.DeliveryRecord, error) {
+	fail := func(field, detail string) ([]ingest.DeliveryRecord, error) {
+		return nil, fmt.Errorf("platformconnector: Just Eat Takeaway order %s: %s: %s", dto.OrderReference, field, detail)
 	}
 
 	if dto.GrossAmountMinor == 0 {
@@ -278,6 +280,7 @@ func (a jetAdapter) normalize(dto jetOrderDTO, ref ingest.SourceRowRef) (ingest.
 		if dto.RefundedAtEpochMs != nil {
 			return fail("refundedAtEpochMs", "is set on a DELIVERED order — refusing rather than guessing whether this counts as revenue or a reversal")
 		}
+		return []ingest.DeliveryRecord{rec}, nil
 	case "REFUNDED":
 		if dto.RefundedAtEpochMs == nil {
 			return fail("refundedAtEpochMs", "is null on a REFUNDED order — refusing rather than attributing the reversal to a date this connector made up")
@@ -286,16 +289,35 @@ func (a jetAdapter) normalize(dto jetOrderDTO, ref ingest.SourceRowRef) (ingest.
 		ry, rm, rd := refundedAt.Date()
 		refundDate := time.Date(ry, rm, rd, 0, 0, 0, 0, merchantZone)
 
+		// TWO records, matching the exact convention the CSV path already
+		// uses and internal/reconcile.computeOneDay already implements —
+		// see ifood_mock.go's normalize for the full rationale and the
+		// live-measured blast radius of getting this wrong. `rec` above
+		// was built directly from the wire's already-negative amounts (no
+		// sign flip, this platform's own convention) and becomes the
+		// "refunded" reversal row as-is; `completed` is its positive
+		// counterpart, dated at the ORIGINAL placement time computed
+		// above, which `reconcile` needs to ever add this order's gross
+		// to the day at all before the reversal nets it back out.
+		completed := rec
+		completed.Status = "completed"
+		completed.RefundDate = nil
+		completed.SubtotalCents = -rec.SubtotalCents
+		completed.CommissionCents = -rec.CommissionCents
+		completed.NetPayoutCents = -rec.NetPayoutCents
+		completed.Notes = "Simulated Just Eat Takeaway partner-API order — not a real settlement."
+
 		rec.Status = "refunded"
 		rec.RefundDate = &refundDate
 		rec.Notes = "Simulated Just Eat Takeaway partner-API refund — not a real settlement."
-		// No sign flip: this platform already reports a refund negative,
-		// which is this repository's own convention. The iFood adapter
-		// has to negate; this one must NOT, and the Proxy's contract
-		// check is what proves each of them got its own case right.
+		// No sign flip on rec: this platform already reports a refund
+		// negative, which is this repository's own convention. The iFood
+		// adapter has to negate; this one must NOT, and the Proxy's
+		// contract check is what proves each of them got its own case
+		// right.
+
+		return []ingest.DeliveryRecord{completed, rec}, nil
 	default:
 		return fail("fulfilmentState", fmt.Sprintf("unrecognized state %q — refusing rather than guessing whether this order counts as revenue", dto.FulfilmentState))
 	}
-
-	return rec, nil
 }
