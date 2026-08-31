@@ -438,9 +438,35 @@ func collectFromJSON(raw string, money, percent map[int64]struct{}, dates map[st
 
 	var v any
 	if err := dec.Decode(&v); err != nil {
+		// Not every "source" this package is handed is a tool-result JSON
+		// payload — Explain also widens the allowed set with the
+		// immediately preceding turn's own served answer text (a natural
+		// sentence, e.g. "Margin on 2026-08-29 was $3,225.06."), so that a
+		// follow-up restating a figure THIS PRODUCT already verified and
+		// served last turn isn't refused for repeating it. A plain-text
+		// source gets its figures lifted the same way the NARRATION itself
+		// does — findCurrencyFigures/findPercentFigures/findDateFigures —
+		// rather than being silently dropped for not being valid JSON.
+		collectFromText(raw, money, percent, dates)
 		return
 	}
 	walk(v, money, percent, dates)
+}
+
+// collectFromText is collectFromJSON's fallback for a plain-text source
+// (see its call site's doc comment). It reuses the exact figure-extraction
+// the narration under check is itself scanned with, so a figure allowed
+// via this path is held to the same recognition rules as one asserted.
+func collectFromText(raw string, money, percent map[int64]struct{}, dates map[string]struct{}) {
+	for _, f := range findCurrencyFigures(raw) {
+		money[f.Hundredths] = struct{}{}
+	}
+	for _, f := range findPercentFigures(raw) {
+		percent[f.Hundredths] = struct{}{}
+	}
+	for _, d := range findDateFigures(raw) {
+		dates[d.ISO] = struct{}{}
+	}
 }
 
 // provenanceKey is the one subtree deliberately excluded from the allowed

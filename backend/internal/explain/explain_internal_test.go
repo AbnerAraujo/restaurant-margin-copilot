@@ -352,7 +352,7 @@ func TestExplain_ZeroToolCallCurrencyAnswerIsRefused(t *testing.T) {
 	}
 	e := newTestExplainer(llm, nil)
 
-	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "")
+	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "", "")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, result.IncompleteReason, "a currency figure with zero tool calls must be refused, not answered")
@@ -411,7 +411,7 @@ func TestExplain_ZeroToolCallNonCurrencyAnswerStillAllowed(t *testing.T) {
 	}
 	e := newTestExplainer(llm, nil)
 
-	result, err := e.Explain(context.Background(), "What was our margin on 2026-09-01?", "")
+	result, err := e.Explain(context.Background(), "What was our margin on 2026-09-01?", "", "")
 
 	require.NoError(t, err)
 	require.Empty(t, result.IncompleteReason)
@@ -443,7 +443,7 @@ func TestExplain_MaxTokensTruncationIsRefusedEvenWithoutCurrencyText(t *testing.
 	}
 	e := newTestExplainer(llm, nil)
 
-	result, err := e.Explain(context.Background(), "show me the day with the most profit and why", "")
+	result, err := e.Explain(context.Background(), "show me the day with the most profit and why", "", "")
 
 	require.NoError(t, err)
 	require.NotEmpty(t, result.IncompleteReason, "a max_tokens-truncated response must be refused, not served as an answer")
@@ -470,7 +470,7 @@ func TestExplain_MidLoopFailurePreservesPartialUsage(t *testing.T) {
 	}
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "")
+	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "", "")
 
 	require.Error(t, err, "the interaction as a whole must still fail")
 	require.NotNil(t, result, "turn 0's real, billed usage must not be discarded just because turn 1 failed")
@@ -498,7 +498,7 @@ func TestExplain_MaxTurnsExhaustion(t *testing.T) {
 	llm := &fakeLLM{responses: responses}
 	e := newTestExplainer(llm, newFakeMCPClient(t))
 
-	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "")
+	result, err := e.Explain(context.Background(), "What was our margin on 2026-08-03?", "", "")
 
 	require.NoError(t, err)
 	require.Empty(t, result.AnswerText)
@@ -524,7 +524,7 @@ func TestExplain_ModelRefusal(t *testing.T) {
 	}
 	e := newTestExplainer(llm, nil)
 
-	result, err := e.Explain(context.Background(), "anything", "")
+	result, err := e.Explain(context.Background(), "anything", "", "")
 
 	require.NoError(t, err)
 	require.Contains(t, result.IncompleteReason, "some_category")

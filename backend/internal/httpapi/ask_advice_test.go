@@ -66,7 +66,7 @@ type invocationExplainer struct {
 	lastQuestion string
 }
 
-func (e *invocationExplainer) Explain(_ context.Context, question, _ string) (*explain.Result, error) {
+func (e *invocationExplainer) Explain(_ context.Context, question, _, _ string) (*explain.Result, error) {
 	e.lastQuestion = question
 	return &explain.Result{
 		AnswerText:       "Here is what the data shows.",

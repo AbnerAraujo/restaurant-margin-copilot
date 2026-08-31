@@ -52,6 +52,27 @@ func TestVerify_GroundedFiguresPass(t *testing.T) {
 	require.Empty(t, report.Dates)
 }
 
+// TestVerify_PlainTextSourceWidensTheAllowedSet pins the fix that lets
+// internal/explain widen the allowed set with the immediately preceding
+// turn's own served answer text — a natural sentence, not a tool-result
+// JSON payload. Before this fix, a non-JSON source was silently dropped
+// (json.Decode fails, collectFromJSON returned early), so a follow-up
+// restating a figure the product had already verified and served last turn
+// was refused as if it were a brand-new, unverifiable claim.
+func TestVerify_PlainTextSourceWidensTheAllowedSet(t *testing.T) {
+	priorAnswer := "Margin on 2026-08-29 was $3,225.06."
+	answer := "The day before that, margin was $3,225.06."
+
+	// $3,225.06 is grounded ONLY in the prior answer, not in dailySummary.
+	report := Verify(answer, []string{dailySummary, priorAnswer})
+	require.False(t, report.Blocking(), "a figure restated from a plain-text prior-answer source must be allowed: %s", report.Summary())
+
+	// Without the plain-text source, the same figure is correctly refused —
+	// proving the widening is real, not a coincidental pass.
+	reportWithoutPrior := Verify(answer, []string{dailySummary})
+	require.True(t, reportWithoutPrior.Blocking(), "the same figure must still be refused when it isn't grounded in any source")
+}
+
 func TestVerify_FabricatedFigureIsCaught(t *testing.T) {
 	report := Verify("On 2024-08-01, total delivery gross sales came to $999.99.", []string{dailySummary})
 

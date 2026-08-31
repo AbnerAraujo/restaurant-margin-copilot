@@ -348,7 +348,7 @@ type Classifier interface {
 // Narrator is the explanation step as this handler needs it.
 // *explain.Explainer satisfies it directly.
 type Narrator interface {
-	Explain(ctx context.Context, question, assumptionStated string) (*explain.Result, error)
+	Explain(ctx context.Context, question, assumptionStated, priorAnswerText string) (*explain.Result, error)
 }
 
 // ParaphraseClassifier is specs/004-semantic-cache's paraphrase layer as
@@ -611,7 +611,17 @@ func HandleAsk(deps Deps) http.HandlerFunc {
 			// did/didn't advice appear?" question answerable from the log.
 			log.Printf("httpapi: inline advice armed (gate flagged advice_requested; question=%q)", req.Question)
 		}
-		result, err := deps.Explainer.Explain(ctx, explainInput, decision.AssumptionStated)
+		// The immediately preceding turn's own answer text, or "" for a
+		// fresh question — widens answerverify's allowed-figure set (see
+		// Explain's doc comment) so a natural follow-up restating a figure
+		// this exact product already verified and served last turn isn't
+		// refused for repeating it. previousAnswer is nil on a fresh
+		// question or a clarification reply, never on a bare follow-up.
+		var priorAnswerText string
+		if previousAnswer != nil {
+			priorAnswerText = previousAnswer.AnswerText
+		}
+		result, err := deps.Explainer.Explain(ctx, explainInput, decision.AssumptionStated, priorAnswerText)
 		if err != nil {
 			// Explain still returns a non-nil *Result on a mid-loop failure,
 			// carrying whatever tokens/cost this interaction's earlier turns

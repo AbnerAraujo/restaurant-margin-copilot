@@ -66,7 +66,7 @@ type explainerReturningPartialResultOnError struct {
 	err    error
 }
 
-func (e explainerReturningPartialResultOnError) Explain(_ context.Context, _, _ string) (*explain.Result, error) {
+func (e explainerReturningPartialResultOnError) Explain(_ context.Context, _, _, _ string) (*explain.Result, error) {
 	return e.result, e.err
 }
 
