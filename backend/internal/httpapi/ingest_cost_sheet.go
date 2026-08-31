@@ -193,9 +193,9 @@ func costSheetDateRange(records []ingest.CostInvoiceRecord) (from, to time.Time)
 }
 
 // mergeCostSheetUpload combines a newly-uploaded cost sheet with whatever is
-// already committed on disk, so that uploading one day's (or one month's)
-// invoices updates ONLY the calendar dates the new file actually covers and
-// leaves every other date's previously-committed costs untouched.
+// already committed on disk, so that uploading an invoice updates ONLY the
+// invoice(s) the new file actually names and leaves every other
+// previously-committed invoice untouched.
 //
 // Why this exists: before it did, HandleCommitCostSheet wrote the uploaded
 // bytes to destPath VERBATIM, which is a wholesale replace — the file the
@@ -207,14 +207,38 @@ func costSheetDateRange(records []ingest.CostInvoiceRecord) (from, to time.Time)
 // copy ("Replace cost sheet") is honest about what the OLD code did — it was
 // never meant to mean "replace the entire multi-year history."
 //
-// The merge key is the exact calendar date, not the upload's overall
-// from/to range: a file covering non-contiguous dates (e.g. one invoice on
-// the 5th and another on the 20th) must not also blank out the untouched
-// days in between, which a range-based replace would.
+// The merge key is InvoiceID, not the calendar date it was first fixed to.
+// A date-keyed merge fixed the worst of the incident above (the blast
+// radius shrank from "the whole file" to "the whole day") but kept the same
+// destructive shape one level down: adversarial testing found that
+// uploading ONE new invoice for a day that already had five committed
+// invoices deleted the other four, silently, with a 200 and no discrepancy
+// flag — the most ordinary real workflow (a late invoice for an
+// already-invoiced day) destroyed $9,669.94 of real data in one live repro.
+// Keying on InvoiceID instead means an upload only ever touches the exact
+// invoices it names: a new ID is added, an ID that already exists is
+// replaced (which is also what makes "I fixed a typo'd date on an invoice"
+// work correctly — the old row, wherever its date was, is removed and the
+// corrected one takes its place, instead of both surviving as a silent
+// double-count).
 //
 // existingPath may not exist yet (a server's very first commit) — that is
 // not an error, it just means there is nothing to merge against.
 func mergeCostSheetUpload(existingPath string, newRecords []ingest.CostInvoiceRecord, newContent []byte) ([]byte, error) {
+	// InvoiceID must be a real, unique identity before it can be trusted as
+	// a merge key — a blank or duplicated one would make every row sharing
+	// it collide. Refuse rather than guess which one is authoritative.
+	seenInUpload := make(map[string]int, len(newRecords))
+	for i, rec := range newRecords {
+		if strings.TrimSpace(rec.InvoiceID) == "" {
+			return nil, fmt.Errorf("row %d: invoice_id is blank — every invoice needs a stable id so a later correction can find and replace it", rec.Ref.Row)
+		}
+		if prior, dup := seenInUpload[rec.InvoiceID]; dup {
+			return nil, fmt.Errorf("invoice_id %q appears twice in this upload (rows %d and %d) — refusing rather than guessing which one is correct", rec.InvoiceID, prior, rec.Ref.Row)
+		}
+		seenInUpload[rec.InvoiceID] = i + 1
+	}
+
 	existingBytes, err := os.ReadFile(existingPath)
 	if errors.Is(err, os.ErrNotExist) {
 		return newContent, nil
@@ -231,14 +255,14 @@ func mergeCostSheetUpload(existingPath string, newRecords []ingest.CostInvoiceRe
 		return nil, fmt.Errorf("existing cost sheet on file no longer parses, cannot safely merge: %w", err)
 	}
 
-	replacedDates := make(map[string]struct{}, len(newRecords))
+	replacedInvoiceIDs := make(map[string]struct{}, len(newRecords))
 	for _, rec := range newRecords {
-		replacedDates[rec.InvoiceDate.Format("2006-01-02")] = struct{}{}
+		replacedInvoiceIDs[rec.InvoiceID] = struct{}{}
 	}
 
 	merged := make([]ingest.CostInvoiceRecord, 0, len(existingRecords)+len(newRecords))
 	for _, rec := range existingRecords {
-		if _, replaced := replacedDates[rec.InvoiceDate.Format("2006-01-02")]; replaced {
+		if _, replaced := replacedInvoiceIDs[rec.InvoiceID]; replaced {
 			continue
 		}
 		merged = append(merged, rec)

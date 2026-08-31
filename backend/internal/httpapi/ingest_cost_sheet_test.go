@@ -554,8 +554,13 @@ func TestHandleCommitCostSheet_MergesByDateRatherThanReplacingEverything(t *test
 	require.Contains(t, string(onDiskAfterDay2), "INV-MERGE-1", "day 2's commit must not erase day 1's row")
 	require.Contains(t, string(onDiskAfterDay2), "INV-MERGE-2")
 
+	// Same invoice_id as day 1's original commit: a real correction to an
+	// existing invoice keeps its own identity, it doesn't become a new one
+	// (see mergeCostSheetUpload's doc comment — merging by InvoiceID is
+	// exactly what makes this the row that gets replaced, not a second row
+	// added alongside the original).
 	const day1Revised = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
-		"INV-MERGE-1-REVISED,1999-02-10,Supplier One,produce,999.99,day 1 revised\n"
+		"INV-MERGE-1,1999-02-10,Supplier One,produce,999.99,day 1 revised\n"
 	resp3 := commit(day1Revised)
 	beforeMargin3, err := strconv.ParseFloat(*resp3.Before.Margin, 64)
 	require.NoError(t, err)
@@ -568,9 +573,69 @@ func TestHandleCommitCostSheet_MergesByDateRatherThanReplacingEverything(t *test
 		"re-uploading day 1 must change total margin by exactly day 1's own cost delta, proving day 2's cost survived untouched")
 	finalOnDisk2, err := os.ReadFile(destPath)
 	require.NoError(t, err)
-	require.NotContains(t, string(finalOnDisk2), "INV-MERGE-1,", "re-uploading day 1 must replace day 1's OWN prior row, not add to it")
-	require.Contains(t, string(finalOnDisk2), "INV-MERGE-1-REVISED", "day 1's new content must be present")
+	require.NotContains(t, string(finalOnDisk2), "day 1 original", "re-uploading INV-MERGE-1 must replace its OWN prior content, not add to it")
+	require.Contains(t, string(finalOnDisk2), "INV-MERGE-1,1999-02-10,Supplier One,produce,999.99,day 1 revised", "day 1's revised content must be present, under the SAME invoice id")
 	require.Contains(t, string(finalOnDisk2), "INV-MERGE-2", "day 2, untouched by this commit, must still be present")
+}
+
+// TestHandleCommitCostSheet_NewInvoiceForAnAlreadyInvoicedDayKeepsTheOthers
+// is the direct regression test for a bug found in adversarial testing on
+// 2026-08-31: merging by calendar date (this feature's first fix) still let
+// the most ordinary real workflow — a late-arriving invoice for a day that
+// already had other invoices on file — silently delete every OTHER invoice
+// already committed for that same day, with a 200 and no discrepancy flag.
+// Merging by InvoiceID instead means an upload only ever replaces the exact
+// invoice(s) it names.
+func TestHandleCommitCostSheet_NewInvoiceForAnAlreadyInvoicedDayKeepsTheOthers(t *testing.T) {
+	conn, q := httpapiConnectOrSkip(t)
+	withReadyLiveDataDir(t)
+	t.Cleanup(func() {
+		_, err := conn.Exec(context.Background(),
+			"DELETE FROM daily_reconciliation WHERE date = $1", "1999-03-15")
+		if err != nil {
+			t.Logf("cleanup: failed to delete same-day-invoice test reconciliation row: %v", err)
+		}
+	})
+
+	handler := HandleCommitCostSheet(nil, q, nil)
+	destPath := filepath.Join(livedata.Dir, liveCostSheetFilename)
+	commit := func(csv string) CommitCostSheetResponse {
+		t.Helper()
+		req := multipartCostSheetRequest(t, http.MethodPost, "/api/ingest/cost-sheet/commit", "upload.csv", csv)
+		rec := httptest.NewRecorder()
+		handler(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, "commit: %s", rec.Body.String())
+		var resp CommitCostSheetResponse
+		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+		return resp
+	}
+
+	const fiveInvoicesOneDay = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-SAMEDAY-1,1999-03-15,Produce Co,produce,100.00,\n" +
+		"INV-SAMEDAY-2,1999-03-15,Meat Co,protein,200.00,\n" +
+		"INV-SAMEDAY-3,1999-03-15,Beverage Co,beverage,50.00,\n" +
+		"INV-SAMEDAY-4,1999-03-15,Packaging Co,packaging,25.00,\n" +
+		"INV-SAMEDAY-5,1999-03-15,Cleaning Co,supplies,10.00,\n"
+	resp1 := commit(fiveInvoicesOneDay)
+	require.Equal(t, 5, resp1.RowsCommitted)
+
+	// A late-arriving sixth invoice for the SAME day — the exact real
+	// workflow that deleted $9,669.94 of real invoices in the live repro.
+	const lateInvoice = "invoice_id,invoice_date,supplier,category,amount,notes\n" +
+		"INV-SAMEDAY-6,1999-03-15,Late Supplier,produce,15.00,late-arriving invoice\n"
+	resp2 := commit(lateInvoice)
+	beforeMargin, err := strconv.ParseFloat(*resp2.Before.Margin, 64)
+	require.NoError(t, err)
+	afterMargin, err := strconv.ParseFloat(*resp2.After.Margin, 64)
+	require.NoError(t, err)
+	require.InDelta(t, -15.0, afterMargin-beforeMargin, 0.001,
+		"the late invoice must change margin by exactly its own $15 cost -- the other five invoices already on file for this day must survive untouched")
+
+	onDisk, err := os.ReadFile(destPath)
+	require.NoError(t, err)
+	for _, id := range []string{"INV-SAMEDAY-1", "INV-SAMEDAY-2", "INV-SAMEDAY-3", "INV-SAMEDAY-4", "INV-SAMEDAY-5", "INV-SAMEDAY-6"} {
+		require.Contains(t, string(onDisk), id, "all six invoices for this day must be present -- none deleted by the late arrival")
+	}
 }
 
 // --- The upload-triggers-sync composition (2026-08-30) ----------------------
