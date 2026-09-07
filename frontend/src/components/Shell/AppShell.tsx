@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   Outlet,
   useLocation,
@@ -99,9 +99,14 @@ export default function AppShell() {
   // Read by the retry loop's `requestAnimationFrame` callbacks, which are
   // set up once per POP navigation and must bail out the instant the owner
   // navigates again before they finish — a plain ref (not state) so it never
-  // itself triggers a render, updated on every render to stay current.
+  // itself triggers a render, synced on every commit (a layout effect, so
+  // it's current before any `requestAnimationFrame` callback can run,
+  // and before the POP-restore effect below reads it) rather than written
+  // during render.
   const currentPathnameRef = useRef(pathname)
-  currentPathnameRef.current = pathname
+  useLayoutEffect(() => {
+    currentPathnameRef.current = pathname
+  }, [pathname])
 
   // Reported live (QA pass): the fixed `CostPanel` sits in the bottom-right
   // corner of the viewport on every route, and grows a LOT taller the

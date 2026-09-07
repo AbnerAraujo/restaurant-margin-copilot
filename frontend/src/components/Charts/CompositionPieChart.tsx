@@ -97,23 +97,28 @@ export default function CompositionPieChart({
   const slices = points.filter((point) => !point.unavailable && point.value > 0)
   const total = slices.reduce((sum, point) => sum + point.value, 0)
 
+  // A plain loop rather than `map` with a mutated outer cursor: the running
+  // angle is local to this single pass, never captured by a closure that
+  // could observe it after render.
+  const segments: Segment[] = []
   let cursorDeg = 0
-  const segments: Segment[] = slices.map((point, index) => {
+  for (const [index, point] of slices.entries()) {
     const sweep = total > 0 ? (point.value / total) * 360 : 0
     const startDeg = cursorDeg
-    cursorDeg += sweep
-    return {
+    const endDeg = startDeg + sweep
+    cursorDeg = endDeg
+    segments.push({
       point,
       index,
       startDeg: startDeg + SEGMENT_GAP_DEGREES / 2,
-      endDeg: cursorDeg - SEGMENT_GAP_DEGREES / 2,
+      endDeg: endDeg - SEGMENT_GAP_DEGREES / 2,
       share: total > 0 ? point.value / total : 0,
       fill:
         index < MAX_CATEGORICAL_SERIES
           ? CATEGORICAL_FILLS[index]
           : 'var(--muted-foreground)',
-    }
-  })
+    })
+  }
 
   const hovered = hoveredIndex === null ? null : segments[hoveredIndex]
 

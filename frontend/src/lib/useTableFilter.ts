@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 
 /**
@@ -92,16 +92,19 @@ export function useTableFilter<T>({
   //
   // The fix doesn't depend on react-router ever queuing correctly: this ref
   // is this hook's OWN authoritative "latest intended params", kept in sync
-  // in two places — (1) every render, so an external change (mount, a
-  // restored POP/Back navigation, this hook re-rendering after its own
-  // write commits) is picked up, and (2) synchronously inside every setter,
+  // in two places — (1) every commit (a layout effect, which runs before
+  // any event handler could fire against the new render), so an external
+  // change (mount, a restored POP/Back navigation, this hook re-rendering
+  // after its own write commits) is picked up, and (2) synchronously inside every setter,
   // immediately after it computes its own `next`, so a second setter called
   // later in the same tick builds on the first call's change instead of on
   // whatever was last committed. Setters then hand `setSearchParams` a
   // concrete `URLSearchParams` object, never a function — so react-router's
   // own notion of "current" never enters the picture at all.
   const latestParamsRef = useRef(searchParams)
-  latestParamsRef.current = searchParams
+  useLayoutEffect(() => {
+    latestParamsRef.current = searchParams
+  })
 
   const searchQuery = searchParams.get(SEARCH_PARAM_KEY) ?? ''
 

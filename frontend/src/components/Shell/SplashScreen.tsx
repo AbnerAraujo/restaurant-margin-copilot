@@ -52,19 +52,21 @@ function advancePast(
 }
 
 export default function SplashScreen() {
-  const [phase, setPhase] = useState<'visible' | 'fading' | 'gone'>('visible')
+  // index.css's global reduced-motion rule collapses the swing (and this
+  // component's own fade transition) to ~0.01ms. Rather than trust a
+  // browser to reliably fire animationend for a near-zero animation, such
+  // a user starts at `fading` outright — there is no swing left to wait
+  // for, and the fade below still resolves near-instantly via its own
+  // transitionend. Decided once, as the initial state, so the first
+  // committed frame is already the right one.
+  const [phase, setPhase] = useState<'visible' | 'fading' | 'gone'>(() =>
+    prefersReducedMotion() ? 'fading' : 'visible',
+  )
 
   useEffect(() => {
-    if (prefersReducedMotion()) {
-      // index.css's global reduced-motion rule collapses the swing (and
-      // this component's own fade transition) to ~0.01ms. Rather than
-      // trust a browser to reliably fire animationend for a near-zero
-      // animation, skip straight to fading — there is no swing left to
-      // wait for, and the fade below still resolves near-instantly via
-      // its own transitionend.
-      setPhase(advancePast('visible', 'fading'))
-      return
-    }
+    // Under reduced motion the swing was skipped above; the fade fallback
+    // in the next effect is the only timer that still applies.
+    if (prefersReducedMotion()) return
     // Fallback only: the primary path is the door swing's own
     // `animationend` in the JSX below.
     const fallback = setTimeout(

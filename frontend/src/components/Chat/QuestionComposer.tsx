@@ -366,15 +366,22 @@ export default function QuestionComposer({
   const [portalNode] = React.useState(() => document.createElement('div'))
 
   // Every open starts a fresh walk through the steps — a half-built question
-  // from a previous, abandoned attempt should never resurface silently.
-  React.useEffect(() => {
-    if (!open) return
-    setStep('category')
-    setCategoryId(null)
-    setAdvisoryKind(null)
-    setDraft({})
-    setQuestionText('')
-  }, [open])
+  // from a previous, abandoned attempt should never resurface silently. The
+  // reset happens during render, keyed off the `open` transition, rather
+  // than in an effect: React re-renders immediately with the fresh state,
+  // so a stale step never reaches the DOM for even one committed frame
+  // (https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes).
+  const [wasOpen, setWasOpen] = React.useState(open)
+  if (open !== wasOpen) {
+    setWasOpen(open)
+    if (open) {
+      setStep('category')
+      setCategoryId(null)
+      setAdvisoryKind(null)
+      setDraft({})
+      setQuestionText('')
+    }
+  }
 
   // `role="dialog"` + `aria-modal="true"` is a promise that nothing outside
   // this dialog is reachable while it's open. Two things keep that promise:
@@ -486,16 +493,18 @@ export default function QuestionComposer({
 
   // Fetched once, lazily, the first time the campaign picker could actually
   // be needed — never on every open of the composer, and never for a
-  // category that doesn't use it. `campaignsError` is part of the guard so a
+  // category that doesn't use it. Kicked off from the category-select
+  // handler (the one place `categoryId` becomes `promotion_roi`), not from
+  // an effect watching it. `campaignsError` is part of the guard so a
   // failed load is never silently retried on the owner's behalf the instant
   // it fails (that would replace the error message with a second spinner
   // before anyone could read it) — retrying is the explicit "Try again"
   // button's job.
-  React.useEffect(() => {
-    if (categoryId !== 'promotion_roi') return
+  function ensureCampaignsLoaded(id: GuidedCategoryId) {
+    if (id !== 'promotion_roi') return
     if (campaigns !== null || campaignsLoading || campaignsError !== null) return
     loadCampaigns()
-  }, [categoryId, campaigns, campaignsLoading, campaignsError, loadCampaigns])
+  }
 
   if (!open) return null
 
@@ -518,6 +527,7 @@ export default function QuestionComposer({
     setAdvisoryKind(null)
     setDraft(defaultDraftFor(id))
     setStep('params')
+    ensureCampaignsLoaded(id)
   }
 
   function selectAdvisoryTopic(kind: BusinessInsightKind) {
