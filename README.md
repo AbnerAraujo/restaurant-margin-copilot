@@ -140,6 +140,16 @@ open it, same as any other local-first tool in this repo. The service worker onl
 caches the app's own JS/CSS/icons; it never caches `/api/*`, so every
 number you see always comes from a live request, never a stale cache.
 
+### Running it in GitHub Codespaces (no local install)
+
+From the repo page on GitHub, **Code → Codespaces → Create codespace**.
+`.devcontainer/` starts Postgres from `docker-compose.yml` and the deploy
+image below, and the app comes up on forwarded port **8080** a few minutes
+later (Ports tab; follow startup with `docker logs -f margin-copilot-app`).
+The creation page offers an `ANTHROPIC_API_KEY` secret for the Ask chat;
+every other page works without it. This works from a tablet browser, and
+the forwarded port can be made public to share the link.
+
 ### Deploying it (one public URL)
 
 The repo root `Dockerfile` builds a single image in which the Go server

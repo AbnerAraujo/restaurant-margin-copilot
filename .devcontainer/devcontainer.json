@@ -1,0 +1,35 @@
+{
+  // GitHub Codespaces: open the repo, wait a few minutes, and the whole app
+  // runs on one forwarded port (8080). It runs the same single-URL image a
+  // Railway deploy runs (see /Dockerfile), next to the Postgres from
+  // /docker-compose.yml, so there is one setup path to keep working.
+  "name": "Restaurant Margin Copilot",
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb"
+  },
+  "forwardPorts": [8080],
+  "portsAttributes": {
+    "8080": {
+      "label": "Restaurant Margin Copilot",
+      "onAutoForward": "notify"
+    }
+  },
+  // Re-runs on every start, including resuming a stopped codespace, so the
+  // app is always up when the codespace is. Docker's build cache keeps the
+  // rebuild after the first one to seconds.
+  "postStartCommand": "bash .devcontainer/start-app.sh",
+  // Offered on the "Create codespace" page, so the key is typed into
+  // GitHub, never into a chat or a committed file. Leaving it blank still
+  // runs every page except the Ask chat.
+  "secrets": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Anthropic Console API key for the Ask chat (create one at platform.claude.com/settings/keys). Optional: every other page works without it.",
+      "documentationUrl": "https://platform.claude.com/settings/keys"
+    }
+  }
+}

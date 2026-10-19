@@ -14,3 +14,4 @@ fixtures
 mcp-server
 .specify
 .claude
+.devcontainer
