@@ -63,6 +63,10 @@ func main() {
 	// cache — it only makes this process behave as httpapi.Deps already
 	// documents for a nil Cache, leaving other instances untouched.
 	evalNoAnswerCache := flag.Bool("eval-no-answer-cache", false, "serve POST /api/ask with the answer cache disabled for THIS process only, so an evaluation run grades (and prices) the real model path rather than previously cached answers; the shared cache is left untouched")
+	// Local development keeps the two-server shape (Vite on :5173 calling
+	// this API on :8080). A deployed instance has one public URL, so the
+	// image passes the built frontend here and serves both from one origin.
+	frontendDir := flag.String("frontend", "", "with -serve, also serve the built frontend (frontend/dist) from this directory on the same origin as the API — the single-URL shape the deploy image uses")
 	flag.Parse()
 
 	if *ingestDir == "" && *ingestPromoDir == "" && *serveAddr == "" {
@@ -158,7 +162,15 @@ func main() {
 		})
 
 		bff.LogSurface(routes, *serveAddr)
-		if err := http.ListenAndServe(*serveAddr, bff.NewServer(routes)); err != nil {
+		handler := bff.NewServer(routes)
+		if *frontendDir != "" {
+			handler, err = bff.WithFrontend(handler, *frontendDir)
+			if err != nil {
+				log.Fatalf("serving the frontend: %v", err)
+			}
+			log.Printf("  also serving the frontend from %s on the same origin", *frontendDir)
+		}
+		if err := http.ListenAndServe(*serveAddr, handler); err != nil {
 			log.Fatalf("http server failed: %v", err)
 		}
 	}

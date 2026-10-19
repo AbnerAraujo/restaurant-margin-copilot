@@ -140,6 +140,30 @@ open it, same as any other local-first tool in this repo. The service worker onl
 caches the app's own JS/CSS/icons; it never caches `/api/*`, so every
 number you see always comes from a live request, never a stale cache.
 
+### Deploying it (one public URL)
+
+The repo root `Dockerfile` builds a single image in which the Go server
+also serves the built frontend (`cmd/server -frontend`), so a deployed
+instance is one URL with no cross-origin calls. On start,
+`deploy/start.sh` runs the same steps as above: migrate, generate the
+dataset, both ingests, serve. Each is safe to repeat, so a restart
+converges on the same numbers instead of duplicating them. `railway.json`
+adds a healthcheck on `/api/badges` for [Railway](https://railway.com),
+but any host that runs a Dockerfile next to a Postgres works.
+
+The container needs two variables:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | the Postgres connection URL (on Railway: `${{Postgres.DATABASE_URL}}`) |
+| `ANTHROPIC_API_KEY` | an Anthropic Console key; without it every page works except the Ask chat |
+
+Two prototype limits carry over. A public URL means anyone who has it can
+ask questions on your API key, so set a spend limit in the Anthropic
+Console. And the dataset directory lives in the container, so a cost
+sheet uploaded through the app is replaced by the generated data on the
+next restart.
+
 ## One dataset: hand-authored opening, generated history
 
 The product serves exactly one dataset — `backend/data/live/` (git-ignored,
